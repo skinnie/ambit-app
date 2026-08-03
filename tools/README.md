@@ -1,0 +1,222 @@
+# Ambit3 navigation database analysis tooling
+
+Decodes the USBPcap captures of SuuntoLink writing routes to a Suunto Ambit3, and
+verifies the binary format byte by byte against the source GPX files.
+
+```
+./tools/selftest.py                        # non-regression, the whole corpus
+./tools/decode_route.py CAPTURE            # dump + self-checks
+./tools/decode_route.py --sequence CAPTURE # chronological command sequence
+./tools/regen_route.py CAPTURE --from-gpx GPX [--route N]
+./tools/build_route.py --compare CAPTURE GPX [GPX...]
+```
+
+`build_route.py` builds the entire navigation database from the GPX files alone and diffs
+it byte for byte against a capture, packet sequence included. Four values are not derivable
+from a GPX and are taken from the capture: `distance`, `ascent`, `descent` and the route
+timestamp. Everything else is computed.
+
+The captures are not versioned (see `.gitignore`): they are recordings of personal
+hardware, and they carry the watch serial number.
+
+## Modules
+
+| File | Role |
+|---|---|
+| `ambit_pcap.py` | pcap -> reassembled HID messages -> sparse flash image |
+| `ambit_format.py` | structures, CRC, region hash, relative geometry |
+| `decode_route.py` | dump of a capture with self-checks |
+| `regen_route.py` | reserialization, then comparison against the source GPX |
+| `ambit_simplify.py` | SuuntoLink's Douglas-Peucker |
+| `build_route.py` | GPX to navigation database, and comparison against a capture |
+| `c_reference.py` | confronts the C serializer in `csrc/` with this reference |
+| `hid_roundtrip.py` | re-encodes the outgoing messages and compares them to the captures |
+| `write_nav.py` | writes to the watch, or simulates; dry-run by default |
+| `sbem_schema.py` | SuuntoLink schema dictionary, names the SBEM payloads |
+| `selftest.py` | chains everything over the whole corpus |
+
+## Writing to the watch
+
+```
+./tools/write_nav.py reset                       # simulates, nothing is emitted
+./tools/write_nav.py reset --compare CAPTURE     # checks against a capture
+./tools/write_nav.py route GPX --meta CAPTURE
+./tools/write_nav.py reset --write               # ACTUALLY EMITS
+```
+
+Without `--write`, not a byte goes out.
+
+The `settings` action is the exception, and it is read-only: it sends the `0x1100`
+query, four zero bytes, which is what SuuntoLink sends on every connection, and
+decodes the reply through the schema dictionary. It therefore needs the cable but
+takes no `--write`, and refuses one. Its point is `WhitelistedBleDevices`, the
+watch's BLE pairing bond, which is step 1 of the BLE milestone in `HANDOFF.md`.
+
+```
+./tools/write_nav.py settings                    # reads the watch, read-only
+./tools/write_nav.py settings --from CAPTURE      # decodes a capture, no watch
+./tools/write_nav.py settings --all               # every entry, not just bonds and pods
+```
+
+The reassembly of a long reply is exercised by `--from`, which replays the 589-byte
+`0x1100` of `ambit3full`; the live path itself has never run against hardware. `--compare` mode proves the simulated payloads are
+identical to SuuntoLink's: they are for `routedelete` and `route12km`, down to the 4-byte
+word at offset 4 of the `0x0b18`, which is supplied by the application and remains
+unidentified.
+
+Frame encoding is verified by round trip: the 4724 outgoing messages of the 9 captures,
+that is 47117 reports of 64 bytes, are re-encoded identically. Established along the way:
+`send_recv` and `format` are independent, contrary to what openambit's `legacy_format`
+parameter suggests by deriving both from a single integer, the firmware capture showing a
+`0x0102` with `send_recv=1` and `format=9`.
+
+## C serializer
+
+`csrc/device_driver_ambit3_navigation.{c,h}` is written to drop into openambit's
+`src/libambit/` unmodified: it depends only on `crc16.h` and `sha256.h`, both already
+present. The transport layer is left outside, which makes serialization testable without a
+watch: `ambit3_navigation_plan()` produces the list of writes, and the caller passes them to
+`libambit_pmem20_data_write` then to `ambit_command_data_tail_len`.
+
+```
+make -C csrc        # builds the harness
+make -C csrc test   # compares its output to the Python reference and to the captures
+```
+
+Result: the 10 and 20 `0x0b16` packets of `route12km` and `route128km` are reproduced byte
+for byte, as are both closing hashes, and the reset plan matches the hashes of `routedelete`
+and `poiimport`.
+
+## Verified format
+
+Reference watch: `Emu` (Ambit3 Peak), fw 2.4.17, hw 70.2.17414.
+
+Regions, as the watch declares them in its `0x0b21` response:
+
+```
+Waypoints  0x005000  16384      header 6 B, descriptors 52 x 100 @ 0x005020
+Routes     0x14c080  130000     header 32 B, descriptors 52 x 50 @ 0x14c0a0
+                                points 12 x 10000 @ 0x14cac8
+                                route index 20 x 50 @ 0x169f88
+                                waypoint index 4 x 100 @ 0x16a370
+```
+
+Point record, **fixed stride of 12 bytes**:
+
+```
+0  i32 x_rel        metres east of the bbox centre, signed
+4  i32 y_rel        metres north of the bbox centre, signed
+8  u16 altitude     metres; 30000 = no data
+10 u16 rel_distance 0 at the first point, 65535 at the last
+```
+
+Formula, solved by fitting then verified on 1188 points:
+
+```
+R    = 10800 * 1852 / pi = 6366707.0195
+x    = +/-round( R * cos(mid_lat) * (lon - mid_lon) )      angles in radians
+y    = +/-round( R * (lat - mid_lat) )
+alt  = trunc(<ele>)
+reld = trunc( round_to_4_significant_digits(travelled / total) * 65535 )
+```
+
+This is not openambit's `distance_calc()` (haversine, R = 6367 km, truncation), which
+reproduces only 124/336 then 508/852 points.
+
+Waypoint descriptor tail (last 12 bytes out of 52):
+
+```
+0  u16 magic = 0x0771
+2  u8  month, day, hour, minute, second  -- last modification date of the ROUTE,
+7  u8  rank of the waypoint in its route    without the year
+8  u8  type = 17 ("Waypoint")
+9  3 zero bytes
+```
+
+Route index entry (20 bytes):
+
+```
+0  u32 route number, starting at 1
+4  u32 timestamp in seconds, same clock as the date above
+8  u32 415, constant
+12 u8  index of the first waypoint, u8 waypoint count
+14 u8, u8 zero except in one observed case
+16 u32 0
+```
+
+SBEM0102 payload of the `0x0b25`: entries `[u8 id][u8 len][data]`, with a u32 extension when
+`len` is `0xff`. Entry `0x55` is the watch's complete POI list, disjoint from the route
+waypoints of the binary region.
+
+Integrity: `crc16_ccitt_false(descriptors || points)` in the route header,
+`crc16_ccitt_false(descriptors)` in the waypoint header, and the `0x0b18` closing hash =
+SHA-256 of the whole region, unwritten bytes at `0xff`. `GpsSGEE` is the exception: hash of
+the written bytes only.
+
+## SBEM schema dictionary
+
+The `descr+SERIAL+FW` file in SuuntoLink's data folder is an SBEM0102 that names and types
+every SML field of the firmware: 278 fields, 27 groups and 19 queryable objects for 2.4.17.
+**Its field numbers are the protocol's entry identifiers**, which makes any SBEM payload
+readable without guessing:
+
+```
+./tools/sbem_schema.py                                       # dump of the schema
+./tools/sbem_schema.py --group 85                            # detail of one id
+./tools/sbem_schema.py --capture "assets/ambit3 pcap/sync"   # decodes a capture
+./tools/sbem_schema.py --verify                              # schema against all captures
+```
+
+Verified on the captures: the `0x0b21` carries only `0x4a`
+(`BinaryDataArea.{Name,Checksum,Address,Size}`, 9 regions), the `0x0b25` and the `0x0b24`
+only `0x55` (`WayPoint`), the `0x1100` the 66 `DeviceSettings` groups, the `0x1200` entries
+`0x59`, `0x5a` and `0x8a` of the `DeviceLogBook`. A request is the identifier of the object
+wanted: the `0x1200` asks for `0x8d` = `sml.DeviceLogBook`, the `0x1100` makes do with four
+zero bytes and returns everything.
+
+What the descriptor adds, beyond navigation:
+
+- the complete POI record, `0x55` = `WayPoint.{Name, RouteName, Timestamp, RouteIndex, Type,
+  SubType, TypeIndex, Flags, Latitude, Longitude}`. What `parse_sbem_poi_list` skips as
+  padding is in fact an empty `RouteName` then five typed u8: the current decoding yields
+  the same coordinates on the captures because those five bytes are zero there, but it would
+  misalign on a typed POI.
+- the logbook index, `0x8a`, 47 fields including `MemArea.StartAddress1/EndAddress1`: the
+  flash address of every activity, that is the whole read path for moves.
+- the `DeviceSettings` tree, readable (`0x1100`) and writable (`0x1101`), including
+  `WhitelistedBleDevices` - see the BLE milestone in `HANDOFF.md`.
+
+The regions declared by the `0x0b21` are nine, not three: `Waypoints`, `Routes`, `Apps`,
+`GpsSGEE`, `CustomModes`, `TrainingProgram`, `ExerciseLog`, `EventLog` and `BlePairingInfo`
+(450 bytes at address 1332).
+
+## Simplification
+
+Douglas-Peucker, a single pass at 2 m, distance to the line, planar projection, the
+waypoints splitting the track. Reproduces 336 points out of 1066 and 852 out of 2911, and
+the resulting point body is byte-for-byte identical to both captures.
+
+The 2 m tolerance is pinned (1, 3 and 4 m fail). The projection radius is not: from
+6 300 000 to 6 500 000 m the result is the same. The metric is 2D despite `is3D()` returning
+true in `route_simplifier.js`, which the Grand Tour fixture proves since it carries
+altitudes.
+
+## Table ordering, with a reproduced SuuntoLink defect
+
+Routes are sorted by decreasing modification date. The waypoint descriptor table follows the
+**reverse** order of the routes, but the index table follows their **direct** order: the two
+are therefore not in correspondence as soon as there is more than one route. This is
+reproduced as is, to stay identical to the reference.
+
+In the route index, `@12` is the rank of the first waypoint in the descriptor table and
+`@15` the number of waypoints placed after that block. The `sync` capture carries a stale
+value there: SuuntoLink computed it over all the routes of the application, including one
+that was not enabled and therefore not written (`route.js` filters on `watchEnabled`). One
+byte diverges, and that application state is not derivable from a GPX.
+
+## Verification coverage
+
+Mutation test: a flipped bit in a point or in a descriptor is caught by the CRC and by the
+hash; in an index table, by the hash alone (the CRC does not cover the indexes); in a
+waypoint descriptor, by the fields of the waypoint region only. Every written byte is
+covered by at least one field.

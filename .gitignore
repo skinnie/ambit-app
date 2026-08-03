@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+csrc/build/
+
+# Analysis artifacts, deliberately not versioned on a public repository:
+#  - SuuntoLink binaries and decompilation: proprietary Suunto software
+#  - Microsoft redistributable DLLs
+#  - pcap captures: they carry the watch serial number and personal POIs (home)
+assets/
+full-assets/
