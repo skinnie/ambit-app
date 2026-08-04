@@ -305,14 +305,21 @@ again with that in mind shows SuuntoLink asking for the POI list, wiping, then w
 list back. The tool now does the same, and its version of that message reproduces the
 capture's byte for byte, so this will not happen to anyone again.
 
-That does not give you yours back. Two questions before we decide how to:
+That does not give you yours back, and you answered the question that decides how. Of the
+three ways the watch accepts a POI - current position, typed coordinates, or the Suunto app
+with "use on the watch" then a cable sync - **use the third one**. It is the only exact one:
+no typing, and full precision. The watch's own entry screen takes five decimals where the
+record stores seven, so anything typed by hand lands within about a metre and is not the same
+POI you had.
 
-1. Can the watch create a POI from **typed coordinates**, or only from where you are standing?
-2. Do you still have the list from task 2?
+**Do that before task 4, not after.** Task 4 asks whether the POIs survive a route write,
+which is the fix from this task being tested. With an empty POI list that question has no
+answer. Restore them first and the check becomes real.
 
-If the watch cannot take typed coordinates, we can add a command that writes them from the
-list you noted - the record format is fully known and we have a byte-exact template. Say the
-word and it is a short job.
+We have not built a command to write POIs ourselves. It is a genuine gap, since the exact
+route depends on the Suunto app and SuuntoLink and this project exists to do without them, but
+it is not needed to finish task 4 and the format is fully known, so it is a short job when it
+comes up rather than now.
 
 ---
 
@@ -320,6 +327,10 @@ word and it is a short job.
 
 **Why:** task 3 proved we can erase. This proves we can *create*, which is the whole point of
 the project. Same machinery, one more command.
+
+**First restore your POIs**, from the Suunto app with a cable sync, as described at the end of
+task 3. Not for their own sake: 4.3 asks whether they survive a route write, and that question
+needs some to survive.
 
 The route we have the most evidence for is the 12 km one, and the tool can rehearse it against
 the matching capture first.
