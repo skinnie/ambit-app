@@ -184,18 +184,47 @@ cd ~/ambit-app
 ./tools/write_nav.py settings --redact
 ```
 
-Task 1 explains what the output means. For now, only one thing matters:
+Task 1 explains what the output means. Here, only the failures matter, and each one has a
+different cause.
 
-**If it says `no Ambit3 found on the USB bus`** while `lsusb` does show the watch, then your
-user is not allowed to talk to it. openambit is already installed so this is unlikely, but the
-fix is:
+**If you get a `Traceback` with lines of Python in it,** your copy of the code is out of
+date. Every failure the tool expects is reported as one readable sentence, never as a
+traceback. Update and try again:
+
+```
+cd ~/ambit-app
+git pull
+./tools/write_nav.py settings --redact
+```
+
+**If it says `no Ambit3 on the USB bus`** while `lsusb` did show the watch: unusual, since
+both look at the same place. Try another port, and send us both outputs.
+
+**If it says `none of them openable`,** the watch is seen but your user is not allowed to
+talk to it. That is the common one. The message prints the fix; this is the same thing with
+a word of explanation.
+
+Listing a USB device needs no permission, opening it does, and they are separate things -
+which is why `lsusb` can succeed while the tool cannot. Look at the device nodes:
+
+```
+ls -l /dev/hidraw*
+```
+
+If they are owned by `root` with no permissions for anyone else, that is the whole problem.
+Grant access:
 
 ```
 echo 'SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1493", MODE="0666"' | sudo tee /etc/udev/rules.d/99-suunto.rules
 sudo udevadm control --reload-rules
 ```
 
-Unplug the watch, plug it back in, and run the command again.
+**Unplug the watch and plug it back in** - the rule only applies to devices that appear after
+it is loaded - then run the command again.
+
+Do not assume openambit already took care of this. A rule written for openambit's own way of
+reaching the watch covers a different device node than the one used here, so openambit can
+work perfectly while this tool cannot.
 
 ---
 

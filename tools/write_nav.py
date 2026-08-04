@@ -96,16 +96,40 @@ class Link:
         self.sent = []
 
     def open(self):
+        """Listing a USB device needs no privilege, opening its /dev/hidraw node does,
+        so the two failures are told apart: nothing plugged in is not the same problem
+        as a device present and unopenable, and only the second has a udev fix."""
         if self.dry_run:
             return None
         import hid  # imported only when a device is really opened
 
-        for product_id, label in PRODUCT_IDS.items():
-            for entry in hid.enumerate(VENDOR_ID, product_id):
+        found = [(entry, label) for product_id, label in PRODUCT_IDS.items()
+                 for entry in hid.enumerate(VENDOR_ID, product_id)]
+        if not found:
+            raise RuntimeError(
+                "no Ambit3 on the USB bus. Check the cable, then that `lsusb` lists a "
+                "device whose id starts with 1493:")
+        failures = []
+        for entry, label in found:
+            try:
                 self.device = open_hid(hid, entry["path"])
-                print(f"  watch: {label}")
-                return label
-        raise RuntimeError("no Ambit3 found on the USB bus")
+            except Exception as exc:  # every backend raises its own type here
+                failures.append(f"{entry['path']!r}: {exc}")
+                continue
+            print(f"  watch: {label}")
+            return label
+        raise RuntimeError(
+            f"{len(found)} Ambit3 on the USB bus, none of them openable. This is almost "
+            "always permissions on the\n  hidraw node rather than anything to do with "
+            "the watch. Check with:\n"
+            "    ls -l /dev/hidraw*\n"
+            "  Grant access, then unplug and replug the watch:\n"
+            "    echo 'SUBSYSTEM==\"hidraw\", ATTRS{idVendor}==\"1493\", MODE=\"0666\"'"
+            " | sudo tee /etc/udev/rules.d/99-suunto.rules\n"
+            "    sudo udevadm control --reload-rules\n"
+            "  Having openambit installed does not settle this: a rule written for its "
+            "own transport\n  covers a different device node than the one used here.\n"
+            "  The backend said: " + "; ".join(failures))
 
     def command(self, command, payload=b"", expect_reply=True):
         reports = encode_message(command, payload, self.sequence)
