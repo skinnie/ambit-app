@@ -45,6 +45,12 @@ CMD_MEMORY_MAP = 0x0B21
 CMD_DATA_WRITE = 0x0B16
 CMD_DATA_TAIL = 0x0B18
 CMD_NAV_COMMIT = 0x0B04
+CMD_POI_READ = 0x0B24
+CMD_POI_WRITE = 0x0B25
+
+POI_ENTRY = 0x55
+# Prefix of an SBEM payload sent to the watch, as against 0x...0100 on a reply.
+SBEM_WRITE_PREFIX = bytes.fromhex("000000000101")
 
 # Entries of the DeviceSettings tree worth calling out, see tools/sbem_schema.py.
 BLE_WHITELIST_ENTRY = 0x41
@@ -237,6 +243,52 @@ def show_settings(payload, show_all=False, redacted=False):
     return bonds
 
 
+def read_pois(link, capture=None):
+    """The watch's complete POI list, through 0x0b24.
+
+    A navigation write erases it, whatever `tools/README.md` used to assume: confirmed on
+    hardware 2026-08-04, a reset with no 0x0b25 lost every POI. Which is why SuuntoLink
+    reads the list before writing and puts it back afterwards, in every capture we have.
+
+    In dry-run there is no watch to ask, so the reply is taken from the capture being
+    compared. That keeps --compare byte-exact rather than skipping the message.
+    """
+    reply = link.command(CMD_POI_READ, b"\0\0\0\0")
+    if not link.dry_run:
+        return reply
+    if capture:
+        for m in messages(capture):
+            if m.command == CMD_POI_READ and m.incoming and m.payload:
+                return m.payload
+    return b""
+
+
+def poi_write_payload(reply):
+    """Turns a 0x0b24 reply into the 0x0b25 that puts the same POIs back, or None when
+    there are none.
+
+    The watch reports one SBEM entry per POI; the write concatenates them into a single
+    entry, in the reverse of the order read. On `routedelete` that reversal is also the
+    order SuuntoLink uses, most recently modified first, which is the same rule it applies
+    to routes, and the result is byte-for-byte the payload in the capture. Reversing needs
+    neither the schema nor any decoding of a POI's insides, so nothing here can mangle a
+    POI it does not understand.
+
+    `poiimport` puts a newly added POI first and the rest in that same order, which is how
+    to add one rather than merely preserve them.
+    """
+    records = [data for entry_id, data in F.sbem_entries(reply)
+               if entry_id == POI_ENTRY]
+    body = b"".join(reversed(records))
+    if not body:
+        return None
+    if len(body) < 0xFF:
+        header = bytes([POI_ENTRY, len(body)])
+    else:
+        header = bytes([POI_ENTRY, 0xFF]) + len(body).to_bytes(4, "little")
+    return SBEM_WRITE_PREFIX + F.SBEM_MAGIC + header + body
+
+
 def read_memory_map(link):
     """Addresses and sizes declared by the watch. In dry-run the reference values,
     the ones from the capture, are returned."""
@@ -317,10 +369,11 @@ def compare_with_capture(link, capture):
     """Compares the simulated 0x0b16 and 0x0b18 with those of the capture, payload by
     payload. Sequence numbers, which are session-specific, are out of the comparison:
     the HID framing is checked separately by hid_roundtrip.py."""
+    compared = (CMD_DATA_WRITE, CMD_DATA_TAIL, CMD_POI_WRITE)
     expected = [(m.command, m.payload) for m in messages(capture)
-                if not m.incoming and m.command in (CMD_DATA_WRITE, CMD_DATA_TAIL)]
+                if not m.incoming and m.command in compared]
     produced = [(command, payload) for command, payload, _ in link.sent
-                if command in (CMD_DATA_WRITE, CMD_DATA_TAIL)]
+                if command in compared]
     if len(produced) != len(expected):
         print(f"\n  FAIL  {len(produced)} messages produced against "
               f"{len(expected)} in the capture")
@@ -341,8 +394,8 @@ def compare_with_capture(link, capture):
                   + ("  (word supplied by the application)" if only_extra else ""))
             if only_extra:
                 ok = True
-    print(f"\n  {'OK   ' if ok else 'FAIL '} {len(produced)} 0x0b16/0x0b18 payloads "
-          f"compared to {capture}")
+    print(f"\n  {'OK   ' if ok else 'FAIL '} {len(produced)} 0x0b16/0x0b18/0x0b25 "
+          f"payloads compared to {capture}")
     return ok
 
 
@@ -402,6 +455,9 @@ def main():
         print("dry-run mode: not a byte will be emitted")
 
     link.command(CMD_DEVICE_INFO, b"\x02\x48\x03\x00")
+    # SuuntoLink reads the POI list here, before the memory map, and writes it back
+    # after the commit. Skipping that is what erased André's POIs on 2026-08-04.
+    pois = read_pois(link, args.compare or args.meta)
     check_memory_map(read_memory_map(link))
 
     if args.action == "reset":
@@ -409,6 +465,12 @@ def main():
     else:
         flash, layout = build_routes([pathlib.Path(p) for p in args.gpx], args.meta)
     send_plan(link, flash, layout)
+
+    restored = poi_write_payload(pois)
+    if restored:
+        link.command(CMD_POI_WRITE, restored)
+    else:
+        print("  no POI to put back")
 
     total = sum(len(payload) for _, payload, _ in link.sent)
     reports = sum(len(r) for _, _, r in link.sent)

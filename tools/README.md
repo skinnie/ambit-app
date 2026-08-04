@@ -44,8 +44,17 @@ hardware, and they carry the watch serial number.
 ./tools/write_nav.py reset --write               # ACTUALLY EMITS
 ```
 
+A navigation write **erases the watch's POI store**, confirmed on hardware 2026-08-04. So the
+sequence follows SuuntoLink's: `0x0b24` reads the complete POI list before the writes, and
+`0x0b25` puts it back after the `0x0b04` commit. The watch reports one SBEM entry per POI and
+the write concatenates them into one, in the reverse of the order read, which on `routedelete`
+is also SuuntoLink's order, most recently modified first. Reversing rather than sorting needs
+neither the schema nor any decoding of a POI's insides, and reproduces the capture byte for
+byte. `poiimport` puts a newly added POI first and the rest in that order, which is how to add
+one rather than only preserve them.
+
 Without `--write`, not a byte goes out. `--compare` mode proves the simulated payloads are
-identical to SuuntoLink's: they are for `routedelete` and `route12km`, down to the 4-byte
+identical to SuuntoLink's: they are for `routedelete`, 5 payloads, and `route12km`, 13, down to the 4-byte
 word at offset 4 of the `0x0b18`, which is supplied by the application and remains
 unidentified.
 

@@ -13,9 +13,9 @@ useful only for making SuuntoLink captures.
 **Golden rule:** every command below is safe except the ones in task 3, which are clearly
 marked. Nothing in tasks 0 to 2 writes anything to the watch.
 
-**Where we are:** task 0 and task 1 are done. **Task 2 then task 3 are what is next**, and they
-are the ones that matter most - they turn a verified-on-paper format into something that
-actually reaches the watch.
+**Where we are:** tasks 0 to 3 are done. The first real write reached the watch on 2026-08-04
+and the routes disappeared from it, which is the milestone this project existed to reach.
+**Task 4 is what is next**: writing a real route rather than an erasure.
 
 ---
 
@@ -244,9 +244,10 @@ rather than from inside an app?
 **The answer is no.** You paired from inside the Suunto app and it still read `0`. Two things
 you found along the way made it more useful than a plain no:
 
-- the watch **cannot** be paired or unpaired from iOS Settings > Bluetooth at all, only from
-  the Suunto app, so step 1.2 as originally written was impossible - that is a finding about
-  iOS, not a mistake on your side;
+- an **unpaired** watch does not appear in iOS Settings > Bluetooth at all, so pairing cannot
+  be started from there and step 1.2 was impossible as written. Once the Suunto app has paired
+  it, it does show up and can be forgotten from Settings. That asymmetry is a finding about
+  iOS, not a mistake on your side, and it decides who owns the pairing flow in our future app;
 - the flag is `0` on all eight slots, empty ones included, where the old capture had `1` on all
   eight.
 
@@ -256,7 +257,7 @@ is part of a later task, and it needs the writing path proven first - which is t
 Thank you for the `--redact` output, it was exactly what was needed and it was safe to send as
 is.
 
-## Task 2 - back up what is on the watch (20 min, by hand, nothing is written)
+## Task 2 - back up what is on the watch: DONE, 2026-08-04
 
 **Why:** task 3 erases every route and every waypoint on the watch. There is no undo, and no
 way to read them back yet. So they get written down on paper first.
@@ -280,74 +281,88 @@ watch. Then, and only then, task 3.
 
 ---
 
-## Task 3 - the first real write (30 min, THIS ERASES THE WATCH'S ROUTES)
+## Task 3 - the first real write: DONE, 2026-08-04
 
-Do not start this before task 2 is finished.
+It worked. The routes disappeared from the watch, and the watch was still answering
+afterwards. Kept short, for the record:
 
-**Why:** everything is ready in software and verified byte for byte against your own
-captures, but nothing has ever been sent to a real watch. This is the moment we find out
-whether the whole thing works. It is the milestone that turns the project into a usable app.
+- the rehearsal matched the capture, `OK 4 0x0b16/0x0b18 payloads`;
+- the watch's own memory map matched every address and size the project had assumed - the
+  first time that was confirmed live rather than from a capture;
+- 7 messages, 206 bytes, no error, and `settings` still answered afterwards.
 
-**Two rules:**
+**Your question, "not sure if it is good to delete gpsSGEE": nothing touched it.** Those three
+`OK Waypoints / Routes / GpsSGEE` lines are a *check*, not a write: the tool asks the watch
+where its regions are and compares the answer to what it expected. Your own output proves it.
+The two writes were 14 and 40 bytes of payload, which is 8 bytes of header plus 6 and 32 bytes
+of body - the two navigation region headers, at `0x005000` and `0x14c080`. `GpsSGEE` lives at
+`0x0704e0` and was never addressed. Your AGPS data is intact.
 
-- Never pass `--write` to any command that mentions `firmware`. There is no such command in
-  this runbook. Writing firmware is the only operation that can permanently kill the watch.
-- If the watch reboots, freezes, or behaves oddly, stop and tell us. Do not retry.
+**Your POIs, though, are our fault.** The documentation said omitting one message would leave
+them alone. It said the opposite of the truth, and your run is what proved it: a navigation
+write wipes the POI store, and that last message is what puts it back. Reading the capture
+again with that in mind shows SuuntoLink asking for the POI list, wiping, then writing the
+list back. The tool now does the same, and its version of that message reproduces the
+capture's byte for byte, so this will not happen to anyone again.
 
-### 3.1 Rehearsal, nothing is sent
+That does not give you yours back. Two questions before we decide how to:
+
+1. Can the watch create a POI from **typed coordinates**, or only from where you are standing?
+2. Do you still have the list from task 2?
+
+If the watch cannot take typed coordinates, we can add a command that writes them from the
+list you noted - the record format is fully known and we have a byte-exact template. Say the
+word and it is a short job.
+
+---
+
+## Task 4 - write a real route (30 min, overwrites the navigation database again)
+
+**Why:** task 3 proved we can erase. This proves we can *create*, which is the whole point of
+the project. Same machinery, one more command.
+
+The route we have the most evidence for is the 12 km one, and the tool can rehearse it against
+the matching capture first.
+
+### 4.1 Rehearsal, nothing is sent
 
 ```
 cd ~/ambit-app
-./tools/write_nav.py reset --compare "assets/ambit3 pcap/routedelete"
+./tools/write_nav.py route "assets/ambit3 pcap/Gare-du-Nord-to-114-Av.-André-Morizet.gpx" \
+    --meta "assets/ambit3 pcap/route12km" \
+    --compare "assets/ambit3 pcap/route12km"
 ```
 
 **Good result:** the last line is
-`OK    4 0x0b16/0x0b18 payloads compared to assets/ambit3 pcap/routedelete`.
+`OK    13 0x0b16/0x0b18/0x0b25 payloads compared to assets/ambit3 pcap/route12km`.
 
-Just above it you will also see
-`INFO  message 3 0x0b18: bytes [4, 5, 6, 7]  (word supplied by the application)`. That is
-expected and not an error: it is the one 4-byte field of the protocol we never identified, and
-it is not part of what we send.
+That means every byte we would send matches what SuuntoLink sent for that same route, POI
+restore included.
 
-This proves the bytes we are about to send are the exact bytes SuuntoLink sent when *you*
-deleted a route. If the last line is not `OK`, stop and send the output.
-
-### 3.2 The real write
-
-The watch plugged in, and:
+### 4.2 The real write
 
 ```
-./tools/write_nav.py reset --write
+./tools/write_nav.py route "assets/ambit3 pcap/Gare-du-Nord-to-114-Av.-André-Morizet.gpx" \
+    --meta "assets/ambit3 pcap/route12km" --write
 ```
 
-**What you should see:** a short list of `-> 0x...` lines and no error. The command prints
-nothing about success, because the watch answers nothing at all to a write. That silence is
-normal.
+`--meta` supplies four values a GPX file does not contain - distance, ascent, descent and a
+timestamp - by taking them from that capture. Without it the route still writes, with neutral
+values we have never tested.
 
-### 3.3 Look at the watch
+### 4.3 Look at the watch
 
-Go to the navigation menu on the watch.
+Navigation menu. We want to know:
 
-- **The route list is empty:** it worked. This is the result we want. Tell us.
-- **The routes are still there:** the write was rejected. Also a useful result, tell us.
-- **The POI list:** tell us whether the POIs survived. We think they should, and we would
-  like to know.
+- is there a route named `Gare du Nord` in the list;
+- can you open it, does it draw, does starting navigation work;
+- how many waypoints does it show - we expect the route to have kept the ones the GPX marks;
+- did the POIs survive this time. They should, and that is the fix from task 3 being tested.
 
-### 3.4 Check from the computer
+### 4.4 Send back
 
-```
-./tools/write_nav.py settings --redact | head -3
-```
-
-If that still answers, the watch is alive and talking, which is the main thing.
-
-### 3.5 Send back
-
-- what the watch's navigation menu shows now, routes and POIs;
-- the terminal output of 3.2, all of it;
-- anything odd the watch did.
-
-Then we move on to writing a real route, which is the same procedure with one more command.
+The full terminal output of 4.2, and what the watch shows. A photo of the route on the watch
+would be the nicest possible result to close this out.
 
 ---
 
