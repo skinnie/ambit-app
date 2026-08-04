@@ -92,7 +92,21 @@ is in the reply, so a truncated list is visible rather than silent.
 ```
 ./tools/write_nav.py pois                        # the watch's POIs
 ./tools/write_nav.py logbook                     # the activities, first page
+./tools/write_nav.py nav                         # the navigation database, off the watch
+./tools/write_nav.py nav --save backup           # and keep the raw regions
 ```
+
+`nav` is the read path `HANDOFF.md` asked for and never had. `0x0b17` takes
+`[u32 address][u32 length]` and answers with the same eight bytes then the data, 1024 at a
+time as SuuntoLink does in `ambit3full`; `nav` walks the `Waypoints` and `Routes` regions that
+way and decodes them with the same structures the serializer writes. It skips `GpsSGEE`, which
+is ephemeris and nothing to do with navigation.
+
+Two things follow. The read is **self-validating**: the regions carry their own CRC over the
+descriptors and the points, so a matching CRC proves the bytes came back intact - it holds on
+all six captures that contain a database, and an empty one is the documented special case where
+the field is a literal zero rather than the CRC of nothing. And `--save` makes a real backup
+possible, which matters before any write.
 
 Without the descriptor the command cannot name the entries, and therefore cannot tell a
 paired watch from an unpaired one: it says so and exits non-zero rather than reporting an

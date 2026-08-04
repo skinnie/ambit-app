@@ -48,6 +48,8 @@ CMD_NAV_COMMIT = 0x0B04
 CMD_POI_READ = 0x0B24
 CMD_POI_WRITE = 0x0B25
 CMD_LOG_HEADERS = 0x1200
+CMD_FLASH_READ = 0x0B17
+FLASH_CHUNK = 1024
 
 # 0x1200 asks for an object by identifier, unlike 0x1100 and 0x0b24 which take four zero
 # bytes and return everything. Here: sml.DeviceLogBook, entry 0x8d, empty.
@@ -151,11 +153,12 @@ class Link:
             "own transport\n  covers a different device node than the one used here.\n"
             "  The backend said: " + "; ".join(failures))
 
-    def command(self, command, payload=b"", expect_reply=True):
+    def command(self, command, payload=b"", expect_reply=True, quiet=False):
         reports = encode_message(command, payload, self.sequence)
         name = CMD_NAMES.get(command, f"0x{command:04x}")
-        print(f"  {'[dry-run] ' if self.dry_run else ''}-> 0x{command:04x} "
-              f"{name:22} {len(payload):5} B  {len(reports)} report(s)")
+        if not quiet:
+            print(f"  {'[dry-run] ' if self.dry_run else ''}-> 0x{command:04x} "
+                  f"{name:22} {len(payload):5} B  {len(reports)} report(s)")
         if self.verbose:
             for report in reports:
                 print(f"        {report.hex(' ')}")
@@ -184,6 +187,113 @@ class Link:
                 raise RuntimeError(f"truncated reply: {len(body)}/{total} bytes")
             body += bytes(more[8:8 + min(54, total - len(body))])
         return body
+
+
+def read_flash(link, address, size, label=""):
+    """Reads a flash region through 0x0b17: [u32 address][u32 length] out, the same eight
+    bytes then the data back, 1024 at a time as SuuntoLink does in `ambit3full`.
+
+    This is the read path `HANDOFF.md` wanted for milestone 4 and never had. It is what
+    makes a backup possible, and it is self-checking: the region carries its own CRC.
+    """
+    import struct
+
+    out = b""
+    while len(out) < size:
+        want = min(FLASH_CHUNK, size - len(out))
+        reply = link.command(CMD_FLASH_READ,
+                             struct.pack("<II", address + len(out), want), quiet=True)
+        if len(reply) < 8:
+            raise RuntimeError(f"0x0b17 at 0x{address + len(out):06x}: short reply")
+        got_address, got_size = struct.unpack("<II", reply[:8])
+        if (got_address, got_size) != (address + len(out), want):
+            raise RuntimeError(
+                f"0x0b17 asked 0x{address + len(out):06x}/{want}, "
+                f"got 0x{got_address:06x}/{got_size}")
+        out += reply[8:8 + got_size]
+        print(f"\r  {label} {len(out)}/{size} B", end="", flush=True)
+    print()
+    return out
+
+
+def show_navigation(flash):
+    """Decodes the navigation database read off the watch, with the structures the
+    serializer already uses. The CRCs make the read self-validating: they cover the
+    descriptors and the points, so if they match, the bytes came back intact."""
+    header = F.RouteHeader.parse(flash.read(F.ROUTE_BASE, 32))
+    waypoint_header = F.WaypointHeader.parse(flash.read(F.WAYPOINT_BASE, 6))
+    routes, points = header.route_count, header.point_count
+    print(f"  routes {routes}   points {points}   waypoints {waypoint_header.count}")
+
+    if header.magic != F.ROUTE_HEADER_MAGIC:
+        print(f"  !! route header magic 0x{header.magic:04x}, expected "
+              f"0x{F.ROUTE_HEADER_MAGIC:04x}")
+        return None
+
+    descriptors = flash.read(F.ROUTE_DESC, 52 * routes)
+    body = flash.read(F.ROUTE_POINTS, 12 * points)
+    # An empty database carries a literal zero rather than the CRC of nothing, which is
+    # what the reset plan writes and what routedelete shows.
+    crc = F.crc16_ccitt_false(descriptors + body) if routes else 0
+    wpt_blob = flash.read(F.WAYPOINT_DESC, 52 * waypoint_header.count)
+    wpt_crc = F.crc16_ccitt_false(wpt_blob)
+    print(f"  {'OK   ' if crc == header.checksum else 'FAIL '} route CRC "
+          f"0x{crc:04x} against 0x{header.checksum:04x}"
+          + ("  (empty database, a literal zero)" if not routes else ""))
+    print(f"  {'OK   ' if wpt_crc == waypoint_header.checksum else 'FAIL '} waypoint CRC "
+          f"0x{wpt_crc:04x} against 0x{waypoint_header.checksum:04x}")
+
+    for i in range(routes):
+        d = F.RouteDescriptor.parse(flash.read(F.ROUTE_DESC + 52 * i, 52))
+        e = F.RouteIndexEntry.parse(flash.read(F.ROUTE_INDEX + 20 * i, 20))
+        section = [F.RoutePoint.parse(flash.read(F.ROUTE_POINTS + 12 * k, 12))
+                   for k in range(d.start_index, d.start_index + d.point_count)]
+        alt = [q.altitude for q in section if q.altitude != F.ALTITUDE_NONE]
+        print(f"  route[{i}] {d.name!r}  {d.point_count} points  {d.distance} m  "
+              f"ascent {d.ascent} descent {d.descent}  waypoints {e.waypoint_count}")
+        print(f"           altitude " + (f"{min(alt)} to {max(alt)} m on "
+                                         f"{len(alt)}/{len(section)} points"
+                                         if alt else "absent on every point"))
+    for i in range(waypoint_header.count):
+        w = F.WaypointDescriptor.parse(flash.read(F.WAYPOINT_DESC + 52 * i, 52))
+        tail = F.WaypointTail.parse(w.tail)
+        print(f"  waypoint[{i}] {w.name!r} route={w.route_name!r}  "
+              f"{w.lat / 1e7:.7f}, {w.lon / 1e7:.7f}  type {tail.type} rank {tail.rank}")
+    return crc == header.checksum and wpt_crc == waypoint_header.checksum
+
+
+def run_nav(args):
+    """READ-ONLY: reads the two navigation regions off the watch and decodes them.
+
+    Nothing here writes. It is the first time this project reads the database rather than
+    inferring it from a capture, which also makes it the backup that milestone 4 asked for
+    and never had.
+    """
+    if args.from_capture:
+        flash = FlashImage.from_pcap(args.from_capture)
+        print(f"### {args.from_capture}, navigation database as written")
+        return 0 if show_navigation(flash) else 1
+
+    link = Link(dry_run=False, verbose=args.verbose)
+    print("read-only: 0x0b17 reads flash, nothing is written")
+    link.open()
+    regions = {}
+    for base, (name, size, _) in sorted(F.REGIONS.items()):
+        if name == "GpsSGEE":
+            continue  # 140000 bytes of ephemeris, nothing to do with navigation
+        regions[name] = read_flash(link, base, size, label=name)
+
+    flash = FlashImage()
+    for base, (name, _, _) in sorted(F.REGIONS.items()):
+        if name in regions:
+            flash.write(base, regions[name])
+
+    if args.save:
+        for name, blob in regions.items():
+            path = pathlib.Path(f"{args.save}-{name.lower()}.bin")
+            path.write_bytes(blob)
+            print(f"  saved {len(blob)} B to {path}")
+    return 0 if show_navigation(flash) else 1
 
 
 def settings_from_capture(capture):
@@ -490,7 +600,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("action",
                         choices=("reset", "route", "settings", "pois",
-                                 "logbook"))
+                                 "logbook", "nav"))
     parser.add_argument("gpx", nargs="*")
     parser.add_argument("--write", action="store_true",
                         help="actually emits; without this option nothing is sent")
@@ -499,23 +609,29 @@ def main():
     parser.add_argument("--compare", metavar="CAPTURE",
                         help="checks the simulated payloads against a capture")
     parser.add_argument("--from", metavar="CAPTURE", dest="from_capture",
-                        help="settings: decodes a capture's 0x1100 instead of the watch")
+                        help="settings, pois, logbook, nav: decode a capture, no watch")
     parser.add_argument("--all", action="store_true",
                         help="settings: every entry, not just the BLE bonds and pods")
     parser.add_argument("--redact", action="store_true",
                         help="settings: mask keys and MAC, output safe to send")
+    parser.add_argument("--save", metavar="PREFIX",
+                        help="nav: also write the raw regions to PREFIX-*.bin")
     parser.add_argument("--verbose", action="store_true",
                         help="logs every 64-byte report")
     args = parser.parse_args()
 
     if args.action == "route" and not args.gpx:
         parser.error("route expects at least one GPX")
+    if args.action == "nav":
+        if args.write:
+            parser.error("nav is read-only, --write has nothing to write")
+        return run_nav(args)
     if args.action in QUERIES:
         if args.write:
             parser.error(f"{args.action} is read-only, --write has nothing to write")
         return run_query(args)
-    if args.from_capture or args.all or args.redact:
-        parser.error("--from, --all and --redact only apply to settings")
+    if args.from_capture or args.all or args.redact or args.save:
+        parser.error("--from, --all, --redact and --save do not apply to reset or route")
 
     link = Link(dry_run=not args.write, verbose=args.verbose)
     if args.write:

@@ -91,7 +91,8 @@ def main():
         record("schema", "SBEM payloads of the captures",
                ["sbem_schema.py", "--verify"])
         for action, capture in (("settings", "ambit3full"), ("pois", "poiimport"),
-                                ("logbook", "poiimport")):
+                                ("logbook", "poiimport"), ("nav", "route128km"),
+                                ("nav", "routedelete")):
             record("dryrun", f"{action} read from {capture}",
                    ["write_nav.py", action, "--from", str(CAPTURES / capture)])
     else:
