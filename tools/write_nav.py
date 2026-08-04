@@ -222,9 +222,10 @@ def show_settings(payload, show_all=False, redacted=False):
               "The 16 bytes of\n  EncodingKey are the candidate for the NSP session "
               "token, see milestone 7\n  in HANDOFF.md.")
         if any(not b.get("IsNspCapable") for b in bonds):
-            print("  Note: a bond has IsNspCapable=0. Observed on a pairing made "
-                  "outside the\n  Suunto app; whether it gates the token is the open "
-                  "question of milestone 7.")
+            print("  Note: a bond has IsNspCapable=0. Pairing does not set it, from "
+                  "inside the Suunto\n  app or outside, so it has to be written through "
+                  "0x1101. Whether the watch then\n  accepts the key as a token is the "
+                  "open question of milestone 7.")
         if redacted:
             print("  Key material is redacted, so this output is safe to send as is.")
         else:

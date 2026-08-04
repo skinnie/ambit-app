@@ -13,6 +13,10 @@ useful only for making SuuntoLink captures.
 **Golden rule:** every command below is safe except the ones in task 3, which are clearly
 marked. Nothing in tasks 0 to 2 writes anything to the watch.
 
+**Where we are:** task 0 and task 1 are done. **Task 2 then task 3 are what is next**, and they
+are the ones that matter most - they turn a verified-on-paper format into something that
+actually reaches the watch.
+
 ---
 
 ## Task 0 - one-time setup (15 min, do this once)
@@ -228,84 +232,29 @@ work perfectly while this tool cannot.
 
 ---
 
-## Task 1 - the `IsNspCapable` question (10 min, nothing is written)
+## Task 1 - the `IsNspCapable` question: DONE, 2026-08-04
 
-**Why:** last time you re-paired the watch and read its Bluetooth settings, one field came
-back as `IsNspCapable=0`, whereas the old capture had `1` everywhere. We need to know whether
-that field just records *how* the pairing was made, or whether it is a switch that decides if
-we can use the key at all. The difference matters a lot, and one test settles it.
+Nothing to do here. Kept for the record, since it explains what task 3 is for.
 
-**The idea:** last time you paired from the iPhone's Bluetooth settings. This time, pair from
-*inside the Suunto app*, and see whether the field becomes `1`.
+**The question was:** the watch stores a Bluetooth key for the phone, `EncodingKey`, and next
+to it a flag `IsNspCapable`. An old capture had that flag at `1`; a fresh pairing gave `0`. Did
+the flag simply record that the pairing had been made from the phone's Bluetooth settings
+rather than from inside an app?
 
-### 1.1 Read the current state first, before touching anything
+**The answer is no.** You paired from inside the Suunto app and it still read `0`. Two things
+you found along the way made it more useful than a plain no:
 
-Plug the watch in, then:
+- the watch **cannot** be paired or unpaired from iOS Settings > Bluetooth at all, only from
+  the Suunto app, so step 1.2 as originally written was impossible - that is a finding about
+  iOS, not a mistake on your side;
+- the flag is `0` on all eight slots, empty ones included, where the old capture had `1` on all
+  eight.
 
-```
-cd ~/ambit-app
-./tools/write_nav.py settings --redact
-```
+So the flag is not something pairing sets, and we now know we have to write it ourselves. That
+is part of a later task, and it needs the writing path proven first - which is task 3.
 
-**Good result:** the last lines say something like
-`1 BLE bond(s) carrying a key out of 8 slot(s)` and
-`Key material is redacted, so this output is safe to send as is`.
-
-`--redact` replaces your keys and your phone's address with a fingerprint like
-`EncodingKey=<16 bytes, sha256:75ca2f70>`. That fingerprint is enough for us to tell whether
-a key changed between two reads, and useless to anyone else. **Always use `--redact` when you
-are going to send us the output.**
-
-Save it:
-
-```
-./tools/write_nav.py settings --redact > ~/read-1-before.txt
-```
-
-**If it says `CANNOT DECIDE`:** the schema file from 0.2 is missing. Fix that first, the
-answer would be meaningless otherwise.
-
-**If it says `no Ambit3 found on the USB bus`:** the cable or the permissions, see 0.5.
-
-### 1.2 Unpair the watch from the phone
-
-Three places, all of them:
-
-1. On the iPhone: **Settings > Bluetooth**, find the watch, tap the blue `i`, then
-   **Forget This Device**.
-2. In the **Suunto app**, if it lists the watch, remove it there too.
-3. On the watch itself: it has a pairing menu that can clear known devices. If you cannot
-   find it, skip this one, it is not essential.
-
-### 1.3 Pair again, but from inside the Suunto app
-
-Open the **Suunto app** on the iPhone and pair the watch from there, not from iOS Settings.
-
-**If the Suunto app refuses to pair an Ambit3, or does not offer it at all: stop and tell us.
-That is a result, not a failure** - it means nobody can set that field through an app any
-more, and we will have to write it ourselves.
-
-### 1.4 Read again
-
-```
-cd ~/ambit-app
-./tools/write_nav.py settings --redact > ~/read-2-after.txt
-cat ~/read-2-after.txt
-```
-
-### 1.5 What to send back
-
-Send both files, `read-1-before.txt` and `read-2-after.txt`. They are already safe to send.
-
-The single thing we are looking for is the value of `IsNspCapable` on the line that has a
-`sha256:` fingerprint for `EncodingKey`:
-
-- **`IsNspCapable=1`** - good news, the field just records how the pairing was made.
-- **`IsNspCapable=0`** - the field means something else and we have more work to do.
-
-Either way it is a useful answer, so do not worry about which one you get.
-
----
+Thank you for the `--redact` output, it was exactly what was needed and it was safe to send as
+is.
 
 ## Task 2 - back up what is on the watch (20 min, by hand, nothing is written)
 
