@@ -21,12 +21,13 @@ marked. Nothing in tasks 0 to 2 writes anything to the watch.
 
 ```
 cd ~
-git clone git@github.com:vincentchalamon/ambit-app.git
+git clone https://github.com/vincentchalamon/ambit-app.git
 cd ambit-app
 ```
 
-If `git clone` complains about permissions, use the HTTPS address instead:
-`git clone https://github.com/vincentchalamon/ambit-app.git`
+If you have an SSH key set up on GitHub you can use
+`git clone git@github.com:vincentchalamon/ambit-app.git` instead. The HTTPS address above
+needs nothing set up, so prefer it.
 
 Later, to get the latest version, just:
 
@@ -64,8 +65,87 @@ sudo apt update
 sudo apt install -y python3 build-essential libhidapi-hidraw0 python3-hid
 ```
 
-That is all. `build-essential` is for the `make` in 0.4, the other two are for talking to the
-watch over USB.
+That is all, on Mint and on Ubuntu. `build-essential` provides the `make` used in 0.4, and
+the other two are what lets Python talk to the watch over USB.
+
+Check it took:
+
+```
+python3 -c "import hid; print('hid module OK')"
+```
+
+**Good result:** it prints `hid module OK`.
+
+**If it prints `ModuleNotFoundError: No module named 'hid'`,** or if `apt` said it could not
+find `python3-hid` because you are not on Mint or Ubuntu, go to 0.3a.
+
+### 0.3a Fallback: a private Python environment for this project
+
+Skip this if 0.3 worked.
+
+**Why:** recent Linux distributions refuse to let `pip` install things next to the system's
+own Python, so as to stop a stray package from breaking the operating system. Trying it
+anyway gives an error mentioning `externally-managed-environment`. That is a fence, not a
+fault. The way around it is a *virtual environment*: a private folder holding its own copy of
+Python and its own packages, which cannot affect the rest of the machine.
+
+Create one inside the repository and install into it:
+
+```
+cd ~/ambit-app
+python3 -m venv venv
+source venv/bin/activate
+pip install hid
+```
+
+**Good result:** `pip` finishes without an error, and your prompt now begins with `(venv)`.
+That prefix is how you know you are inside the environment.
+
+**If `python3 -m venv venv` fails with a message about `ensurepip`,** the piece of Python
+that creates environments is not installed. The error itself names the package to install,
+and it is one of these two:
+
+```
+sudo apt install -y python3-venv
+```
+
+Then delete the half-made folder and try again:
+
+```
+rm -rf ~/ambit-app/venv
+cd ~/ambit-app
+python3 -m venv venv
+source venv/bin/activate
+pip install hid
+```
+
+**The one thing to remember about a venv:** it is not permanent. It applies to the terminal
+window you activated it in, and nothing else. **Every time you open a new terminal**, before
+running any command from this runbook:
+
+```
+cd ~/ambit-app
+source venv/bin/activate
+```
+
+If you forget, `No module named 'hid'` comes back. That message means "you are outside the
+environment", not "the install failed". Re-activate and carry on.
+
+The `venv` folder is deliberately not tracked by git, so it will never get in the way of a
+`git pull`.
+
+### 0.3b If you see `module 'hid' has no attribute 'Device'`
+
+That was a real bug on our side, fixed on 2026-08-04. Two different Python packages are both
+imported as `hid` and their APIs differ; the tool used to require one of them and Mint ships
+the other. It now accepts either. Update and the error goes away:
+
+```
+cd ~/ambit-app
+git pull
+```
+
+If it persists after a `git pull`, send us the output of `python3 -c "import hid; print(hid.__file__)"`.
 
 ### 0.4 Check everything works
 

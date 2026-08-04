@@ -65,6 +65,26 @@ def show_value(name, value, redacted):
             f"sha256:{hashlib.sha256(text.encode()).hexdigest()[:8]}>")
 
 
+def open_hid(hid, path):
+    """Two different modules import as `hid`, both are packaged, and their APIs differ.
+
+    PyPI `hid`, ctypes bindings, exposes `Device(path=...)`. cython-hidapi, which Debian
+    and Mint ship as `python3-hid`, exposes `device()` plus `open_path()` and no `Device`
+    at all. Accept either, so that a plain `apt install python3-hid` is enough and nobody
+    has to be told which packaging to prefer.
+
+    `enumerate()` is identical in both, and `read(size, timeout)` agrees as long as the
+    timeout stays positional: the keyword is `timeout` in one and `timeout_ms` in the
+    other. `read()` returns bytes in one and a list of ints in the other, which is why
+    every slice of a reply is wrapped in `bytes()`.
+    """
+    if hasattr(hid, "Device"):
+        return hid.Device(path=path)
+    device = hid.device()
+    device.open_path(path)
+    return device
+
+
 class Link:
     """HID transport. In dry-run no device is opened."""
 
@@ -78,11 +98,11 @@ class Link:
     def open(self):
         if self.dry_run:
             return None
-        import hid  # imported only when actually writing
+        import hid  # imported only when a device is really opened
 
         for product_id, label in PRODUCT_IDS.items():
             for entry in hid.enumerate(VENDOR_ID, product_id):
-                self.device = hid.Device(path=entry["path"])
+                self.device = open_hid(hid, entry["path"])
                 print(f"  watch: {label}")
                 return label
         raise RuntimeError("no Ambit3 found on the USB bus")
@@ -109,13 +129,13 @@ class Link:
         as ambit_pcap.messages() does: a 0x1100 reply is 589 bytes over 12 reports."""
         import struct
 
-        head = self.device.read(64, timeout=20000)
+        head = self.device.read(64, 20000)  # positional: see open_hid()
         if not head or head[0] != 0x3F:
             raise RuntimeError("no reply from the watch")
         total, = struct.unpack("<I", bytes(head[16:20]))
         body = bytes(head[20:20 + min(42, total)])
         while len(body) < total:
-            more = self.device.read(64, timeout=20000)
+            more = self.device.read(64, 20000)
             if not more:
                 raise RuntimeError(f"truncated reply: {len(body)}/{total} bytes")
             body += bytes(more[8:8 + min(54, total - len(body))])

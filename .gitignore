@@ -1,6 +1,7 @@
 __pycache__/
 *.pyc
 csrc/build/
+venv/
 
 # Analysis artifacts, deliberately not versioned on a public repository:
 #  - SuuntoLink binaries and decompilation: proprietary Suunto software

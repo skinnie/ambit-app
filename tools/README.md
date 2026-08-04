@@ -49,6 +49,14 @@ identical to SuuntoLink's: they are for `routedelete` and `route12km`, down to t
 word at offset 4 of the `0x0b18`, which is supplied by the application and remains
 unidentified.
 
+`--write` needs the `hid` Python module. Two different packages import under that name and
+their APIs differ: PyPI `hid` exposes `Device(path=...)`, while cython-hidapi, which Debian
+and Mint ship as `python3-hid`, exposes `device()` plus `open_path()`. `open_hid()` accepts
+either, so either packaging works and the reader is not told to prefer one. Consequences for
+anyone touching that code: keep the `read()` timeout positional, the keyword differs between
+the two, and keep wrapping reply slices in `bytes()`, since one returns bytes and the other a
+list of ints.
+
 The `settings` action is the exception, and it is read-only: it sends the `0x1100`
 query, four zero bytes, which is what SuuntoLink sends on every connection, and
 decodes the reply through the schema dictionary. It therefore needs the cable but
