@@ -90,8 +90,10 @@ def main():
     if any((HERE.parent / "assets").glob("descr+*+2.4.17")):
         record("schema", "SBEM payloads of the captures",
                ["sbem_schema.py", "--verify"])
-        record("dryrun", "settings read from ambit3full",
-               ["write_nav.py", "settings", "--from", str(CAPTURES / "ambit3full")])
+        for action, capture in (("settings", "ambit3full"), ("pois", "poiimport"),
+                                ("logbook", "poiimport")):
+            record("dryrun", f"{action} read from {capture}",
+                   ["write_nav.py", action, "--from", str(CAPTURES / capture)])
     else:
         print("  skip    SBEM schema and settings (SuuntoLink descriptor absent)")
 

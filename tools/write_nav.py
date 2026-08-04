@@ -47,6 +47,20 @@ CMD_DATA_TAIL = 0x0B18
 CMD_NAV_COMMIT = 0x0B04
 CMD_POI_READ = 0x0B24
 CMD_POI_WRITE = 0x0B25
+CMD_LOG_HEADERS = 0x1200
+
+# 0x1200 asks for an object by identifier, unlike 0x1100 and 0x0b24 which take four zero
+# bytes and return everything. Here: sml.DeviceLogBook, entry 0x8d, empty.
+LOGBOOK_REQUEST = (bytes.fromhex("00000000") + (1).to_bytes(2, "little")
+                   + (10).to_bytes(2, "little") + b"SBEM0102" + bytes([0x8D, 0x00]))
+
+# The three read-only queries: command, request payload, and the entries worth printing
+# when --all is not given.
+QUERIES = {
+    "settings": (CMD_SETTINGS_READ, b"\0\0\0\0", (0x41, 0x43)),
+    "pois": (CMD_POI_READ, b"\0\0\0\0", (0x55,)),
+    "logbook": (CMD_LOG_HEADERS, LOGBOOK_REQUEST, (0x59, 0x5A, 0x8A)),
+}
 
 POI_ENTRY = 0x55
 # Prefix of an SBEM payload sent to the watch, as against 0x...0100 on a reply.
@@ -401,28 +415,82 @@ def compare_with_capture(link, capture):
     return ok
 
 
-def run_settings(args):
-    """READ-ONLY: nothing is written to the watch, so there is no --write to give."""
+def reply_from_capture(capture, command):
+    for m in messages(capture):
+        if m.command == command and m.incoming and m.payload:
+            return m.payload
+    raise ValueError(f"no 0x{command:04x} reply in {capture}")
+
+
+def run_query(args):
+    """READ-ONLY: the three queries send a request and decode the reply, and none of them
+    writes, so none takes --write.
+
+    `logbook` returns one page. The watch pages a long list, newest move first, and the
+    continuation cursor sits in the reply prefix; paging is not implemented because a run
+    made to look at the newest activity does not need it.
+    """
+    command, request, interesting = QUERIES[args.action]
+
     if args.from_capture:
         try:
-            payload = settings_from_capture(args.from_capture)
+            payload = reply_from_capture(args.from_capture, command)
         except ValueError as exc:
-            print(f"  {exc}. Only ambit3full carries one.")
+            print(f"  {exc}.")
             return 1
-        print(f"### {args.from_capture}, 0x1100 reply ({len(payload)} B)")
-        return 0 if show_settings(payload, args.all, args.redact) is not None else 1
+        print(f"### {args.from_capture}, 0x{command:04x} reply ({len(payload)} B)")
+    else:
+        link = Link(dry_run=False, verbose=args.verbose)
+        print(f"read-only: the 0x{command:04x} query, nothing is written")
+        link.open()
+        payload = link.command(command, request)
+        print(f"  reply {len(payload)} B")
 
-    link = Link(dry_run=False, verbose=args.verbose)
-    print("read-only: the 0x1100 query, four zero bytes, nothing is written")
-    link.open()
-    payload = link.command(CMD_SETTINGS_READ, b"\0\0\0\0")
-    print(f"  reply {len(payload)} B")
-    return 0 if show_settings(payload, args.all, args.redact) is not None else 1
+    if args.action == "settings":
+        return 0 if show_settings(payload, args.all, args.redact) is not None else 1
+    return 0 if show_entries(payload, interesting, args.all, args.redact) is not None else 1
+
+
+def show_entries(payload, interesting, show_all=False, redacted=False):
+    """Names and decodes a reply's SBEM entries. Returns None when the schema is missing,
+    for the same reason show_settings() does: an unnamed dump must not read as an answer.
+    """
+    import sbem_schema
+
+    head = payload.find(sbem_schema.MAGIC)
+    if head < 0:
+        print("  no SBEM0102 payload in the reply")
+        return None
+    descriptor = sbem_schema.default_descriptor()
+    if not descriptor.exists():
+        print(f"  CANNOT DECIDE: the SuuntoLink descriptor is missing from "
+              f"{descriptor.parent},\n  so the entries cannot be named. See "
+              f"tools/sbem_schema.py.")
+        for entry_id, data in sbem_schema.entries(payload[head:]):
+            print(f"  0x{entry_id:02x} [{len(data)}] {data[:32].hex(' ')}")
+        return None
+
+    schema = sbem_schema.load(descriptor)
+    shown = 0
+    for entry_id, data in sbem_schema.entries(payload[head:]):
+        if not (show_all or entry_id in interesting):
+            continue
+        print(f"  0x{entry_id:02x} {schema.label(entry_id) or '?'}  [{len(data)}]")
+        for record in schema.decode_entry(entry_id, data) or []:
+            shown += 1
+            print("        " + "  ".join(
+                f"{schema.field_name(entry_id, f.fid)}="
+                f"{show_value(schema.field_name(entry_id, f.fid), v, redacted)}"
+                for f, v in record))
+    print(f"\n  {shown} record(s)")
+    return shown
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("action", choices=("reset", "route", "settings"))
+    parser.add_argument("action",
+                        choices=("reset", "route", "settings", "pois",
+                                 "logbook"))
     parser.add_argument("gpx", nargs="*")
     parser.add_argument("--write", action="store_true",
                         help="actually emits; without this option nothing is sent")
@@ -442,10 +510,10 @@ def main():
 
     if args.action == "route" and not args.gpx:
         parser.error("route expects at least one GPX")
-    if args.action == "settings":
+    if args.action in QUERIES:
         if args.write:
-            parser.error("settings is read-only, --write has nothing to write")
-        return run_settings(args)
+            parser.error(f"{args.action} is read-only, --write has nothing to write")
+        return run_query(args)
     if args.from_capture or args.all or args.redact:
         parser.error("--from, --all and --redact only apply to settings")
 

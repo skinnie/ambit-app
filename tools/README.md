@@ -79,6 +79,21 @@ watch's BLE pairing bond, which is step 1 of the BLE milestone in `HANDOFF.md`.
 ./tools/write_nav.py settings --redact            # mask keys and MAC, safe to send
 ```
 
+`pois` and `logbook` are the same shape and equally read-only. `pois` sends the `0x0b24` and
+lists the watch's POIs with all ten fields; `logbook` sends the `0x1200` and lists the
+activities, 47 named fields each including `MemArea.StartAddress1/EndAddress1`, the flash
+range of every move. Both take `--from CAPTURE` and `--all`.
+
+`logbook` returns one page. The watch pages a long list, newest first, and the continuation
+cursor sits in the reply prefix - `poiimport`'s second request carries `0218 0000`. Paging is
+not implemented, because a run made to look at the newest activity does not need it; the count
+is in the reply, so a truncated list is visible rather than silent.
+
+```
+./tools/write_nav.py pois                        # the watch's POIs
+./tools/write_nav.py logbook                     # the activities, first page
+```
+
 Without the descriptor the command cannot name the entries, and therefore cannot tell a
 paired watch from an unpaired one: it says so and exits non-zero rather than reporting an
 absence of bonds it cannot actually see. That false negative was hit for real, against a
