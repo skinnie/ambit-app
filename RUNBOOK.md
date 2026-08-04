@@ -385,9 +385,17 @@ payload and they will survive.
     --meta "assets/ambit3 pcap/route12km" --write
 ```
 
+**`--write` takes no value.** It is a switch, not an option: drop `--compare` and its capture
+entirely, keep `--meta` and its own. Passing a capture after `--write` gets you
+`unrecognized arguments`.
+
 `--meta` supplies four values a GPX file does not contain - distance, ascent, descent and a
 timestamp - by taking them from that capture. Without it the route still writes, with neutral
 values we have never tested.
+
+**This replaces the whole navigation database with that one route**, so any other route on the
+watch goes away. That is what the backup in the previous step is for: `restore before-task4`
+brings everything back, headers and all.
 
 ### 4.3 Look at the watch
 

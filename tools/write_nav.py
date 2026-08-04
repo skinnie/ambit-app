@@ -552,10 +552,21 @@ def build_routes(gpx_paths, meta_capture):
 
 
 def compare_with_capture(link, capture):
-    """Compares the simulated 0x0b16 and 0x0b18 with those of the capture, payload by
-    payload. Sequence numbers, which are session-specific, are out of the comparison:
-    the HID framing is checked separately by hid_roundtrip.py."""
-    compared = (CMD_DATA_WRITE, CMD_DATA_TAIL, CMD_POI_WRITE)
+    """Compares the 0x0b16 and 0x0b18 with those of the capture, payload by payload.
+    Sequence numbers, which are session-specific, are out of the comparison: the HID
+    framing is checked separately by hid_roundtrip.py.
+
+    The POI write is only comparable in dry-run. A live run reads the list off the watch,
+    which legitimately holds different POIs from whoever recorded the capture, so including
+    it would turn `--write --compare` into a guaranteed failure on a payload that is
+    correct. In dry-run the list comes from the capture itself, so it is compared.
+    """
+    compared = (CMD_DATA_WRITE, CMD_DATA_TAIL)
+    if link.dry_run:
+        compared += (CMD_POI_WRITE,)
+    else:
+        print("  note  the POI write is out of the comparison: a live run takes that "
+              "list from the\n        watch, not from the capture")
     expected = [(m.command, m.payload) for m in messages(capture)
                 if not m.incoming and m.command in compared]
     produced = [(command, payload) for command, payload, _ in link.sent
@@ -580,7 +591,8 @@ def compare_with_capture(link, capture):
                   + ("  (word supplied by the application)" if only_extra else ""))
             if only_extra:
                 ok = True
-    print(f"\n  {'OK   ' if ok else 'FAIL '} {len(produced)} 0x0b16/0x0b18/0x0b25 "
+    kinds = "0x0b16/0x0b18/0x0b25" if link.dry_run else "0x0b16/0x0b18"
+    print(f"\n  {'OK   ' if ok else 'FAIL '} {len(produced)} {kinds} "
           f"payloads compared to {capture}")
     return ok
 

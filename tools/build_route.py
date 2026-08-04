@@ -34,6 +34,10 @@ class Route:
 
 def route_from_gpx(path, distance, ascent, descent, stamp, max_points=None):
     name, gpx, gpx_waypoints = read_gpx(path)
+    if not gpx:
+        # Reached by passing a capture where a GPX was meant, which is easy to do since
+        # both live in the same folder. Without this it fails later on an empty bbox.
+        raise ValueError(f"{path}: no <rtept>, so this is not a route GPX")
     max_points = max_points or F.MAX_ROUTE_POINTS
 
     # The waypoints are the ones of type "Waypoint"; each matches a point of the
