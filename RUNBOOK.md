@@ -159,13 +159,13 @@ make -C csrc
 python3 tools/selftest.py
 ```
 
-**Good result:** the last line says `19/19 checks pass`.
+**Good result:** the last line says `20/20 checks pass`.
 
 **If it says `captures not found`:** the `assets/` folder is not in the right place, go back
 to 0.2.
 
 **If some lines say `skip`:** that is fine, it means an optional piece is missing, and the
-count will be lower than 19. Send the output and we will tell you if it matters.
+count will be lower than 20. Send the output and we will tell you if it matters.
 
 ### 0.5 Check the watch is reachable
 
@@ -350,6 +350,12 @@ cd ~/ambit-app
 That means every byte we would send matches what SuuntoLink sent for that same route, POI
 restore included.
 
+**One difference to expect between the rehearsal and the real thing.** The rehearsal counts 13
+payloads because it borrows the POI list from the capture. Your watch has no POIs left, so the
+real write will say `no POI to put back` and send 12. That is correct, not a fault: there is
+nothing to preserve. Once you have POIs on the watch again, that message becomes the 13th
+payload and they will survive.
+
 ### 4.2 The real write
 
 ```
@@ -368,7 +374,8 @@ Navigation menu. We want to know:
 - is there a route named `Gare du Nord` in the list;
 - can you open it, does it draw, does starting navigation work;
 - how many waypoints does it show - we expect the route to have kept the ones the GPX marks;
-- did the POIs survive this time. They should, and that is the fix from task 3 being tested.
+- the POI list, which will still be empty unless you put something there first. The fix from
+  task 3 only gets a real test once there is something to preserve.
 
 ### 4.4 Send back
 

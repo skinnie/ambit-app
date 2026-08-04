@@ -277,6 +277,8 @@ def poi_write_payload(reply):
     `poiimport` puts a newly added POI first and the rest in that same order, which is how
     to add one rather than merely preserve them.
     """
+    if not reply or F.SBEM_MAGIC not in reply:
+        return None  # no watch to ask and no capture to borrow from, as in a bare dry-run
     records = [data for entry_id, data in F.sbem_entries(reply)
                if entry_id == POI_ENTRY]
     body = b"".join(reversed(records))

@@ -68,6 +68,9 @@ def main():
     record("hid", "frame encoder round trip", ["hid_roundtrip.py"])
 
     for label, argv in (
+        # The bare form too: it takes the branch where there is neither a watch to read
+        # the POIs from nor a capture to borrow them from, which once crashed.
+        ("reset, bare dry-run", ["reset"]),
         ("reset against routedelete",
          ["reset", "--compare", str(CAPTURES / "routedelete")]),
         ("route against route12km",
