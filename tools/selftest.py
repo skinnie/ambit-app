@@ -80,6 +80,12 @@ def main():
     ):
         record("dryrun", label, ["write_nav.py", *argv])
 
+    if (HERE.parent / "assets" / "backup-routes.bin").exists():
+        record("dryrun", "restore from a region read off the watch",
+               ["write_nav.py", "restore", str(HERE.parent / "assets" / "backup")])
+    else:
+        print("  skip    restore (no saved region in assets/)")
+
     if (HERE.parent / "csrc" / "build" / "harness").exists():
         record("C", "serializer against the reference", ["c_reference.py"])
     else:

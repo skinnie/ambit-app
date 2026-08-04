@@ -473,6 +473,66 @@ def build_reset():
     return flash, layout
 
 
+def build_restore(prefix):
+    """Rebuilds the two headers from regions saved by `nav --save`, without touching the
+    data behind them.
+
+    A reset rewrites only the two headers: 6 bytes and 32 bytes. Everything else -
+    descriptors, points, index tables - stays in flash untouched, which a region read off
+    the watch on 2026-08-04 showed directly. The leftovers there reproduced the CRCs of the
+    `route128km` capture exactly, 0x8aaf and 0x6270, so both routes, all 1188 points with
+    their 852 altitudes and all 11 waypoints had survived an erase byte for byte.
+
+    So undoing an erase means writing correct counts and CRCs back into two headers. The
+    closing hashes are exact rather than guessed, because the saved region gives the whole
+    of what the flash will hold once the header is patched.
+    """
+    routes = pathlib.Path(f"{prefix}-routes.bin").read_bytes()
+    waypoints = pathlib.Path(f"{prefix}-waypoints.bin").read_bytes()
+    if len(routes) != F.ROUTE_REGION_SIZE or len(waypoints) != F.WAYPOINT_REGION_SIZE:
+        raise ValueError(f"expected {F.ROUTE_REGION_SIZE} and "
+                         f"{F.WAYPOINT_REGION_SIZE} bytes, got {len(routes)} and "
+                         f"{len(waypoints)}")
+
+    # Count what survived, reading the tables rather than the zeroed counters.
+    descriptors, points = b"", 0
+    base = F.ROUTE_DESC - F.ROUTE_BASE
+    for i in range(F.MAX_ROUTES):
+        blob = routes[base + 52 * i:base + 52 * (i + 1)]
+        if blob[:1] in (b"\xff", b"\x00"):
+            break
+        descriptors += blob
+        points += F.RouteDescriptor.parse(blob).point_count
+    wpt_blob = b""
+    base = F.WAYPOINT_DESC - F.WAYPOINT_BASE
+    for i in range(F.MAX_WAYPOINTS):
+        blob = waypoints[base + 52 * i:base + 52 * (i + 1)]
+        if blob[:1] == b"\xff" or blob[:8] == b"\0" * 8:
+            break
+        wpt_blob += blob
+    route_count, waypoint_count = len(descriptors) // 52, len(wpt_blob) // 52
+    print(f"  recovered {route_count} route(s), {points} points, "
+          f"{waypoint_count} waypoint(s)")
+    if not route_count:
+        raise ValueError("no route left in the saved region, nothing to restore")
+
+    body = routes[F.ROUTE_POINTS - F.ROUTE_BASE:][:12 * points]
+    route_header = F.RouteHeader(
+        route_count, points, F.crc16_ccitt_false(descriptors + body)).build()
+    waypoint_header = F.WaypointHeader.build_for(wpt_blob, waypoint_count)
+
+    # The flash image holds the whole region so the closing hash is computed over what the
+    # watch will really contain; only the headers are in the layout, so only they go out.
+    flash = FlashImage()
+    flash.write(F.ROUTE_BASE, route_header + routes[len(route_header):])
+    flash.write(F.WAYPOINT_BASE, waypoint_header + waypoints[len(waypoint_header):])
+    layout = [("waypoint header", F.WAYPOINT_BASE, waypoint_header),
+              ("tail", F.WAYPOINT_BASE, None),
+              ("route header", F.ROUTE_BASE, route_header),
+              ("tail", F.ROUTE_BASE, None)]
+    return flash, layout
+
+
 def build_routes(gpx_paths, meta_capture):
     stamps = []
     if meta_capture:
@@ -600,7 +660,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("action",
                         choices=("reset", "route", "settings", "pois",
-                                 "logbook", "nav"))
+                                 "logbook", "nav", "restore"))
     parser.add_argument("gpx", nargs="*")
     parser.add_argument("--write", action="store_true",
                         help="actually emits; without this option nothing is sent")
@@ -622,6 +682,8 @@ def main():
 
     if args.action == "route" and not args.gpx:
         parser.error("route expects at least one GPX")
+    if args.action == "restore" and len(args.gpx) != 1:
+        parser.error("restore expects the prefix used by `nav --save`")
     if args.action == "nav":
         if args.write:
             parser.error("nav is read-only, --write has nothing to write")
@@ -648,6 +710,8 @@ def main():
 
     if args.action == "reset":
         flash, layout = build_reset()
+    elif args.action == "restore":
+        flash, layout = build_restore(args.gpx[0])
     else:
         flash, layout = build_routes([pathlib.Path(p) for p in args.gpx], args.meta)
     send_plan(link, flash, layout)
