@@ -13,11 +13,12 @@ useful only for making SuuntoLink captures.
 **Golden rule:** every command below is safe except the ones in task 3, which are clearly
 marked. Nothing in tasks 0 to 2 writes anything to the watch.
 
-**Where we are:** tasks 0 to 3 are done, and the routes task 3 erased have since been brought
-back - a reset turns out to rewrite only 38 bytes of header and leave the data in place, so
-`restore` puts the counts back. **Task 4 is what is next**: writing a route from a GPX file,
-which is the one thing still unproven, since the restore only rewrote headers over points that
-were already there.
+**Where we are: tasks 0 to 4 are done, and the project's goal is met.** On 2026-08-04 a route
+built from a GPX file alone was written to the watch, and the watch shows it with its two
+waypoints. Nothing between a GPX file and the watch screen is guesswork any more.
+
+What is left needs the watch but is smaller: putting your own routes back, and closing two
+protocol details in task 5 below.
 
 Before any write from now on: `./tools/write_nav.py nav --save backup`. It makes the write
 reversible.
@@ -328,89 +329,53 @@ comes up rather than now.
 
 ---
 
-## Task 4 - write a real route (30 min, overwrites the navigation database again)
+## Task 4 - write a real route: DONE, 2026-08-04
 
-**Why:** task 3 proved we can erase. This proves we can *create*, which is the whole point of
-the project. Same machinery, one more command.
+It worked. `Gare du Nord` appeared on the watch with its two waypoints, and the POI survived.
 
-**Where:** Linux Mint, like everything else. Not Windows, not the Mac - the tooling only exists
-on the Mint side.
+That is the whole point of the project reached: a GPX file, simplified the way SuuntoLink
+simplifies it, turned into the watch's own binary format, framed, sent over USB, and displayed.
+336 points out of the file's 1066, four chunks of point data, both checksums, both index tables.
 
-**And keep the watch away from SuuntoLink until you have sent us the result.** This matters more
-than it sounds. A sync re-pushes every route the Suunto app has marked "use on the watch", which
-we can see it doing in the `firmware` capture: right after the region reads as empty, the same
-session writes the routes straight back. So plugging into Windows after task 4 would overwrite
-what we wrote, and checking the watch afterwards would prove nothing. If you would rather be safe
-than careful, turn "use on the watch" off in the app for now.
+Thank you - none of the last two days could have happened without the watch.
 
-**First restore your POIs** if you have not, from the Suunto app with a cable sync, as described
-at the end of task 3 - and do that *before* the write, not after, for the same reason. 4.3 asks
-whether the POIs survive a route write, and that question needs some to survive.
+---
 
-**Take a backup first**, which makes the whole thing reversible:
+## Task 5 - put your routes back, and two small unknowns (30 min)
+
+### 5.1 Your Grand Tour, back
+
+Task 4 replaced the whole database, so your own routes went. The backup you took brings them
+back, headers and all:
 
 ```
 cd ~/ambit-app
-./tools/write_nav.py nav --save before-task4
+./tools/write_nav.py nav --save after-task4      # keep the route-write result first
+./tools/write_nav.py restore before-task4        # rehearsal
+./tools/write_nav.py restore before-task4 --write
 ```
 
-The route we have the most evidence for is the 12 km one, and the tool can rehearse it against
-the matching capture first.
+**Send us `after-task4-routes.bin` before you do that.** It is the first chance to compare what
+the watch actually stored against what we meant to send, byte for byte. The watch displaying the
+route is good; that file would be proof.
 
-### 4.1 Rehearsal, nothing is sent
+### 5.2 The last two protocol unknowns
 
-```
-cd ~/ambit-app
-./tools/write_nav.py route "assets/ambit3 pcap/Gare-du-Nord-to-114-Av.-André-Morizet.gpx" \
-    --meta "assets/ambit3 pcap/route12km" \
-    --compare "assets/ambit3 pcap/route12km"
-```
+Both are small, both need the watch, and both close a line in the handoff's unknowns table.
+Neither is dangerous, but both are writes, so take a backup first.
 
-**Good result:** the last line is
-`OK    13 0x0b16/0x0b18/0x0b25 payloads compared to assets/ambit3 pcap/route12km`.
+**Does the watch check the closing hash?** Every write ends with a SHA-256 of the region. We
+compute it correctly and have never found out whether the watch cares. If it does not, a whole
+class of mistake goes unnoticed - which is worth knowing before anyone builds an app on this.
 
-That means every byte we would send matches what SuuntoLink sent for that same route, POI
-restore included.
+**What is the 4-byte word at offset 4 of the `0x0b18`?** It is the only field of the protocol we
+have never identified. It is deterministic from the content, but it is not a CRC32, not a sum
+and not a size. We currently send zeros and the watch has accepted every write, which is already
+informative.
 
-**One difference to expect between the rehearsal and the real thing.** The rehearsal counts 13
-payloads because it borrows the POI list from the capture. Your watch has no POIs left, so the
-real write will say `no POI to put back` and send 12. That is correct, not a fault: there is
-nothing to preserve. Once you have POIs on the watch again, that message becomes the 13th
-payload and they will survive.
-
-### 4.2 The real write
-
-```
-./tools/write_nav.py route "assets/ambit3 pcap/Gare-du-Nord-to-114-Av.-André-Morizet.gpx" \
-    --meta "assets/ambit3 pcap/route12km" --write
-```
-
-**`--write` takes no value.** It is a switch, not an option: drop `--compare` and its capture
-entirely, keep `--meta` and its own. Passing a capture after `--write` gets you
-`unrecognized arguments`.
-
-`--meta` supplies four values a GPX file does not contain - distance, ascent, descent and a
-timestamp - by taking them from that capture. Without it the route still writes, with neutral
-values we have never tested.
-
-**This replaces the whole navigation database with that one route**, so any other route on the
-watch goes away. That is what the backup in the previous step is for: `restore before-task4`
-brings everything back, headers and all.
-
-### 4.3 Look at the watch
-
-Navigation menu. We want to know:
-
-- is there a route named `Gare du Nord` in the list;
-- can you open it, does it draw, does starting navigation work;
-- how many waypoints does it show - we expect the route to have kept the ones the GPX marks;
-- the POI list, which will still be empty unless you put something there first. The fix from
-  task 3 only gets a real test once there is something to preserve.
-
-### 4.4 Send back
-
-The full terminal output of 4.2, and what the watch shows. A photo of the route on the watch
-would be the nicest possible result to close this out.
+Tell us when you have a spare moment and we will send exact commands for these - they need a
+small change to the tool first, and we would rather write that than have you edit anything by
+hand.
 
 ---
 

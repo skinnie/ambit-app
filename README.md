@@ -7,6 +7,10 @@ The binary format of the watch's navigation database is decoded and verified byt
 against USB captures of SuuntoLink. The serializer exists in Python and in C, the latter
 written to drop into openambit's `libambit` unmodified.
 
+**It works on hardware.** On 2026-08-04 a route built from a GPX file alone was written to a real
+Ambit3 over USB, and the watch shows it with its waypoints. What remains is packaging: Android
+USB-OTG, then Bluetooth, then iOS.
+
 - [`RUNBOOK.md`](RUNBOOK.md) — step-by-step instructions for whoever has the watch.
 - [`HANDOFF.md`](HANDOFF.md) — project state, prerequisites and remaining work. **Start here.**
 - [`tools/README.md`](tools/README.md) — format specification and tooling usage.
