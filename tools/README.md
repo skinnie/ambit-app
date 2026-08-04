@@ -176,6 +176,13 @@ SBEM0102 payload of the `0x0b25`: entries `[u8 id][u8 len][data]`, with a u32 ex
 `len` is `0xff`. Entry `0x55` is the watch's complete POI list, disjoint from the route
 waypoints of the binary region.
 
+A POI record is ten fields and **no altitude**: the schema has none, the Kailash's 2.0.5
+descriptor declares the same ten, and the 52-byte binary waypoint descriptor has no spare
+byte. The application layer does carry one - `POST suunto://SDS/LegacyPOI/<serial>` sends an
+`altitude` per POI - so it is lost on the way in, for want of anywhere to put it. Its
+`Timestamp` is that layer's `creation`, plain Unix epoch as ISO 8601 in UTC, unlike the route
+timestamp and its unexplained epoch.
+
 Integrity: `crc16_ccitt_false(descriptors || points)` in the route header,
 `crc16_ccitt_false(descriptors)` in the waypoint header, and the `0x0b18` closing hash =
 SHA-256 of the whole region, unwritten bytes at `0xff`. `GpsSGEE` is the exception: hash of
