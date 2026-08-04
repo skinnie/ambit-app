@@ -13,9 +13,14 @@ useful only for making SuuntoLink captures.
 **Golden rule:** every command below is safe except the ones in task 3, which are clearly
 marked. Nothing in tasks 0 to 2 writes anything to the watch.
 
-**Where we are:** tasks 0 to 3 are done. The first real write reached the watch on 2026-08-04
-and the routes disappeared from it, which is the milestone this project existed to reach.
-**Task 4 is what is next**: writing a real route rather than an erasure.
+**Where we are:** tasks 0 to 3 are done, and the routes task 3 erased have since been brought
+back - a reset turns out to rewrite only 38 bytes of header and leave the data in place, so
+`restore` puts the counts back. **Task 4 is what is next**: writing a route from a GPX file,
+which is the one thing still unproven, since the restore only rewrote headers over points that
+were already there.
+
+Before any write from now on: `./tools/write_nav.py nav --save backup`. It makes the write
+reversible.
 
 ---
 

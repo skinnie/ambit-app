@@ -719,6 +719,14 @@ def main():
     restored = poi_write_payload(pois)
     if restored:
         link.command(CMD_POI_WRITE, restored)
+    elif link.dry_run and not (args.compare or args.meta):
+        # A dry-run has no watch to ask, so it cannot show the 0x0b25 a live run will send.
+        # Saying "no POI" here once made a rehearsal announce one message fewer than the
+        # real write, on a watch that did have a POI. A rehearsal must not undercount.
+        print("  a live run would read the watch's POI list here and write it back "
+              "afterwards,\n  which this rehearsal cannot show: expect one more 0x0b25 "
+              "than the count below.\n  Give --compare or --meta to rehearse that message "
+              "against a capture.")
     else:
         print("  no POI to put back")
 
