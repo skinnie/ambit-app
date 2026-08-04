@@ -333,9 +333,26 @@ comes up rather than now.
 **Why:** task 3 proved we can erase. This proves we can *create*, which is the whole point of
 the project. Same machinery, one more command.
 
-**First restore your POIs**, from the Suunto app with a cable sync, as described at the end of
-task 3. Not for their own sake: 4.3 asks whether they survive a route write, and that question
-needs some to survive.
+**Where:** Linux Mint, like everything else. Not Windows, not the Mac - the tooling only exists
+on the Mint side.
+
+**And keep the watch away from SuuntoLink until you have sent us the result.** This matters more
+than it sounds. A sync re-pushes every route the Suunto app has marked "use on the watch", which
+we can see it doing in the `firmware` capture: right after the region reads as empty, the same
+session writes the routes straight back. So plugging into Windows after task 4 would overwrite
+what we wrote, and checking the watch afterwards would prove nothing. If you would rather be safe
+than careful, turn "use on the watch" off in the app for now.
+
+**First restore your POIs** if you have not, from the Suunto app with a cable sync, as described
+at the end of task 3 - and do that *before* the write, not after, for the same reason. 4.3 asks
+whether the POIs survive a route write, and that question needs some to survive.
+
+**Take a backup first**, which makes the whole thing reversible:
+
+```
+cd ~/ambit-app
+./tools/write_nav.py nav --save before-task4
+```
 
 The route we have the most evidence for is the 12 km one, and the tool can rehearse it against
 the matching capture first.
