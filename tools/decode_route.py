@@ -151,8 +151,11 @@ def decode(path, sequence=False):
         pois = F.parse_sbem_poi_list(m.payload)
         print(f"\n== POI via 0x0b25 (SBEM0102), {len(pois)} entries "
               f"— a store distinct from the Waypoints region")
-        for name, stamp, lat, lon in pois:
-            print(f"  {name!r:20} {stamp}  {lat / 1e7:.7f}, {lon / 1e7:.7f}")
+        for p in pois:
+            typed = "".join(f" {k}={p[k]}" for k in
+                            ("type", "sub_type", "type_index", "flags") if p[k])
+            print(f"  {p['name']!r:20} {p['stamp']}  "
+                  f"{p['lat'] / 1e7:.7f}, {p['lon'] / 1e7:.7f}{typed}")
         break
 
     print("\n== closing hash 0x0b18")

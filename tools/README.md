@@ -192,8 +192,13 @@ SBEM0102 payload of the `0x0b25`: entries `[u8 id][u8 len][data]`, with a u32 ex
 waypoints of the binary region.
 
 A POI record is ten fields and **no altitude**: the schema has none, the Kailash's 2.0.5
-descriptor declares the same ten, and the 52-byte binary waypoint descriptor has no spare
-byte. The application layer does carry one - `POST suunto://SDS/LegacyPOI/<serial>` sends an
+descriptor declares the same ten, the 52-byte binary waypoint descriptor has no spare byte,
+and a POI the watch created itself, read back on 2026-08-04, has the same ten. Those four
+typed bytes are zero on everything SuuntoLink writes and not on what the watch writes:
+`Type=17`, the value `WAYPOINT_TYPE_DEFAULT` already held for the binary waypoint tail,
+`TypeIndex=1` numbering it, and an unexplained `Flags=1`. Which is why `parse_sbem_poi_list`
+no longer looks for the coordinates by skipping zero bytes - that crashed on the first POI
+whose fields were not zero. The application layer does carry one - `POST suunto://SDS/LegacyPOI/<serial>` sends an
 `altitude` per POI - so it is lost on the way in, for want of anywhere to put it. Its
 `Timestamp` is that layer's `creation`, plain Unix epoch as ISO 8601 in UTC, unlike the route
 timestamp and its unexplained epoch.

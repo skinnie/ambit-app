@@ -230,8 +230,8 @@ def verify(schema):
             schema_pois = [(r[0][1], r[8][1], r[9][1])
                            for eid, data in entries(m.payload[head:])
                            for r in schema.decode_entry(eid, data)]
-            heuristic = [(n, lat, lon)
-                         for n, _, lat, lon in F.parse_sbem_poi_list(m.payload)]
+            heuristic = [(p["name"], p["lat"], p["lon"])
+                         for p in F.parse_sbem_poi_list(m.payload)]
             checks += 1
             if schema_pois != heuristic:
                 failures.append(f"{cap.name} 0x0b25: schema POI {schema_pois} "

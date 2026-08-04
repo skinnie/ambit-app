@@ -293,38 +293,40 @@ def sbem_entries(payload):
     return out
 
 
+#   name, route name and timestamp are NUL-terminated; the five u8 in between are what
+#   an earlier version of this parser mistook for padding.
+POI_FIELDS = ("name", "route_name", "stamp", "route_index", "type", "sub_type",
+              "type_index", "flags", "lat", "lon")
+
+
 def parse_sbem_poi_list(payload):
-    """Decodes the payload of the 0x0b25: the watch's COMPLETE POI list.
+    """Decodes the POI list of the 0x0b24 and 0x0b25: three NUL-terminated strings, five
+    u8, then latitude and longitude as i32 x 1e7. Ten fields, and no altitude.
 
-    Each POI is variable length: NUL-terminated name, NUL-terminated ISO timestamp,
-    padding, then latitude and longitude as i32 x 1e7.
+    These POIs are DISJOINT from the binary descriptors of the Waypoints region, which
+    only carry route waypoints - but they do not survive a navigation write. Confirmed on
+    hardware 2026-08-04: the write erases them and the 0x0b25 is what puts them back.
 
-    These POIs are DISJOINT from the binary descriptors of the Waypoints region,
-    which only carry the route waypoints. The two therefore live in separate stores:
-    a route write that does not send this message should leave the POIs alone (to be
-    confirmed on hardware).
-
-    The descriptor names that padding, see tools/sbem_schema.py: it is an empty
-    RouteName then five typed u8. They are zero on every capture, which is why this
-    heuristic reads the right coordinates, but it would misalign on a typed POI.
+    This used to skip runs of zero bytes to find the coordinates, which worked only
+    because SuuntoLink writes zero in all five u8. A POI created on the watch does not:
+    2026-08-04 produced Type=17, TypeIndex=1, Flags=1, and the old parser crashed on it.
+    The layout is hardcoded here rather than read from the schema, so that
+    `sbem_schema.py --verify` stays an independent check of the two against each other.
     """
     body = b"".join(data for _, data in sbem_entries(payload))
     out = []
     off = 0
     while off < len(body):
-        end = body.index(b"\0", off)
-        name = body[off:end].decode("utf-8", "replace")
-        start = end
-        while start < len(body) and body[start] == 0:
-            start += 1
-        stop = body.index(b"\0", start)
-        stamp = body[start:stop].decode("ascii", "replace")
-        cursor = stop
-        while cursor < len(body) and body[cursor] == 0:
-            cursor += 1
-        lat, lon = struct.unpack("<ii", body[cursor:cursor + 8])
-        out.append((name, stamp, lat, lon))
-        off = cursor + 8
+        values = []
+        for _ in range(3):
+            end = body.index(b"\0", off)
+            values.append(body[off:end].decode("utf-8", "replace"))
+            off = end + 1
+        values.extend(body[off:off + 5])
+        off += 5
+        values.extend(struct.unpack("<ii", body[off:off + 8]))
+        off += 8
+        out.append(dict(zip(POI_FIELDS, values)))
     return out
 
 
