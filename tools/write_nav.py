@@ -50,6 +50,20 @@ CMD_NAV_COMMIT = 0x0B04
 BLE_WHITELIST_ENTRY = 0x41
 POD_ENTRY = 0x43
 
+# Fields that are key material or identify a phone. --redact replaces their value with
+# a length and a short digest: still enough to tell two reads apart or match them, not
+# enough to use the key. Report a bond with --redact rather than retyping the values.
+SECRET_FIELDS = ("MAC", "IdentityResolvingKey", "EncodingKey", "EncodingRnd")
+
+
+def show_value(name, value, redacted):
+    if not (redacted and value and name in SECRET_FIELDS):
+        return repr(value)
+    import hashlib
+    text = str(value)
+    return (f"<{len(text.split(':'))} bytes, "
+            f"sha256:{hashlib.sha256(text.encode()).hexdigest()[:8]}>")
+
 
 class Link:
     """HID transport. In dry-run no device is opened."""
@@ -116,7 +130,7 @@ def settings_from_capture(capture):
     raise ValueError(f"no 0x1100 reply in {capture}")
 
 
-def show_settings(payload, show_all=False):
+def show_settings(payload, show_all=False, redacted=False):
     """Decodes a 0x1100 reply through the SuuntoLink schema. Returns the list of BLE
     bonds carrying a key, or None when the schema is missing and the question cannot
     be answered. Never return an empty list in that case: an absent descriptor once
@@ -151,7 +165,8 @@ def show_settings(payload, show_all=False):
         print(f"  0x{entry_id:02x} {schema.label(entry_id) or '?'}  [{len(data)}]")
         for record in schema.decode_entry(entry_id, data) or []:
             fields = {schema.field_name(entry_id, f.fid): v for f, v in record}
-            print("        " + "  ".join(f"{k}={v!r}" for k, v in fields.items()))
+            print("        " + "  ".join(f"{k}={show_value(k, v, redacted)}"
+                                        for k, v in fields.items()))
             if entry_id != BLE_WHITELIST_ENTRY:
                 continue
             slots += 1
@@ -166,7 +181,11 @@ def show_settings(payload, show_all=False):
             print("  Note: a bond has IsNspCapable=0. Observed on a pairing made "
                   "outside the\n  Suunto app; whether it gates the token is the open "
                   "question of milestone 7.")
-        print("  These are real link keys: do not paste this output anywhere public.")
+        if redacted:
+            print("  Key material is redacted, so this output is safe to send as is.")
+        else:
+            print("  These are real link keys. Re-run with --redact to get output that "
+                  "is safe\n  to paste or send.")
     else:
         print(f"\n  {slots} whitelist slot(s), none carrying a key: this watch has no "
               "bond.\n  Pair it with a phone, then read again.")
@@ -291,14 +310,14 @@ def run_settings(args):
             print(f"  {exc}. Only ambit3full carries one.")
             return 1
         print(f"### {args.from_capture}, 0x1100 reply ({len(payload)} B)")
-        return 0 if show_settings(payload, args.all) is not None else 1
+        return 0 if show_settings(payload, args.all, args.redact) is not None else 1
 
     link = Link(dry_run=False, verbose=args.verbose)
     print("read-only: the 0x1100 query, four zero bytes, nothing is written")
     link.open()
     payload = link.command(CMD_SETTINGS_READ, b"\0\0\0\0")
     print(f"  reply {len(payload)} B")
-    return 0 if show_settings(payload, args.all) is not None else 1
+    return 0 if show_settings(payload, args.all, args.redact) is not None else 1
 
 
 def main():
@@ -315,6 +334,8 @@ def main():
                         help="settings: decodes a capture's 0x1100 instead of the watch")
     parser.add_argument("--all", action="store_true",
                         help="settings: every entry, not just the BLE bonds and pods")
+    parser.add_argument("--redact", action="store_true",
+                        help="settings: mask keys and MAC, output safe to send")
     parser.add_argument("--verbose", action="store_true",
                         help="logs every 64-byte report")
     args = parser.parse_args()
@@ -325,8 +346,8 @@ def main():
         if args.write:
             parser.error("settings is read-only, --write has nothing to write")
         return run_settings(args)
-    if args.from_capture or args.all:
-        parser.error("--from and --all only apply to settings")
+    if args.from_capture or args.all or args.redact:
+        parser.error("--from, --all and --redact only apply to settings")
 
     link = Link(dry_run=not args.write, verbose=args.verbose)
     if args.write:

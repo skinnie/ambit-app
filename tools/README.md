@@ -44,7 +44,10 @@ hardware, and they carry the watch serial number.
 ./tools/write_nav.py reset --write               # ACTUALLY EMITS
 ```
 
-Without `--write`, not a byte goes out.
+Without `--write`, not a byte goes out. `--compare` mode proves the simulated payloads are
+identical to SuuntoLink's: they are for `routedelete` and `route12km`, down to the 4-byte
+word at offset 4 of the `0x0b18`, which is supplied by the application and remains
+unidentified.
 
 The `settings` action is the exception, and it is read-only: it sends the `0x1100`
 query, four zero bytes, which is what SuuntoLink sends on every connection, and
@@ -56,13 +59,21 @@ watch's BLE pairing bond, which is step 1 of the BLE milestone in `HANDOFF.md`.
 ./tools/write_nav.py settings                    # reads the watch, read-only
 ./tools/write_nav.py settings --from CAPTURE      # decodes a capture, no watch
 ./tools/write_nav.py settings --all               # every entry, not just bonds and pods
+./tools/write_nav.py settings --redact            # mask keys and MAC, safe to send
 ```
 
+Without the descriptor the command cannot name the entries, and therefore cannot tell a
+paired watch from an unpaired one: it says so and exits non-zero rather than reporting an
+absence of bonds it cannot actually see. That false negative was hit for real, against a
+capture that does carry a bond.
+
+`--redact` replaces `MAC`, `IdentityResolvingKey`, `EncodingKey` and `EncodingRnd` with a
+length and an eight-character digest, which still tells two reads apart or matches them.
+Use it for anything that leaves the machine.
+
 The reassembly of a long reply is exercised by `--from`, which replays the 589-byte
-`0x1100` of `ambit3full`; the live path itself has never run against hardware. `--compare` mode proves the simulated payloads are
-identical to SuuntoLink's: they are for `routedelete` and `route12km`, down to the 4-byte
-word at offset 4 of the `0x0b18`, which is supplied by the application and remains
-unidentified.
+`0x1100` of `ambit3full`. The live read path did run against the watch on 2026-08-03; the
+write path never has.
 
 Frame encoding is verified by round trip: the 4724 outgoing messages of the 9 captures,
 that is 47117 reports of 64 bytes, are re-encoded identically. Established along the way:

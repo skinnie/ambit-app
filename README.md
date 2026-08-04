@@ -7,6 +7,7 @@ The binary format of the watch's navigation database is decoded and verified byt
 against USB captures of SuuntoLink. The serializer exists in Python and in C, the latter
 written to drop into openambit's `libambit` unmodified.
 
+- [`RUNBOOK.md`](RUNBOOK.md) — step-by-step instructions for whoever has the watch.
 - [`HANDOFF.md`](HANDOFF.md) — project state, prerequisites and remaining work. **Start here.**
 - [`tools/README.md`](tools/README.md) — format specification and tooling usage.
 
