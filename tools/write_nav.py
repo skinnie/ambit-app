@@ -117,49 +117,59 @@ def settings_from_capture(capture):
 
 
 def show_settings(payload, show_all=False):
-    """Decodes a 0x1100 reply through the SuuntoLink schema. Returns the whitelist
-    entries, those that carry a key first."""
+    """Decodes a 0x1100 reply through the SuuntoLink schema. Returns the list of BLE
+    bonds carrying a key, or None when the schema is missing and the question cannot
+    be answered. Never return an empty list in that case: an absent descriptor once
+    read as "never paired" against a capture that did carry a bond."""
     import sbem_schema
 
     head = payload.find(sbem_schema.MAGIC)
     if head < 0:
         print("  no SBEM0102 payload in the reply")
-        return []
+        return None
+
+    descriptor = sbem_schema.default_descriptor()
+    if not descriptor.exists():
+        print(f"  CANNOT DECIDE: the SuuntoLink descriptor is missing.\n"
+              f"  Expected a descr+SERIAL+{sbem_schema.REFERENCE_FW} file in "
+              f"{descriptor.parent}, whatever\n"
+              f"  serial it carries; it comes from SuuntoLink's data folder. Without "
+              f"it the entries\n  cannot be named, and this command cannot tell a "
+              f"paired watch from an unpaired one.")
+        for entry_id, data in sbem_schema.entries(payload[head:]):
+            print(f"  0x{entry_id:02x} [{len(data)}] {data[:32].hex(' ')}")
+        return None
+
+    schema = sbem_schema.load(descriptor)
     entries = list(sbem_schema.entries(payload[head:]))
     print(f"  {len(entries)} entries in the DeviceSettings tree")
 
-    schema = None
-    if sbem_schema.default_descriptor().exists():
-        schema = sbem_schema.load()
-    else:
-        print("  SuuntoLink descriptor absent: identifiers shown unnamed, see "
-              "tools/sbem_schema.py")
-
-    bonds = []
+    bonds, slots = [], 0
     for entry_id, data in entries:
-        interesting = entry_id in (BLE_WHITELIST_ENTRY, POD_ENTRY)
-        if not (show_all or interesting):
+        if not (show_all or entry_id in (BLE_WHITELIST_ENTRY, POD_ENTRY)):
             continue
-        label = (schema.label(entry_id) or "?") if schema else "?"
-        print(f"  0x{entry_id:02x} {label}  [{len(data)}]")
-        if schema is None:
-            print(f"        {data.hex(' ')}")
-            continue
+        print(f"  0x{entry_id:02x} {schema.label(entry_id) or '?'}  [{len(data)}]")
         for record in schema.decode_entry(entry_id, data) or []:
             fields = {schema.field_name(entry_id, f.fid): v for f, v in record}
             print("        " + "  ".join(f"{k}={v!r}" for k, v in fields.items()))
-            if entry_id == BLE_WHITELIST_ENTRY and fields.get("EncodingKey"):
+            if entry_id != BLE_WHITELIST_ENTRY:
+                continue
+            slots += 1
+            if fields.get("EncodingKey"):
                 bonds.append(fields)
 
     if bonds:
-        print(f"\n  {len(bonds)} BLE bond(s) carrying a key. The 16 bytes of "
-              "EncodingKey are the\n  candidate for the NSP session token, see "
-              "milestone 7 in HANDOFF.md.")
+        print(f"\n  {len(bonds)} BLE bond(s) carrying a key out of {slots} slot(s). "
+              "The 16 bytes of\n  EncodingKey are the candidate for the NSP session "
+              "token, see milestone 7\n  in HANDOFF.md.")
+        if any(not b.get("IsNspCapable") for b in bonds):
+            print("  Note: a bond has IsNspCapable=0. Observed on a pairing made "
+                  "outside the\n  Suunto app; whether it gates the token is the open "
+                  "question of milestone 7.")
         print("  These are real link keys: do not paste this output anywhere public.")
     else:
-        print("\n  no BLE bond carrying a key: the watch has never been paired, or "
-              "the\n  whitelist has been cleared. Pair it with a phone, then read "
-              "again.")
+        print(f"\n  {slots} whitelist slot(s), none carrying a key: this watch has no "
+              "bond.\n  Pair it with a phone, then read again.")
     return bonds
 
 
@@ -281,16 +291,14 @@ def run_settings(args):
             print(f"  {exc}. Only ambit3full carries one.")
             return 1
         print(f"### {args.from_capture}, 0x1100 reply ({len(payload)} B)")
-        show_settings(payload, args.all)
-        return 0
+        return 0 if show_settings(payload, args.all) is not None else 1
 
     link = Link(dry_run=False, verbose=args.verbose)
     print("read-only: the 0x1100 query, four zero bytes, nothing is written")
     link.open()
     payload = link.command(CMD_SETTINGS_READ, b"\0\0\0\0")
     print(f"  reply {len(payload)} B")
-    show_settings(payload, args.all)
-    return 0
+    return 0 if show_settings(payload, args.all) is not None else 1
 
 
 def main():

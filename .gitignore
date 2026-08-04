@@ -8,3 +8,8 @@ csrc/build/
 #  - pcap captures: they carry the watch serial number and personal POIs (home)
 assets/
 full-assets/
+
+# Field reports pasted straight from a `write_nav.py settings` run: they quote BLE
+# link keys and a phone MAC verbatim. Their findings belong in HANDOFF.md, with the
+# values redacted; the raw notes stay local.
+HANDOFF-append-*.md

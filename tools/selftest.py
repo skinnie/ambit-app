@@ -74,8 +74,6 @@ def main():
          ["route", str(CAPTURES / "Gare-du-Nord-to-114-Av.-André-Morizet.gpx"),
           "--meta", str(CAPTURES / "route12km"),
           "--compare", str(CAPTURES / "route12km")]),
-        ("settings read from ambit3full",
-         ["settings", "--from", str(CAPTURES / "ambit3full")]),
     ):
         record("dryrun", label, ["write_nav.py", *argv])
 
@@ -84,11 +82,15 @@ def main():
     else:
         print("  skip    C serializer (run make -C csrc)")
 
+    # Both need the SuuntoLink descriptor, and `settings` deliberately fails without
+    # it rather than reporting an unpaired watch it cannot actually see.
     if any((HERE.parent / "assets").glob("descr+*+2.4.17")):
         record("schema", "SBEM payloads of the captures",
                ["sbem_schema.py", "--verify"])
+        record("dryrun", "settings read from ambit3full",
+               ["write_nav.py", "settings", "--from", str(CAPTURES / "ambit3full")])
     else:
-        print("  skip    SBEM schema (SuuntoLink descriptor absent)")
+        print("  skip    SBEM schema and settings (SuuntoLink descriptor absent)")
 
     print(f"\n{checks - len(failures)}/{checks} checks pass")
     for name, out in failures:
