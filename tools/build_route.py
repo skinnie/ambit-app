@@ -53,6 +53,18 @@ def route_from_gpx(path, distance, ascent, descent, stamp, max_points=None):
         forced.append(match)
         tagged.append((match, lat, lon, wname))
 
+    if not tagged:
+        # A route with zero attached waypoints writes fine but never appears in the
+        # watch's own Navigation menu - confirmed on hardware 2026-08-04, see
+        # HANDOFF_ANDRE.md. Most real-world GPX (a plain track/route with no named
+        # Suunto/Komoot waypoints) supply none, so without this every such route
+        # would silently fail to show up despite writing without error. Synthesize
+        # the two the watch actually needs: start and end.
+        for i, wname in ((0, "Start"), (len(gpx) - 1, "End")):
+            lat, lon = gpx[i][0], gpx[i][1]
+            forced.append(i)
+            tagged.append((i, lat, lon, wname))
+
     kept = simplify_route(gpx, max_points, forced)
     if kept is None:
         raise ValueError(f"route {name!r} cannot be simplified below {max_points} points")

@@ -30,6 +30,8 @@ CMD_NAMES = {
     0x0B24: "unknown_0b24",
     0x0B25: "sbem_nav_payload",  # unknown4 in openambit
     0x0B26: "unknown_0b26",
+    0x0B19: "unknown_0b19",  # seen in BLE log-sync capture 2026-08-06, meaning unclear
+    0x0B1A: "unknown_0b1a",  # seen in BLE log-sync capture 2026-08-06, meaning unclear
     0x1100: "ambit3_settings",
     0x1200: "ambit3_log_headers",
     0x1201: "ambit3_log_synced",

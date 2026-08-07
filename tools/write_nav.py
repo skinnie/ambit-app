@@ -25,8 +25,10 @@ milestone 7 in HANDOFF.md.
 """
 
 import argparse
+import json
 import pathlib
 import sys
+from xml.sax.saxutils import escape as xml_escape
 
 import ambit_format as F
 from ambit_pcap import CMD_NAMES, FlashImage, encode_message, messages, write_packs
@@ -118,39 +120,62 @@ class Link:
         self.sent = []
 
     def open(self):
-        """Listing a USB device needs no privilege, opening its /dev/hidraw node does,
-        so the two failures are told apart: nothing plugged in is not the same problem
-        as a device present and unopenable, and only the second has a udev fix."""
+        """Listing a USB device needs no privilege, opening it does, so the two failures
+        are told apart: nothing plugged in is not the same problem as a device present
+        and unopenable.
+
+        Both possible `hid` module backings (see open_hid()'s own docstring) go through
+        libusb, not the kernel hidraw interface - real permission for either is decided by
+        `/dev/bus/usb/<bus>/<device>`'s own mode, not any hidraw udev rule (a rule for
+        `SUBSYSTEM=="hidraw"` has zero effect on this transport - confirmed 2026-08-07,
+        see V3_CHANGELOG.md). On most desktop distros that node's permission is granted
+        dynamically per logged-in session (systemd-logind's "uaccess" ACL tagging) right
+        after the kernel creates it on plug-in - there is a real, short race between the
+        node existing and that tag being applied, so a reconnect can transiently look like
+        a permissions failure and clear up half a second later on its own. Retried for
+        exactly that reason, not papering over a real, persistent failure: if it's still
+        unopenable after retrying, something else is actually wrong.
+        """
         if self.dry_run:
             return None
         import hid  # imported only when a device is really opened
+        import time
 
-        found = [(entry, label) for product_id, label in PRODUCT_IDS.items()
-                 for entry in hid.enumerate(VENDOR_ID, product_id)]
-        if not found:
-            raise RuntimeError(
-                "no Ambit3 on the USB bus. Check the cable, then that `lsusb` lists a "
-                "device whose id starts with 1493:")
+        attempts = 5
+        delay_s = 0.4
         failures = []
-        for entry, label in found:
-            try:
-                self.device = open_hid(hid, entry["path"])
-            except Exception as exc:  # every backend raises its own type here
-                failures.append(f"{entry['path']!r}: {exc}")
-                continue
-            print(f"  watch: {label}")
-            return label
+        for attempt in range(1, attempts + 1):
+            found = [(entry, label) for product_id, label in PRODUCT_IDS.items()
+                     for entry in hid.enumerate(VENDOR_ID, product_id)]
+            if not found:
+                if attempt < attempts:
+                    time.sleep(delay_s)
+                    continue
+                raise RuntimeError(
+                    "no Ambit3 on the USB bus. Check the cable, then that `lsusb` lists "
+                    "a device whose id starts with 1493:")
+            failures = []
+            for entry, label in found:
+                try:
+                    self.device = open_hid(hid, entry["path"])
+                except Exception as exc:  # every backend raises its own type here
+                    failures.append(f"{entry['path']!r}: {exc}")
+                    continue
+                print(f"  watch: {label}")
+                return label
+            if attempt < attempts:
+                time.sleep(delay_s)
         raise RuntimeError(
-            f"{len(found)} Ambit3 on the USB bus, none of them openable. This is almost "
-            "always permissions on the\n  hidraw node rather than anything to do with "
-            "the watch. Check with:\n"
-            "    ls -l /dev/hidraw*\n"
-            "  Grant access, then unplug and replug the watch:\n"
-            "    echo 'SUBSYSTEM==\"hidraw\", ATTRS{idVendor}==\"1493\", MODE=\"0666\"'"
-            " | sudo tee /etc/udev/rules.d/99-suunto.rules\n"
-            "    sudo udevadm control --reload-rules\n"
-            "  Having openambit installed does not settle this: a rule written for its "
-            "own transport\n  covers a different device node than the one used here.\n"
+            f"{len(failures)} Ambit3 on the USB bus, still not openable after {attempts} "
+            f"tries over {attempts * delay_s:.1f}s (past the usual reconnect race). "
+            "Check with:\n"
+            "    lsusb | grep 1493   # confirm the device and its bus/device numbers\n"
+            "    ls -la /dev/bus/usb/<bus>/<device>   # from lsusb above\n"
+            "  Should read crw-rw-rw- (or at least rw for your user) shortly after "
+            "plugging in - if it's still root-only\n  after a few seconds, your "
+            "distro's systemd-logind uaccess rules aren't tagging this device; that's "
+            "a\n  session/seat issue, not something a udev MODE rule for hidraw can "
+            "fix (this transport doesn't use hidraw).\n"
             "  The backend said: " + "; ".join(failures))
 
     def command(self, command, payload=b"", expect_reply=True, quiet=False):
@@ -262,6 +287,75 @@ def show_navigation(flash):
     return crc == header.checksum and wpt_crc == waypoint_header.checksum
 
 
+def route_to_gpx(flash, index):
+    """Full-point GPX export of one on-watch route - real feature, 2026-08-07, matching the
+    confirmed-working capability already shipped in the real Android app
+    (opensportsync-main's NavigationService.ts route export - "Real GPS-point export ... is
+    a confirmed, working capability", RoutesPage.qml's own prior comment). Each on-watch
+    point is stored as (x, y) metres relative to the route descriptor's own mid_lat/mid_lon
+    (see build_routes()/serialize() in this same file for the forward direction) -
+    ambit_format.inverse_xy() is that same already-tested projection run backwards, not new
+    math. <rte>/<rtept>, not <trk>/<trkpt>: this project's own established convention for
+    routes/waypoints versus recorded activity tracks (see exercise_log.py's to_gpx() for the
+    latter)."""
+    header = F.RouteHeader.parse(flash.read(F.ROUTE_BASE, 32))
+    if not (0 <= index < header.route_count):
+        raise ValueError(f"route index {index} out of range (0..{header.route_count - 1})")
+    d = F.RouteDescriptor.parse(flash.read(F.ROUTE_DESC + 52 * index, 52))
+    points = [F.RoutePoint.parse(flash.read(F.ROUTE_POINTS + 12 * k, 12))
+              for k in range(d.start_index, d.start_index + d.point_count)]
+
+    lines = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<gpx version="1.1" creator="ambit-app write_nav.py"'
+        ' xmlns="http://www.topografix.com/GPX/1/1">',
+        f'  <rte><name>{xml_escape(d.name)}</name>',
+    ]
+    for p in points:
+        lat, lon = F.inverse_xy(d.mid_lat, d.mid_lon, p.x, p.y)
+        ele = f'<ele>{p.altitude:.1f}</ele>' if p.altitude != F.ALTITUDE_NONE else ''
+        lines.append(f'    <rtept lat="{lat:.7f}" lon="{lon:.7f}">{ele}</rtept>')
+    lines.append('  </rte>')
+    lines.append('</gpx>')
+    return "\n".join(lines)
+
+
+def nav_summary_json(flash):
+    """Every on-watch route's real points, in one shot from the *same* already-read flash
+    data show_navigation() decodes from - real request 2026-08-08 ("add a map for each
+    gpx"): the point-per-route decode this needs is exactly route_to_gpx()'s own (same
+    inverse_xy() call), just collected for every route into a JSON-able dict instead of one
+    route's XML, so RoutesPage.qml can show a real thumbnail per on-watch route without a
+    single extra USB round trip - nav already reads the whole database once."""
+    header = F.RouteHeader.parse(flash.read(F.ROUTE_BASE, 32))
+    if header.magic != F.ROUTE_HEADER_MAGIC:
+        return {"routes": []}
+
+    routes_out = []
+    for i in range(header.route_count):
+        d = F.RouteDescriptor.parse(flash.read(F.ROUTE_DESC + 52 * i, 52))
+        e = F.RouteIndexEntry.parse(flash.read(F.ROUTE_INDEX + 20 * i, 20))
+        points = [F.RoutePoint.parse(flash.read(F.ROUTE_POINTS + 12 * k, 12))
+                  for k in range(d.start_index, d.start_index + d.point_count)]
+        track = []
+        for p in points:
+            lat, lon = F.inverse_xy(d.mid_lat, d.mid_lon, p.x, p.y)
+            track.append({
+                "lat": lat, "lon": lon,
+                "ele": None if p.altitude == F.ALTITUDE_NONE else p.altitude,
+            })
+        routes_out.append({
+            "name": d.name,
+            "distanceMeters": d.distance,
+            "ascentMeters": d.ascent,
+            "descentMeters": d.descent,
+            "pointCount": d.point_count,
+            "waypointCount": e.waypoint_count,
+            "track": track,
+        })
+    return {"routes": routes_out}
+
+
 def run_nav(args):
     """READ-ONLY: reads the two navigation regions off the watch and decodes them.
 
@@ -293,7 +387,25 @@ def run_nav(args):
             path = pathlib.Path(f"{args.save}-{name.lower()}.bin")
             path.write_bytes(blob)
             print(f"  saved {len(blob)} B to {path}")
-    return 0 if show_navigation(flash) else 1
+
+    if args.route_gpx is not None:
+        gpx = route_to_gpx(flash, args.route_gpx)
+        if args.route_gpx_out:
+            pathlib.Path(args.route_gpx_out).write_text(gpx, encoding="utf-8")
+            print(f"  wrote route[{args.route_gpx}] GPX to {args.route_gpx_out}")
+        else:
+            print(gpx)
+
+    ok = show_navigation(flash)
+
+    if args.json:
+        # Printed last, on its own line, after show_navigation()'s human-readable output -
+        # same "find the last JSON-parseable line" convention sgee.py --status --json
+        # already established, so callers don't need a separate output mode that skips the
+        # human-readable diagnostics entirely.
+        print(json.dumps(nav_summary_json(flash)))
+
+    return 0 if ok else 1
 
 
 def settings_from_capture(capture):
@@ -415,6 +527,25 @@ def poi_write_payload(reply):
     return SBEM_WRITE_PREFIX + F.SBEM_MAGIC + header + body
 
 
+def poi_write_payload_add(reply, new_record):
+    """Like `poi_write_payload`, but for adding a POI rather than merely preserving the
+    list: per its own docstring, `poiimport` puts the new record first and the rest in
+    the order they were read - not reversed, unlike a plain preserve.
+
+    A reply with no SBEM0102 payload just means the watch currently has zero POIs
+    (confirmed a real, reachable state on hardware 2026-08-04, not an error) - the new
+    record is then the entire list, same as `poiimport` would look on an empty watch."""
+    records = ([data for entry_id, data in F.sbem_entries(reply)
+                if entry_id == POI_ENTRY]
+               if reply and F.SBEM_MAGIC in reply else [])
+    body = new_record + b"".join(records)
+    if len(body) < 0xFF:
+        header = bytes([POI_ENTRY, len(body)])
+    else:
+        header = bytes([POI_ENTRY, 0xFF]) + len(body).to_bytes(4, "little")
+    return SBEM_WRITE_PREFIX + F.SBEM_MAGIC + header + body
+
+
 def read_memory_map(link):
     """Addresses and sizes declared by the watch. In dry-run the reference values,
     the ones from the capture, are returned."""
@@ -448,7 +579,10 @@ def check_memory_map(found):
     return ok
 
 
-def send_plan(link, flash, layout):
+def send_plan(link, flash, layout, commit=True):
+    """commit=False for GpsSGEE: confirmed against assets/ambit3 pcap/orbitsync, 2026-08-05
+    - its data_write/data_tail_len pair is followed directly by unrelated queries, no
+    CMD_NAV_COMMIT, unlike Routes/Waypoints which always need one."""
     for command, address, body in emit_packs(flash, layout):
         if command == CMD_DATA_WRITE:
             head = address.to_bytes(4, "little") + len(body).to_bytes(2, "little") \
@@ -458,7 +592,8 @@ def send_plan(link, flash, layout):
             # [u32 address][u32 supplied by the application] + 64 hex characters
             head = address.to_bytes(4, "little") + b"\0\0\0\0"
             link.command(CMD_DATA_TAIL, head + body)
-    link.command(CMD_NAV_COMMIT)
+    if commit:
+        link.command(CMD_NAV_COMMIT)
 
 
 def build_reset():
@@ -688,6 +823,15 @@ def main():
                         help="settings: mask keys and MAC, output safe to send")
     parser.add_argument("--save", metavar="PREFIX",
                         help="nav: also write the raw regions to PREFIX-*.bin")
+    parser.add_argument("--route-gpx", type=int, metavar="INDEX",
+                        help="nav: export on-watch route INDEX's full points as GPX "
+                             "(<rte>/<rtept>) - see --route-gpx-out")
+    parser.add_argument("--route-gpx-out", metavar="PATH",
+                        help="nav --route-gpx: write to this file instead of stdout")
+    parser.add_argument("--json", action="store_true",
+                        help="nav: also prints every on-watch route's real points as JSON "
+                             "(on the last stdout line) - no extra USB read, reuses the "
+                             "same flash data already read for the summary above it")
     parser.add_argument("--verbose", action="store_true",
                         help="logs every 64-byte report")
     args = parser.parse_args()

@@ -1,0 +1,171 @@
+import QtQuick
+import QtQuick.Controls
+import AmbitApp
+
+// Step 10. Real backup/restore, built on write_nav.py's own `nav --save` / `restore
+// PREFIX --write` - "the backup that milestone 4 asked for and never had" (that file's own
+// words). "Sport Modes, Settings, Profiles" (the spec's own "Future" list here) aren't
+// covered by this mechanism, which only ever touched routes/waypoints - not simulated.
+Flickable {
+    id: root
+    contentWidth: width
+    contentHeight: column.height + Theme.spacingLarge * 2
+    clip: true
+
+    Component.onCompleted: {
+        BackupService.refresh();
+        BackupService.checkFirmware();
+    }
+
+    Column {
+        id: column
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.top: parent.top
+        anchors.topMargin: Theme.spacingLarge
+        width: 480
+        spacing: Theme.spacingMedium
+
+        Card {
+            width: parent.width
+            Column {
+                width: parent.width
+                spacing: Theme.spacingSmall
+
+                Text { text: qsTr("Backup & Restore"); font.bold: true; color: Theme.text }
+                Text {
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    color: Theme.mutedText
+                    font.pixelSize: 12
+                    text: qsTr("Covers Routes and POIs together (the watch's whole " +
+                                "navigation database) - Sport Modes, Settings, and Profiles " +
+                                "are future, not part of this mechanism.")
+                }
+
+                Button {
+                    text: BackupService.loading ? qsTr("Working…") : qsTr("Create backup now")
+                    enabled: !BackupService.loading
+                    onClicked: BackupService.createBackup()
+                }
+
+                Text {
+                    visible: BackupService.lastActionText.length > 0
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    font.pixelSize: 11
+                    color: BackupService.lastActionOk ? Theme.success : Theme.error
+                    text: BackupService.lastActionText
+                }
+            }
+        }
+
+        Card {
+            width: parent.width
+            Column {
+                width: parent.width
+                spacing: Theme.spacingSmall
+
+                Text { text: qsTr("Existing backups"); font.bold: true; color: Theme.text }
+
+                Text {
+                    visible: BackupService.backups.length === 0
+                    text: qsTr("None yet.")
+                    color: Theme.mutedText
+                    font.pixelSize: 12
+                }
+
+                Repeater {
+                    model: BackupService.backups
+                    delegate: Column {
+                        width: parent.width
+                        spacing: 4
+                        Text {
+                            text: new Date(modelData.createdAt * 1000)
+                                .toLocaleString(Qt.locale(), Locale.ShortFormat)
+                            color: Theme.text
+                            font.pixelSize: 13
+                        }
+                        Row {
+                            spacing: Theme.spacingSmall
+                            // Real request 2026-08-07: "replace the rehearse restore button
+                            // with open backup folder" - Restore itself already reports its
+                            // own result text below, which was Rehearse's whole purpose;
+                            // being able to actually see the saved files is the more useful
+                            // second action here.
+                            Button {
+                                text: qsTr("Open backup folder")
+                                onClicked: LocalFileService.openFolder(LocalFileService.backupsLocation)
+                            }
+                            Button {
+                                text: qsTr("Restore")
+                                onClicked: BackupService.restoreBackup(modelData.prefix, true)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // --- Firmware backup - added 2026-08-07, see V3_CHANGELOG.md ---
+        Card {
+            width: parent.width
+            Column {
+                width: parent.width
+                spacing: Theme.spacingSmall
+
+                Text { text: qsTr("Firmware"); font.bold: true; color: Theme.text }
+
+                Text {
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    color: Theme.error
+                    font.pixelSize: 12
+                    font.bold: true
+                    text: qsTr("For backup only - this cannot be used to flash the watch. " +
+                                "There is no known way to install firmware over this " +
+                                "protocol; the only supported way to update the watch is " +
+                                "Suunto's own official app. Saved purely as a local copy in " +
+                                "case Suunto's server ever stops serving this version.")
+                }
+
+                Text {
+                    visible: BackupService.firmwareCheckOk
+                    color: Theme.text
+                    font.pixelSize: 13
+                    text: qsTr("Latest available: %1 (uploaded %2)")
+                        .arg(BackupService.firmwareLatestVersion)
+                        .arg(BackupService.firmwareUploadDate)
+                }
+                Text {
+                    visible: !BackupService.firmwareCheckOk && !BackupService.firmwareLoading
+                    color: Theme.mutedText
+                    font.pixelSize: 12
+                    text: qsTr("Couldn't check for firmware yet.")
+                }
+
+                Row {
+                    spacing: Theme.spacingSmall
+                    Button {
+                        text: BackupService.firmwareLoading ? qsTr("Working…") : qsTr("Check again")
+                        enabled: !BackupService.firmwareLoading
+                        onClicked: BackupService.checkFirmware()
+                    }
+                    Button {
+                        text: qsTr("Download for backup")
+                        enabled: !BackupService.firmwareLoading && BackupService.firmwareCheckOk
+                        onClicked: BackupService.downloadFirmware()
+                    }
+                }
+
+                Text {
+                    visible: BackupService.firmwareActionText.length > 0
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    font.pixelSize: 11
+                    color: BackupService.firmwareActionOk ? Theme.success : Theme.error
+                    text: BackupService.firmwareActionText
+                }
+            }
+        }
+    }
+}

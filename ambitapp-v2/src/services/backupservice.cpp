@@ -1,0 +1,136 @@
+#include "backupservice.h"
+
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QNetworkReply>
+
+static const QString kBackendBase = QStringLiteral("http://127.0.0.1:8766");
+
+BackupService::BackupService(QObject *parent) : QObject(parent) {}
+
+void BackupService::setLoading(bool value)
+{
+    if (m_loading == value)
+        return;
+    m_loading = value;
+    emit loadingChanged();
+}
+
+void BackupService::setFirmwareLoading(bool value)
+{
+    if (m_firmwareLoading == value)
+        return;
+    m_firmwareLoading = value;
+    emit firmwareLoadingChanged();
+}
+
+void BackupService::refresh()
+{
+    setLoading(true);
+    QNetworkReply *reply = m_network.get(
+        QNetworkRequest(QUrl(kBackendBase + QStringLiteral("/api/backups"))));
+    connect(reply, &QNetworkReply::finished, this, [this, reply] {
+        reply->deleteLater();
+        setLoading(false);
+        if (reply->error() != QNetworkReply::NoError) {
+            m_lastActionText = reply->errorString();
+            m_lastActionOk = false;
+            emit lastActionChanged();
+            return;
+        }
+        const auto doc = QJsonDocument::fromJson(reply->readAll());
+        m_backups.clear();
+        for (const auto &v : doc.object().value(QStringLiteral("backups")).toArray())
+            m_backups.append(v.toObject().toVariantMap());
+        emit backupsChanged();
+    });
+}
+
+void BackupService::createBackup()
+{
+    setLoading(true);
+    QNetworkRequest req(QUrl(kBackendBase + QStringLiteral("/api/backup")));
+    req.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
+    QNetworkReply *reply = m_network.post(req, QByteArray("{}"));
+    connect(reply, &QNetworkReply::finished, this, [this, reply] {
+        reply->deleteLater();
+        setLoading(false);
+        const auto doc = QJsonDocument::fromJson(reply->readAll());
+        const auto obj = doc.object();
+        m_lastActionOk = obj.value(QStringLiteral("ok")).toBool();
+        m_lastActionText = m_lastActionOk
+            ? QStringLiteral("Backed up to %1").arg(obj.value(QStringLiteral("label")).toString())
+            : obj.value(QStringLiteral("stderr")).toString();
+        emit lastActionChanged();
+        if (m_lastActionOk)
+            refresh();
+    });
+}
+
+void BackupService::restoreBackup(const QString &prefix, bool confirm)
+{
+    QJsonObject body;
+    body[QStringLiteral("prefix")] = prefix;
+    body[QStringLiteral("confirm")] = confirm;
+
+    QNetworkRequest req(QUrl(kBackendBase + QStringLiteral("/api/restore")));
+    req.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
+    QNetworkReply *reply = m_network.post(req, QJsonDocument(body).toJson());
+    connect(reply, &QNetworkReply::finished, this, [this, reply] {
+        reply->deleteLater();
+        const auto doc = QJsonDocument::fromJson(reply->readAll());
+        const auto obj = doc.object();
+        m_lastActionOk = obj.value(QStringLiteral("ok")).toBool();
+        const QString raw = obj.value(QStringLiteral("raw_output")).toString();
+        const QString err = obj.value(QStringLiteral("stderr")).toString();
+        m_lastActionText = m_lastActionOk ? raw : (err.isEmpty() ? raw : err);
+        emit lastActionChanged();
+    });
+}
+
+void BackupService::checkFirmware()
+{
+    setFirmwareLoading(true);
+    QNetworkReply *reply = m_network.get(
+        QNetworkRequest(QUrl(kBackendBase + QStringLiteral("/api/firmware"))));
+    connect(reply, &QNetworkReply::finished, this, [this, reply] {
+        reply->deleteLater();
+        setFirmwareLoading(false);
+        const auto doc = QJsonDocument::fromJson(reply->readAll());
+        const auto obj = doc.object();
+        m_firmwareCheckOk = (reply->error() == QNetworkReply::NoError)
+            && obj.value(QStringLiteral("ok")).toBool();
+        if (m_firmwareCheckOk) {
+            m_firmwareLatestVersion = obj.value(QStringLiteral("latest_firmware_version")).toString();
+            m_firmwareUploadDate = obj.value(QStringLiteral("upload_date")).toString();
+            m_firmwareDownloadUrl = obj.value(QStringLiteral("download_url")).toString();
+        } else {
+            m_firmwareActionText = obj.value(QStringLiteral("stderr")).toString();
+            emit firmwareActionChanged();
+        }
+        emit firmwareCheckChanged();
+    });
+}
+
+void BackupService::downloadFirmware()
+{
+    setFirmwareLoading(true);
+    QNetworkRequest req(QUrl(kBackendBase + QStringLiteral("/api/firmware/download")));
+    req.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
+    QNetworkReply *reply = m_network.post(req, QByteArray("{}"));
+    connect(reply, &QNetworkReply::finished, this, [this, reply] {
+        reply->deleteLater();
+        setFirmwareLoading(false);
+        const auto doc = QJsonDocument::fromJson(reply->readAll());
+        const auto obj = doc.object();
+        m_firmwareActionOk = obj.value(QStringLiteral("ok")).toBool();
+        m_firmwareActionText = m_firmwareActionOk
+            ? QStringLiteral("Saved to %1 (%2 bytes) - backup only, this cannot be used to "
+                              "flash the watch.")
+                  .arg(obj.value(QStringLiteral("path")).toString())
+                  .arg(obj.value(QStringLiteral("size_bytes")).toInt())
+            : obj.value(QStringLiteral("stderr")).toString();
+        emit firmwareActionChanged();
+    });
+}

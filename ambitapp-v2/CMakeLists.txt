@@ -1,0 +1,131 @@
+cmake_minimum_required(VERSION 3.21)
+project(AmbitApp VERSION 2.3.0 LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_AUTOMOC ON)
+
+find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Qml Quick QuickControls2 QuickDialogs2
+    Network)
+
+# Step 6 (Maps) - two real backends tried and abandoned, both after real hardware testing:
+# maplibre-native-qt (a separate ~1.7GB build) crashed outright (std::bad_alloc, reproducible
+# even under forced software OpenGL, so not a driver quirk); Qt's own built-in "osm"
+# GeoServices plugin kept showing a "missing API key" watermark that its documented
+# parameters couldn't clear (this Qt 6.12 build's plugin binary has none of the documented
+# "osm.mapping.*" parameter strings at all - checked directly with `strings`, not guessed a
+# third time). MapView.qml is now a plain direct XYZ tile renderer instead - no
+# GeoServices plugin, no Qt6::Location/Qt6::Positioning dependency at all. See MapView.qml
+# and V3_CHANGELOG.md, 2026-08-07.
+
+qt_standard_project_setup(REQUIRES 6.5)
+
+qt_add_executable(ambitapp
+    src/main.cpp
+)
+
+# Pure-QML singletons - see qml/Theme.qml's own header comment for why these are QML, not
+# C++ types: no native state or backend calls belong in any of them. MUST be set before
+# qt_add_qml_module() below, not after: it reads this property while generating qmldir, so
+# setting it later writes every one of these as a plain type instead of `singleton NAME ...`
+# - real bug, found 2026-08-07 on the first real build (every Theme/Icons property came back
+# undefined at runtime, see V3_CHANGELOG.md for the full symptom and how it was traced).
+set_source_files_properties(qml/Theme.qml PROPERTIES
+    QT_QML_SINGLETON_TYPE true
+)
+set_source_files_properties(qml/FeatureFlags.qml PROPERTIES
+    QT_QML_SINGLETON_TYPE true
+)
+set_source_files_properties(qml/DeviceCapabilities.qml PROPERTIES
+    QT_QML_SINGLETON_TYPE true
+)
+set_source_files_properties(qml/Icons.qml PROPERTIES
+    QT_QML_SINGLETON_TYPE true
+)
+set_source_files_properties(qml/viewmodels/HomeViewModel.qml PROPERTIES
+    QT_QML_SINGLETON_TYPE true
+)
+set_source_files_properties(qml/viewmodels/WeatherViewModel.qml PROPERTIES
+    QT_QML_SINGLETON_TYPE true
+)
+set_source_files_properties(qml/MapService.qml PROPERTIES
+    QT_QML_SINGLETON_TYPE true
+)
+set_source_files_properties(qml/viewmodels/ActivityViewModel.qml PROPERTIES
+    QT_QML_SINGLETON_TYPE true
+)
+set_source_files_properties(qml/viewmodels/RouteViewModel.qml PROPERTIES
+    QT_QML_SINGLETON_TYPE true
+)
+
+qt_add_qml_module(ambitapp
+    URI AmbitApp
+    VERSION 1.0
+    QML_FILES
+        qml/Main.qml
+        qml/Theme.qml
+        qml/FeatureFlags.qml
+        qml/DeviceCapabilities.qml
+        qml/Icons.qml
+        qml/components/Card.qml
+        qml/components/Icon.qml
+        qml/components/NavItem.qml
+        qml/components/NavRail.qml
+        qml/components/PagePlaceholder.qml
+        qml/components/WeatherCard.qml
+        qml/components/MapView.qml
+        qml/components/ActivityCard.qml
+        qml/components/ActivityDetail.qml
+        qml/MapService.qml
+        qml/viewmodels/HomeViewModel.qml
+        qml/viewmodels/WeatherViewModel.qml
+        qml/viewmodels/ActivityViewModel.qml
+        qml/viewmodels/RouteViewModel.qml
+        qml/pages/HomePage.qml
+        qml/pages/ActivitiesPage.qml
+        qml/pages/RoutesPage.qml
+        qml/pages/PoisPage.qml
+        qml/pages/BackupPage.qml
+        qml/pages/SettingsPage.qml
+        qml/pages/SportModesPage.qml
+    # Step 10+ pages/components get added here as they're built - each spec step should
+    # compile independently, so this list grows incrementally rather than all at once.
+    SOURCES
+        src/services/deviceservice.h
+        src/services/deviceservice.cpp
+        src/services/weatherservice.h
+        src/services/weatherservice.cpp
+        src/services/activityservice.h
+        src/services/activityservice.cpp
+        src/services/routeservice.h
+        src/services/routeservice.cpp
+        src/services/poiservice.h
+        src/services/poiservice.cpp
+        src/services/backupservice.h
+        src/services/backupservice.cpp
+        src/services/connectionsservice.h
+        src/services/connectionsservice.cpp
+        src/services/localfileservice.h
+        src/services/localfileservice.cpp
+    RESOURCES
+        assets/fonts/MaterialSymbolsRounded.ttf
+        # assets/map/osm-raster-style.json was MapLibre's own style file - unused since the
+        # 2026-08-07 switch to Qt's built-in "osm" plugin, left on disk but out of the build
+)
+
+target_link_libraries(ambitapp PRIVATE
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Qml
+    Qt6::Quick
+    Qt6::QuickControls2
+    Qt6::Network
+)
+
+# qt_add_qml_module's auto-generated type-registration file (ambitapp_qmltyperegistrations.cpp)
+# looks up each QML_ELEMENT header by bare filename (__has_include(<deviceservice.h>)), not by
+# its path under src/services/ - needs that directory on the include path explicitly, or every
+# one of those checks silently fails and the include gets skipped (2026-08-07, first real build).
+target_include_directories(ambitapp PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/services
+)

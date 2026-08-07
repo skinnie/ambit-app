@@ -86,10 +86,24 @@ def main():
     else:
         print("  skip    restore (no saved region in assets/)")
 
+    sgee_data = HERE.parent / "assets" / "WIndows apps" / "Suuntolink" / "sgee.7d"
+    orbitsync = CAPTURES / "orbitsync"
+    if sgee_data.exists() and orbitsync.exists():
+        record("dryrun", "sgee against orbitsync",
+               ["sgee.py", str(sgee_data), "--compare", str(orbitsync)])
+    else:
+        print("  skip    sgee (sgee.7d or orbitsync capture absent from assets/)")
+
     if (HERE.parent / "csrc" / "build" / "harness").exists():
         record("C", "serializer against the reference", ["c_reference.py"])
     else:
         print("  skip    C serializer (run make -C csrc)")
+
+    if (HERE.parent / "csrc" / "build" / "sport_modes_harness").exists():
+        record("C", "sport-modes serializer against the reference",
+               ["sport_modes_c_reference.py"])
+    else:
+        print("  skip    C sport-modes serializer (run make -C csrc)")
 
     # Both need the SuuntoLink descriptor, and `settings` deliberately fails without
     # it rather than reporting an unpaired watch it cannot actually see.

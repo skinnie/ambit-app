@@ -3,6 +3,13 @@ __pycache__/
 csrc/build/
 venv/
 
+# PyInstaller build tooling/output: venvs bake in absolute paths of the machine that
+# created them, so they must never travel between machines (this broke a real Mac
+# build once - "bad interpreter", the venv's own python3 shebang pointed at a Linux
+# path). Regenerated automatically by tools/packaging/build_*.sh on first run.
+tools/packaging/.build-venv/
+build/
+
 # Analysis artifacts, deliberately not versioned on a public repository:
 #  - SuuntoLink binaries and decompilation: proprietary Suunto software
 #  - Microsoft redistributable DLLs
@@ -14,3 +21,9 @@ full-assets/
 # link keys and a phone MAC verbatim. Their findings belong in HANDOFF.md, with the
 # values redacted; the raw notes stay local.
 HANDOFF-append-*.md
+
+# ambitapp-v2's own build tree and one-off cmake/make stdout captures made while
+# iterating on real builds - scratch, not source.
+ambitapp-v2/build/
+ambitapp-v2/*.log
+ambitapp-v2/*.exitcode

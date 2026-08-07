@@ -12,6 +12,9 @@ import struct
 WAYPOINT_BASE, WAYPOINT_REGION_SIZE = 0x005000, 16384
 ROUTE_BASE, ROUTE_REGION_SIZE = 0x14C080, 130000
 SGEE_BASE, SGEE_REGION_SIZE = 0x0704E0, 140000
+TRAINING_PROGRAM_BASE, TRAINING_PROGRAM_REGION_SIZE = 0x001000, 3072
+APPS_BASE, APPS_REGION_SIZE = 0x0927C0, 200000
+CUSTOM_MODES_BASE, CUSTOM_MODES_REGION_SIZE = 0x002000, 12288
 
 # The closing hash does not cover the same thing depending on the region:
 #   PADDED  = the whole region, unwritten bytes at 0xff  (Routes, Waypoints)
@@ -23,6 +26,24 @@ REGIONS = {
     WAYPOINT_BASE: ("Waypoints", WAYPOINT_REGION_SIZE, HASH_PADDED),
     ROUTE_BASE: ("Routes", ROUTE_REGION_SIZE, HASH_PADDED),
     SGEE_BASE: ("GpsSGEE", SGEE_REGION_SIZE, HASH_WRITTEN),
+    # UNVERIFIED, 2026-08-05: no capture in this project touches TrainingProgram, so neither
+    # its presence here nor WRITTEN as its hash mode is confirmed against real bytes - it's an
+    # inference from the format being self-describing (an item count in its own header), the
+    # same shape as GpsSGEE's length-prefixed blob, unlike Routes/Waypoints' fixed-size
+    # database. See training_program_andre.md.
+    TRAINING_PROGRAM_BASE: ("TrainingProgram", TRAINING_PROGRAM_REGION_SIZE, HASH_WRITTEN),
+    # UNVERIFIED, 2026-08-05, both entries: no capture exists of a real write to either
+    # region (the only real installs seen were done by SuuntoLink itself, never captured on
+    # the wire - training_program_andre.md's Finding 15/"what actually getting this feature
+    # back would take"). Apps -> WRITTEN by analogy with GpsSGEE/TrainingProgram: entries are
+    # self-describing (their own total_length) and simply appended, the same growing-heap
+    # shape, unlike Routes/Waypoints' fixed database. CustomModes -> PADDED by analogy with
+    # Routes/Waypoints instead: real before/after captures (custom_modes_andre.md) show the
+    # region staying exactly CUSTOM_MODES_REGION_SIZE bytes across a write, content simply
+    # growing into what was previously 0xFF padding - the same fixed-region-rewritten-whole
+    # shape, not a variable-length append-only heap.
+    APPS_BASE: ("Apps", APPS_REGION_SIZE, HASH_WRITTEN),
+    CUSTOM_MODES_BASE: ("CustomModes", CUSTOM_MODES_REGION_SIZE, HASH_PADDED),
 }
 
 WAYPOINT_HEADER_MAGIC = 0x0334
@@ -328,6 +349,22 @@ def parse_sbem_poi_list(payload):
         off += 8
         out.append(dict(zip(POI_FIELDS, values)))
     return out
+
+
+def build_poi_record(name, lat, lon, stamp, route_name="", route_index=0,
+                      type_=WAYPOINT_TYPE_DEFAULT, sub_type=0, type_index=0, flags=1):
+    """Encodes one POI record: the exact inverse of `parse_sbem_poi_list` - three
+    NUL-terminated strings, five u8, then latitude/longitude as i32 x 1e7.
+
+    Defaults (`type_=17`, `flags=1`) match what the watch itself writes for a POI it
+    creates - confirmed on hardware 2026-08-04, see `parse_sbem_poi_list`. SuuntoLink
+    instead leaves type/sub_type/type_index/flags at 0 for imported POIs.
+    """
+    return (name.encode("utf-8") + b"\0" +
+            route_name.encode("utf-8") + b"\0" +
+            stamp.encode("utf-8") + b"\0" +
+            bytes([route_index, type_, sub_type, type_index, flags]) +
+            struct.pack("<ii", round(lat * 1e7), round(lon * 1e7)))
 
 
 # --- geometry --------------------------------------------------------------

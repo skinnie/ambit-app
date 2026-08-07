@@ -1,0 +1,487 @@
+#!/usr/bin/env python3
+"""AmbitApp V2's Python backend bridge - wraps this repo's existing, hardware-proven CLI
+tools (`tools/write_nav.py`, `tools/exercise_log.py`, `tools/sgee.py`) behind a local
+HTTP/JSON API, so the Qt/QML app's C++ Services layer never needs to know Python exists.
+See `../README.md`'s "Architecture decision" section for why the backend stays Python
+rather than being ported to C++: everything here is already hardware-tested, and
+re-deriving it in C++ would mean redoing real reverse-engineering work for no gain.
+
+Same stdlib-only, no-framework style as `tools/workout_gui.py` - `BaseHTTPRequestHandler`,
+`ThreadingHTTPServer`, JSON in/out, nothing else to install.
+
+**Every endpoint that can write to the watch runs its underlying tool WITHOUT `--write`
+unless the request body explicitly sets `"confirm": true`.** That is not this file's own
+idea of caution - it mirrors `write_nav.py`/`sgee.py`'s own default-safe CLI design (dry-run
+unless told otherwise) exactly, on purpose: a bug in this bridge should fail the same safe
+way those tools already do.
+
+**Deliberately calls the real CLI tools via subprocess, not their internal functions
+directly.** Reuses the exact, already-tested entry point (argument validation, dry-run
+default, POI preservation dance, all of it) instead of re-wiring internals here in a way
+that could subtly diverge from what real hardware has actually verified - the same
+reasoning behind this project's own "bounds-check before write" lesson (a real out-of-bounds
+flash write happened once, from code that skipped the tool that already got this right).
+
+**Untested against real hardware as of 2026-08-07.** Written by reading the actual CLI
+tools' argparse interfaces and output shapes directly (not guessed), but this sandbox has no
+watch attached to verify against - a real device test is still owed before trusting this
+with an actual write.
+
+    ./backend/server.py                 # serves http://127.0.0.1:8766
+    ./backend/server.py --port 9000
+"""
+
+import argparse
+import base64
+import json
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+import urllib.error
+import urllib.request
+from datetime import datetime, timezone
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+
+TOOLS_DIR = Path(__file__).resolve().parent.parent.parent / "tools"
+PYTHON = sys.executable
+
+# Step 10 (Backup). write_nav.py's own `nav --save PREFIX` / `restore PREFIX --write` is a
+# real, hardware-tested backup/restore mechanism (see that file's own run_nav()/
+# build_restore() - "the backup that milestone 4 asked for and never had") - this just picks
+# a real place on disk for PREFIX to live, one directory per timestamped backup.
+BACKUP_DIR = Path.home() / "AmbitAppBackups"
+FIRMWARE_DIR = BACKUP_DIR / "firmware"
+
+# Confirmed live and fully unauthenticated, 2026-08-05 (sgee_andre.md) - no AppKey/account
+# needed, unlike the rest of that host's API surface.
+GPS_ORBIT_URL = "https://devices.suunto-operations.com/devices/gpsorbit/binary"
+
+
+# ThreadingHTTPServer gives every incoming request its own thread, and the QML app fires
+# several independent requests close together in real use (Home's device+weather refresh,
+# a page's own onCompleted, a Backup/Firmware check) - each run_tool() call opens the watch's
+# USB connection fresh in its own subprocess, and only one process can hold it at a time.
+# Without this lock those threads race each other for the device and the loser sees a real,
+# correctly-reported "none openable" error, even though nothing was actually wrong with the
+# watch or the connection - confirmed live, 2026-08-07, see V3_CHANGELOG.md. write_nav.py's
+# own retry (Link.open(), 5 tries/2s) only covers the reconnect-permission race, not two of
+# this backend's own requests overlapping - that needs serializing here instead.
+WATCH_LOCK = threading.Lock()
+
+
+def run_tool(script, args, timeout=180):
+    """Runs one of tools/*.py exactly as a person at a terminal would. Returns
+    (returncode, stdout, stderr); never raises for a nonzero exit, the caller decides what
+    that means for the specific tool. Serialized across all callers via WATCH_LOCK - see its
+    own comment for why."""
+    with WATCH_LOCK:
+        proc = subprocess.run(
+            [PYTHON, str(TOOLS_DIR / script), *args],
+            cwd=TOOLS_DIR, capture_output=True, text=True, timeout=timeout)
+        return proc.returncode, proc.stdout, proc.stderr
+
+
+class Handler(BaseHTTPRequestHandler):
+    def log_message(self, fmt, *args):
+        pass  # keep stdout clean; errors still surface via response bodies
+
+    def _send_json(self, status, payload):
+        body = json.dumps(payload).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _read_json_body(self):
+        length = int(self.headers.get("Content-Length", 0))
+        return json.loads(self.rfile.read(length)) if length else {}
+
+    def do_GET(self):
+        if self.path == "/api/health":
+            self._send_json(200, {"ok": True})
+        elif self.path == "/api/nav":
+            self._handle_nav()
+        elif self.path == "/api/activities":
+            self._handle_activities()
+        elif self.path == "/api/pois":
+            self._handle_pois_read()
+        elif self.path == "/api/backups":
+            self._handle_backups_list()
+        elif self.path == "/api/device":
+            self._handle_device()
+        elif self.path == "/api/firmware":
+            self._handle_firmware_check()
+        elif self.path == "/api/agps/status":
+            self._handle_agps_status()
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def do_POST(self):
+        try:
+            body = self._read_json_body()
+        except json.JSONDecodeError as e:
+            self._send_json(400, {"error": f"invalid JSON body: {e}"})
+            return
+
+        if self.path == "/api/routes":
+            self._handle_route_write(body)
+        elif self.path == "/api/routes/export":
+            self._handle_route_export(body)
+        elif self.path == "/api/agps/update":
+            self._handle_agps_update(body)
+        elif self.path == "/api/firmware/download":
+            self._handle_firmware_download()
+        elif self.path == "/api/backup":
+            self._handle_backup_create()
+        elif self.path == "/api/restore":
+            self._handle_restore(body)
+        elif self.path == "/api/pois":
+            # POI import/export (GPX and typed coordinates) is real and confirmed working -
+            # tested via a real compiled Android app against real hardware, 2026-08-06
+            # (HANDOFF.md's POI section and Milestone 6 row). What's missing is narrower than
+            # that: the specific code isn't in *this repo's* copy of tools/write_nav.py yet
+            # (it only preserves POIs already on the watch across a route/reset/restore
+            # write) - so this bridge has nothing correct to call until that code is located
+            # or ported here. Returning 501 rather than silently doing nothing.
+            self._send_json(501, {
+                "error": "POI import/export is confirmed working (real hardware, 2026-08-06) "
+                         "but the code isn't in this repo's tools/write_nav.py yet - nothing "
+                         "for this endpoint to call until it's located or ported in. See "
+                         "HANDOFF.md's POI section."})
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    # --- read-only: always safe, no --write anywhere below this line ---
+
+    def _handle_nav(self):
+        """Routes and POIs currently on the watch. Returns raw CLI output (still used for
+        the summary line RouteService.cpp's own regex already parses) plus, since 2026-08-08
+        ("add a map for each gpx"), real per-route point tracks via `nav --json` - one
+        already-existing JSON line appended after the human-readable output, decoded from
+        the exact same flash data already read for the summary, no extra USB round trip."""
+        code, out, err = run_tool("write_nav.py", ["nav", "--json"])
+        routes = self._parse_last_json_line(out)  # same "last JSON line" convention
+        self._send_json(200 if code == 0 else 502, {
+            "ok": code == 0, "raw_output": out, "stderr": err,
+            "routes": (routes or {}).get("routes", [])})
+
+    def _handle_activities(self):
+        """Recorded moves, as GPX and FIT. Read-only by construction - exercise_log.py's
+        `nav` equivalent never has a --write flag, it only reads flash."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            code, out, err = run_tool(
+                "exercise_log.py", ["--gpx-out", tmpdir, "--fit-out", tmpdir])
+            if code != 0:
+                self._send_json(502, {"ok": False, "raw_output": out, "stderr": err})
+                return
+            activities = []
+            tmp = Path(tmpdir)
+            for gpx_path in sorted(tmp.glob("move*.gpx")):
+                n = gpx_path.stem[len("move"):]
+                fit_path = tmp / f"move{n}.fit"
+                activities.append({
+                    "index": int(n),
+                    "gpx": gpx_path.read_text(),
+                    "fit_base64": (base64.b64encode(fit_path.read_bytes()).decode("ascii")
+                                   if fit_path.exists() else None),
+                })
+            self._send_json(200, {"ok": True, "activities": activities, "raw_output": out})
+
+    def _handle_pois_read(self):
+        """POIs currently on the watch. Raw output, deliberately - unlike routes'
+        `show_navigation()`, `pois`'s own `show_entries()` prints fields using whatever the
+        real SuuntoLink schema descriptor names them, not a fixed f-string this project can
+        read and confirm ahead of time (see write_nav.py's own show_entries()). Guessing a
+        parser for that without a real watch to check the actual field names against risks
+        silently showing wrong data - same reasoning as /api/nav, applied honestly rather
+        than skipped."""
+        code, out, err = run_tool("write_nav.py", ["pois"])
+        self._send_json(200 if code == 0 else 502, {
+            "ok": code == 0, "raw_output": out, "stderr": err})
+
+    def _handle_route_export(self, body):
+        """Body: {"index": int}. Real request 2026-08-07 ("replicate the function from our
+        android app: export as gpx") - read-only (0x0b17, same as /api/nav), never writes.
+        `index` matches the order write_nav.py's `nav` already lists on-watch routes in
+        (RouteService.onWatchRoutes' own array position), not a separate lookup."""
+        try:
+            index = int(body.get("index"))
+        except (TypeError, ValueError):
+            self._send_json(400, {"error": "missing/invalid \"index\""})
+            return
+
+        with tempfile.NamedTemporaryFile("w", suffix=".gpx", delete=False) as f:
+            gpx_path = f.name
+        try:
+            code, out, err = run_tool(
+                "write_nav.py", ["nav", "--route-gpx", str(index), "--route-gpx-out", gpx_path])
+            gpx_text = Path(gpx_path).read_text(encoding="utf-8") if code == 0 else ""
+        finally:
+            Path(gpx_path).unlink(missing_ok=True)
+
+        self._send_json(200 if code == 0 and gpx_text else 502, {
+            "ok": code == 0 and bool(gpx_text), "gpx": gpx_text,
+            "raw_output": out, "stderr": err})
+
+    # --- writes: dry-run unless the caller explicitly confirms ---
+
+    def _handle_route_write(self, body):
+        """Body: {"name": str, "gpx": "<gpx xml text>", "confirm": bool}. Without `confirm`,
+        runs the exact same rehearsal `write_nav.py route FILE` (no --write) already does -
+        real validation, nothing emitted - so a client can sanity-check before committing to
+        an actual write."""
+        gpx_text = body.get("gpx")
+        if not gpx_text:
+            self._send_json(400, {"error": "missing \"gpx\" (GPX file text)"})
+            return
+        confirm = bool(body.get("confirm", False))
+
+        with tempfile.NamedTemporaryFile("w", suffix=".gpx", delete=False) as f:
+            f.write(gpx_text)
+            gpx_path = f.name
+        try:
+            args = ["route", gpx_path]
+            if confirm:
+                args.append("--write")
+            code, out, err = run_tool("write_nav.py", args)
+        finally:
+            Path(gpx_path).unlink(missing_ok=True)
+
+        self._send_json(200 if code == 0 else 502, {
+            "ok": code == 0, "wrote": confirm and code == 0,
+            "raw_output": out, "stderr": err})
+
+    def _parse_last_json_line(self, out):
+        """Shared by every tool invocation that prints human-readable progress lines (real
+        commands, real byte counts) *and* a machine-readable summary - sgee.py --status
+        --json and write_nav.py nav --json both end with exactly one JSON line after their
+        own diagnostic output, not at a fixed position, so lines are tried in order and the
+        last successfully-parsed one wins rather than assuming line count/position."""
+        parsed = None
+        for line in out.strip().splitlines():
+            try:
+                parsed = json.loads(line)
+            except ValueError:
+                continue
+        return parsed
+
+    def _handle_agps_status(self):
+        """GET /api/agps/status - real, read-only 0x0b15 query, no network fetch and
+        nothing written. What HomeViewModel shows before any Update tap, and what
+        /api/agps/update's offline fallback also reports."""
+        code, out, err = run_tool("sgee.py", ["--status", "--json"])
+        status = self._parse_last_json_line(out)
+        if status is None:
+            self._send_json(502, {
+                "ok": False, "error": "couldn't read orbit status from the watch",
+                "raw_output": out, "stderr": err})
+            return
+        self._send_json(200, {"ok": True, **status})
+
+    def _handle_agps_update(self, body):
+        """Body: {"confirm": bool}. Real request 2026-08-07 ("it is not validity, it is
+        update - if it's less than one day, say No update needed, otherwise download if
+        online, otherwise just read the watch's own date"):
+
+        1. Always reads the watch's own current orbit date first (0x0b15, real but
+           read-only, same call as /api/agps/status) - this needs no network at all.
+        2. If that's under a day old, skips the network fetch and the write entirely -
+           "no update needed" is a real state this reports, not just a UI label.
+        3. Otherwise tries the live download; if that fails (most likely: no internet),
+           falls back to reporting the watch's already-known current date rather than
+           erroring outright - genuinely nothing more can be done without a network, and
+           that is not the same situation as a bug.
+        4. If the download succeeds, runs sgee.py against it - with --write only if
+           confirmed, same rehearsal-first pattern as routes.
+        """
+        confirm = bool(body.get("confirm", False))
+
+        code, out, err = run_tool("sgee.py", ["--status", "--json"])
+        watch_status = self._parse_last_json_line(out)
+        if watch_status is None:
+            self._send_json(502, {
+                "ok": False, "error": "couldn't read the watch's current orbit status",
+                "raw_output": out, "stderr": err})
+            return
+
+        if watch_status.get("valid"):
+            watch_dt = datetime.strptime(
+                f"{watch_status['date']} {watch_status['time']}", "%Y-%m-%d %H:%M:%S"
+            ).replace(tzinfo=timezone.utc)
+            age = datetime.now(timezone.utc) - watch_dt
+            if age.total_seconds() < 86400:
+                self._send_json(200, {
+                    "ok": True, "skipped": True, "reason": "No update needed",
+                    "watch_date": watch_status["date"]})
+                return
+
+        try:
+            with urllib.request.urlopen(GPS_ORBIT_URL, timeout=30) as resp:
+                data = resp.read()
+        except urllib.error.URLError as e:
+            # Offline (or the server's unreachable) - not this backend's error, just
+            # nothing more it can do; report what's already known from the watch itself.
+            self._send_json(200, {
+                "ok": True, "wrote": False, "offline": True,
+                "watch_date": watch_status.get("date"),
+                "watch_valid": watch_status.get("valid", False),
+                "error": f"couldn't reach the orbital data server: {e}"})
+            return
+
+        with tempfile.NamedTemporaryFile("wb", suffix=".bin", delete=False) as f:
+            f.write(data)
+            bin_path = f.name
+        try:
+            args = [bin_path]
+            if confirm:
+                args.append("--write")
+            code, out, err = run_tool("sgee.py", args)
+        finally:
+            Path(bin_path).unlink(missing_ok=True)
+
+        self._send_json(200 if code == 0 else 502, {
+            "ok": code == 0, "wrote": confirm and code == 0,
+            "fetched_bytes": len(data), "raw_output": out, "stderr": err})
+
+    def _handle_backups_list(self):
+        """Every backup made so far - just a directory listing, real prefixes `nav --save`/
+        `restore` already understand, nothing invented here."""
+        BACKUP_DIR.mkdir(exist_ok=True)
+        backups = []
+        for routes_file in sorted(BACKUP_DIR.glob("*-routes.bin"), reverse=True):
+            prefix = str(routes_file)[:-len("-routes.bin")]
+            waypoints_file = Path(f"{prefix}-waypoints.bin")
+            if not waypoints_file.exists():
+                continue  # an incomplete save - both files always get written together
+            backups.append({
+                "prefix": prefix,
+                "label": Path(prefix).name,
+                "createdAt": routes_file.stat().st_mtime,
+            })
+        self._send_json(200, {"ok": True, "backups": backups})
+
+    def _handle_device(self):
+        """Model/serial/firmware/hardware/battery - tools/device_info.py, added 2026-08-07.
+        Real commands write_nav.py already sends (0x0000) or already names from captures but
+        never sent (0x0306) - see that file's own docstring for exactly where the reply
+        layout came from (openambit's real implementation) and how it was cross-checked
+        (hw_version matched HANDOFF.md's independently-documented value exactly once a real
+        parsing bug was fixed). Confirmed working against real hardware in this same
+        session, unlike most of this backend."""
+        code, out, err = run_tool("device_info.py", ["--json"])
+        if code != 0:
+            self._send_json(502, {"ok": False, "raw_output": out, "stderr": err})
+            return
+        last_line = out.strip().splitlines()[-1] if out.strip() else ""
+        try:
+            info = json.loads(last_line)
+        except json.JSONDecodeError:
+            self._send_json(502, {"ok": False, "error": "device_info.py --json produced "
+                                   "no parseable JSON", "raw_output": out})
+            return
+        self._send_json(200, {"ok": True, **info})
+
+    def _handle_firmware_check(self):
+        """Latest firmware available for the connected watch + a real download URL -
+        tools/firmware_check.py, added 2026-08-07 (see V3_CHANGELOG.md). Read-only: this
+        only asks Suunto's own device-info service what's available, nothing is downloaded
+        or written to the watch here."""
+        code, out, err = run_tool("firmware_check.py", ["--json"])
+        if code != 0:
+            self._send_json(502, {"ok": False, "raw_output": out, "stderr": err})
+            return
+        last_line = out.strip().splitlines()[-1] if out.strip() else ""
+        try:
+            info = json.loads(last_line)
+        except json.JSONDecodeError:
+            self._send_json(502, {"ok": False, "error": "firmware_check.py --json produced "
+                                   "no parseable JSON", "raw_output": out})
+            return
+        self._send_json(200, info)
+
+    def _handle_firmware_download(self):
+        """Saves the current firmware file locally - for backup only. It cannot be used to
+        flash the watch: nobody has reverse-engineered how a firmware install actually
+        happens over this protocol, and separately the file itself isn't even a real zip
+        (see firmware_check.py's own note) - just a copy kept in case Suunto's server ever
+        stops serving old versions."""
+        FIRMWARE_DIR.mkdir(parents=True, exist_ok=True)
+        code, out, err = run_tool("firmware_check.py", ["--json"])
+        if code != 0:
+            self._send_json(502, {"ok": False, "raw_output": out, "stderr": err})
+            return
+        last_line = out.strip().splitlines()[-1] if out.strip() else ""
+        try:
+            info = json.loads(last_line)
+        except json.JSONDecodeError:
+            self._send_json(502, {"ok": False, "error": "firmware_check.py --json produced "
+                                   "no parseable JSON", "raw_output": out})
+            return
+
+        version = info.get("latest_firmware_version") or "unknown"
+        hw = info.get("hw_version") or "unknown"
+        dest = FIRMWARE_DIR / f"{info.get('model', 'watch')}-fw_{version}-{hw}.bin"
+        code, out, err = run_tool("firmware_check.py", ["--json", "--download", str(dest)])
+        ok = code == 0 and dest.exists()
+        self._send_json(200 if ok else 502, {
+            "ok": ok, "path": str(dest) if ok else None,
+            "size_bytes": dest.stat().st_size if ok else None,
+            "raw_output": out, "stderr": err, **info})
+
+    def _handle_backup_create(self):
+        """Read-only against the watch (`nav` never writes), safe to call any time - the
+        only actual disk write is the two .bin files themselves, not the watch."""
+        BACKUP_DIR.mkdir(exist_ok=True)
+        label = time.strftime("%Y%m%d-%H%M%S")
+        prefix = str(BACKUP_DIR / label)
+        code, out, err = run_tool("write_nav.py", ["nav", "--save", prefix])
+        ok = code == 0 and Path(f"{prefix}-routes.bin").exists()
+        self._send_json(200 if ok else 502, {
+            "ok": ok, "prefix": prefix, "label": label, "raw_output": out, "stderr": err})
+
+    def _handle_restore(self, body):
+        """Body: {"prefix": str, "confirm": bool}. Real hardware write when confirmed - same
+        rehearsal-first pattern as everything else here, and the exact mechanism
+        HANDOFF.md documents as "the backup that milestone 4 asked for and never had"."""
+        prefix = body.get("prefix")
+        if not prefix:
+            self._send_json(400, {"error": "missing \"prefix\""})
+            return
+        if not (Path(f"{prefix}-routes.bin").exists()
+                and Path(f"{prefix}-waypoints.bin").exists()):
+            self._send_json(400, {"error": f"no backup found at prefix {prefix!r}"})
+            return
+
+        confirm = bool(body.get("confirm", False))
+        args = ["restore", prefix]
+        if confirm:
+            args.append("--write")
+        code, out, err = run_tool("write_nav.py", args)
+        self._send_json(200 if code == 0 else 502, {
+            "ok": code == 0, "wrote": confirm and code == 0, "raw_output": out, "stderr": err})
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--host", default="127.0.0.1")
+    ap.add_argument("--port", type=int, default=8766)
+    args = ap.parse_args()
+
+    server = ThreadingHTTPServer((args.host, args.port), Handler)
+    print(f"AmbitApp backend bridge running at http://{args.host}:{args.port}/ "
+          f"(Ctrl+C to stop)")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

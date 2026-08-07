@@ -1,0 +1,78 @@
+#include <QFontDatabase>
+#include <QGuiApplication>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QNetworkRequest>
+#include <QQmlApplicationEngine>
+#include <QQmlNetworkAccessManagerFactory>
+
+namespace {
+
+// Real bug found 2026-08-07: MapView.qml's plain Image elements (the XYZ tile renderer, see
+// its own header comment) go through QQmlEngine's default QNetworkAccessManager, which sends
+// no User-Agent at all. OpenStreetMap's tile usage policy
+// (operations.osmfoundation.org/policies/tiles/) requires a real, identifying one on every
+// request to tile.openstreetmap.org - without it, the app's own tile requests were getting
+// classified as bulk/anonymous traffic and started coming back as OSM's own "Access blocked"
+// 418 image instead of map tiles. This is the one place in the app that talks to a raw tile
+// server, so the fix lives here (applies to every QML network request) rather than in
+// MapView.qml or MapService.qml.
+class TileNetworkAccessManager : public QNetworkAccessManager
+{
+public:
+    using QNetworkAccessManager::QNetworkAccessManager;
+
+protected:
+    QNetworkReply *createRequest(Operation op, const QNetworkRequest &originalRequest,
+                                  QIODevice *outgoingData = nullptr) override
+    {
+        QNetworkRequest request(originalRequest);
+        request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("AmbitApp/2.0"));
+        return QNetworkAccessManager::createRequest(op, request, outgoingData);
+    }
+};
+
+class TileNetworkAccessManagerFactory : public QQmlNetworkAccessManagerFactory
+{
+public:
+    QNetworkAccessManager *create(QObject *parent) override
+    {
+        return new TileNetworkAccessManager(parent);
+    }
+};
+
+}  // namespace
+
+// Bootstraps the QML application - deliberately thin. Per AMBITAPP_SPEC.md's architecture
+// diagram (QML -> ViewModels -> Services -> Current Backend -> libambit), no watch-protocol
+// logic belongs here or anywhere in C++ yet: the "Current Backend" for now is the existing,
+// hardware-proven Python tooling (tools/*.py), reached over HTTP by C++ Services classes as
+// those get built (see ambitapp-v2/backend/ once that step lands). This file only ever
+// starts the UI.
+int main(int argc, char *argv[])
+{
+    QGuiApplication app(argc, argv);
+    app.setOrganizationName(QStringLiteral("AmbitApp"));
+    app.setApplicationName(QStringLiteral("AmbitApp"));
+
+    // Registered once, here, rather than via a QML FontLoader per Icon instance - qml/Icons.qml
+    // just references the family name. See assets/fonts/NOTICE.md for what this font actually
+    // is (a subsetted Material Symbols Rounded) and why it's this small.
+    QFontDatabase::addApplicationFont(
+        QStringLiteral(":/qt/qml/AmbitApp/assets/fonts/MaterialSymbolsRounded.ttf"));
+
+    // Must be set before the engine is used for anything (it lazily creates its default
+    // QNetworkAccessManager on first network request) - and must outlive `engine`, which this
+    // declaration order guarantees (locals are destroyed in reverse declaration order).
+    TileNetworkAccessManagerFactory tileNetworkFactory;
+
+    QQmlApplicationEngine engine;
+    engine.setNetworkAccessManagerFactory(&tileNetworkFactory);
+    QObject::connect(
+        &engine, &QQmlApplicationEngine::objectCreationFailed,
+        &app, [] { QCoreApplication::exit(-1); },
+        Qt::QueuedConnection);
+    engine.loadFromModule("AmbitApp", "Main");
+
+    return app.exec();
+}
