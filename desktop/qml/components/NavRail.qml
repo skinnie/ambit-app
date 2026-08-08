@@ -36,6 +36,10 @@ Rectangle {
         }
         NavItem {
             width: parent.width
+            // Kailash excluded, real 2026-08-09 - it's a GPS travel/adventure watch with no
+            // route-following feature at all (KAILASH-SCOPING-NOTE.md's own "What this
+            // project is (and isn't)" section), not a gap in this page.
+            visible: !HomeViewModel.isKailash
             glyph: Icons.routes
             label: qsTr("Routes")
             selected: root.currentPage === "routes"
@@ -43,6 +47,8 @@ Rectangle {
         }
         NavItem {
             width: parent.width
+            // Kailash excluded, real 2026-08-09, same reasoning as Routes above.
+            visible: !HomeViewModel.isKailash
             glyph: Icons.pois
             label: qsTr("POIs")
             selected: root.currentPage === "pois"
@@ -57,10 +63,13 @@ Rectangle {
         }
         // Real, 2026-08-08 ("a new menu, for suunto, called Intervals") - Suunto-only, same
         // as the App-Zone compiler it launches (tools/workout_gui.py) being an Ambit3
-        // mechanism with no Garmin equivalent.
+        // mechanism with no Garmin equivalent. Kailash excluded too, real 2026-08-09
+        // ("intervals menu should only appear for ambit or nothing connect") - App-Zone
+        // workouts are a CustomModes/Suunto-Apps mechanism, same one Kailash's own
+        // Sport Modes page exclusion is based on (no CustomModes region on that watch).
         NavItem {
             width: parent.width
-            visible: !HomeViewModel.isGarmin
+            visible: !HomeViewModel.isGarmin && !HomeViewModel.isKailash
             useIntervalsIcon: true
             label: qsTr("Intervals")
             selected: root.currentPage === "intervals"

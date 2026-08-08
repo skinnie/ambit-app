@@ -81,16 +81,30 @@ Flickable {
                         TextField {
                             id: nameField
                             width: 200
-                            text: modeCard.modelData.name
                             enabled: !modeCard.busy
-                            // Reset to the real current name whenever the model refreshes
-                            // (e.g. after a rename elsewhere), unless the user is actively
-                            // typing in this exact field right now.
-                            Connections {
-                                target: CustomModesService
-                                function onModesChanged() {
-                                    if (!nameField.activeFocus) nameField.text = modeCard.modelData.name
-                                }
+                            // Real bug, found 2026-08-09 from a live screenshot ("strange
+                            // characters" in a mode's name field, even though the real
+                            // watch data was confirmed clean by reading it directly): a
+                            // plain `text: modeCard.modelData.name` binding plus an
+                            // imperative `nameField.text = ...` inside a Connections
+                            // handler is a real QML footgun - the FIRST imperative
+                            // assignment permanently severs the declarative binding (QML
+                            // property bindings are one-shot-broken by direct assignment,
+                            // not re-established), so `text` becomes a dead, non-reactive
+                            // value from then on. If that assignment happened to run during
+                            // a moment the Repeater's model was mid-refresh (modelData
+                            // transiently stale/undefined), whatever it grabbed got frozen
+                            // in forever, with no further refresh ever able to fix it - the
+                            // real mechanism behind the garbled name. Fixed with a proper
+                            // `Binding` element instead, which re-evaluates/re-applies
+                            // correctly on every change rather than dying after one direct
+                            // assignment - same "don't type in this exact field right now"
+                            // guard, correctly reactive this time.
+                            Binding {
+                                target: nameField
+                                property: "text"
+                                value: modeCard.modelData.name
+                                when: !nameField.activeFocus
                             }
                         }
                         Button {
