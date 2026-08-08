@@ -1385,3 +1385,81 @@ display row, a rule, or a whole exercise mode would change tag lengths and there
 downstream offset in the region - a materially different, harder problem than a same-width
 name swap) or the separately-blocked "Suunto Apps install" feature (Finding 19) - both real,
 open, and not what this test attempted.
+
+## CustomModes real hardware edits, continued: Autolap, HR limits, pod enable, and a real
+## display-field bug found and fixed live
+
+Building directly on the rename milestone above, same session, same real Ambit3 Peak, same
+proven `tools/custom_modes_field_write_test.py` transport - real, confirmed writes to
+Walk's own settings:
+
+- `Autolap`: `0 -> 10` (10 m, chosen deliberately low so a real short walk outside would
+  trigger it) - **confirmed working live by André** ("autolap works"). Later set back to
+  `0` (disabled) once the HR-limit testing became the focus.
+- `HrLow`/`HrHigh`/`HrLimitsUse`: `0/0/0 -> 100/110/1`, then narrowed twice more
+  (`70/95`, then `70/75`) chasing a real audible confirmation - see below for why no beep
+  was heard despite the mechanism genuinely working.
+- `UseHw`: `0x0006 -> 0x0007` - enabled the HR belt bit (`0x0001`, resolved bit-for-bit
+  earlier in this doc's own "Resolves hrbelt_and_pods" section) so Walk actually searches
+  for/uses a paired HR belt at all, since a HR-limit alert has nothing to compare against
+  otherwise.
+
+**A real bug found and fixed live, via the same "always ask, cross-reference against a
+known-working real example, never guess" discipline as the earlier rename work.** André
+first asked for Walk's first display's middle row to show live heart rate. The initial
+attempt changed the `Index` half of that `EXERCISE_MODES_DISP_FIELD_SETTING` leaf
+(`FT_TIME -> FT_HEART_RATE_CURR`) - write confirmed byte-exact by the watch's own re-read,
+but **nothing changed on the real screen**. André's own real-world check settled it: he
+looked at every sport mode's own first couple of screens on the real watch and reported
+that Running genuinely shows heart rate in the middle row of its *second* screen, and
+Cycling/"Run a route" show a "heart rate zone app" (a real Suunto App, via the separate
+`EXERCISE_MODES_RULES` mechanism - not a plain field, and not what was being attempted
+here) in the middle of their first screen.
+
+Reading Running's own real Display 1 Field 1 directly gave the answer: `Index=1 (FT_TIME)`,
+`Type=21`. `21` decimal is `0x15` - the exact same numeric value as `FT_HEART_RATE_CURR`
+in `custom_modes.py`'s own `FIELD_TYPES` table. Not a coincidence: **`Type`, not `Index`,
+is the real content selector for at least this common "Index=FT_TIME" numeric-value-slot
+case** - `decode_disp_field()`'s own docstring had already flagged `Type`'s exact semantics
+as "not pinned down further," and this is the real answer. Confirmed a second, independent
+way before ever touching the watch again: reading Walk's own then-current (wrong) field
+showed `Type=11 (FT_VELOCITY)` - Speed - which is *exactly* what André had reported seeing
+("walk has speed in km/h in the center"), an exact match, not a guess. Fixed by reverting
+`Index` back to `FT_TIME` and setting `Type=21` instead
+(`tools/custom_modes_display_field_write_test.py` extended with a `--type` flag for
+exactly this). **Confirmed live by André immediately after: "hr is there."**
+
+Real, useful structural clue from the same investigation, worth recording: on the actual
+watch, Walk visually cycles through only **one** real data screen, while Running has
+**three** - even though both store 8+ raw `EXERCISE_MODES_DISPLAY` tags in CustomModes.
+The extra stored displays per mode use non-`TEMPLATE_4` templates (compass-navigate,
+navigation, graph, map-draw, and an unidentified `0x0127`) that are very likely
+conditional/special-purpose overlays (shown only while navigating, or as a map view) rather
+than part of the normal swipeable cycle - consistent with the real user manual's own "1 to
+8 different sport mode displays" wording (a real per-mode maximum, not a promise that all
+stored slots are always visible) and with Running's real screen count (3) matching its own
+3 `TEMPLATE_4` entries (Display 0/1/2) exactly.
+
+**The "why no beep" mystery, resolved with a real forum source, not guessed.** After
+confirming the HR-limit mechanism was genuinely live (a deliberately inverted range,
+`HrHigh=70 < HrLow=72` - guaranteed to read as "outside limits" for any real heart rate -
+produced a real on-screen alert symbol immediately), no audible tone was heard. Checked
+`Tones` (the real, global `sml.DeviceSettings.Audio.Mode` field, not a per-mode setting)
+first and ruled it out - already `"All on"`, not muted. The real answer, found on an old
+user forum for the Ambit3 Peak: **the on-screen alert for going *above* the high HR limit
+is instantaneous, but the *audible* alert for the same event is genuinely, significantly
+delayed** (the forum poster's own recollection: "not sure how many seconds, a minute or two
+might be correct") - **but the return-under-the-limit case is different: coming back under
+the high limit gives an instant audible beep**, no delay. This matches what was actually
+observed (instant visual, no beep heard within the short test window) and isn't a bug in
+this project's own write at all - the underlying watch firmware genuinely behaves this way.
+
+**Summary of what's now real and confirmed for CustomModes, not just theorized**: renaming
+a mode (both its own name and its multisport-slot name), changing any of its flat
+`SETTING_FIELDS` values (`Autolap`, `HrHigh`/`HrLow`/`HrLimitsUse`, `UseHw`, and by the same
+mechanism every other field in that same list), and changing which data a display's own
+row shows (via `Type`, now correctly understood) are all real, hardware-write-confirmed,
+live-observed-on-the-actual-watch-screen capabilities - a substantial, real expansion past
+the original rename-only milestone, all from a single focused session building on the exact
+same proven transport and the same "verify against a real known-working example before
+trusting an edit" discipline throughout.
