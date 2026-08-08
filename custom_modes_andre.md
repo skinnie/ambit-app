@@ -1187,3 +1187,63 @@ suuntolink_roaming/app-4.1.15/resources/app/ambit/sport_mode.js` and `.../ambit/
 schema descriptor, `7r-trackLog.db` SQLite database, and `assets/manuals/
 Suunto_Kailash_UserGuide_EN.pdf`), and a live, working `sml.DeviceHistory` query against
 André's real connected Kailash, 2026-08-08.
+
+## Kailash settings write path (cable vs BLE) - real, live-tested, 2026-08-08
+
+**Real request**: "Regarding the 7R, the settings for the watch are changed via 7R ios app...
+Maybe worth checking if we can also change it via cable, like we plan to do on the ambit 3."
+Tested against the Ambit3 first (this project's own reference watch, and the one with a
+decompiled reference implementation to check against - see below), since the wire mechanism
+(`0x1100`/`0x1101`) is shared across the whole product family, not device-specific.
+
+**Confirmed real, live against André's own connected Ambit3 Peak**: the `0x1100` read
+(`DeviceSettings`, already used read-only by `write_nav.py settings`) and the previously
+untested `0x1101` write both work at the protocol level - sent the exact same 438-byte
+settings blob straight back unchanged (a pure round-trip sanity check), got a clean empty-body
+ACK (no error, no timeout), and a re-read confirmed the settings byte-identical. Then a real
+value change: flipped `Time.Format` (entry `0x09`) from `0` to `1` in the raw blob, wrote it,
+and a re-read confirmed the watch reported back `1` - looked like a genuine, working write.
+
+**Real, important negative finding**: it wasn't. André checked the watch's own screen and it
+still showed 24-hour time (`13:11`), not the 12-hour format the flipped value should produce -
+the protocol accepted and echoed the write, but nothing about the watch's actual live
+behavior changed. Reverted the byte back to `0` immediately (confirmed via re-read); the watch
+remained fully healthy and responsive throughout (separately, an unrelated "Connecting to
+Moveslink" screen appeared on the watch around the same time and cleared with a normal
+unplug/replug - investigated and very likely just the watch's ordinary "USB attached, no host
+app talking to it" state, not something the write caused, though this wasn't proven either
+way and is flagged honestly as unresolved rather than dismissed).
+
+**This means the earlier "brightness" round-trip test (same session, done before this one) is
+also unconfirmed as a *real* write** - its own success was judged the same way (protocol
+read-back matching), and the value was reverted before ever being checked against the watch's
+actual screen. Recorded here as a real gap in that test, not a second confirmed case.
+
+**Checked the decompiled reference implementation for a missing step, found none obvious**:
+`assets/WIndows apps/suuntoapp_local/decompiled/SDSApplicationServer.exe.c`'s own
+`EmuDevice::saveSettings` (real log line: `"EmuDevice: use SML settings saving"`) reads the
+current tree, merges changes, encodes to JSON, and calls `FUN_00709070` (`writeSettingsToDevice`,
+confirmed by its own log lines - `"EmuDevice::writeSettingsToDevice: Failed encode new Json
+settings"` / `"...Failed to save settings"` - and by its vtable being `Task::NSP::
+NspTaskAppWriteSettings`, the same class name already known to map to `0x1101`) - no separate
+"apply"/"commit"/reboot call visible chained after it in this same function. If that's really
+the complete official write sequence, a bare `0x1101` write matching what SuuntoLink itself
+does should be sufficient - which makes the real display staying unchanged a genuine, open
+mystery, not obviously a "missing step" problem. Real, uninvestigated alternative
+explanations, none confirmed: `Time.Format` (entry `0x09`) may not be the field the watch's own
+UI actually reads from for its live clock rendering (it could be metadata SuuntoLink itself
+uses without the watch's firmware treating it as authoritative); the watch's running firmware
+might cache display-relevant settings in RAM at boot and only re-read flash then, needing a
+reboot to pick up a write that already reached flash correctly; or the merge/encode step this
+test skipped (directly patching one byte in the *read* reply rather than round-tripping through
+SuuntoLink's own JSON encode/decode) drops something the real client always sets alongside a
+value change.
+
+**Bottom line for the original question**: settings ARE readable over USB cable for both
+watches (already true before this investigation). Settings writes are ACCEPTED by both the
+Ambit3 (and, by protocol similarity though not separately tested yet, presumably the
+Kailash) without error - but there is no confirmed case yet of a cable-issued 0x1101 write
+actually changing the watch's live, visible behavior. Real, unresolved - not yet answered
+whether it's BLE-only for changes that actually take effect, or whether cable writes do work
+and this session's own test setup missed something. No further live write tests were run
+after this finding pending direction on how to proceed.
