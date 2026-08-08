@@ -8,10 +8,15 @@ import HomeScreen from './src/screens/HomeScreen';
 import LogListScreen from './src/screens/LogListScreen';
 import MapScreen from './src/screens/MapScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
+import PoiScreen from './src/screens/PoiScreen';
+import RouteScreen from './src/screens/RouteScreen';
+import GarminRouteScreen from './src/screens/GarminRouteScreen';
+import GarminPoiScreen from './src/screens/GarminPoiScreen';
+import BackupScreen from './src/screens/BackupScreen';
+import type { GarminConnectResult } from './src/native/GarminModule';
 import { ActivityRecord } from './src/database/db';
 import { handleOAuthCallback as handleLiveloxCallback } from './src/services/ApiLivelox';
 import { handleOAuthCallback as handleStravaCallback } from './src/services/ApiStrava';
-import { checkForUpdate } from './src/services/UpdateService';
 import { t, dateLocale } from './src/i18n';
 
 // ─── Types de navigation ──────────────────────────────────────────────────────
@@ -21,6 +26,17 @@ export type RootStackParamList = {
   LogList: undefined;
   Map: { activity: ActivityRecord };
   Settings: undefined;
+  Poi: undefined;
+  Route: undefined;
+  // v2.3.2 beta: HomeScreen connects to the Garmin device itself (see its
+  // connecting-flow state machine) and hands the already-fetched info over
+  // here — neither screen has its own Connect step. Activities sync runs
+  // inline from Home (no screen — see GarminActivityService.ts), so there's
+  // no "Garmin" route anymore, just these two, mirroring the Ambit Route/Poi
+  // screens per André's feedback.
+  GarminRoute: { info: GarminConnectResult };
+  GarminPoi: { info: GarminConnectResult };
+  Backup: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -56,19 +72,6 @@ export default function App() {
     const sub = Linking.addEventListener('url', ({ url }) => processOAuthUrl(url));
     // App lancée via le deep link (app froide)
     Linking.getInitialURL().then(processOAuthUrl);
-    // Vérification de mise à jour
-    checkForUpdate().then(({ available, downloadUrl }) => {
-      if (available) {
-        Alert.alert(
-          t.updateTitle,
-          t.updateMsg,
-          [
-            { text: t.updateLater, style: 'cancel' },
-            { text: t.updateDownload, onPress: () => Linking.openURL(downloadUrl) },
-          ]
-        );
-      }
-    });
     return () => sub.remove();
   }, []);
 
@@ -108,6 +111,31 @@ export default function App() {
             name="Settings"
             component={SettingsScreen}
             options={{ title: t.settingsTitle }}
+          />
+          <Stack.Screen
+            name="Poi"
+            component={PoiScreen}
+            options={{ title: t.poiScreenTitle }}
+          />
+          <Stack.Screen
+            name="Route"
+            component={RouteScreen}
+            options={{ title: t.routeScreenTitle }}
+          />
+          <Stack.Screen
+            name="GarminRoute"
+            component={GarminRouteScreen}
+            options={{ title: t.garminRouteScreenTitle }}
+          />
+          <Stack.Screen
+            name="GarminPoi"
+            component={GarminPoiScreen}
+            options={{ title: t.garminPoiScreenTitle }}
+          />
+          <Stack.Screen
+            name="Backup"
+            component={BackupScreen}
+            options={{ title: t.backupScreenTitle }}
           />
         </Stack.Navigator>
       </NavigationContainer>

@@ -1,6 +1,6 @@
 {
-  "name": "OpenSportsSync",
-  "version": "0.0.1",
+  "name": "AmbitApp",
+  "version": "2.3.4-beta",
   "private": true,
   "scripts": {
     "postinstall": "patch-package",

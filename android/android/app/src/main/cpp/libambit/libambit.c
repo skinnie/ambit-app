@@ -46,7 +46,9 @@
 /*
  * Static functions
  */
-static int device_info_get(ambit_object_t *object, ambit_device_info_t *info);
+// Non-static: also called from libambit_android.c (Android fd-based bridge) to
+// fetch the real firmware version before driver->init() picks a fw generation.
+// See libambit_int.h for the shared declaration.
 static ambit_device_info_t * ambit_device_info_new(const struct hid_device_info *dev);
 
 /*
@@ -176,6 +178,9 @@ void libambit_close(ambit_object_t *object)
         }
         if (object->handle != NULL) {
             hid_close(object->handle);
+        }
+        if (object->transport == AMBIT_TRANSPORT_BLE) {
+            libambit_ble_transport_close(object); /* frees object->transport_ctx, protocol_ble.c */
         }
         if(object->driver_data != NULL) {
             free(object->driver_data);
@@ -573,7 +578,7 @@ bool libambit_malloc_app_rule(uint16_t count, ambit_app_rules_t *ambit_app_rules
     return ambit_app_rule != NULL;
 }
 
-static int device_info_get(ambit_object_t *object, ambit_device_info_t *info)
+int device_info_get(ambit_object_t *object, ambit_device_info_t *info)
 {
     uint8_t *komposti_version = NULL;
     uint8_t *reply_data = NULL;
@@ -590,7 +595,21 @@ static int device_info_get(ambit_object_t *object, ambit_device_info_t *info)
     
     LOG_INFO("Reading device info");
 
-    if (libambit_protocol_command(object, ambit_command_device_info, komposti_version, sizeof(uint8_t)*4, &reply_data, &replylen, 1) == 0) {
+    /* USB's on-wire format needs legacy_format=1 for this specific command (long-
+     * standing, unexplained but working). BLE has no confirmed equivalent of that
+     * flag at all (see protocol_ble.c) — use 0 there, the only variant implemented. */
+    uint8_t legacy_format = (object->transport == AMBIT_TRANSPORT_BLE) ? 0 : 1;
+
+    if (libambit_protocol_command(object, ambit_command_device_info, komposti_version, sizeof(uint8_t)*4, &reply_data, &replylen, legacy_format) == 0) {
+        /* model(16) + serial(16) + fw_version(4) + hw_version(4) = 40 bytes minimum.
+         * Not previously checked — harmless over USB where the reply is always this
+         * shape, but BLE's reply length isn't guaranteed the same way, and reading
+         * past a short reply_data allocation here would be a real out-of-bounds read. */
+        if (replylen < (size_t)(LIBAMBIT_MODEL_LENGTH + LIBAMBIT_SERIAL_LENGTH + 8)) {
+            LOG_WARNING("device_info reply too short (%zu bytes), refusing to parse it", replylen);
+            libambit_protocol_free(reply_data);
+            return -1;
+        }
         if (info != NULL) {
             const char *p = (char *)reply_data;
 

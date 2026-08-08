@@ -1,42 +1,35 @@
 import RNFS from 'react-native-fs';
-import { updateSgee } from '../native/AmbitUsbModule';
+import { connect, disconnect, updateSgee } from '../native/AmbitUsbModule';
 
-// URL du fichier SGEE Suunto (éphémérides GPS, mis à jour hebdomadairement)
-// Source : API publique Suunto, même endpoint qu'Openambit
-const SGEE_URL = 'https://uiservices.suunto.com/api/sgee/v1/fetch';
-const SGEE_LOCAL_PATH = `${RNFS.DocumentDirectoryPath}/sgee.bin`;
-
-export interface SgeeStatus {
-  localExists: boolean;
-  localDate: Date | null;
-  isExpired: boolean;   // > 7 jours
-}
-
-/** Vérifie l'état du fichier SGEE local. */
-export async function getSgeeStatus(): Promise<SgeeStatus> {
-  const exists = await RNFS.exists(SGEE_LOCAL_PATH);
-  if (!exists) return { localExists: false, localDate: null, isExpired: true };
-
-  const stat = await RNFS.stat(SGEE_LOCAL_PATH);
-  const localDate = new Date(stat.mtime);
-  const ageMs = Date.now() - localDate.getTime();
-  const isExpired = ageMs > 7 * 24 * 60 * 60 * 1000; // 7 jours
-
-  return { localExists: true, localDate, isExpired };
-}
+// GPS orbital data (AGPS/SGEE) — live, unauthenticated Suunto endpoint.
+// Verified working 2026-08-05 against real hardware: see ambit-app/sgee_andre.md
+// and ambit-app/tools/README.md. NOT the same as the account-tied cloudapi.suunto.com
+// host — this is devices.suunto-operations.com, found in SuuntoLink's own
+// production.json, and it needs no AppKey/serial/account for this specific path.
+// GLONASS is only relevant on Traverse/Traverse Alpha/Ambit3 Vertical, so only
+// the GPS orbit file is fetched here.
+const SGEE_URL = 'https://devices.suunto-operations.com/devices/gpsorbit/binary';
+const SGEE_LOCAL_PATH = `${RNFS.DocumentDirectoryPath}/gpsorbit.bin`;
 
 /**
- * Télécharge le fichier SGEE depuis les serveurs Suunto et l'enregistre localement.
- * @param onProgress Callback optionnel (bytes reçus / total)
+ * Downloads the current GPS orbit file and writes it to the watch.
+ * The watch must already be connected (connect() called before this).
+ *
+ * No local staleness/caching logic here on purpose: the download is small
+ * (tens of KB) and fast, and the native write path (device_driver_ambit3.c's
+ * gps_orbit_write) already compares the new data's embedded generation date
+ * against what the watch currently holds and skips the actual flash write if
+ * nothing changed — so a manual "update" tap can just always fetch fresh and
+ * let that existing check decide whether anything really needs writing.
  */
-export async function downloadSgee(
+export async function updateWatchSgee(
   onProgress?: (received: number, total: number) => void
 ): Promise<void> {
   const download = RNFS.downloadFile({
     fromUrl: SGEE_URL,
     toFile: SGEE_LOCAL_PATH,
     headers: {
-      'User-Agent': 'OpenSportsSync/1.0',
+      'User-Agent': 'AmbitApp/1.0',
       'Accept': 'application/octet-stream',
     },
     progress: onProgress
@@ -46,25 +39,35 @@ export async function downloadSgee(
 
   const result = await download.promise;
   if (result.statusCode !== 200) {
-    throw new Error(`Téléchargement SGEE échoué : HTTP ${result.statusCode}`);
-  }
-}
-
-/**
- * Télécharge le SGEE si nécessaire, puis l'envoie à la montre.
- * La montre doit être déjà connectée (connect() appelé avant).
- * @param forceDownload Forcer le re-téléchargement même si le fichier est récent
- * @param onProgress    Callback de progression du téléchargement
- */
-export async function updateWatchSgee(
-  forceDownload = false,
-  onProgress?: (received: number, total: number) => void
-): Promise<void> {
-  const status = await getSgeeStatus();
-
-  if (forceDownload || status.isExpired || !status.localExists) {
-    await downloadSgee(onProgress);
+    throw new Error(`SGEE download failed: HTTP ${result.statusCode}`);
   }
 
   await updateSgee(SGEE_LOCAL_PATH);
+}
+
+export interface OrbitalUpdateState {
+  phase: 'idle' | 'connecting' | 'downloading' | 'writing' | 'done' | 'error';
+  error?: string;
+}
+
+/** Full pipeline for the HomeScreen button: connect, download, write, disconnect. */
+export async function updateOrbitalData(onState: (s: OrbitalUpdateState) => void): Promise<void> {
+  onState({ phase: 'connecting' });
+  try {
+    await connect();
+  } catch (e: any) {
+    onState({ phase: 'error', error: e?.message ?? 'Connexion à la montre échouée' });
+    return;
+  }
+
+  onState({ phase: 'downloading' });
+  try {
+    await updateWatchSgee();
+    onState({ phase: 'writing' }); // le téléchargement et l'écriture native sont rapides, phase surtout indicative
+    onState({ phase: 'done' });
+  } catch (e: any) {
+    onState({ phase: 'error', error: e?.message ?? 'Échec de la mise à jour des données GPS' });
+  } finally {
+    await disconnect().catch(() => {});
+  }
 }

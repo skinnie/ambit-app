@@ -27,25 +27,25 @@ export interface GpxMetadata {
   activityType: string; // ex: "Orienteering", "Running", "Cycling"…
 }
 
-// ─── Suunto sport_type uint8 → nom lisible ────────────────────────────────────
-// Source : AmbitSync / openambit (MoveInfoActivity.java) + codes Suunto connus
+// ─── Suunto sport_type uint8 → readable name ──────────────────────────────────
+// Source: AmbitSync / openambit (MoveInfoActivity.java) + known Suunto codes
 const SPORT_TYPE_MAP: Record<number, string> = {
-  0x03: 'Course à pied',
-  0x04: 'Cyclisme',
-  0x05: 'VTT',
-  0x07: 'Patinage',
-  0x0a: 'Randonnée',
-  0x0b: 'Marche',
-  0x13: 'Ski alpin',
-  0x14: 'Snowboard',
-  0x15: 'Ski de fond',
-  0x45: 'Patinage sur glace',
-  0x49: 'Alpinisme',
-  0x4a: 'Orientation',   // Ambit 3+
-  0x4b: 'Orientation',   // Ambit 1
-  0x4d: 'Ski de randonnée',
-  0x51: 'Trail',
-  0x52: 'Natation',
+  0x03: 'Running',
+  0x04: 'Cycling',
+  0x05: 'Mountain biking',
+  0x07: 'Skating',
+  0x0a: 'Hiking',
+  0x0b: 'Walking',
+  0x13: 'Alpine skiing',
+  0x14: 'Snowboarding',
+  0x15: 'Cross-country skiing',
+  0x45: 'Ice skating',
+  0x49: 'Mountaineering',
+  0x4a: 'Orienteering',   // Ambit 3+
+  0x4b: 'Orienteering',   // Ambit 1
+  0x4d: 'Ski touring',
+  0x51: 'Trail running',
+  0x52: 'Swimming',
 };
 
 // ─── Parser ───────────────────────────────────────────────────────────────────

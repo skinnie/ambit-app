@@ -12,6 +12,7 @@ export interface SyncState {
   total: number;
   newCount: number;   // logs effectivement écrits (nouveaux)
   error?: string;
+  deviceName?: string; // nom du modèle détecté, ex. "Suunto Ambit3 Peak" (connu après connect())
 }
 
 type SyncListener = (state: SyncState) => void;
@@ -35,15 +36,17 @@ export async function runSync(
 
   // ── 1. Connexion ────────────────────────────────────────────────────────────
   emit({ phase: 'connecting' });
+  let deviceName: string | undefined;
   try {
-    await provider.connect();
+    const info = await provider.connect();
+    deviceName = info.name;
   } catch (e: any) {
-    emit({ phase: 'error', error: e?.message ?? 'Connexion échouée' });
+    emit({ phase: 'error', error: e?.message ?? 'Connection failed' });
     return 0;
   }
 
   // ── 2. Récupération des logs ─────────────────────────────────────────────────
-  emit({ phase: 'fetching', current: 0, total: 0 });
+  emit({ phase: 'fetching', current: 0, total: 0, deviceName });
 
   // Charger les IDs déjà connus → passés au skip_callback natif pour éviter
   // de relire le payload complet des logs déjà synchronisés
@@ -54,7 +57,7 @@ export async function runSync(
   const unsubscribe = provider.onSyncProgress(event => {
     current = event.current;
     total = event.total;
-    onState({ phase: 'fetching', current, total, newCount: 0 });
+    onState({ phase: 'fetching', current, total, newCount: 0, deviceName });
   });
 
   let gpxLogs: string[];
@@ -62,14 +65,14 @@ export async function runSync(
     gpxLogs = await provider.getLogs(knownIds);
   } catch (e: any) {
     unsubscribe();
-    emit({ phase: 'error', error: e?.message ?? 'Lecture des logs échouée' });
+    emit({ phase: 'error', error: e?.message ?? 'Failed to read logs' });
     await provider.disconnect().catch(() => {});
     return 0;
   }
   unsubscribe();
 
   // ── 3. Écriture des nouveaux logs ────────────────────────────────────────────
-  emit({ phase: 'writing', current: 0, total: gpxLogs.length, newCount: 0 });
+  emit({ phase: 'writing', current: 0, total: gpxLogs.length, newCount: 0, deviceName });
   let newCount = 0;
 
   for (let i = 0; i < gpxLogs.length; i++) {
@@ -80,7 +83,7 @@ export async function runSync(
       ? meta.date.replace(/[^0-9T]/g, '').substring(0, 15) // "20240615T093000"
       : `log_${Date.now()}_${i}`;
 
-    onState({ phase: 'writing', current: i + 1, total: gpxLogs.length, newCount });
+    onState({ phase: 'writing', current: i + 1, total: gpxLogs.length, newCount, deviceName });
 
     if (await isActivitySynced(id)) continue;
 
@@ -102,6 +105,6 @@ export async function runSync(
 
   // ── 4. Déconnexion ───────────────────────────────────────────────────────────
   await provider.disconnect().catch(() => {});
-  emit({ phase: 'done', current: gpxLogs.length, total: gpxLogs.length, newCount });
+  emit({ phase: 'done', current: gpxLogs.length, total: gpxLogs.length, newCount, deviceName });
   return newCount;
 }

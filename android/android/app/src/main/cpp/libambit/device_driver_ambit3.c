@@ -29,10 +29,13 @@
 #include "sbem0102.h"
 #include "utils.h"
 #include "debug.h"
+#include "device_driver_ambit3_navigation.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
+#include <time.h>
 #include <math.h>
 
 /*
@@ -946,6 +949,455 @@ static int log_synced(ambit_object_t *object, ambit_log_entry_t *log_entry)
         LOG_WARNING("Failed to sync log");
         return -1;
     }
-    
+
     return 0;
+}
+
+/*
+ * ─── Route write (GPX-to-watch navigation) ────────────────────────────────
+ *
+ * Not part of upstream openambit: this is the transport layer for
+ * ambit3_navigation_plan() (device_driver_ambit3_navigation.c/.h, ported
+ * unmodified from a separate reverse-engineering project, verified byte for
+ * byte against real USBPcap captures and against real hardware writes).
+ * That function only builds the payloads; everything below reproduces the
+ * exact command sequence SuuntoLink itself uses, confirmed on hardware:
+ *
+ *   0x0b24 (read the POI list) -> waypoint region writes + tail hash ->
+ *   route region writes + tail hash -> 0x0b04 (commit) ->
+ *   0x0b25 (restore the POI list)
+ *
+ * A navigation write erases the whole POI store; the read-before/restore-
+ * after pair is what makes that invisible to the user. This is not
+ * optional. protocol.h's own enum mislabels 0x0b25 as "unknown4" and is
+ * missing 0x0b24 entirely -- both are defined locally below rather than
+ * trusted from there.
+ *
+ * IMPORTANT, and reflected below: routes written this way are not durable.
+ * SuuntoLink's own sync (and, per field testing, even the Suunto phone app
+ * merely coming into BLE range) wholesale-replaces whatever is in the Routes
+ * region on its own next sync, with no merge. POIs persist; routes don't.
+ * This is a "load right before you go" feature, not permanent storage --
+ * make sure any caller surfaces that to the user rather than implying the
+ * route is saved for good.
+ */
+
+#define AMBIT3_CMD_POI_READ   0x0b24
+#define AMBIT3_CMD_POI_WRITE  0x0b25
+#define AMBIT3_CMD_NAV_COMMIT 0x0b04 /* == ambit_command_nav_memory_delete in protocol.h; that name is wrong, the value isn't */
+
+#define AMBIT3_POI_ENTRY_ID   0x55
+
+/* [u32 0][u8 0x01][u8 0x01]["SBEM0102"] -- the fixed 14-byte prefix every
+ * SBEM0102-framed write (not just POIs) uses. Confirmed byte for byte
+ * against a real 0x0b25 capture; not derivable from the protocol.h enum. */
+static const uint8_t AMBIT3_SBEM_WRITE_PREFIX[14] = {
+    0x00, 0x00, 0x00, 0x00, 0x01, 0x01,
+    'S', 'B', 'E', 'M', '0', '1', '0', '2',
+};
+
+/* Builds the [u32 address][u32 0][64 ASCII hex chars] tail payload and sends
+ * it via 0x0b18. `hash_hex` must be a NUL-terminated 64-character uppercase
+ * hex string, as ambit3_navigation_plan() already produces. */
+static int ambit3_send_region_tail(ambit_object_t *object, uint32_t address, const char *hash_hex)
+{
+    uint8_t tail[4 + 4 + 64];
+    uint32_t addr_le = htole32(address);
+    memcpy(tail, &addr_le, 4);
+    memset(tail + 4, 0, 4); /* the second u32 is opaque, supplied-by-the-application in every real
+                                capture examined; zeroed here, same as this project's own reference
+                                tooling -- the watch has never rejected a write over this field */
+    memcpy(tail + 8, hash_hex, 64);
+
+    if (libambit_protocol_command(object, ambit_command_data_tail_len, tail, sizeof(tail), NULL, NULL, 0) != 0) {
+        LOG_WARNING("Failed to write region tail for address 0x%06x", address);
+        return -1;
+    }
+    return 0;
+}
+
+/* Sends every write in `plan` whose address falls in [base, base+size), via
+ * the existing generic pmem20 chunker, then that group's closing tail. */
+static int ambit3_send_region(ambit_object_t *object, const ambit3_nav_plan_t *plan,
+                               uint32_t base, uint32_t size, const char *hash_hex)
+{
+    for (size_t i = 0; i < plan->write_count; i++) {
+        const ambit3_nav_write_t *w = &plan->writes[i];
+        if (w->address < base || w->address >= base + size) continue;
+        if (libambit_pmem20_data_write(&object->driver_data->pmem20, w->address, w->data, w->length) != 0) {
+            LOG_WARNING("Failed to write region chunk at 0x%06x (%u bytes)", w->address, w->length);
+            return -1;
+        }
+    }
+    return ambit3_send_region_tail(object, base, hash_hex);
+}
+
+/*
+ * Reads the watch's POI list (0x0b24) and collects a pointer/length pair
+ * per entry (id AMBIT3_POI_ENTRY_ID) into caller-provided arrays. `bodies[i]`
+ * points inside `*poi_reply_out`, which the caller must free with
+ * libambit_protocol_free() once done reading them -- NOT before.
+ * Returns the entry count (0 for a genuinely empty POI store, a real,
+ * reachable state confirmed on hardware), or -1 if the read itself failed.
+ */
+static int ambit3_read_poi_entries(ambit_object_t *object,
+                                    const uint8_t **bodies, uint32_t *body_lens, size_t max_entries,
+                                    uint8_t **poi_reply_out, size_t *poi_reply_len_out)
+{
+    uint8_t zero4[4] = { 0, 0, 0, 0 };
+    *poi_reply_out = NULL;
+    *poi_reply_len_out = 0;
+
+    if (libambit_protocol_command(object, AMBIT3_CMD_POI_READ, zero4, sizeof(zero4), poi_reply_out, poi_reply_len_out, 0) != 0) {
+        return -1;
+    }
+
+    size_t entry_count = 0;
+    uint8_t *poi_reply = *poi_reply_out;
+    size_t poi_reply_len = *poi_reply_len_out;
+    if (poi_reply != NULL && poi_reply_len > 14 && memcmp(poi_reply + 6, "SBEM0102", 8) == 0) {
+        libambit_sbem0102_data_t poi_entries;
+        poi_entries.data = poi_reply + 14;
+        poi_entries.size = poi_reply_len - 14;
+        libambit_sbem0102_data_reset(&poi_entries);
+
+        while (libambit_sbem0102_data_next(&poi_entries) == 0 && entry_count < max_entries) {
+            if (libambit_sbem0102_data_id(&poi_entries) == AMBIT3_POI_ENTRY_ID) {
+                bodies[entry_count] = libambit_sbem0102_data_ptr(&poi_entries);
+                body_lens[entry_count] = libambit_sbem0102_data_len(&poi_entries);
+                entry_count++;
+            }
+        }
+    }
+    return (int)entry_count;
+}
+
+/*
+ * Builds the full 0x0b25 SBEM0102 write payload from a list of existing POI
+ * entry bodies, plus an optional new record placed first (poiimport's own
+ * behaviour: new POI first, the rest following in whatever order the
+ * caller already put `bodies` in -- reversed for a plain preserve, as-read
+ * for an add; see the two callers). Returns NULL (and *out_len = 0) if
+ * there is nothing to write at all. Caller frees the returned buffer.
+ */
+static uint8_t *ambit3_build_poi_write_payload(
+    const uint8_t *const *bodies, const uint32_t *body_lens, size_t entry_count,
+    const uint8_t *new_record, size_t new_record_len,
+    size_t *out_len)
+{
+    size_t total_body_len = new_record_len;
+    for (size_t i = 0; i < entry_count; i++) total_body_len += body_lens[i];
+    *out_len = 0;
+    if (total_body_len == 0) return NULL;
+
+    size_t header_len = (total_body_len < 0xff) ? 2 : 6;
+    size_t payload_len = sizeof(AMBIT3_SBEM_WRITE_PREFIX) + header_len + total_body_len;
+    uint8_t *payload = (uint8_t*)malloc(payload_len);
+    if (payload == NULL) return NULL;
+
+    uint8_t *p = payload;
+    memcpy(p, AMBIT3_SBEM_WRITE_PREFIX, sizeof(AMBIT3_SBEM_WRITE_PREFIX));
+    p += sizeof(AMBIT3_SBEM_WRITE_PREFIX);
+    *p++ = AMBIT3_POI_ENTRY_ID;
+    if (header_len == 2) {
+        *p++ = (uint8_t)total_body_len;
+    } else {
+        *p++ = 0xff;
+        uint32_t len_le = htole32((uint32_t)total_body_len);
+        memcpy(p, &len_le, 4);
+        p += 4;
+    }
+    if (new_record != NULL) {
+        memcpy(p, new_record, new_record_len);
+        p += new_record_len;
+    }
+    for (size_t i = 0; i < entry_count; i++) {
+        memcpy(p, bodies[i], body_lens[i]);
+        p += body_lens[i];
+    }
+
+    *out_len = payload_len;
+    return payload;
+}
+
+#define AMBIT3_POI_MAX_EXISTING 64
+
+/*
+ * Adds one POI to the watch, preserving every POI already there. Unlike a
+ * route write, this never touches the Waypoints/Routes flash regions and
+ * needs no commit -- it only reads and rewrites the POI SBEM list via
+ * 0x0b24/0x0b25. Byte layout ported from ambit-app/tools/ambit_format.py's
+ * build_poi_record(), itself documented as "the exact inverse of
+ * parse_sbem_poi_list" (which IS hardware-verified against real POI reads).
+ * The add path itself (as opposed to reading unmodified) has not been
+ * round-trip tested on real hardware as of this writing -- worth treating
+ * the first real use as a test, same spirit as the route write.
+ * `name` must be non-empty. Returns 0 on success, -1 on failure.
+ */
+int ambit3_add_poi_to_watch(ambit_object_t *object, const char *name, double lat, double lon)
+{
+    if (object == NULL || object->driver_data == NULL || name == NULL || name[0] == '\0') {
+        LOG_ERROR("ambit3_add_poi_to_watch: invalid arguments");
+        return -1;
+    }
+
+    uint8_t *poi_reply = NULL;
+    size_t poi_reply_len = 0;
+    const uint8_t *bodies[AMBIT3_POI_MAX_EXISTING];
+    uint32_t body_lens[AMBIT3_POI_MAX_EXISTING];
+    int entry_count = ambit3_read_poi_entries(object, bodies, body_lens, AMBIT3_POI_MAX_EXISTING, &poi_reply, &poi_reply_len);
+    if (entry_count < 0) {
+        LOG_ERROR("ambit3_add_poi_to_watch: failed to read the existing POI list, aborting before any write");
+        libambit_protocol_free(poi_reply);
+        return -1;
+    }
+
+    /* Timestamp: ISO 8601, no offset suffix. tools/README.md documented this
+     * field as UTC from a single reference watch's own self-created POI, but
+     * a direct test on real hardware here (2026-08-06, watch and phone
+     * clocks agreed, watch's own POI screen showed the write's UTC value
+     * literally rather than converting it) shows the watch does NOT convert
+     * this field for display -- it echoes back whatever was stored. Storing
+     * local time instead is what makes the watch's own UI show the real
+     * creation time; the original finding was very likely a reference watch
+     * that happened to be configured for UTC+0, making the two
+     * indistinguishable in that single test. Uses the phone's local
+     * timezone, which is what the user actually wants reflected. */
+    char stamp[32];
+    time_t now = time(NULL);
+    struct tm tmv;
+    localtime_r(&now, &tmv);
+    strftime(stamp, sizeof(stamp), "%Y-%m-%dT%H:%M:%S", &tmv);
+
+    /* name\0 + route_name\0 (empty: standalone, not tied to a route) + stamp\0 +
+     * [route_index=0][type=17][sub_type=0][type_index=0][flags=1] +
+     * [i32 LE lat*1e7][i32 LE lon*1e7]. type=17/flags=1 match what the watch
+     * itself writes for a POI it creates (SuuntoLink instead leaves those at
+     * 0 for an imported one) -- picked so this looks the same as a
+     * watch-made POI rather than an imported one. */
+    size_t name_len = strlen(name);
+    size_t stamp_len = strlen(stamp);
+    size_t record_len = name_len + 1 + 1 /* empty route_name + its NUL */ + stamp_len + 1 + 5 + 8;
+    uint8_t *record = (uint8_t*)malloc(record_len);
+    int ret = -1;
+    if (record == NULL) {
+        LOG_ERROR("ambit3_add_poi_to_watch: out of memory building the POI record");
+        libambit_protocol_free(poi_reply);
+        return -1;
+    }
+    uint8_t *p = record;
+    memcpy(p, name, name_len); p += name_len; *p++ = 0;
+    *p++ = 0; /* empty route_name */
+    memcpy(p, stamp, stamp_len); p += stamp_len; *p++ = 0;
+    *p++ = 0;  /* route_index */
+    *p++ = 17; /* type = WAYPOINT_TYPE_DEFAULT */
+    *p++ = 0;  /* sub_type */
+    *p++ = 0;  /* type_index */
+    *p++ = 1;  /* flags */
+    int32_t lat_i = (int32_t)llround(lat * 1e7);
+    int32_t lon_i = (int32_t)llround(lon * 1e7);
+    uint32_t lat_le = htole32((uint32_t)lat_i);
+    uint32_t lon_le = htole32((uint32_t)lon_i);
+    memcpy(p, &lat_le, 4); p += 4;
+    memcpy(p, &lon_le, 4); p += 4;
+
+    size_t payload_len = 0;
+    uint8_t *payload = ambit3_build_poi_write_payload(bodies, body_lens, (size_t)entry_count,
+                                                        record, record_len, &payload_len);
+    if (payload == NULL) {
+        LOG_ERROR("ambit3_add_poi_to_watch: failed to build the POI write payload");
+    } else if (libambit_protocol_command(object, AMBIT3_CMD_POI_WRITE, payload, payload_len, NULL, NULL, 0) != 0) {
+        LOG_ERROR("ambit3_add_poi_to_watch: write failed");
+    } else {
+        LOG_INFO("ambit3_add_poi_to_watch: added '%s' (%d existing POI(s) preserved)", name, entry_count);
+        ret = 0;
+    }
+
+    free(payload);
+    free(record);
+    libambit_protocol_free(poi_reply);
+    return ret;
+}
+
+/*
+ * Writes one or more routes to the watch, replacing the whole navigation
+ * database (that is how the format works -- SuuntoLink itself has no
+ * incremental/append mode either). Preserves the POI store across the
+ * write. Returns 0 on success, -1 on failure; on failure the watch's own
+ * state is whatever the last completed step left it in -- see the ordering
+ * note above for what that implies.
+ */
+int ambit3_write_route_to_watch(ambit_object_t *object, const ambit3_nav_route_t *routes, size_t route_count)
+{
+    ambit3_nav_plan_t plan;
+    uint8_t *poi_reply = NULL;
+    size_t poi_reply_len = 0;
+    uint8_t *poi_write_payload = NULL;
+    size_t poi_write_len = 0;
+    int ret = -1;
+
+    if (object == NULL || object->driver_data == NULL || routes == NULL || route_count == 0) {
+        LOG_ERROR("ambit3_write_route_to_watch: invalid arguments");
+        return -1;
+    }
+
+    /* Safety gate: refuse rather than write to the wrong place if this
+     * watch's live memory map doesn't match the addresses/sizes the plan
+     * assumes. Those constants were only ever verified against one
+     * model/firmware combination -- see device_driver_ambit3_navigation.h. */
+    if (object->driver_data->memory_maps.initialized == 0) {
+        if (get_memory_maps(object) != 0) {
+            LOG_ERROR("ambit3_write_route_to_watch: failed to read memory map");
+            return -1;
+        }
+    }
+    if (object->driver_data->memory_maps.waypoints.start != AMBIT3_WAYPOINT_BASE ||
+        object->driver_data->memory_maps.waypoints.size  != AMBIT3_WAYPOINT_REGION_SIZE ||
+        object->driver_data->memory_maps.routes.start    != AMBIT3_ROUTE_BASE ||
+        object->driver_data->memory_maps.routes.size     != AMBIT3_ROUTE_REGION_SIZE) {
+        LOG_ERROR("ambit3_write_route_to_watch: watch's memory map does not match the "
+                  "verified addresses (Waypoints 0x%06x/%u, Routes 0x%06x/%u expected; "
+                  "got Waypoints 0x%06x/%u, Routes 0x%06x/%u) -- refusing to write",
+                  AMBIT3_WAYPOINT_BASE, AMBIT3_WAYPOINT_REGION_SIZE,
+                  AMBIT3_ROUTE_BASE, AMBIT3_ROUTE_REGION_SIZE,
+                  object->driver_data->memory_maps.waypoints.start, object->driver_data->memory_maps.waypoints.size,
+                  object->driver_data->memory_maps.routes.start, object->driver_data->memory_maps.routes.size);
+        return -1;
+    }
+
+    if (ambit3_navigation_plan(routes, route_count, &plan) != 0) {
+        LOG_ERROR("ambit3_write_route_to_watch: failed to build the navigation plan "
+                   "(a limit was likely exceeded -- see AMBIT3_MAX_* in the header)");
+        return -1;
+    }
+
+    /* 1. Read the POI list before touching anything, then rebuild the write
+     * payload with the same entries in REVERSE order -- matching exactly
+     * what a real capture shows SuuntoLink doing when it preserves (as
+     * opposed to adding) a list. This needs no understanding of a POI's own
+     * fields, so it cannot corrupt one it doesn't recognise. */
+    {
+        const uint8_t *bodies[AMBIT3_POI_MAX_EXISTING];
+        uint32_t body_lens[AMBIT3_POI_MAX_EXISTING];
+        int entry_count = ambit3_read_poi_entries(object, bodies, body_lens, AMBIT3_POI_MAX_EXISTING, &poi_reply, &poi_reply_len);
+        if (entry_count < 0) {
+            LOG_ERROR("ambit3_write_route_to_watch: failed to read the POI list, aborting before any write");
+            goto cleanup;
+        }
+        for (int i = 0; i < entry_count / 2; i++) {
+            const uint8_t *tb = bodies[i]; bodies[i] = bodies[entry_count - 1 - i]; bodies[entry_count - 1 - i] = tb;
+            uint32_t tl = body_lens[i]; body_lens[i] = body_lens[entry_count - 1 - i]; body_lens[entry_count - 1 - i] = tl;
+        }
+        poi_write_payload = ambit3_build_poi_write_payload(bodies, body_lens, (size_t)entry_count, NULL, 0, &poi_write_len);
+        /* entry_count == 0 means a genuinely empty POI store (confirmed a
+         * real, reachable state on hardware) -- nothing to restore, and
+         * poi_write_payload stays NULL, which step 4 below treats as
+         * "nothing to send" rather than an error. */
+    }
+
+    /* 2. Waypoint region, then Route region: writes, then each group's tail. */
+    if (ambit3_send_region(object, &plan, AMBIT3_WAYPOINT_BASE, AMBIT3_WAYPOINT_REGION_SIZE, plan.waypoint_hash) != 0) {
+        goto cleanup;
+    }
+    if (ambit3_send_region(object, &plan, AMBIT3_ROUTE_BASE, AMBIT3_ROUTE_REGION_SIZE, plan.route_hash) != 0) {
+        goto cleanup;
+    }
+
+    /* 3. Commit -- after the writes for Ambit3, unlike openambit's Ambit2 path. */
+    if (libambit_protocol_command(object, AMBIT3_CMD_NAV_COMMIT, NULL, 0, NULL, NULL, 0) != 0) {
+        LOG_ERROR("ambit3_write_route_to_watch: commit failed -- the watch's navigation "
+                   "database may be left in a partially-written state. A backup taken "
+                   "before this write is the only way back.");
+        goto cleanup;
+    }
+
+    /* 4. Restore the POI list. This is what makes step 1 invisible to the user. */
+    if (poi_write_payload != NULL) {
+        if (libambit_protocol_command(object, AMBIT3_CMD_POI_WRITE, poi_write_payload, poi_write_len, NULL, NULL, 0) != 0) {
+            LOG_ERROR("ambit3_write_route_to_watch: route write succeeded but restoring "
+                      "the POI list failed -- the watch's POIs may now be empty");
+            goto cleanup;
+        }
+    }
+
+    LOG_INFO("ambit3_write_route_to_watch: wrote %zu route(s), %u waypoint bytes, %u route bytes",
+              route_count, AMBIT3_WAYPOINT_REGION_SIZE, AMBIT3_ROUTE_REGION_SIZE);
+    ret = 0;
+
+cleanup:
+    libambit_protocol_free(poi_reply);
+    free(poi_write_payload);
+    ambit3_navigation_plan_free(&plan);
+    return ret;
+}
+
+/*
+ * ─── Reading back (routes, waypoints, POIs) ───────────────────────────────
+ *
+ * All read-only. Byte-level decoding of what these return is deliberately
+ * NOT done here -- it happens in TypeScript (RouteReader.ts), same
+ * reasoning as RouteSimplify.ts on the write side: the parsing is pure
+ * logic with no protocol/hardware dependency once the raw bytes are in
+ * hand, so it's easier to get right and iterate on in JS than to add more
+ * native surface for something that can't affect the watch either way.
+ */
+
+#define AMBIT3_FLASH_READ_CHUNK 1024
+
+/*
+ * Reads `length` bytes starting at `address` into a caller-allocated
+ * `out_buffer`, via 0x0b17 ([u32 address][u32 length] out, the same eight
+ * bytes then the data back) -- ambit-app's tools/write_nav.py read_flash(),
+ * ported directly; this is what makes reading the Waypoints/Routes regions
+ * (and nothing else, this project's own log-reading code has its own
+ * chunker with unrelated bounds tied to the log region) possible.
+ * Returns 0 on success, -1 on failure (including a short/mismatched reply).
+ */
+int ambit3_read_flash_region(ambit_object_t *object, uint32_t address, uint32_t length, uint8_t *out_buffer)
+{
+    if (object == NULL || out_buffer == NULL) return -1;
+
+    uint32_t offset = 0;
+    while (offset < length) {
+        uint32_t want = (length - offset > AMBIT3_FLASH_READ_CHUNK) ? AMBIT3_FLASH_READ_CHUNK : (length - offset);
+
+        uint8_t send[8];
+        uint32_t addr_le = htole32(address + offset);
+        uint32_t want_le = htole32(want);
+        memcpy(send, &addr_le, 4);
+        memcpy(send + 4, &want_le, 4);
+
+        uint8_t *reply = NULL;
+        size_t replylen = 0;
+        int ret = libambit_protocol_command(object, ambit_command_log_read, send, sizeof(send), &reply, &replylen, 0);
+        if (ret != 0 || replylen != (size_t)want + 8) {
+            LOG_WARNING("ambit3_read_flash_region: 0x0b17 at 0x%06x wanted %u, got %zu bytes (ret=%d)",
+                        address + offset, want, replylen, ret);
+            libambit_protocol_free(reply);
+            return -1;
+        }
+        /* First 8 bytes of the reply echo [address][length] -- not re-checked
+         * byte for byte here since a short/mismatched replylen (above) is
+         * already the practical signal something went wrong. */
+        memcpy(out_buffer + offset, reply + 8, want);
+        libambit_protocol_free(reply);
+        offset += want;
+    }
+    return 0;
+}
+
+/*
+ * Reads the watch's raw POI list (0x0b24) as-is, including the 14-byte
+ * SBEM0102 prefix -- decoding the individual entries happens in TS, which
+ * already needs its own small SBEM0102 reader for this (see RouteReader.ts).
+ * *out is allocated by libambit_protocol_command(); caller frees with
+ * libambit_protocol_free(). Returns 0 on success, -1 on failure.
+ */
+int ambit3_read_poi_list_raw(ambit_object_t *object, uint8_t **out, size_t *out_len)
+{
+    if (object == NULL || out == NULL || out_len == NULL) return -1;
+    uint8_t zero4[4] = { 0, 0, 0, 0 };
+    *out = NULL;
+    *out_len = 0;
+    return libambit_protocol_command(object, AMBIT3_CMD_POI_READ, zero4, sizeof(zero4), out, out_len, 0);
 }

@@ -8,12 +8,16 @@ import {
   getRunalyzeApiKey, saveRunalyzeApiKey, removeRunalyzeApiKey,
 } from '../services/ApiRunalyze';
 import {
+  getIntervalsIcuCredentials, saveIntervalsIcuCredentials, removeIntervalsIcuCredentials,
+} from '../services/ApiIntervalsIcu';
+import {
   isAuthenticated as liveloxIsAuth, getAuthorizationUrl, logout as liveloxLogout,
 } from '../services/ApiLivelox';
 import {
   isAuthenticated as stravaIsAuth, getAuthorizationUrl as stravaAuthUrl, logout as stravaLogout,
 } from '../services/ApiStrava';
 import { t } from '../i18n';
+import { APP_VERSION } from '../config/version';
 
 export default function SettingsScreen() {
   const [runalyzeKey, setRunalyzeKey]     = useState('');
@@ -22,6 +26,11 @@ export default function SettingsScreen() {
   const [liveloxAuth, setLiveloxAuth]     = useState(false);
   const [stravaAuth, setStravaAuth]       = useState(false);
 
+  const [intervalsAthleteId, setIntervalsAthleteId] = useState('');
+  const [intervalsApiKey, setIntervalsApiKey]       = useState('');
+  const [intervalsSaved, setIntervalsSaved]         = useState(false);
+  const [savingIntervals, setSavingIntervals]       = useState(false);
+
   useFocusEffect(useCallback(() => {
     getRunalyzeApiKey().then(k => {
       setSavedKey(k);
@@ -29,6 +38,11 @@ export default function SettingsScreen() {
     });
     liveloxIsAuth().then(setLiveloxAuth);
     stravaIsAuth().then(setStravaAuth);
+    getIntervalsIcuCredentials().then(creds => {
+      setIntervalsSaved(!!creds);
+      setIntervalsAthleteId(creds?.athleteId ?? '');
+      setIntervalsApiKey(creds?.apiKey ?? '');
+    });
   }, []));
 
   async function handleSaveRunalyze() {
@@ -51,6 +65,29 @@ export default function SettingsScreen() {
     setSavedKey(null);
     setRunalyzeKey('');
     Alert.alert(t.deleted, t.keyDeleted);
+  }
+
+  async function handleSaveIntervals() {
+    if (!intervalsAthleteId.trim() || !intervalsApiKey.trim()) {
+      Alert.alert(t.emptyCreds, t.emptyCredsMsg);
+      return;
+    }
+    setSavingIntervals(true);
+    try {
+      await saveIntervalsIcuCredentials(intervalsAthleteId.trim(), intervalsApiKey.trim());
+      setIntervalsSaved(true);
+      Alert.alert(t.savedOk, t.credsSaved);
+    } finally {
+      setSavingIntervals(false);
+    }
+  }
+
+  async function handleRemoveIntervals() {
+    await removeIntervalsIcuCredentials();
+    setIntervalsSaved(false);
+    setIntervalsAthleteId('');
+    setIntervalsApiKey('');
+    Alert.alert(t.deleted, t.credsDeleted);
   }
 
   async function handleStravaConnect() {
@@ -174,6 +211,72 @@ export default function SettingsScreen() {
             <Text style={styles.statusText}>{t.keyStored}</Text>
           </View>
         )}
+      </View>
+
+      {/* ── Intervals.icu ── */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>{t.intervalsSection}</Text>
+        <Text style={styles.sectionDesc}>{t.intervalsDesc}</Text>
+        <Text style={styles.sectionDesc}>
+          {t.intervalsApiHint}
+          <Text style={styles.link}>{t.intervalsApiLink}</Text>
+        </Text>
+
+        <Text style={styles.label}>{t.athleteId}</Text>
+        <TextInput
+          style={styles.input}
+          value={intervalsAthleteId}
+          onChangeText={setIntervalsAthleteId}
+          placeholder={t.athleteIdPlaceholder}
+          placeholderTextColor="#4a5a7a"
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
+
+        <Text style={styles.label}>{t.apiKey}</Text>
+        <TextInput
+          style={styles.input}
+          value={intervalsApiKey}
+          onChangeText={setIntervalsApiKey}
+          placeholder={t.apiKeyPlaceholder}
+          placeholderTextColor="#4a5a7a"
+          autoCapitalize="none"
+          autoCorrect={false}
+          secureTextEntry
+        />
+
+        <View style={styles.row}>
+          <TouchableOpacity
+            style={[styles.btn, styles.btnPrimary, savingIntervals && styles.btnDisabled]}
+            onPress={handleSaveIntervals}
+            disabled={savingIntervals}
+          >
+            {savingIntervals
+              ? <ActivityIndicator size="small" color="#fff" />
+              : <Text style={styles.btnText}>{t.saveBtn}</Text>
+            }
+          </TouchableOpacity>
+
+          {intervalsSaved && (
+            <TouchableOpacity style={[styles.btn, styles.btnDanger]} onPress={handleRemoveIntervals}>
+              <Text style={styles.btnText}>{t.deleteBtn}</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {intervalsSaved && (
+          <View style={styles.statusRow}>
+            <View style={styles.dot} />
+            <Text style={styles.statusText}>{t.credsStored}</Text>
+          </View>
+        )}
+      </View>
+
+      {/* ── About / disclaimer ── */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>{t.aboutSection}</Text>
+        <Text style={styles.sectionDesc}>{t.aboutVersion(APP_VERSION)}</Text>
+        <Text style={[styles.sectionDesc, { marginTop: 10 }]}>{t.aboutDisclaimer}</Text>
       </View>
 
     </ScrollView>

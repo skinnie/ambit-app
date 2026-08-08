@@ -45,7 +45,7 @@ export async function uploadFitToRunalyze(
   }
 
   const json = await response.json();
-  if (json?.status !== 'success') throw new Error('Runalyze: réponse inattendue\n' + JSON.stringify(json));
+  if (json?.status !== 'success') throw new Error('Runalyze: unexpected response\n' + JSON.stringify(json));
   // activity_id peut être null si en file d'attente (queue_id présent)
   return { activityId: json.activity_id ?? json.queue_id ?? 0 };
 }
@@ -81,6 +81,6 @@ export async function uploadToRunalyze(
 
   const json = await response.json();
   // Runalyze retourne { "activityId": 12345 }
-  if (!json?.activityId) throw new Error('Runalyze: réponse inattendue\n' + JSON.stringify(json));
+  if (!json?.activityId) throw new Error('Runalyze: unexpected response\n' + JSON.stringify(json));
   return { activityId: json.activityId };
 }

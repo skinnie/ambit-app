@@ -112,6 +112,11 @@ int libambit_device_driver_status_get(ambit_object_t *object, ambit_device_statu
     LOG_INFO("Reading device status");
 
     if (libambit_protocol_command(object, ambit_command_status, NULL, 0, &reply_data, &replylen, 0) == 0) {
+        if (replylen < 2) {
+            LOG_WARNING("status reply too short (%zu bytes), refusing to parse it", replylen);
+            libambit_protocol_free(reply_data);
+            return -1;
+        }
         if (status != NULL) {
             status->charge = reply_data[1];
         }

@@ -66,5 +66,9 @@ int libambit_pmem20_log_parse_header(uint8_t *data, size_t datalen, ambit_log_he
 int libambit_pmem20_gps_orbit_write(libambit_pmem20_t *object, const uint8_t *data, size_t datalen, bool include_sha256_hash);
 int libambit_pmem20_sport_mode_write(libambit_pmem20_t *object, const uint8_t *data, size_t datalen, bool include_sha256_hash);
 int libambit_pmem20_app_data_write(libambit_pmem20_t *object, const uint8_t *data, size_t datalen, bool include_sha256_hash);
+// Raw chunked write at an arbitrary address, no length-prefix/hash wrapping
+// (unlike the three above). Used by device_driver_ambit3.c's route writer,
+// which computes and sends its own region-wide closing hash separately.
+int libambit_pmem20_data_write(libambit_pmem20_t *object, uint32_t start_address, const uint8_t *data, size_t datalen);
 
 #endif /* __PMEM20_H__ */

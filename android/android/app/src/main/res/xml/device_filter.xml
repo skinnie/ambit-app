@@ -12,4 +12,10 @@
     <usb-device vendor-id="5267" product-id="43" />   <!-- 0x002b Traverse          -->
     <usb-device vendor-id="5267" product-id="44" />   <!-- 0x002c Ambit3 Vertical   -->
     <usb-device vendor-id="5267" product-id="45" />   <!-- 0x002d Traverse Alpha    -->
+
+    <!-- Garmin VID=0x091e (2334) — confirmed on real hardware 2026-08-07 (eTrex 30,
+         PID 0x2519/9497 via lsusb). No product-id here deliberately: matches any Garmin
+         USB Mass Storage device (the whole eTrex family has different PIDs per model,
+         not enumerated individually), see GARMIN_USB_IMPORT_SPEC.md. -->
+    <usb-device vendor-id="2334" />
 </resources>

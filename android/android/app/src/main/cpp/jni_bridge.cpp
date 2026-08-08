@@ -7,18 +7,90 @@
 #include <ctime>
 #include <vector>
 #include <set>
+#include <cmath>
 
 // ─── libambit ─────────────────────────────────────────────────────────────────
 #include "libambit/libambit.h"
+#include "libambit/libambit_int.h"
+#include "libambit/device_driver_ambit3_navigation.h"
 
 // libambit_new_from_fd() est déclaré dans libambit_android.c
 extern "C" ambit_object_t *libambit_new_from_fd(int fd, int ep_in, int ep_out,
                                                  uint16_t vid, uint16_t pid);
 
+// libambit_new_from_ble() is declared in libambit_android.c. BLE-only —
+// see protocol_ble.c and HANDOFF.md Milestone 7 (2026-08-06 entry) for why
+// USB and BLE need separate constructors (different wire framing, not just
+// a different transport under the same framing).
+extern "C" ambit_object_t *libambit_new_from_ble(JavaVM *jvm, jobject module_ref_local,
+                                                  JNIEnv *env, uint16_t vid, uint16_t pid);
+
+// ambit_ble_on_notify() is declared in protocol_ble.c — feeds raw GATT
+// notification bytes into the BLE frame reassembly/CRC-check logic.
+extern "C" void ambit_ble_on_notify(ambit_object_t *object, const uint8_t *data, size_t len);
+
+// ambit3_write_route_to_watch() est déclarée dans device_driver_ambit3.c
+extern "C" int ambit3_write_route_to_watch(ambit_object_t *object,
+                                            const ambit3_nav_route_t *routes,
+                                            size_t route_count);
+
+// ambit3_add_poi_to_watch() est déclarée dans device_driver_ambit3.c
+extern "C" int ambit3_add_poi_to_watch(ambit_object_t *object,
+                                        const char *name, double lat, double lon);
+
+// ambit3_read_flash_region() / ambit3_read_poi_list_raw() sont déclarées dans device_driver_ambit3.c
+extern "C" int ambit3_read_flash_region(ambit_object_t *object, uint32_t address, uint32_t length, uint8_t *out_buffer);
+extern "C" int ambit3_read_poi_list_raw(ambit_object_t *object, uint8_t **out, size_t *out_len);
+
 #undef  LOG_TAG
 #define LOG_TAG "AmbitJNI"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO,  LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
+
+// ─── Base64 (pour renvoyer des blobs bruts — régions flash, liste POI — à JS) ──
+
+static std::string base64Encode(const uint8_t *data, size_t len)
+{
+    static const char table[] =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    std::string out;
+    out.reserve(((len + 2) / 3) * 4);
+    size_t i = 0;
+    while (i + 3 <= len) {
+        uint32_t n = (data[i] << 16) | (data[i + 1] << 8) | data[i + 2];
+        out += table[(n >> 18) & 0x3F];
+        out += table[(n >> 12) & 0x3F];
+        out += table[(n >> 6) & 0x3F];
+        out += table[n & 0x3F];
+        i += 3;
+    }
+    size_t rem = len - i;
+    if (rem == 1) {
+        uint32_t n = data[i] << 16;
+        out += table[(n >> 18) & 0x3F];
+        out += table[(n >> 12) & 0x3F];
+        out += "==";
+    } else if (rem == 2) {
+        uint32_t n = (data[i] << 16) | (data[i + 1] << 8);
+        out += table[(n >> 18) & 0x3F];
+        out += table[(n >> 12) & 0x3F];
+        out += table[(n >> 6) & 0x3F];
+        out += "=";
+    }
+    return out;
+}
+
+static std::string jsonEscape(const char *s)
+{
+    std::string out;
+    if (!s) return out;
+    for (const char *p = s; *p; p++) {
+        if (*p == '"' || *p == '\\') out += '\\';
+        if ((unsigned char)*p < 0x20) continue; // drop control chars, keep it simple
+        out += *p;
+    }
+    return out;
+}
 
 // ─── État global ──────────────────────────────────────────────────────────────
 
@@ -226,6 +298,57 @@ Java_com_ambitsyncmodern_usb_AmbitUsbModule_nativeAmbitInit(
 }
 
 /**
+ * nativeAmbitGetDeviceInfo
+ *
+ * Returns a JSON string: {"model":"...","serial":"...","fwVersion":"X.Y.Z",
+ * "hwVersion":"X.Y.Z","battery":N}.
+ *
+ * model/serial/fwVersion/hwVersion come from device_info, already populated
+ * once at connect time for both USB and BLE (see libambit_android.c) — no
+ * extra round-trip to the watch needed here. The third version component is
+ * a 16-bit little-endian value (version[2] | version[3]<<8), not a plain
+ * byte — confirmed against a hardware-verified reference implementation
+ * (device_info.py in the companion desktop project), matching the formatting
+ * version_string() in libambit.c already uses.
+ *
+ * battery is a live read (ambit_command_status / 0x0306, charge = reply
+ * byte[1]) since it changes over time and isn't cached in device_info.
+ * -1 if the read fails — non-fatal, caller should just hide the battery row.
+ */
+JNIEXPORT jstring JNICALL
+Java_com_ambitsyncmodern_usb_AmbitUsbModule_nativeAmbitGetDeviceInfo(
+        JNIEnv *env, jobject /* thiz */)
+{
+    if (!g_device) { LOGE("Not initialized"); return env->NewStringUTF("{}"); }
+
+    const uint8_t *fw = g_device->device_info.fw_version;
+    const uint8_t *hw = g_device->device_info.hw_version;
+    char fw_buf[16];
+    char hw_buf[16];
+    snprintf(fw_buf, sizeof(fw_buf), "%d.%d.%d", fw[0], fw[1], fw[2] | (fw[3] << 8));
+    snprintf(hw_buf, sizeof(hw_buf), "%d.%d.%d", hw[0], hw[1], hw[2] | (hw[3] << 8));
+
+    ambit_device_status_t status;
+    int battery = -1;
+    if (libambit_device_status_get(g_device, &status) == 0) {
+        battery = status.charge;
+    } else {
+        LOGE("Failed to read battery status");
+    }
+
+    std::ostringstream json;
+    json << "{"
+         << "\"model\":\""      << jsonEscape(g_device->device_info.model)  << "\","
+         << "\"serial\":\""     << jsonEscape(g_device->device_info.serial) << "\","
+         << "\"fwVersion\":\""  << fw_buf << "\","
+         << "\"hwVersion\":\""  << hw_buf << "\","
+         << "\"battery\":"      << battery
+         << "}";
+
+    return env->NewStringUTF(json.str().c_str());
+}
+
+/**
  * nativeAmbitGetLogCount
  *
  * Lit TOUS les logs depuis la montre et les met en cache (g_log_cache).
@@ -307,6 +430,203 @@ Java_com_ambitsyncmodern_usb_AmbitUsbModule_nativeAmbitSendSgee(
 }
 
 /**
+ * nativeAmbitWriteRoute
+ *
+ * Writes a single route (already simplified to <= AMBIT3_MAX_ROUTE_POINTS
+ * points on the JS side — see src/services/RouteSimplify.ts) to the watch's
+ * navigation database, via ambit3_write_route_to_watch() in
+ * device_driver_ambit3.c. Route points and waypoints are passed as parallel
+ * primitive arrays since that's what crosses the JNI boundary cheaply;
+ * everything else (GPX parsing, simplification, the caller-supplied
+ * distance/ascent/descent/timestamp) already happened on the JS side.
+ *
+ * @return true on success. On false, check logcat tag "AmbitJNI" for which
+ * step failed — the native side logs a specific reason for every failure
+ * path (see device_driver_ambit3.c's ambit3_write_route_to_watch).
+ */
+JNIEXPORT jboolean JNICALL
+Java_com_ambitsyncmodern_usb_AmbitUsbModule_nativeAmbitWriteRoute(
+        JNIEnv *env, jobject /* thiz */,
+        jstring routeName,
+        jdoubleArray ptLat, jdoubleArray ptLon, jintArray ptAlt,
+        jdoubleArray wptLat, jdoubleArray wptLon, jobjectArray wptName, jintArray wptPointIndex,
+        jint distanceM, jint ascentM, jint descentM, jlong timestampSec)
+{
+    if (!g_device) { LOGE("nativeAmbitWriteRoute: Not connected"); return JNI_FALSE; }
+
+    jsize point_count = env->GetArrayLength(ptLat);
+    jsize waypoint_count = wptLat ? env->GetArrayLength(wptLat) : 0;
+
+    if (point_count < 2) {
+        LOGE("nativeAmbitWriteRoute: route has fewer than 2 points (%d)", point_count);
+        return JNI_FALSE;
+    }
+    if (waypoint_count == 0) {
+        // Not just a style nit: a route with zero on-device waypoints reads back
+        // self-consistent (both CRCs match) but never appears in the watch's own
+        // Navigation menu, confirmed on real hardware. The caller (RouteSimplify /
+        // NavigationService) must always synthesize a Start/End pair when the
+        // source GPX has no type="Waypoint" entries -- this is the last line of
+        // defense, not the intended fix point.
+        LOGE("nativeAmbitWriteRoute: route has no waypoints, refusing -- it would "
+             "write successfully but never show up on the watch");
+        return JNI_FALSE;
+    }
+
+    const char *name_utf8 = env->GetStringUTFChars(routeName, nullptr);
+
+    jdouble *lat = env->GetDoubleArrayElements(ptLat, nullptr);
+    jdouble *lon = env->GetDoubleArrayElements(ptLon, nullptr);
+    jint    *alt = env->GetIntArrayElements(ptAlt, nullptr);
+
+    std::vector<ambit3_nav_point_t> points(point_count);
+    for (jsize i = 0; i < point_count; i++) {
+        points[i].latitude  = (int32_t)llround(lat[i] * 1e7);
+        points[i].longitude = (int32_t)llround(lon[i] * 1e7);
+        points[i].altitude  = alt[i];
+    }
+
+    jdouble *wlat = env->GetDoubleArrayElements(wptLat, nullptr);
+    jdouble *wlon = env->GetDoubleArrayElements(wptLon, nullptr);
+    jint    *widx = env->GetIntArrayElements(wptPointIndex, nullptr);
+
+    std::vector<ambit3_nav_waypoint_t> waypoints(waypoint_count);
+    std::vector<std::string> wpt_names_utf8(waypoint_count); // keep alive until the call below
+    for (jsize i = 0; i < waypoint_count; i++) {
+        auto jname = (jstring)env->GetObjectArrayElement(wptName, i);
+        const char *n = env->GetStringUTFChars(jname, nullptr);
+        wpt_names_utf8[i] = n;
+        env->ReleaseStringUTFChars(jname, n);
+        env->DeleteLocalRef(jname);
+
+        waypoints[i].latitude    = (int32_t)llround(wlat[i] * 1e7);
+        waypoints[i].longitude   = (int32_t)llround(wlon[i] * 1e7);
+        waypoints[i].point_index = (uint16_t)widx[i];
+        strncpy(waypoints[i].name, wpt_names_utf8[i].c_str(), sizeof(waypoints[i].name) - 1);
+        waypoints[i].name[sizeof(waypoints[i].name) - 1] = '\0';
+    }
+
+    // The route index's timestamp is seconds since an empirically-found, non-standard
+    // epoch (1953-11-25T17:31:44 UTC) -- not Unix time. HANDOFF.md: "the exact epoch
+    // ... is not a known round date", pinned to the second by matching a real capture,
+    // never explained further. `timestampSec` below is a real Unix timestamp (also
+    // used as-is for the calendar-component fields further down via gmtime_r); this
+    // offset converts it to what the route index itself expects.
+    static const int64_t AMBIT3_ROUTE_EPOCH_OFFSET_SEC = 508055296; // unix_epoch - route_epoch, precomputed
+
+    ambit3_nav_route_t route = {};
+    strncpy(route.name, name_utf8, sizeof(route.name) - 1);
+    route.points = points.data();
+    route.point_count = (uint16_t)point_count;
+    route.distance = (uint32_t)distanceM;
+    route.ascent = (uint16_t)ascentM;
+    route.descent = (uint16_t)descentM;
+    route.timestamp = (uint32_t)((int64_t)timestampSec + AMBIT3_ROUTE_EPOCH_OFFSET_SEC);
+    route.waypoints = waypoints.data();
+    route.waypoint_count = (uint16_t)waypoint_count;
+
+    // month/day/hour/minute/second: the waypoint descriptor's own last-modification
+    // stamp, no year (see tools/README.md). Derived from timestampSec, UTC.
+    time_t t = (time_t)timestampSec;
+    struct tm tmv;
+    gmtime_r(&t, &tmv);
+    route.month  = (uint8_t)(tmv.tm_mon + 1);
+    route.day    = (uint8_t)tmv.tm_mday;
+    route.hour   = (uint8_t)tmv.tm_hour;
+    route.minute = (uint8_t)tmv.tm_min;
+    route.second = (uint8_t)tmv.tm_sec;
+
+    LOGI("nativeAmbitWriteRoute: writing '%s', %d points, %d waypoints", name_utf8, point_count, waypoint_count);
+    int ret = ambit3_write_route_to_watch(g_device, &route, 1);
+
+    env->ReleaseDoubleArrayElements(ptLat, lat, JNI_ABORT);
+    env->ReleaseDoubleArrayElements(ptLon, lon, JNI_ABORT);
+    env->ReleaseIntArrayElements(ptAlt, alt, JNI_ABORT);
+    env->ReleaseDoubleArrayElements(wptLat, wlat, JNI_ABORT);
+    env->ReleaseDoubleArrayElements(wptLon, wlon, JNI_ABORT);
+    env->ReleaseIntArrayElements(wptPointIndex, widx, JNI_ABORT);
+    env->ReleaseStringUTFChars(routeName, name_utf8);
+
+    if (ret != 0) { LOGE("ambit3_write_route_to_watch failed: %d", ret); return JNI_FALSE; }
+    return JNI_TRUE;
+}
+
+/**
+ * nativeAmbitAddPoi
+ *
+ * Adds one POI to the watch, preserving every POI already there. Much
+ * smaller/lower-risk than nativeAmbitWriteRoute: doesn't touch the
+ * Waypoints/Routes flash regions at all, only the POI SBEM list.
+ */
+JNIEXPORT jboolean JNICALL
+Java_com_ambitsyncmodern_usb_AmbitUsbModule_nativeAmbitAddPoi(
+        JNIEnv *env, jobject /* thiz */,
+        jstring name, jdouble lat, jdouble lon)
+{
+    if (!g_device) { LOGE("nativeAmbitAddPoi: Not connected"); return JNI_FALSE; }
+
+    const char *name_utf8 = env->GetStringUTFChars(name, nullptr);
+    LOGI("nativeAmbitAddPoi: adding '%s'", name_utf8);
+    int ret = ambit3_add_poi_to_watch(g_device, name_utf8, (double)lat, (double)lon);
+    env->ReleaseStringUTFChars(name, name_utf8);
+
+    if (ret != 0) { LOGE("ambit3_add_poi_to_watch failed: %d", ret); return JNI_FALSE; }
+    return JNI_TRUE;
+}
+
+/**
+ * nativeAmbitReadRegion
+ *
+ * Reads `length` bytes at `address` and returns them base64-encoded.
+ * Decoding (routes/waypoints structures) happens in TS -- see RouteReader.ts.
+ * Returns null on failure.
+ */
+JNIEXPORT jstring JNICALL
+Java_com_ambitsyncmodern_usb_AmbitUsbModule_nativeAmbitReadRegion(
+        JNIEnv *env, jobject /* thiz */,
+        jlong address, jlong length)
+{
+    if (!g_device) { LOGE("nativeAmbitReadRegion: Not connected"); return nullptr; }
+    if (length <= 0 || length > 1024 * 1024) { LOGE("nativeAmbitReadRegion: implausible length %lld", (long long)length); return nullptr; }
+
+    std::vector<uint8_t> buffer((size_t)length);
+    LOGI("nativeAmbitReadRegion: reading 0x%06llx / %lld bytes", (long long)address, (long long)length);
+    int ret = ambit3_read_flash_region(g_device, (uint32_t)address, (uint32_t)length, buffer.data());
+    if (ret != 0) { LOGE("ambit3_read_flash_region failed: %d", ret); return nullptr; }
+
+    std::string b64 = base64Encode(buffer.data(), buffer.size());
+    return env->NewStringUTF(b64.c_str());
+}
+
+/**
+ * nativeAmbitReadPoiListRaw
+ *
+ * Returns the watch's raw POI SBEM0102 reply (0x0b24), base64-encoded, or
+ * null on failure / if the watch genuinely has none (an empty string is a
+ * real, reachable "zero POIs" state, distinct from a read failure).
+ */
+JNIEXPORT jstring JNICALL
+Java_com_ambitsyncmodern_usb_AmbitUsbModule_nativeAmbitReadPoiListRaw(
+        JNIEnv *env, jobject /* thiz */)
+{
+    if (!g_device) { LOGE("nativeAmbitReadPoiListRaw: Not connected"); return nullptr; }
+
+    uint8_t *raw = nullptr;
+    size_t rawlen = 0;
+    int ret = ambit3_read_poi_list_raw(g_device, &raw, &rawlen);
+    if (ret != 0) {
+        LOGE("ambit3_read_poi_list_raw failed: %d", ret);
+        return nullptr;
+    }
+    std::string b64 = (raw && rawlen > 0) ? base64Encode(raw, rawlen) : std::string();
+    // raw is malloc'd by libambit_protocol_command(); libambit_protocol_free() (protocol.h,
+    // not included here) is verified to be exactly `if (data) free(data);`, so plain free()
+    // is equivalent and avoids pulling in protocol.h just for this.
+    free(raw);
+    return env->NewStringUTF(b64.c_str());
+}
+
+/**
  * nativeAmbitDisconnect
  */
 JNIEXPORT void JNICALL
@@ -319,6 +639,71 @@ Java_com_ambitsyncmodern_usb_AmbitUsbModule_nativeAmbitDisconnect(
         libambit_close(g_device);
         g_device = nullptr;
     }
+}
+
+/**
+ * nativeAmbitBleInit
+ *
+ * Constructs g_device from an already-connected, already-discovered BLE
+ * link (Kotlin's AmbitBleModule has connected, handled the Service Changed
+ * indication, re-discovered services, found the custom service's write/
+ * notify characteristics by UUID, and enabled notifications before calling
+ * this — see AmbitBleModule.kt). Reuses the SAME g_device global as the USB
+ * path: every other native export in this file (nativeAmbitWriteRoute,
+ * nativeAmbitReadRegion, nativeAmbitDisconnect, etc.) already operates on
+ * g_device without caring how it was constructed, so BLE gets all of that
+ * for free — only connection setup and the BLE frame codec (protocol_ble.c)
+ * are new code.
+ *
+ * @param vid Vendor ID  (0x1493 for Suunto)
+ * @param pid Product ID — Ambit3/Traverse only; enforced by AmbitBleModule's
+ *            scan filter before this is ever called, not re-checked here.
+ */
+JNIEXPORT jboolean JNICALL
+Java_com_ambitsyncmodern_ble_AmbitBleModule_nativeAmbitBleInit(
+        JNIEnv *env, jobject thiz, jint vid, jint pid)
+{
+    LOGI("nativeAmbitBleInit vid=0x%04x pid=0x%04x", vid, pid);
+
+    if (g_device) {
+        libambit_close(g_device);
+        g_device = nullptr;
+    }
+    g_log_cache.clear();
+
+    JavaVM *jvm = nullptr;
+    env->GetJavaVM(&jvm);
+
+    g_device = libambit_new_from_ble(jvm, thiz, env, (uint16_t)vid, (uint16_t)pid);
+    if (!g_device) {
+        LOGE("libambit_new_from_ble failed — VID/PID 0x%04x/0x%04x, or device info "
+             "read didn't come back in a recognized shape (see protocol_ble.c)", vid, pid);
+        return JNI_FALSE;
+    }
+
+    LOGI("Ambit BLE initialized successfully (driver selected)");
+    return JNI_TRUE;
+}
+
+/**
+ * nativeAmbitBleOnNotify
+ *
+ * Called by AmbitBleModule.kt's onCharacteristicChanged for every raw GATT
+ * notification received on the watch's notify characteristic. Forwards the
+ * bytes into protocol_ble.c's frame reassembly — NOT called from the same
+ * thread that nativeAmbitWriteRoute/etc. (and therefore
+ * libambit_protocol_command_ble's blocking wait) run on.
+ */
+JNIEXPORT void JNICALL
+Java_com_ambitsyncmodern_ble_AmbitBleModule_nativeAmbitBleOnNotify(
+        JNIEnv *env, jobject /* thiz */, jbyteArray chunk)
+{
+    if (!g_device) return; // late/stray notification after disconnect — ignore
+
+    jsize len = env->GetArrayLength(chunk);
+    jbyte *bytes = env->GetByteArrayElements(chunk, nullptr);
+    ambit_ble_on_notify(g_device, (const uint8_t *)bytes, (size_t)len);
+    env->ReleaseByteArrayElements(chunk, bytes, JNI_ABORT);
 }
 
 } // extern "C"

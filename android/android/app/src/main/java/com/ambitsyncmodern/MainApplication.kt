@@ -4,6 +4,8 @@ import android.app.Application
 import com.facebook.react.PackageList
 import com.facebook.react.ReactApplication
 import com.ambitsyncmodern.usb.AmbitUsbPackage
+import com.ambitsyncmodern.ble.AmbitBlePackage
+import com.ambitsyncmodern.garmin.GarminPackage
 import com.facebook.react.ReactHost
 import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.load
 import com.facebook.react.defaults.DefaultReactHost.getDefaultReactHost
@@ -18,6 +20,8 @@ class MainApplication : Application(), ReactApplication {
       packageList =
         PackageList(this).packages.apply {
           add(AmbitUsbPackage())
+          add(AmbitBlePackage())
+          add(GarminPackage())
         },
     )
   }

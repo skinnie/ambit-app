@@ -86,8 +86,25 @@ static void finalize_packet(uint8_t *data, uint8_t payload_len);
 /*
  * Public functions
  */
+/* Declared in protocol_ble.c. Handles the BLE-specific framing (12-byte
+ * header + CRC32 + 0x7e envelope) — see HANDOFF.md Milestone 7,
+ * 2026-08-06 entry. Not used for USB. Only legacy_format==0 ("normal") is
+ * implemented: BLE is scoped to Ambit3/Traverse only, which always use 0 in
+ * practice — the non-zero variants exist for older Ambit/Ambit2-era memory
+ * map generations that have no BLE support in this project at all. Returns
+ * -1 without touching the wire if legacy_format != 0, rather than guessing
+ * at a framing variant with zero hardware evidence behind it. */
+extern int libambit_protocol_command_ble(ambit_object_t *object, uint16_t command,
+                                          uint8_t *data, size_t datalen,
+                                          uint8_t **reply_data, size_t *replylen,
+                                          uint8_t legacy_format);
+
 int libambit_protocol_command(ambit_object_t *object, uint16_t command, uint8_t *data, size_t datalen, uint8_t **reply_data, size_t *replylen, uint8_t legacy_format)
 {
+    if (object->transport == AMBIT_TRANSPORT_BLE) {
+        return libambit_protocol_command_ble(object, command, data, datalen, reply_data, replylen, legacy_format);
+    }
+
     int ret = 0;
     uint8_t buf[64];
     memset(buf, 0, 64);

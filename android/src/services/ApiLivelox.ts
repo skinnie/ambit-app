@@ -148,7 +148,7 @@ export async function getAuthorizationUrl(): Promise<string> {
 export async function handleOAuthCallback(code: string): Promise<void> {
   const creds = await Keychain.getGenericPassword({ service: KC_PKCE });
   const verifier = creds ? creds.password : null;
-  if (!verifier) throw new Error('PKCE verifier introuvable');
+  if (!verifier) throw new Error('PKCE verifier not found');
 
   const response = await fetch(LIVELOX_TOKEN_URL, {
     method: 'POST',
@@ -181,7 +181,7 @@ export async function handleOAuthCallback(code: string): Promise<void> {
 
 async function getValidToken(): Promise<string> {
   let token = await loadToken();
-  if (!token) throw new Error('Non authentifié sur Livelox');
+  if (!token) throw new Error('Not authenticated with Livelox');
 
   if (Date.now() > token.expires_at - 60_000) {
     const response = await fetch(LIVELOX_TOKEN_URL, {
@@ -195,7 +195,7 @@ async function getValidToken(): Promise<string> {
     });
     if (!response.ok) {
       await logout();
-      throw new Error('Session Livelox expirée, veuillez vous reconnecter');
+      throw new Error('Livelox session expired, please reconnect');
     }
     const json = await response.json();
     token = {
@@ -264,5 +264,5 @@ export async function uploadGpxToLivelox(gpxPath: string): Promise<LiveloxImport
     // status === 'pending' → continuer à poller
   }
 
-  throw new Error('Livelox timeout: traitement non terminé après 20 secondes');
+  throw new Error('Livelox timeout: processing not finished after 20 seconds');
 }

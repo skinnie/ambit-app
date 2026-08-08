@@ -77,7 +77,7 @@ export async function generateFitFile(
 ): Promise<string> {
   const xml    = await readGpxFile(gpxPath);
   const points = parseTrackPoints(xml);
-  if (points.length === 0) throw new Error('Aucun point GPS dans ce GPX');
+  if (points.length === 0) throw new Error('No GPS points in this GPX');
 
   const stats = computeElevationStats(points);
 
@@ -130,8 +130,8 @@ export async function generateFitFile(
     { num: 7,   size: 4, baseType: U32 }, // total_elapsed_time (×1000 → scale=1000 ms)
     { num: 8,   size: 4, baseType: U32 }, // total_timer_time
     { num: 9,   size: 4, baseType: U32 }, // total_distance (×100 → cm)
-    { num: 25,  size: 2, baseType: U16 }, // total_ascent (m)
-    { num: 26,  size: 2, baseType: U16 }, // total_descent (m)
+    { num: 22,  size: 2, baseType: U16 }, // total_ascent (m)
+    { num: 23,  size: 2, baseType: U16 }, // total_descent (m)
     { num: 5,   size: 1, baseType: E   }, // sport
     { num: 0,   size: 1, baseType: E   }, // event
     { num: 1,   size: 1, baseType: E   }, // event_type
@@ -214,9 +214,12 @@ export async function generateFitFile(
   hdr.push(0x2E, 0x46, 0x49, 0x54); // ".FIT"
   u16(hdr, fitCrc(hdr)); // CRC de l'en-tête
 
-  // CRC fichier (sur les données)
+  // CRC fichier — doit couvrir le header ET les données (tout ce qui précède
+  // ce CRC dans le fichier final), pas seulement `data` : le CRC de fin de
+  // fichier valide l'intégrité de l'ensemble, contrairement au CRC d'en-tête
+  // (déjà écrit ci-dessus) qui ne couvre que les 12 premiers octets du header.
   const fileCrc: Buf = [];
-  u16(fileCrc, fitCrc(data));
+  u16(fileCrc, fitCrc([...hdr, ...data]));
 
   // Buffer final
   const all = new Uint8Array([...hdr, ...data, ...fileCrc]);

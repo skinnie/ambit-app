@@ -58,7 +58,11 @@ static void add_time(ambit_date_time_t *intime, int32_t offset, ambit_date_time_
 static int is_leap(unsigned int y);
 static void to_timeval(ambit_date_time_t *ambit_time, struct timeval *timeval);
 
-static int libambit_pmem20_data_write(libambit_pmem20_t *object, uint32_t start_address, const uint8_t *data, size_t datalen);
+// Not static: also called directly from device_driver_ambit3.c's route-write
+// path (ambit3_send_region), which needs the raw chunked write without the
+// gps_orbit_write-style automatic length-prefix/hash wrapping — the route
+// writer builds and sends its own region hash separately. See pmem20.h.
+int libambit_pmem20_data_write(libambit_pmem20_t *object, uint32_t start_address, const uint8_t *data, size_t datalen);
 
 /*
  * Static variables

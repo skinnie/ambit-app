@@ -1,5 +1,6 @@
 package com.ambitsyncmodern.usb
 
+import android.app.Activity
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -8,25 +9,32 @@ import android.content.IntentFilter
 import android.hardware.usb.UsbConstants
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
+import android.net.Uri
 import android.os.Build
 import com.facebook.react.bridge.*
 import com.facebook.react.modules.core.DeviceEventManagerModule
+import org.json.JSONObject
 import java.util.concurrent.Executors
+
+private const val PICK_GPX_REQUEST_CODE = 4242
+private const val SAVE_FILE_AS_REQUEST_CODE = 4243
 
 private const val SUUNTO_VID = 0x1493
 
-// PIDs Suunto connus (source : openambit/src/libambit/device_support.c)
-private val SUUNTO_KNOWN_PIDS = setOf(
-    0x0010, // Suunto Ambit (Ambit 1) — codename Bluebird
-    0x0019, // Suunto Ambit2       — codename Duck
-    0x001a, // Suunto Ambit2 S     — codename Colibri
-    0x001b, // Suunto Ambit3 Peak  — codename Emu
-    0x001c, // Suunto Ambit3 Sport — codename Finch
-    0x001d, // Suunto Ambit2 R     — codename Greentit
-    0x001e, // Suunto Ambit3 Run   — codename Ibisbill
-    0x002b, // Suunto Traverse     — codename Jabiru
-    0x002c, // Suunto Ambit3 Vertical — codename Kaka
-    0x002d, // Suunto Traverse Alpha  — codename Loon
+// PIDs Suunto connus → nom de modèle (source : openambit/src/libambit/device_support.c)
+// Utilisé comme source de vérité pour l'affichage : plus fiable que UsbDevice.productName,
+// qui dépend de la chaîne iProduct renvoyée par le firmware de la montre (souvent générique).
+private val SUUNTO_PID_NAMES = mapOf(
+    0x0010 to "Suunto Ambit",          // codename Bluebird
+    0x0019 to "Suunto Ambit2",         // codename Duck
+    0x001a to "Suunto Ambit2 S",       // codename Colibri
+    0x001b to "Suunto Ambit3 Peak",    // codename Emu
+    0x001c to "Suunto Ambit3 Sport",   // codename Finch
+    0x001d to "Suunto Ambit2 R",       // codename Greentit
+    0x001e to "Suunto Ambit3 Run",     // codename Ibisbill
+    0x002b to "Suunto Traverse",       // codename Jabiru
+    0x002c to "Suunto Ambit3 Vertical",// codename Kaka
+    0x002d to "Suunto Traverse Alpha", // codename Loon
 )
 
 private const val ACTION_USB_PERMISSION = "com.ambitsyncmodern.USB_PERMISSION"
@@ -39,19 +47,136 @@ class AmbitUsbModule(private val reactContext: ReactApplicationContext) :
         // par SoLoader pour la New Architecture). Les fonctions JNI sont toujours
         // disponibles ; nativeAmbitInit() retourne false tant que libambit n'est pas intégré.
         const val jniLoaded: Boolean = true
+
+        // Référence vers l'instance vivante du module, pour que MainActivity puisse
+        // déclencher un événement JS sans dépendre de l'API ReactContext exacte de
+        // ReactActivity (qui varie selon la version RN / New Architecture) — le module
+        // a déjà un reactContext garanti valide via son constructeur.
+        @Volatile private var activeInstance: AmbitUsbModule? = null
+
+        /**
+         * Appelée par MainActivity.onNewIntent() quand la montre est branchée alors
+         * que l'app tourne déjà (launchMode="singleTask" -> pas de nouveau onCreate).
+         * Le cas "lancement à froid" via ce même intent est géré différemment, côté JS
+         * (wasLaunchedViaUsbAttach(), interrogé une fois au montage) : émettre un
+         * événement aussi tôt risquerait de survenir avant qu'un listener JS ne soit
+         * abonné, et un événement RCTDeviceEventEmitter non écouté est perdu, pas mis
+         * en file d'attente.
+         */
+        fun notifyUsbAttached() {
+            activeInstance?.emitUsbAttached()
+        }
     }
 
     // ─── Fonctions JNI (implémentées dans jni_bridge.cpp) ────────────────────
     private external fun nativeAmbitInit(fd: Int, epIn: Int, epOut: Int, vid: Int, pid: Int): Boolean
+    private external fun nativeAmbitGetDeviceInfo(): String
     private external fun nativeAmbitGetLogCount(knownDates: Array<String>): Int
     private external fun nativeAmbitGetLogAsGpx(index: Int): String?
     private external fun nativeAmbitSendSgee(data: ByteArray): Boolean
+    private external fun nativeAmbitWriteRoute(
+        routeName: String,
+        ptLat: DoubleArray, ptLon: DoubleArray, ptAlt: IntArray,
+        wptLat: DoubleArray, wptLon: DoubleArray, wptName: Array<String>, wptPointIndex: IntArray,
+        distanceM: Int, ascentM: Int, descentM: Int, timestampSec: Long
+    ): Boolean
+    private external fun nativeAmbitAddPoi(name: String, lat: Double, lon: Double): Boolean
+    private external fun nativeAmbitReadRegion(address: Long, length: Long): String?
+    private external fun nativeAmbitReadPoiListRaw(): String?
     private external fun nativeAmbitDisconnect()
 
     // ─── État interne ─────────────────────────────────────────────────────────
     private var currentDevice: UsbDevice? = null
     private var pendingConnectPromise: Promise? = null
+    private var pendingPickGpxPromise: Promise? = null
+    private var pendingSaveAsPromise: Promise? = null
+    private var pendingSaveAsSourcePath: String? = null
     private val executor = Executors.newSingleThreadExecutor()
+
+    private val activityEventListener = object : BaseActivityEventListener() {
+        override fun onActivityResult(activity: Activity, requestCode: Int, resultCode: Int, data: Intent?) {
+            when (requestCode) {
+                PICK_GPX_REQUEST_CODE -> {
+                    val promise = pendingPickGpxPromise ?: return
+                    pendingPickGpxPromise = null
+
+                    val uri: Uri? = if (resultCode == Activity.RESULT_OK) data?.data else null
+                    if (uri == null) {
+                        promise.reject("GPX_PICK_CANCELLED", "No file selected")
+                        return
+                    }
+                    try {
+                        val destFile = java.io.File(reactContext.cacheDir, "picked_route_${System.currentTimeMillis()}.gpx")
+                        reactContext.contentResolver.openInputStream(uri)?.use { input ->
+                            destFile.outputStream().use { output -> input.copyTo(output) }
+                        } ?: throw Exception("Could not open the selected file")
+                        promise.resolve(destFile.absolutePath)
+                    } catch (e: Exception) {
+                        promise.reject("GPX_PICK_FAILED", e.message ?: "Unknown error")
+                    }
+                }
+                SAVE_FILE_AS_REQUEST_CODE -> {
+                    val promise = pendingSaveAsPromise ?: return
+                    val sourcePath = pendingSaveAsSourcePath
+                    pendingSaveAsPromise = null
+                    pendingSaveAsSourcePath = null
+
+                    val uri: Uri? = if (resultCode == Activity.RESULT_OK) data?.data else null
+                    if (uri == null || sourcePath == null) {
+                        promise.reject("SAVE_AS_CANCELLED", "No destination chosen")
+                        return
+                    }
+                    try {
+                        reactContext.contentResolver.openOutputStream(uri)?.use { output ->
+                            java.io.File(sourcePath).inputStream().use { input -> input.copyTo(output) }
+                        } ?: throw Exception("Could not open the chosen destination")
+                        promise.resolve(uri.toString())
+                    } catch (e: Exception) {
+                        promise.reject("SAVE_AS_FAILED", e.message ?: "Unknown error")
+                    }
+                }
+            }
+        }
+    }
+
+    init {
+        reactContext.addActivityEventListener(activityEventListener)
+        activeInstance = this
+    }
+
+    private fun emitUsbAttached() {
+        reactContext
+            .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+            .emit("AmbitUsbAttached", null)
+    }
+
+    // ─── wasLaunchedViaUsbAttach() ──────────────────────────────────────────────
+    // Interrogé une fois par JS au montage : l'app a-t-elle été lancée à froid par
+    // le branchement de la montre (intent-filter USB_DEVICE_ATTACHED du manifest) ?
+    @ReactMethod
+    fun wasLaunchedViaUsbAttach(promise: Promise) {
+        val action = reactContext.currentActivity?.intent?.action
+        promise.resolve(action == UsbManager.ACTION_USB_DEVICE_ATTACHED)
+    }
+
+    // ─── detectAttachedDeviceType() ─────────────────────────────────────────────
+    // v2.3 beta: device_filter.xml now matches both Ambit/Traverse (VID 0x1493)
+    // and Garmin (VID 0x091e, GarminModule.kt) — USB_DEVICE_ATTACHED alone no
+    // longer means "an Ambit was plugged in". Called before routing to either
+    // device's flow. Returns "ambit" | "garmin" | "none" — never throws.
+    @ReactMethod
+    fun detectAttachedDeviceType(promise: Promise) {
+        val usbManager = reactContext.getSystemService(Context.USB_SERVICE) as UsbManager
+        val devices = usbManager.deviceList.values
+        val ambit = devices.find { it.vendorId == SUUNTO_VID && it.productId in SUUNTO_PID_NAMES }
+        if (ambit != null) { promise.resolve("ambit"); return }
+        // 2334 = 0x091E, Garmin's VID — kept as a local literal rather than importing
+        // GarminModule.kt, matching this project's existing pattern of not creating
+        // cross-module dependencies between separate device integrations.
+        val garmin = devices.find { it.vendorId == 2334 }
+        if (garmin != null) { promise.resolve("garmin"); return }
+        promise.resolve("none")
+    }
 
     private val usbPermissionReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -68,7 +193,7 @@ class AmbitUsbModule(private val reactContext: ReactApplicationContext) :
             pendingConnectPromise = null
 
             if (!granted || device == null) {
-                promise.reject("USB_PERMISSION_DENIED", "Permission USB refusée par l'utilisateur")
+                promise.reject("USB_PERMISSION_DENIED", "USB permission denied by user")
                 return
             }
             openDeviceAndInit(device, promise)
@@ -82,15 +207,15 @@ class AmbitUsbModule(private val reactContext: ReactApplicationContext) :
     @ReactMethod
     fun connect(promise: Promise) {
         if (!jniLoaded) {
-            promise.reject("JNI_NOT_LOADED", "Bibliothèque native non disponible (libambit non intégrée)")
+            promise.reject("JNI_NOT_LOADED", "Native library unavailable (libambit not integrated)")
             return
         }
         val usbManager = reactContext.getSystemService(Context.USB_SERVICE) as UsbManager
         val ambit = usbManager.deviceList.values.find { device ->
-            device.vendorId == SUUNTO_VID && device.productId in SUUNTO_KNOWN_PIDS
+            device.vendorId == SUUNTO_VID && device.productId in SUUNTO_PID_NAMES
         }
         if (ambit == null) {
-            promise.reject("AMBIT_NOT_FOUND", "Aucune montre Suunto détectée. Vérifiez le câble USB OTG.")
+            promise.reject("AMBIT_NOT_FOUND", "No Suunto watch detected. Check the USB OTG cable.")
             return
         }
         currentDevice = ambit
@@ -120,7 +245,7 @@ class AmbitUsbModule(private val reactContext: ReactApplicationContext) :
         val usbManager = reactContext.getSystemService(Context.USB_SERVICE) as UsbManager
         val connection = usbManager.openDevice(device)
         if (connection == null) {
-            promise.reject("USB_OPEN_FAILED", "Impossible d'ouvrir la connexion USB")
+            promise.reject("USB_OPEN_FAILED", "Could not open the USB connection")
             return
         }
 
@@ -141,7 +266,7 @@ class AmbitUsbModule(private val reactContext: ReactApplicationContext) :
 
         if (epIn == -1) {
             connection.close()
-            promise.reject("USB_NO_ENDPOINT", "Aucun endpoint USB IN trouvé sur l'interface 0")
+            promise.reject("USB_NO_ENDPOINT", "No USB IN endpoint found on interface 0")
             return
         }
 
@@ -152,17 +277,48 @@ class AmbitUsbModule(private val reactContext: ReactApplicationContext) :
         val ok = nativeAmbitInit(fd, epIn, epOut, vid, pid)
         if (!ok) {
             connection.close()
-            promise.reject("AMBIT_INIT_FAILED", "Échec de l'initialisation libambit (VID=0x${vid.toString(16)} PID=0x${pid.toString(16)})")
+            promise.reject("AMBIT_INIT_FAILED", "libambit initialization failed (VID=0x${vid.toString(16)} PID=0x${pid.toString(16)})")
             return
         }
 
-        val deviceName = device.productName ?: "Suunto (0x${pid.toString(16)})"
+        val deviceName = SUUNTO_PID_NAMES[pid] ?: device.productName ?: "Suunto (0x${pid.toString(16)})"
         val info = Arguments.createMap().apply {
             putString("name", deviceName)
             putInt("vendorId", vid)
             putInt("productId", pid)
         }
         promise.resolve(info)
+    }
+
+    // ─── getDeviceInfo() ──────────────────────────────────────────────────────
+    // Model/serial/firmware/hardware version (from the watch's own device-info
+    // reply, cached at connect time) plus a live battery read. Requires connect()
+    // to have already succeeded — nativeAmbitGetDeviceInfo() returns "{}" if not.
+    @ReactMethod
+    fun getDeviceInfo(promise: Promise) {
+        if (!jniLoaded) {
+            promise.reject("JNI_NOT_LOADED", "Native library unavailable")
+            return
+        }
+        val device = currentDevice
+        if (device == null) {
+            promise.reject("AMBIT_NOT_CONNECTED", "Call connect() first")
+            return
+        }
+        try {
+            val json = JSONObject(nativeAmbitGetDeviceInfo())
+            val info = Arguments.createMap().apply {
+                putString("name", SUUNTO_PID_NAMES[device.productId] ?: device.productName ?: "Suunto")
+                putString("model", json.optString("model", ""))
+                putString("serial", json.optString("serial", ""))
+                putString("fwVersion", json.optString("fwVersion", ""))
+                putString("hwVersion", json.optString("hwVersion", ""))
+                putInt("battery", json.optInt("battery", -1))
+            }
+            promise.resolve(info)
+        } catch (e: Exception) {
+            promise.reject("DEVICE_INFO_PARSE_FAILED", e.message, e)
+        }
     }
 
     // ─── getLogs() ────────────────────────────────────────────────────────────
@@ -172,14 +328,14 @@ class AmbitUsbModule(private val reactContext: ReactApplicationContext) :
     @ReactMethod
     fun getLogs(knownIds: ReadableArray, promise: Promise) {
         if (!jniLoaded) {
-            promise.reject("JNI_NOT_LOADED", "Bibliothèque native non disponible")
+            promise.reject("JNI_NOT_LOADED", "Native library unavailable")
             return
         }
         val knownDates = Array(knownIds.size()) { i -> knownIds.getString(i) ?: "" }
         executor.execute {
             val count = nativeAmbitGetLogCount(knownDates)
             if (count < 0) {
-                promise.reject("NOT_CONNECTED", "Montre non connectée ou non initialisée")
+                promise.reject("NOT_CONNECTED", "Watch not connected or not initialized")
                 return@execute
             }
             val results = Arguments.createArray()
@@ -197,19 +353,187 @@ class AmbitUsbModule(private val reactContext: ReactApplicationContext) :
     @ReactMethod
     fun updateSgee(path: String, promise: Promise) {
         if (!jniLoaded) {
-            promise.reject("JNI_NOT_LOADED", "Bibliothèque native non disponible")
+            promise.reject("JNI_NOT_LOADED", "Native library unavailable")
             return
         }
         executor.execute {
             val file = java.io.File(path)
             if (!file.exists()) {
-                promise.reject("SGEE_FILE_NOT_FOUND", "Fichier SGEE introuvable : $path")
+                promise.reject("SGEE_FILE_NOT_FOUND", "SGEE file not found: $path")
                 return@execute
             }
             val data = file.readBytes()
             val ok = nativeAmbitSendSgee(data)
             if (ok) promise.resolve(true)
-            else promise.reject("SGEE_SEND_FAILED", "Échec de l'envoi des données SGEE")
+            else promise.reject("SGEE_SEND_FAILED", "Failed to send SGEE data")
+        }
+    }
+
+    // ─── pickGpxFile() ────────────────────────────────────────────────────────
+    // Ouvre le sélecteur de fichiers Android (Storage Access Framework) et copie
+    // le fichier choisi dans le cache de l'app, pour obtenir un chemin local
+    // classique (content:// n'est pas garanti lisible par RNFS.readFile).
+    @ReactMethod
+    fun pickGpxFile(promise: Promise) {
+        val activity = reactContext.currentActivity
+        if (activity == null) {
+            promise.reject("NO_ACTIVITY", "No active activity")
+            return
+        }
+        pendingPickGpxPromise = promise
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*" // pas de type MIME GPX standard fiable sur tous les file managers
+        }
+        activity.startActivityForResult(intent, PICK_GPX_REQUEST_CODE)
+    }
+
+    // ─── saveFileAs() ─────────────────────────────────────────────────────────
+    // Opens the system "Save as" picker (Storage Access Framework) so the user
+    // can choose exactly where a downloaded file goes, instead of it always
+    // landing silently in Downloads. Defaults to the Downloads folder (via
+    // EXTRA_INITIAL_URI) so accepting the picker's default is equivalent to
+    // today's saveToDownloads() behavior — the user only needs to browse
+    // elsewhere if they actually want to. Added for the Ambit firmware Backup
+    // screen (v2.3.3) but generic — any local file can be saved this way.
+    @ReactMethod
+    fun saveFileAs(sourcePath: String, suggestedName: String, mimeType: String, promise: Promise) {
+        val activity = reactContext.currentActivity
+        if (activity == null) {
+            promise.reject("NO_ACTIVITY", "No active activity")
+            return
+        }
+        pendingSaveAsPromise = promise
+        pendingSaveAsSourcePath = sourcePath
+        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = mimeType
+            putExtra(Intent.EXTRA_TITLE, suggestedName)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                // Standard AOSP DocumentsUI URI for the public Downloads folder —
+                // just a starting point for the picker, not a guarantee (some
+                // OEM file pickers ignore it), but the common case (stock/AOSP-
+                // derived pickers, including BlissOS's) honors it.
+                putExtra(
+                    android.provider.DocumentsContract.EXTRA_INITIAL_URI,
+                    Uri.parse("content://com.android.externalstorage.documents/document/primary:Download")
+                )
+            }
+        }
+        activity.startActivityForResult(intent, SAVE_FILE_AS_REQUEST_CODE)
+    }
+
+    // ─── writeRoute() ─────────────────────────────────────────────────────────
+    // Écrit une route (déjà simplifiée côté JS, <= AMBIT3_MAX_ROUTE_POINTS points)
+    // sur la montre. Remplace toute la base de données de navigation ; les POIs
+    // sont préservés côté natif (lecture 0x0b24 avant, restauration 0x0b25 après).
+    // Non durable : voir device_driver_ambit3.c, ambit3_write_route_to_watch().
+    @ReactMethod
+    fun writeRoute(route: ReadableMap, promise: Promise) {
+        if (!jniLoaded) {
+            promise.reject("JNI_NOT_LOADED", "Native library unavailable")
+            return
+        }
+        executor.execute {
+            try {
+                val name = route.getString("name") ?: "Route"
+                val pts = route.getArray("points") ?: throw Exception("points manquant")
+                val ptLat = DoubleArray(pts.size())
+                val ptLon = DoubleArray(pts.size())
+                val ptAlt = IntArray(pts.size())
+                for (i in 0 until pts.size()) {
+                    val p = pts.getMap(i)!!
+                    ptLat[i] = p.getDouble("lat")
+                    ptLon[i] = p.getDouble("lon")
+                    ptAlt[i] = if (p.hasKey("alt") && !p.isNull("alt")) p.getInt("alt") else 30000 // AMBIT3_ALTITUDE_NONE
+                }
+
+                val wpts = route.getArray("waypoints") ?: throw Exception("waypoints manquant")
+                val wptLat = DoubleArray(wpts.size())
+                val wptLon = DoubleArray(wpts.size())
+                val wptName = Array(wpts.size()) { "" }
+                val wptPointIndex = IntArray(wpts.size())
+                for (i in 0 until wpts.size()) {
+                    val w = wpts.getMap(i)!!
+                    wptLat[i] = w.getDouble("lat")
+                    wptLon[i] = w.getDouble("lon")
+                    wptName[i] = w.getString("name") ?: ""
+                    wptPointIndex[i] = w.getInt("pointIndex")
+                }
+
+                val ok = nativeAmbitWriteRoute(
+                    name,
+                    ptLat, ptLon, ptAlt,
+                    wptLat, wptLon, wptName, wptPointIndex,
+                    route.getInt("distanceM"), route.getInt("ascentM"), route.getInt("descentM"),
+                    route.getDouble("timestampSec").toLong()
+                )
+                if (ok) promise.resolve(true)
+                else promise.reject("ROUTE_WRITE_FAILED", "Route write failed (see logcat AmbitJNI)")
+            } catch (e: Exception) {
+                promise.reject("ROUTE_WRITE_ERROR", e.message ?: "Unknown error")
+            }
+        }
+    }
+
+    // ─── addPoi() ─────────────────────────────────────────────────────────────
+    // Ajoute un POI sur la montre en préservant ceux déjà présents. Contrairement
+    // à writeRoute(), ne touche pas aux régions Waypoints/Routes de la flash.
+    @ReactMethod
+    fun addPoi(name: String, lat: Double, lon: Double, promise: Promise) {
+        if (!jniLoaded) {
+            promise.reject("JNI_NOT_LOADED", "Native library unavailable")
+            return
+        }
+        if (name.isBlank()) {
+            promise.reject("POI_INVALID_NAME", "POI name cannot be empty")
+            return
+        }
+        executor.execute {
+            try {
+                val ok = nativeAmbitAddPoi(name.trim(), lat, lon)
+                if (ok) promise.resolve(true)
+                else promise.reject("POI_ADD_FAILED", "Failed to add POI (see logcat AmbitJNI)")
+            } catch (e: Exception) {
+                promise.reject("POI_ADD_ERROR", e.message ?: "Unknown error")
+            }
+        }
+    }
+
+    // ─── readRegion() / readPoiListRaw() ───────────────────────────────────────
+    // Lecture seule. Renvoie du base64 ; le décodage (structures routes/waypoints,
+    // entrées SBEM0102 des POIs) se fait côté TS — voir RouteReader.ts / PoiService.ts.
+    @ReactMethod
+    fun readRegion(address: Double, length: Double, promise: Promise) {
+        if (!jniLoaded) {
+            promise.reject("JNI_NOT_LOADED", "Native library unavailable")
+            return
+        }
+        executor.execute {
+            try {
+                val b64 = nativeAmbitReadRegion(address.toLong(), length.toLong())
+                if (b64 != null) promise.resolve(b64)
+                else promise.reject("REGION_READ_FAILED", "Failed to read region (see logcat AmbitJNI)")
+            } catch (e: Exception) {
+                promise.reject("REGION_READ_ERROR", e.message ?: "Unknown error")
+            }
+        }
+    }
+
+    @ReactMethod
+    fun readPoiListRaw(promise: Promise) {
+        if (!jniLoaded) {
+            promise.reject("JNI_NOT_LOADED", "Native library unavailable")
+            return
+        }
+        executor.execute {
+            try {
+                val b64 = nativeAmbitReadPoiListRaw()
+                if (b64 != null) promise.resolve(b64)
+                else promise.reject("POI_READ_FAILED", "Failed to read POI list (see logcat AmbitJNI)")
+            } catch (e: Exception) {
+                promise.reject("POI_READ_ERROR", e.message ?: "Unknown error")
+            }
         }
     }
 
@@ -221,7 +545,7 @@ class AmbitUsbModule(private val reactContext: ReactApplicationContext) :
         try {
             val file = java.io.File(filePath)
             if (!file.exists()) {
-                promise.reject("FILE_NOT_FOUND", "Fichier introuvable : $filePath")
+                promise.reject("FILE_NOT_FOUND", "File not found: $filePath")
                 return
             }
             val uri = androidx.core.content.FileProvider.getUriForFile(
@@ -239,7 +563,7 @@ class AmbitUsbModule(private val reactContext: ReactApplicationContext) :
             reactApplicationContext.startActivity(chooser)
             promise.resolve(null)
         } catch (e: Exception) {
-            promise.reject("SHARE_ERROR", e.message ?: "Erreur inconnue")
+            promise.reject("SHARE_ERROR", e.message ?: "Unknown error")
         }
     }
 
@@ -252,7 +576,7 @@ class AmbitUsbModule(private val reactContext: ReactApplicationContext) :
         try {
             val file = java.io.File(filePath)
             if (!file.exists()) {
-                promise.reject("FILE_NOT_FOUND", "Fichier introuvable : $filePath")
+                promise.reject("FILE_NOT_FOUND", "File not found: $filePath")
                 return
             }
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
@@ -277,7 +601,7 @@ class AmbitUsbModule(private val reactContext: ReactApplicationContext) :
             }
             promise.resolve(null)
         } catch (e: Exception) {
-            promise.reject("SAVE_ERROR", e.message ?: "Erreur inconnue")
+            promise.reject("SAVE_ERROR", e.message ?: "Unknown error")
         }
     }
 
@@ -302,6 +626,7 @@ class AmbitUsbModule(private val reactContext: ReactApplicationContext) :
 
     override fun onCatalystInstanceDestroy() {
         super.onCatalystInstanceDestroy()
+        if (activeInstance === this) activeInstance = null
         try { reactContext.unregisterReceiver(usbPermissionReceiver) } catch (_: Exception) {}
         executor.execute { if (jniLoaded) nativeAmbitDisconnect() }
         executor.shutdown()

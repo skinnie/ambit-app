@@ -5,6 +5,7 @@ import { WebView, WebViewMessageEvent } from 'react-native-webview';
 import { uploadGpxToLivelox, isAuthenticated, getAuthorizationUrl } from '../services/ApiLivelox';
 import { uploadGpxToStrava, isAuthenticated as stravaIsAuthenticated } from '../services/ApiStrava';
 import { getRunalyzeApiKey, uploadFitToRunalyze } from '../services/ApiRunalyze';
+import { getIntervalsIcuCredentials, uploadFitToIntervalsIcu } from '../services/ApiIntervalsIcu';
 import { generateFitFile } from '../services/FitExport';
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -434,6 +435,39 @@ export default function MapScreen() {
     }
   }
 
+  async function handleUploadIntervals() {
+    setShowExportMenu(false);
+    const creds = await getIntervalsIcuCredentials();
+    if (!creds) {
+      Alert.alert(
+        t.noCreds,
+        t.noCredsMsg,
+        [
+          { text: t.cancel, style: 'cancel' },
+          { text: t.settings, onPress: () => navigation.navigate('Settings') },
+        ]
+      );
+      return;
+    }
+    setExporting(true);
+    try {
+      const fitPath = await generateFitFile(activity.gpx_path, activity);
+      const result  = await uploadFitToIntervalsIcu(fitPath, creds.athleteId, creds.apiKey);
+      Alert.alert(
+        'Intervals.icu ✓',
+        t.intervalsSuccess,
+        [
+          { text: t.close, style: 'cancel' },
+          { text: t.viewOnIntervals, onPress: () => Linking.openURL(result.viewerUrl) },
+        ]
+      );
+    } catch (e: any) {
+      Alert.alert(t.intervalsError, e?.message ?? String(e));
+    } finally {
+      setExporting(false);
+    }
+  }
+
   async function handleUploadStrava() {
     setShowExportMenu(false);
     try {
@@ -491,6 +525,34 @@ export default function MapScreen() {
       Alert.alert(t.savedOk, t.savedMsg(fileName));
     } catch (e: any) {
       Alert.alert(t.error, t.saveError + e?.message);
+    }
+  }
+
+  async function handleShareFit() {
+    setShowExportMenu(false);
+    setExporting(true);
+    try {
+      const fitPath = await generateFitFile(activity.gpx_path, activity);
+      await shareFile(fitPath, 'application/vnd.ant.fit');
+    } catch (e: any) {
+      Alert.alert(t.error, t.shareError + e?.message);
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  async function handleSaveFitToDownloads() {
+    setShowExportMenu(false);
+    setExporting(true);
+    try {
+      const fitPath  = await generateFitFile(activity.gpx_path, activity);
+      const fileName = fitPath.split('/').pop() ?? `${activity.id}.fit`;
+      await saveToDownloads(fitPath, fileName, 'application/vnd.ant.fit');
+      Alert.alert(t.savedOk, t.savedMsg(fileName));
+    } catch (e: any) {
+      Alert.alert(t.error, t.saveError + e?.message);
+    } finally {
+      setExporting(false);
     }
   }
 
@@ -554,7 +616,10 @@ export default function MapScreen() {
         <View style={styles.exportMenu}>
           <ExportMenuItem label={t.shareGpx}       onPress={handleShareGpx} />
           <ExportMenuItem label={t.saveDownloads}  onPress={handleSaveToDownloads} />
+          <ExportMenuItem label={t.shareFit}       onPress={handleShareFit} />
+          <ExportMenuItem label={t.saveFitDownloads} onPress={handleSaveFitToDownloads} />
           <ExportMenuItem label={t.uploadRunalyze} onPress={handleUploadRunalyze} />
+          <ExportMenuItem label={t.uploadIntervals} onPress={handleUploadIntervals} />
           <ExportMenuItem label={t.uploadLivelox}  onPress={handleExportLivelox} />
           <ExportMenuItem label={t.uploadStrava}   onPress={handleUploadStrava} />
         </View>

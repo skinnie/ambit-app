@@ -1,0 +1,4 @@
+<resources>
+    <!-- Sampled from iconv6.png's own background -->
+    <color name="ic_launcher_background">#000000</color>
+</resources>

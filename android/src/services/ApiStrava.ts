@@ -93,7 +93,7 @@ export async function handleOAuthCallback(code: string): Promise<void> {
 
 async function getValidToken(): Promise<string> {
   let token = await loadToken();
-  if (!token) throw new Error('Non authentifié sur Strava');
+  if (!token) throw new Error('Not authenticated with Strava');
 
   if (Date.now() > token.expires_at - 60_000) {
     const response = await fetch(STRAVA_TOKEN_URL, {
@@ -109,7 +109,7 @@ async function getValidToken(): Promise<string> {
 
     if (!response.ok) {
       await logout();
-      throw new Error('Session Strava expirée, veuillez vous reconnecter');
+      throw new Error('Strava session expired, please reconnect');
     }
 
     const json = await response.json();
@@ -183,7 +183,7 @@ export async function uploadGpxToStrava(
   });
 
   if (uploadRes.status === 429) {
-    throw new Error('Quota Strava atteint (200 req/15 min). Réessaie dans 15 min.');
+    throw new Error('Strava rate limit reached (200 req/15 min). Try again in 15 min.');
   }
   if (!uploadRes.ok) {
     const body = await uploadRes.text();
@@ -206,7 +206,7 @@ export async function uploadGpxToStrava(
     });
 
     if (statusRes.status === 429) {
-      throw new Error('Quota Strava atteint (200 req/15 min). Réessaie dans 15 min.');
+      throw new Error('Strava rate limit reached (200 req/15 min). Try again in 15 min.');
     }
     if (!statusRes.ok) continue;
 
@@ -221,5 +221,5 @@ export async function uploadGpxToStrava(
     // status: "Your activity is being processed." → continuer
   }
 
-  throw new Error('Strava timeout: traitement non terminé après 60 secondes');
+  throw new Error('Strava timeout: processing not finished after 60 seconds');
 }
