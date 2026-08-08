@@ -136,6 +136,72 @@ FIELD_TYPES = {
     0x0150: "PID_RUNNER_GPS_TEMPLATE_50_MAP_DRAW", 0x0200: "PID_RUNNER_GPS_TEMPLATE_100_DEBUG",
 }
 
+# Real, 2026-08-09 ("on custom sports it shows the variable names, can't we have the normal
+# names?") - a human-readable label per real FIELD_TYPES entry, for the desktop/Android
+# field-type pickers. Curated by hand for every FT_* entry (real sports-watch terminology,
+# not a mechanical guess) - two are hardware-confirmed real names from this project's own
+# live testing, not just plausible-sounding ones: FT_VELOCITY really does show as "Speed"
+# (custom_modes_andre.md, Walk's own wrong field read back as this, matching what André
+# reported seeing), and FT_HEART_RATE_CURR really does show as plain "Heart Rate" (same
+# doc, the confirmed HR-display fix). FT_RULE_ENGINE_0/1/2's "Suunto App Slot N" wording
+# matches this project's own real understanding of what RULEIDX selects (decode_rule()'s
+# own docstring). The PID_RUNNER_GPS_TEMPLATE_* screen-template entries are deliberately
+# NOT given invented descriptions here (this project has never confirmed what most of those
+# numbers look like on a real screen, only that TEMPLATE_4 is the ordinary repeating data
+# screen - see custom_modes_andre.md) - field_type_label()'s own fallback just cleans up
+# the real enum name's own formatting for those instead of guessing new meaning.
+FIELD_TYPE_LABELS = {
+    "FT_SHORTCUT": "Shortcut", "FT_TIME": "Time", "FT_TIME_SEC": "Time (with seconds)",
+    "FT_DATE": "Date", "FT_WEEKDAY": "Weekday", "FT_TIMER": "Timer", "FT_ALTI": "Altitude",
+    "FT_BARO": "Barometric Pressure", "FT_COMPASS": "Compass Heading",
+    "FT_HEART_RATE_AVG": "Heart Rate (average)", "FT_DISTANCE": "Distance",
+    "FT_VELOCITY": "Speed", "FT_AVGSPEED": "Speed (average)", "FT_TEMPERATURE": "Temperature",
+    "FT_BARO_GRAPH": "Barometric Pressure Graph", "FT_ALTI_GRAPH": "Altitude Graph",
+    "FT_COMPASSCARDINAL": "Compass Direction", "FT_TOTAL_CALORIES": "Calories",
+    "FT_REF_ALTI": "Reference Altitude", "FT_ENERGY_SYMBOL": "Energy Level",
+    "FT_HEART_RATE_PEAK": "Heart Rate (peak)", "FT_HEART_RATE_CURR": "Heart Rate",
+    "FT_HEART_RATE_GRAPH": "Heart Rate Graph", "FT_CADENCE": "Cadence",
+    "FT_NAVI_ARROW": "Navigation Arrow", "FT_NAVI_DISTANCE": "Navigation Distance",
+    "FT_NAVI_DIRECTION": "Navigation Direction", "FT_DUAL_TIME": "Dual Time",
+    "FT_PACE": "Pace", "FT_AVG_PACE": "Pace (average)", "FT_RECOVERY_TIME": "Recovery Time",
+    "FT_TE": "Training Effect", "FT_EXERCISE_ALTI_GRAPH": "Altitude Graph (exercise)",
+    "FT_RULE_ENGINE_0": "Suunto App Slot 1", "FT_RULE_ENGINE_1": "Suunto App Slot 2",
+    "FT_RULE_ENGINE_2": "Suunto App Slot 3", "FT_STOPWATCH_ABC": "Stopwatch",
+    "FT_SW_ABC_LAP_TIME": "Stopwatch Lap Time", "FT_SW_ABC_LAP": "Stopwatch Lap",
+    "FT_SW_TIME": "Stopwatch Time", "FT_DEVELOPER_TITLE": "Developer Title",
+    "FT_TEXT_ADJUST": "Text Adjust", "FT_CALIBRATED_DISTANCE": "Distance (calibrated)",
+    "FT_INTERVAL_VALUE": "Interval Value", "FT_INTERVAL_TITLE": "Interval Title",
+    "FT_SPLIT_LAP_DISTANCE": "Split/Lap Distance", "FT_SWIM_STYLE_TITLE": "Swim Style Title",
+    "FT_DRILL_TITLE": "Drill Title", "FT_BATTERY_CHARGE": "Battery Charge",
+    "FT_SPORT_LAP_STOPWATCH": "Lap Stopwatch", "FT_SPORT_LAP_AVGSPEED": "Lap Average Speed",
+    "FT_BIKE_POWER_AVG": "Bike Power (average)", "FT_BIKE_POWER_10S": "Bike Power (10s average)",
+    "FT_BIKE_POWER_LAP": "Bike Power (lap average)", "FT_BIKE_POWER_LAP_MAX": "Bike Power (lap max)",
+    "FT_SWIM_STYLE": "Swim Style", "FT_SWIM_STROKES": "Swim Strokes", "FT_SWIM_PACE": "Swim Pace",
+    "FT_SWIM_AVG_PACE": "Swim Pace (average)", "FT_SWIM_LAP_DISTANCE": "Swim Lap Distance",
+    "FT_SWIM_LAP_RATE": "Swim Stroke Rate", "FT_SWIM_LAP_SWOLF": "Swim SWOLF",
+    "FT_SWIM_POOL_STROKES": "Pool Swim Strokes", "FT_SWIM_POOL_PACE": "Pool Swim Pace",
+    "FT_SWIM_INT_TIME": "Swim Interval Time", "FT_SWIM_INT_STROKES": "Swim Interval Strokes",
+    "FT_SWIM_INT_PACE": "Swim Interval Pace", "FT_SWIM_REST_TIME": "Swim Rest Time",
+    "MT_NONE": "(none)",
+}
+
+
+def field_type_label(name):
+    """Human-readable label for a real FIELD_TYPES name - the curated dict above for every
+    FT_*/MT_NONE entry, or a real-but-honest fallback for the PID_RUNNER_GPS_TEMPLATE_*
+    screen-template entries this project has never confirmed the visual meaning of: strips
+    the common prefix and reformats the enum's own real suffix, without inventing new
+    meaning. `name` not in FIELD_TYPES at all (shouldn't happen, defensive) falls back to
+    itself unchanged."""
+    if name in FIELD_TYPE_LABELS:
+        return FIELD_TYPE_LABELS[name]
+    if name.startswith("PID_RUNNER_GPS_TEMPLATE_"):
+        rest = name[len("PID_RUNNER_GPS_TEMPLATE_"):]
+        num, _, words = rest.partition("_")
+        pretty = words.replace("_", " ").title()
+        return f"Screen {num}" + (f" - {pretty}" if pretty else "")
+    return name
+
 # EXERCISE_MODES_SETTING_NAME_LEN64's content: name string (64 B on UTF8-capable devices,
 # see build_settings_name_field() for the older 16/24-byte variants) then a fixed sequence of
 # uint16 fields, then one full interval-timer slot, then five short repeats. Verified against
@@ -457,8 +523,11 @@ def to_json(result):
                 {
                     "index": i,
                     "template": disp["TemplateName"],
+                    "templateLabel": field_type_label(disp["TemplateName"]),
                     "fields": [
-                        {"indexName": f["IndexName"], "type": f["Type"]}
+                        {"indexName": f["IndexName"], "type": f["Type"],
+                         "typeLabel": field_type_label(
+                             FIELD_TYPES.get(f["Type"], f"0x{f['Type']:04x}"))}
                         for f in disp["Fields"]
                     ],
                 }
@@ -544,7 +613,8 @@ def main():
 
     if args.list_field_types:
         print(json.dumps({"ok": True, "fieldTypes": [
-            {"value": k, "name": v} for k, v in sorted(FIELD_TYPES.items())]}))
+            {"value": k, "name": v, "label": field_type_label(v)}
+            for k, v in sorted(FIELD_TYPES.items())]}))
         return 0
 
     if args.from_file:

@@ -80,6 +80,7 @@ void CustomModesService::refresh()
                 QVariantMap dispRow;
                 dispRow[QStringLiteral("index")] = disp.value(QStringLiteral("index")).toInt();
                 dispRow[QStringLiteral("template")] = disp.value(QStringLiteral("template")).toString();
+                dispRow[QStringLiteral("templateLabel")] = disp.value(QStringLiteral("templateLabel")).toString();
 
                 QVariantList fields;
                 int fieldIdx = 0;
@@ -89,6 +90,7 @@ void CustomModesService::refresh()
                     fieldRow[QStringLiteral("field")] = fieldIdx++;
                     fieldRow[QStringLiteral("indexName")] = field.value(QStringLiteral("indexName")).toString();
                     fieldRow[QStringLiteral("type")] = field.value(QStringLiteral("type")).toInt();
+                    fieldRow[QStringLiteral("typeLabel")] = field.value(QStringLiteral("typeLabel")).toString();
                     fields.append(fieldRow);
                 }
                 dispRow[QStringLiteral("fields")] = fields;
@@ -120,6 +122,7 @@ void CustomModesService::refreshFieldTypes()
             QVariantMap row;
             row[QStringLiteral("value")] = entry.value(QStringLiteral("value")).toInt();
             row[QStringLiteral("name")] = entry.value(QStringLiteral("name")).toString();
+            row[QStringLiteral("label")] = entry.value(QStringLiteral("label")).toString();
             types.append(row);
         }
         m_fieldTypes = types;

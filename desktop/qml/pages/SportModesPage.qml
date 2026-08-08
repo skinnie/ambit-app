@@ -258,7 +258,7 @@ Flickable {
                                     width: parent.width
                                     spacing: 2
                                     Text {
-                                        text: qsTr("Screen %1 - %2").arg(dispCol.modelData.index).arg(dispCol.modelData.template)
+                                        text: qsTr("Screen %1 - %2").arg(dispCol.modelData.index).arg(dispCol.modelData.templateLabel)
                                         color: Theme.mutedText
                                         font.pixelSize: 11
                                     }
@@ -280,7 +280,16 @@ Flickable {
                                                 id: typeCombo
                                                 width: 260
                                                 model: CustomModesService.fieldTypes
-                                                textRole: "name"
+                                                // Real, 2026-08-09 ("shows the variable
+                                                // names, can't we have the normal names?") -
+                                                // textRole shows the human label, but the
+                                                // write below must still send the real raw
+                                                // FIELD_TYPES name (custom_modes.py's own
+                                                // --type resolver only knows those, not the
+                                                // display labels) - CustomModesService.
+                                                // fieldTypes[currentIndex].name, not
+                                                // textAt(currentIndex).
+                                                textRole: "label"
                                                 valueRole: "value"
                                                 enabled: !modeCard.busy
                                                 currentIndex: {
@@ -293,7 +302,8 @@ Flickable {
                                                     if (currentValue === fieldRow.modelData.type) return;
                                                     CustomModesService.writeDisplayField(
                                                         modeCard.modelData.name, dispCol.modelData.index,
-                                                        fieldRow.modelData.field, textAt(currentIndex))
+                                                        fieldRow.modelData.field,
+                                                        CustomModesService.fieldTypes[currentIndex].name)
                                                 }
                                             }
                                         }
