@@ -15,23 +15,56 @@ Item {
     // files already sitting on the device) depending on which one HomeViewModel says is
     // actually connected. Matches the real Android app's own "no sub menu needed, just read
     // and log" simplicity for Garmin.
+    //
+    // Real, 2026-08-09 ("Activity logs from kailash => treat them as walks => import to
+    // the activities") - Kailash has no ExerciseLog PMEM region at all (KailashService's
+    // own header comment), so ActivityService has nothing to read for it. Its real
+    // per-session data lives in KailashService.sessions instead (the DeviceHistory
+    // "activity mode" logbook - when/durationSeconds/distanceMeters/maxSpeed, already
+    // fetched on Home) - reshaped here into the exact {name, startTime, distanceMeters,
+    // durationSeconds, ascentMeters, track} shape ActivityCard.qml already expects, so no
+    // new QML component is needed. Every session becomes a real "Walk" card - Kailash's own
+    // DeviceHistory doesn't record which activity type each session was (unlike Ambit3's
+    // real ExerciseLog), and "Walk" is the closest honest default for a GPS-adventure watch
+    // with no sport-mode concept at all, per this request. ascentMeters/track are honestly
+    // empty (this logbook has summary stats only, no per-session GPS track - the watch's
+    // separate, continuous TrackLog is shown on Home as "Recent Track" instead, not
+    // per-session) - ActivityCard.qml already renders that as "No GPS track", not broken.
+    readonly property var kailashActivities: KailashService.sessions.map(function(s) {
+        return {
+            name: qsTr("Walk"),
+            startTime: s.when,
+            distanceMeters: s.distanceMeters,
+            durationSeconds: s.durationSeconds,
+            ascentMeters: 0,
+            track: [],
+        };
+    })
+
     readonly property bool loading:
-        HomeViewModel.isGarmin ? GarminService.activitiesLoading : ActivityService.loading
+        HomeViewModel.isGarmin ? GarminService.activitiesLoading
+        : HomeViewModel.isKailash ? KailashService.loading
+        : ActivityService.loading
     readonly property var activeActivities:
-        HomeViewModel.isGarmin ? GarminService.activities : ActivityService.activities
+        HomeViewModel.isGarmin ? GarminService.activities
+        : HomeViewModel.isKailash ? root.kailashActivities
+        : ActivityService.activities
 
     Component.onCompleted: {
         ActivityService.refresh()
         GarminService.refreshActivities()
+        KailashService.refreshHistory()
     }
 
     // Real, not a guess: the watch's ExerciseLog region is ~5.3MB, read 1024 bytes at a
     // time over USB - genuinely takes a couple of minutes. Without this, the page was a
     // blank white screen the whole time (found 2026-08-07 via real testing) - looked broken,
-    // wasn't. Garmin's own read is a plain local file read - fast - so this message only
-    // applies to the Ambit3 path.
+    // wasn't. Garmin's own read is a plain local file read - fast, and Kailash's own
+    // DeviceHistory read (2026-08-09) is a single 0x1200 query, also fast - so this message
+    // only applies to the Ambit3 ExerciseLog path.
     Text {
-        visible: root.selectedActivity === null && root.loading && !HomeViewModel.isGarmin
+        visible: root.selectedActivity === null && root.loading
+                 && !HomeViewModel.isGarmin && !HomeViewModel.isKailash
         anchors.horizontalCenter: parent.horizontalCenter
         y: Theme.spacingLarge
         color: Theme.mutedText
