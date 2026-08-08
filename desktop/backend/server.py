@@ -122,6 +122,8 @@ class Handler(BaseHTTPRequestHandler):
             self._handle_kailash_tracklog()
         elif self.path == "/api/settings" or self.path.startswith("/api/settings?"):
             self._handle_settings_read()
+        elif self.path == "/api/customodes":
+            self._handle_customodes_read()
         elif self.path == "/api/agps/status":
             self._handle_agps_status()
         else:
@@ -149,6 +151,12 @@ class Handler(BaseHTTPRequestHandler):
             self._handle_restore(body)
         elif self.path == "/api/settings":
             self._handle_settings_write(body)
+        elif self.path == "/api/customodes/rename":
+            self._handle_customodes_rename(body)
+        elif self.path == "/api/customodes/field":
+            self._handle_customodes_field(body)
+        elif self.path == "/api/customodes/display-field":
+            self._handle_customodes_display_field(body)
         elif self.path == "/api/pois":
             # POI import/export (GPX and typed coordinates) is real and confirmed working -
             # tested via a real compiled Android app against real hardware, 2026-08-06
@@ -496,6 +504,111 @@ class Handler(BaseHTTPRequestHandler):
         if info is None:
             self._send_json(502, {"ok": False, "error": "settings_write.py --json produced "
                                    "no parseable JSON", "raw_output": out, "stderr": err})
+            return
+        self._send_json(200 if info.get("ok") else 502, info)
+
+    def _handle_customodes_read(self):
+        """GET /api/customodes - Ambit3's real sport modes (CustomModes flash region),
+        added 2026-08-08 alongside the first hardware-confirmed CustomModes content edits
+        (see custom_modes_andre.md). Real, read-only 0x0b17 flash read, decoded through
+        tools/custom_modes.py's own to_json() - field names there already match what the
+        write endpoints below expect (SETTING_FIELDS' own names, FIELD_TYPES' own names),
+        so this needs no separate name-mapping layer."""
+        code, out, err = run_tool("custom_modes.py", ["--json"])
+        info = self._parse_last_json_line(out)
+        if info is None:
+            self._send_json(502, {"ok": False, "error": "custom_modes.py --json produced "
+                                   "no parseable JSON", "raw_output": out, "stderr": err})
+            return
+        self._send_json(200 if info.get("ok") else 502, info)
+
+    def _handle_customodes_rename(self, body):
+        """POST /api/customodes/rename. Body: {"from": str, "to": str, "confirm": bool}.
+        Same rehearsal-first pattern as every other write here - without confirm:true, a
+        dry-run (real offsets found, nothing sent); with it, a real write confirmed by
+        tools/custom_modes_rename_test.py's own re-read. Real, hardware-confirmed
+        2026-08-08: renames both the mode's own name and its multisport-slot name in one
+        write - see that tool's own docstring for why both are needed."""
+        from_name = body.get("from")
+        to_name = body.get("to")
+        if not from_name or not to_name:
+            self._send_json(400, {"error": "missing \"from\" or \"to\""})
+            return
+        confirm = bool(body.get("confirm", False))
+        args = ["--from", from_name, "--to", to_name, "--json"]
+        if confirm:
+            args.append("--write")
+        code, out, err = run_tool("custom_modes_rename_test.py", args)
+        info = self._parse_last_json_line(out)
+        if info is None:
+            self._send_json(502, {"ok": False, "error": "custom_modes_rename_test.py --json "
+                                   "produced no parseable JSON", "raw_output": out, "stderr": err})
+            return
+        self._send_json(200 if info.get("ok") else 502, info)
+
+    def _handle_customodes_field(self, body):
+        """POST /api/customodes/field. Body: {"mode": str, "fields": {name: value, ...},
+        "confirm": bool}. Writes any of a mode's own flat SETTING_FIELDS values (Autolap,
+        HrHigh/HrLow/HrLimitsUse, UseHw, etc. - see tools/custom_modes.py's own
+        SETTING_FIELDS list for the complete real set), one or many at once via
+        tools/custom_modes_field_write_test.py's own --set (repeatable). Same rehearsal-
+        first pattern as every other write here."""
+        mode = body.get("mode")
+        fields = body.get("fields")
+        if not mode or not fields:
+            self._send_json(400, {"error": "missing \"mode\" or \"fields\""})
+            return
+        confirm = bool(body.get("confirm", False))
+        args = ["--mode", mode]
+        for name, value in fields.items():
+            args += ["--set", f"{name}={value}"]
+        args.append("--json")
+        if confirm:
+            args.append("--write")
+        code, out, err = run_tool("custom_modes_field_write_test.py", args)
+        info = self._parse_last_json_line(out)
+        if info is None:
+            self._send_json(502, {"ok": False, "error": "custom_modes_field_write_test.py "
+                                   "--json produced no parseable JSON", "raw_output": out,
+                                   "stderr": err})
+            return
+        self._send_json(200 if info.get("ok") else 502, info)
+
+    def _handle_customodes_display_field(self, body):
+        """POST /api/customodes/display-field. Body: {"mode": str, "display": int,
+        "field": int, "index": str (optional), "type": str (optional), "confirm": bool} -
+        at least one of "index"/"type" required. Real, hardware-confirmed finding,
+        2026-08-08 (custom_modes_andre.md): for the common Index=FT_TIME case seen on every
+        real display, "type" - not "index" - is what actually selects the rendered content
+        (e.g. type: "FT_HEART_RATE_CURR"). Both are exposed since the underlying tool
+        supports either, but a UI built on this should default to changing "type" unless
+        it has independent evidence a given display slot works differently."""
+        mode = body.get("mode")
+        display = body.get("display")
+        field = body.get("field")
+        index = body.get("index")
+        new_type = body.get("type")
+        if mode is None or display is None or field is None:
+            self._send_json(400, {"error": "missing \"mode\", \"display\", or \"field\""})
+            return
+        if index is None and new_type is None:
+            self._send_json(400, {"error": "give \"index\" and/or \"type\""})
+            return
+        confirm = bool(body.get("confirm", False))
+        args = ["--mode", mode, "--display", str(display), "--field", str(field)]
+        if index is not None:
+            args += ["--to", str(index)]
+        if new_type is not None:
+            args += ["--type", str(new_type)]
+        args.append("--json")
+        if confirm:
+            args.append("--write")
+        code, out, err = run_tool("custom_modes_display_field_write_test.py", args)
+        info = self._parse_last_json_line(out)
+        if info is None:
+            self._send_json(502, {"ok": False, "error": "custom_modes_display_field_write_test.py "
+                                   "--json produced no parseable JSON", "raw_output": out,
+                                   "stderr": err})
             return
         self._send_json(200 if info.get("ok") else 502, info)
 
