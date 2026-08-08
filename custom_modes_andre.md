@@ -961,11 +961,24 @@ Ambit3's own multi-megabyte `ExerciseLog`) and/or `EventLog` (400000 bytes - pla
 event markers, a smaller, different-shaped record than raw samples) - genuinely new formats,
 neither one decoded here, real follow-up work. Orbital update (`GpsSGEE`) is unaffected by any
 of this and already confirmed working end-to-end with the existing `sgee.py`, address and all.
-Firmware dump: not exercised by this capture at all (no distinct command beyond what's already
-listed above), and there's no separate "Firmware" region in this same memory-map dump either -
-genuinely unconfirmed, not just unresolved. `firmware_check.py` itself doesn't query the watch
-live at all; it only looks up a `model`/`hw_version` pair already obtained from `device_info`
-against a static table, so it isn't a starting point for an actual dump mechanism either way.
+
+**Firmware dump - corrected, was wrong above.** An earlier draft of this section called this
+"genuinely unconfirmed" after checking only for a device-side flash mechanism (there's no
+"Firmware" region in the memory map above, and `firmware_check.py`'s own function names don't
+mention "download" or "Hoopoe" - a narrow `grep`, not an actual read of the file). That was the
+wrong place to look: `firmware_check.py` doesn't touch the watch's flash for this at all - it
+queries Suunto's own live cloud firmware-distribution service
+(`devices.suunto-operations.com`, keyed by model codename + hw_version, App-Zone-unrelated,
+already confirmed working for the Ambit3 reference watch 2026-08-07) and downloads the
+resulting `.zip`. Since it's keyed by the plain model *codename*, and this same capture already
+confirmed Kailash's codename is literally `Hoopoe`, this needed nothing new - just calling
+`check_firmware("Hoopoe", "72.1.0")` (the `hw_version` this same capture's `device_info` reply
+decoded to earlier). **Confirmed live, real HTTP round trip, 2026-08-08:** returns
+`LatestFirmwareVersion: "2.0.5"` - an exact match to `HANDOFF.md`'s own existing reference
+("Suunto Kailash + cable... fw 2.0.5"), and a real download URL
+(`.../firmwares/Hoopoe-fw_2.0.5-72.1.0.zip`). André confirmed separately this has already been
+used successfully in practice. So: firmware dump for Kailash already works, today, with zero
+code changes - the same tool as Ambit3, just pointed at a different model name.
 
 **`appstopscreensunrisunset` - a real data point, deliberately not turned into a claim.**
 Chronologically the last capture in this whole batch, right after
