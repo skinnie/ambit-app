@@ -119,6 +119,8 @@ class Handler(BaseHTTPRequestHandler):
             self._handle_kailash_history()
         elif self.path == "/api/kailash/tracklog":
             self._handle_kailash_tracklog()
+        elif self.path == "/api/settings":
+            self._handle_settings_read()
         elif self.path == "/api/agps/status":
             self._handle_agps_status()
         else:
@@ -144,6 +146,8 @@ class Handler(BaseHTTPRequestHandler):
             self._handle_backup_create()
         elif self.path == "/api/restore":
             self._handle_restore(body)
+        elif self.path == "/api/settings":
+            self._handle_settings_write(body)
         elif self.path == "/api/pois":
             # POI import/export (GPX and typed coordinates) is real and confirmed working -
             # tested via a real compiled Android app against real hardware, 2026-08-06
@@ -439,6 +443,46 @@ class Handler(BaseHTTPRequestHandler):
         info = self._parse_last_json_line(out)
         if info is None:
             self._send_json(502, {"ok": False, "error": "kailash_tracklog.py --json produced "
+                                   "no parseable JSON", "raw_output": out, "stderr": err})
+            return
+        self._send_json(200 if info.get("ok") else 502, info)
+
+    def _handle_settings_read(self):
+        """GET /api/settings - Ambit3 (and Traverse/Ambit2, same schema family). Real,
+        read-only 0x1100 DeviceSettings query, decoded through tools/settings_write.py's
+        curated, screenshot-verified field table (added 2026-08-08 - see that file's own
+        docstring and custom_modes_andre.md for how entry IDs were confirmed to only ever
+        be looked up fresh per-device, after a real bug where a hardcoded ID from one
+        watch's schema silently hit a different field on another). Every value live-
+        verified against real SuuntoLink screenshots for this exact watch."""
+        code, out, err = run_tool("settings_write.py", ["--json"])
+        info = self._parse_last_json_line(out)
+        if info is None:
+            self._send_json(502, {"ok": False, "error": "settings_write.py --json produced "
+                                   "no parseable JSON", "raw_output": out, "stderr": err})
+            return
+        self._send_json(200 if info.get("ok") else 502, info)
+
+    def _handle_settings_write(self, body):
+        """POST /api/settings. Body: {"key": str, "value": number, "confirm": bool}. Same
+        rehearsal-first pattern as every other write in this backend: without confirm:true,
+        runs settings_write.py's own --set dry-run (shows current value and what would be
+        written, sends nothing); with confirm:true, adds --write for a real 0x1101 send,
+        confirmed by settings_write.py's own re-read (its own `ok` is only true if the
+        watch's re-read actually reflects the new value - see that file's own write_one())."""
+        key = body.get("key")
+        value = body.get("value")
+        if key is None or value is None:
+            self._send_json(400, {"error": "missing \"key\" or \"value\""})
+            return
+        confirm = bool(body.get("confirm", False))
+        args = ["--set", f"{key}={value}", "--json"]
+        if confirm:
+            args.append("--write")
+        code, out, err = run_tool("settings_write.py", args)
+        info = self._parse_last_json_line(out)
+        if info is None:
+            self._send_json(502, {"ok": False, "error": "settings_write.py --json produced "
                                    "no parseable JSON", "raw_output": out, "stderr": err})
             return
         self._send_json(200 if info.get("ok") else 502, info)
