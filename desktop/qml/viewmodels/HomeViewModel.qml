@@ -15,7 +15,14 @@ QtObject {
     // at once - it's this app's original/primary device, and the two would never really be
     // plugged in together in practice.
     readonly property bool isGarmin: !connected && GarminService.connected
-    readonly property bool isAmbit: connected
+    readonly property bool isAmbit: connected && DeviceService.model !== "Hoopoe"
+
+    // Real, 2026-08-08 ("Yes I want to implement it both to desktop and android version").
+    // Kailash ("Hoopoe") answers the same 0x0000 identity command every Ambit/Traverse watch
+    // does (DeviceService needed no changes for /api/device to already work for it - see
+    // write_nav.py's PRODUCT_IDS fix), so `connected` is already true for it; this just picks
+    // out which real device is actually plugged in, the same way isGarmin/isAmbit already do.
+    readonly property bool isKailash: connected && DeviceService.model === "Hoopoe"
 
     // 2026-08-07: switched from DeviceService.navOk to deviceInfoOk - navOk came from a
     // slow, unnecessary full flash read (see DeviceService's own header comment); a
@@ -44,7 +51,7 @@ QtObject {
     readonly property var _modelNames: ({
         Bluebird: "Ambit", Duck: "Ambit 2", Colibri: "Ambit 2 S", Greentit: "Ambit 2 R",
         Emu: "Ambit 3 Peak", Finch: "Ambit 3 Sport", Ibisbill: "Ambit 3 Run", Kaka: "Ambit 3 Vertical",
-        Jabiru: "Traverse", Loon: "Traverse Alpha",
+        Jabiru: "Traverse", Loon: "Traverse Alpha", Hoopoe: "Kailash",
     })
     readonly property string deviceDisplayName:
         DeviceService.deviceInfoOk

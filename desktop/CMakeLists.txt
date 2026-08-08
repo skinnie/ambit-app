@@ -114,6 +114,8 @@ qt_add_qml_module(ambitapp
         src/services/garminservice.cpp
         src/services/intervalsservice.h
         src/services/intervalsservice.cpp
+        src/services/kailashservice.h
+        src/services/kailashservice.cpp
     RESOURCES
         assets/fonts/MaterialSymbolsRounded.ttf
         # assets/map/osm-raster-style.json was MapLibre's own style file - unused since the
