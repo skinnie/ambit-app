@@ -142,6 +142,29 @@ export function readDeviceHistoryRaw(): Promise<string> {
   return NativeAmbit.readDeviceHistoryRaw();
 }
 
+/**
+ * Ambit3 (and Traverse/Ambit2, same schema family). Reads the watch's raw
+ * sml.DeviceSettings reply (0x1100, four zero bytes) in base64. Decoding happens in TS
+ * (AmbitSettingsReader.ts). The watch must already be connected.
+ */
+export function readSettingsRaw(): Promise<string> {
+  return NativeAmbit.readSettingsRaw();
+}
+
+/**
+ * Real, hardware-confirmed 2026-08-08: writes a full sml.DeviceSettings blob back via
+ * 0x1101 - André confirmed on a real connected Ambit3's own screen that this exact
+ * mechanism visibly switched the display Light -> Dark. `dataBase64` must be the *entire*
+ * settings blob (read via readSettingsRaw(), patch one field, send the whole thing back) -
+ * see AmbitSettingsWriter.ts's own writeSetting() for that dance. Resolving `true` here
+ * only means the write was sent without error - it does NOT by itself confirm the watch
+ * applied it; the caller re-reads to check, matching this project's own "prove it, don't
+ * just trust the ACK" rule found necessary during live testing.
+ */
+export function writeSettingsRaw(dataBase64: string): Promise<boolean> {
+  return NativeAmbit.writeSettingsRaw(dataBase64);
+}
+
 // ─── Auto-sync on USB attach ───────────────────────────────────────────────────
 // AndroidManifest.xml (launchMode="singleTask" + USB_DEVICE_ATTACHED intent-filter
 // + device_filter.xml) already lets the OS launch/foreground the app when the

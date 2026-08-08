@@ -1,9 +1,11 @@
 import React, { useCallback, useState } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity,
+  View, Text, TextInput, TouchableOpacity, Switch,
   StyleSheet, Alert, ScrollView, ActivityIndicator, Linking,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import { DecodedSetting } from '../services/AmbitSettingsReader';
+import { readAmbitSettings, writeAmbitSetting } from '../services/AmbitSettingsService';
 import {
   getRunalyzeApiKey, saveRunalyzeApiKey, removeRunalyzeApiKey,
 } from '../services/ApiRunalyze';
@@ -30,6 +32,44 @@ export default function SettingsScreen() {
   const [intervalsApiKey, setIntervalsApiKey]       = useState('');
   const [intervalsSaved, setIntervalsSaved]         = useState(false);
   const [savingIntervals, setSavingIntervals]       = useState(false);
+
+  // Real, 2026-08-08 ("Settings on ambit 3 - if they are already cracked to be changed by
+  // cable, we will need to build a UI for it"). Not auto-loaded on focus like the API
+  // credentials above - reading needs the watch actually connected via USB, which isn't
+  // guaranteed just because this screen is open, so it's behind an explicit "Read
+  // Settings" tap instead (same "explicit action, no surprise USB traffic" spirit as the
+  // rest of this app's own on-demand connect/read/disconnect flows - see PoiService.ts).
+  const [ambitSettings, setAmbitSettings] = useState<DecodedSetting[] | null>(null);
+  const [ambitSettingsPhase, setAmbitSettingsPhase] =
+    useState<'idle' | 'connecting' | 'reading' | 'done' | 'error'>('idle');
+  const [ambitSettingsError, setAmbitSettingsError] = useState<string | undefined>();
+  const [writingKey, setWritingKey] = useState<string | null>(null);
+
+  async function handleReadAmbitSettings() {
+    await readAmbitSettings(s => {
+      setAmbitSettingsPhase(s.phase);
+      if (s.settings) setAmbitSettings(s.settings);
+      setAmbitSettingsError(s.error);
+    });
+  }
+
+  async function handleWriteAmbitSetting(key: string, value: number) {
+    setWritingKey(key);
+    await writeAmbitSetting(key, value, s => {
+      if (s.phase === 'done' || s.phase === 'error') {
+        setWritingKey(null);
+        if (s.error) Alert.alert(t.error, s.error);
+      }
+      if (s.result) {
+        // Reflect the watch's own confirmed value, not blindly what was requested -
+        // matches AmbitSettingsWriter.ts's own "prove it" contract.
+        setAmbitSettings(prev => prev && prev.map(row =>
+          row.key === key && s.result!.confirmedValue !== null
+            ? { ...row, value: s.result!.confirmedValue as number }
+            : row));
+      }
+    });
+  }
 
   useFocusEffect(useCallback(() => {
     getRunalyzeApiKey().then(k => {
@@ -272,6 +312,111 @@ export default function SettingsScreen() {
         )}
       </View>
 
+      {/* ── Ambit3 Settings - real, 2026-08-08. Cable settings-write is confirmed
+          working (see AmbitSettingsWriter.ts's own header comment: André confirmed on the
+          watch's own screen that flipping display_dark visibly switched it Light -> Dark).
+          Not for Kailash: this curated field table came from the Ambit3's own real schema
+          and screenshots and hasn't been checked against Kailash's much smaller,
+          differently-numbered one - see custom_modes_andre.md. ── */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>{t.ambitSettingsSection}</Text>
+        <Text style={styles.sectionDesc}>{t.ambitSettingsDesc}</Text>
+
+        {!ambitSettings && ambitSettingsPhase !== 'connecting' && ambitSettingsPhase !== 'reading' && (
+          <TouchableOpacity
+            style={[styles.btn, styles.btnPrimary, { marginTop: 10 }]}
+            onPress={handleReadAmbitSettings}
+          >
+            <Text style={styles.btnText}>{t.ambitSettingsReadBtn}</Text>
+          </TouchableOpacity>
+        )}
+
+        {(ambitSettingsPhase === 'connecting' || ambitSettingsPhase === 'reading') && (
+          <View style={styles.statusRow}>
+            <ActivityIndicator size="small" color="#00e5ff" />
+            <Text style={[styles.statusText, { color: '#8899aa', marginLeft: 8 }]}>
+              {ambitSettingsPhase === 'connecting' ? t.connecting : t.ambitSettingsReading}
+            </Text>
+          </View>
+        )}
+
+        {ambitSettingsPhase === 'error' && ambitSettingsError && !ambitSettings && (
+          <Text style={[styles.sectionDesc, { color: '#f44336', marginTop: 10 }]}>
+            {ambitSettingsError}
+          </Text>
+        )}
+
+        {ambitSettings && ambitSettings.map(row => {
+          const label = row.key.split('_')
+            .map((w, i) => (i === 0 ? w.charAt(0).toUpperCase() + w.slice(1) : w))
+            .join(' ');
+          const busy = writingKey === row.key;
+          return (
+            <View key={row.key} style={styles.ambitSettingRow}>
+              <Text style={styles.ambitSettingLabel}>{label}</Text>
+
+              {row.kind === 'bool' && (
+                <Switch
+                  value={row.value === 1}
+                  onValueChange={v => handleWriteAmbitSetting(row.key, v ? 1 : 0)}
+                  disabled={busy}
+                  trackColor={{ false: '#1a4a7a', true: '#00e5ff88' }}
+                  thumbColor="#fff"
+                />
+              )}
+
+              {row.kind === 'enum' && (
+                <View style={styles.chipRow}>
+                  {(row.choices ?? []).map(choice => (
+                    <TouchableOpacity
+                      key={choice.value}
+                      style={[styles.chip, choice.value === row.value && styles.chipActive]}
+                      disabled={busy}
+                      onPress={() => handleWriteAmbitSetting(row.key, choice.value)}
+                    >
+                      <Text style={[styles.chipText, choice.value === row.value && styles.chipTextActive]}>
+                        {choice.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+
+              {row.kind === 'number' && (
+                <View style={styles.stepperRow}>
+                  <TouchableOpacity
+                    style={styles.stepperBtn}
+                    disabled={busy}
+                    onPress={() => handleWriteAmbitSetting(row.key, Math.max(0, row.value - 5))}
+                  >
+                    <Text style={styles.stepperBtnText}>-</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.stepperValue}>{row.value}</Text>
+                  <TouchableOpacity
+                    style={styles.stepperBtn}
+                    disabled={busy}
+                    onPress={() => handleWriteAmbitSetting(row.key, Math.min(100, row.value + 5))}
+                  >
+                    <Text style={styles.stepperBtnText}>+</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {busy && <ActivityIndicator size="small" color="#00e5ff" style={{ marginLeft: 8 }} />}
+            </View>
+          );
+        })}
+
+        {ambitSettings && (
+          <TouchableOpacity
+            style={[styles.btn, styles.btnPrimary, { marginTop: 14 }]}
+            onPress={handleReadAmbitSettings}
+          >
+            <Text style={styles.btnText}>{t.ambitSettingsRefreshBtn}</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
       {/* ── About / disclaimer ── */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>{t.aboutSection}</Text>
@@ -322,4 +467,24 @@ const styles = StyleSheet.create({
   statusRow: { flexDirection: 'row', alignItems: 'center', marginTop: 10 },
   dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#4caf50', marginRight: 6 },
   statusText: { color: '#4caf50', fontSize: 12 },
+  ambitSettingRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    marginTop: 14,
+  },
+  ambitSettingLabel: { color: '#fff', fontSize: 14, flex: 1, marginRight: 10 },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, flexShrink: 1, justifyContent: 'flex-end' },
+  chip: {
+    paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8,
+    borderWidth: 1, borderColor: '#1a4a7a', backgroundColor: '#16213e',
+  },
+  chipActive: { borderColor: '#00e5ff', backgroundColor: '#00e5ff22' },
+  chipText: { color: '#8899aa', fontSize: 12 },
+  chipTextActive: { color: '#00e5ff', fontWeight: '600' },
+  stepperRow: { flexDirection: 'row', alignItems: 'center' },
+  stepperBtn: {
+    width: 32, height: 32, borderRadius: 8, borderWidth: 1, borderColor: '#1a4a7a',
+    alignItems: 'center', justifyContent: 'center', backgroundColor: '#16213e',
+  },
+  stepperBtnText: { color: '#00e5ff', fontSize: 18, fontWeight: '700' },
+  stepperValue: { color: '#fff', fontSize: 14, marginHorizontal: 10, minWidth: 30, textAlign: 'center' },
 });

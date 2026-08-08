@@ -11,6 +11,7 @@ import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
 import android.net.Uri
 import android.os.Build
+import android.util.Base64
 import com.facebook.react.bridge.*
 import com.facebook.react.modules.core.DeviceEventManagerModule
 import org.json.JSONObject
@@ -92,6 +93,8 @@ class AmbitUsbModule(private val reactContext: ReactApplicationContext) :
     private external fun nativeAmbitReadRegion(address: Long, length: Long): String?
     private external fun nativeAmbitReadPoiListRaw(): String?
     private external fun nativeAmbitReadDeviceHistoryRaw(): String?
+    private external fun nativeAmbitReadSettingsRaw(): String?
+    private external fun nativeAmbitWriteSettingsRaw(data: ByteArray): Boolean
     private external fun nativeAmbitDisconnect()
 
     // ─── État interne ─────────────────────────────────────────────────────────
@@ -565,6 +568,51 @@ class AmbitUsbModule(private val reactContext: ReactApplicationContext) :
                 else promise.reject("HISTORY_READ_FAILED", "Failed to read device history (see logcat AmbitJNI)")
             } catch (e: Exception) {
                 promise.reject("HISTORY_READ_ERROR", e.message ?: "Unknown error")
+            }
+        }
+    }
+
+    // Real, 2026-08-08 ("Settings on ambit 3 - if they are already cracked to be changed by
+    // cable, we will need to build a UI for it"). Real, read-only 0x1100 query - the same
+    // sml.DeviceSettings tree tools/settings_write.py already reads on the desktop side.
+    // Decoding happens in TS (AmbitSettingsReader.ts).
+    @ReactMethod
+    fun readSettingsRaw(promise: Promise) {
+        if (!jniLoaded) {
+            promise.reject("JNI_NOT_LOADED", "Native library unavailable")
+            return
+        }
+        executor.execute {
+            try {
+                val b64 = nativeAmbitReadSettingsRaw()
+                if (b64 != null) promise.resolve(b64)
+                else promise.reject("SETTINGS_READ_FAILED", "Failed to read settings (see logcat AmbitJNI)")
+            } catch (e: Exception) {
+                promise.reject("SETTINGS_READ_ERROR", e.message ?: "Unknown error")
+            }
+        }
+    }
+
+    // Real, hardware-confirmed write, 2026-08-08 (see ambit3_write_settings_raw()'s own
+    // comment in device_driver_ambit3.c: André confirmed on a real watch's own screen that
+    // this exact mechanism visibly switched the display Light -> Dark). `dataBase64` must
+    // be the *entire* settings blob (read first, patch one field, send the whole thing
+    // back) - matching how tools/settings_write.py's own write_one() and the real
+    // SuuntoLink reference client both work.
+    @ReactMethod
+    fun writeSettingsRaw(dataBase64: String, promise: Promise) {
+        if (!jniLoaded) {
+            promise.reject("JNI_NOT_LOADED", "Native library unavailable")
+            return
+        }
+        executor.execute {
+            try {
+                val data = Base64.decode(dataBase64, Base64.DEFAULT)
+                val ok = nativeAmbitWriteSettingsRaw(data)
+                if (ok) promise.resolve(true)
+                else promise.reject("SETTINGS_WRITE_FAILED", "Failed to write settings (see logcat AmbitJNI)")
+            } catch (e: Exception) {
+                promise.reject("SETTINGS_WRITE_ERROR", e.message ?: "Unknown error")
             }
         }
     }

@@ -43,6 +43,8 @@ extern "C" int ambit3_add_poi_to_watch(ambit_object_t *object,
 extern "C" int ambit3_read_flash_region(ambit_object_t *object, uint32_t address, uint32_t length, uint8_t *out_buffer);
 extern "C" int ambit3_read_poi_list_raw(ambit_object_t *object, uint8_t **out, size_t *out_len);
 extern "C" int ambit3_read_object_by_id_raw(ambit_object_t *object, uint8_t entry_id, uint8_t **out, size_t *out_len);
+extern "C" int ambit3_read_settings_raw(ambit_object_t *object, uint8_t **out, size_t *out_len);
+extern "C" int ambit3_write_settings_raw(ambit_object_t *object, const uint8_t *data, size_t datalen, uint8_t **out, size_t *out_len);
 
 #undef  LOG_TAG
 #define LOG_TAG "AmbitJNI"
@@ -659,6 +661,67 @@ Java_com_ambitsyncmodern_usb_AmbitUsbModule_nativeAmbitReadDeviceHistoryRaw(
     std::string b64 = (raw && rawlen > 0) ? base64Encode(raw, rawlen) : std::string();
     free(raw);  // same equivalence as nativeAmbitReadPoiListRaw's own free(), see its comment
     return env->NewStringUTF(b64.c_str());
+}
+
+/**
+ * nativeAmbitReadSettingsRaw
+ *
+ * Real, 2026-08-08 ("Settings on ambit 3 - if they are already cracked to be changed by
+ * cable, we will need to build a UI for it"). Returns the watch's raw sml.DeviceSettings
+ * reply (0x1100, four zero bytes), base64-encoded. Decoding happens in TS
+ * (AmbitSettingsReader.ts), mirroring the companion research project's own
+ * tools/settings_write.py. Null on failure.
+ */
+JNIEXPORT jstring JNICALL
+Java_com_ambitsyncmodern_usb_AmbitUsbModule_nativeAmbitReadSettingsRaw(
+        JNIEnv *env, jobject /* thiz */)
+{
+    if (!g_device) { LOGE("nativeAmbitReadSettingsRaw: Not connected"); return nullptr; }
+
+    uint8_t *raw = nullptr;
+    size_t rawlen = 0;
+    int ret = ambit3_read_settings_raw(g_device, &raw, &rawlen);
+    if (ret != 0) {
+        LOGE("ambit3_read_settings_raw failed: %d", ret);
+        return nullptr;
+    }
+    std::string b64 = (raw && rawlen > 0) ? base64Encode(raw, rawlen) : std::string();
+    free(raw);
+    return env->NewStringUTF(b64.c_str());
+}
+
+/**
+ * nativeAmbitWriteSettingsRaw
+ *
+ * Real, hardware-confirmed 2026-08-08 (see ambit3_write_settings_raw()'s own comment in
+ * device_driver_ambit3.c): writes a full sml.DeviceSettings blob back via 0x1101. `data` is
+ * a plain jbyteArray (Kotlin decodes the base64 string it got from TS before calling this -
+ * no base64 decoding needed on the native side, unlike the read direction). Returns true on
+ * a clean 0x1101 send; this does NOT by itself confirm the write took effect - the caller
+ * (AmbitSettingsWriter.ts) re-reads via nativeAmbitReadSettingsRaw() afterward and compares,
+ * the same "prove it, don't just trust the ACK" rule this project's own live testing found
+ * necessary (custom_modes_andre.md).
+ */
+JNIEXPORT jboolean JNICALL
+Java_com_ambitsyncmodern_usb_AmbitUsbModule_nativeAmbitWriteSettingsRaw(
+        JNIEnv *env, jobject /* thiz */, jbyteArray data)
+{
+    if (!g_device) { LOGE("nativeAmbitWriteSettingsRaw: Not connected"); return JNI_FALSE; }
+    if (!data) { LOGE("nativeAmbitWriteSettingsRaw: null data"); return JNI_FALSE; }
+
+    jsize len = env->GetArrayLength(data);
+    std::vector<uint8_t> buffer((size_t)len);
+    env->GetByteArrayRegion(data, 0, len, reinterpret_cast<jbyte *>(buffer.data()));
+
+    uint8_t *reply = nullptr;
+    size_t replylen = 0;
+    int ret = ambit3_write_settings_raw(g_device, buffer.data(), buffer.size(), &reply, &replylen);
+    free(reply);  // expected empty on success (confirmed live) - not returned to Kotlin
+    if (ret != 0) {
+        LOGE("ambit3_write_settings_raw failed: %d", ret);
+        return JNI_FALSE;
+    }
+    return JNI_TRUE;
 }
 
 /**

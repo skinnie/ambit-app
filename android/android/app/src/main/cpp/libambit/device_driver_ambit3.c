@@ -1435,3 +1435,46 @@ int ambit3_read_object_by_id_raw(ambit_object_t *object, uint8_t entry_id, uint8
     *out_len = 0;
     return libambit_protocol_command(object, AMBIT3_CMD_LOG_HEADERS, request, sizeof(request), out, out_len, 0);
 }
+
+#define AMBIT3_CMD_SETTINGS_READ  0x1100
+#define AMBIT3_CMD_SETTINGS_WRITE 0x1101
+
+/*
+ * Reads the watch's real sml.DeviceSettings tree (0x1100, four zero bytes) - the same
+ * command the companion research project's tools/write_nav.py/settings_write.py already
+ * use. *out is allocated by libambit_protocol_command(); caller frees with plain free()
+ * (same equivalence as ambit3_read_poi_list_raw's own caller - see its comment). Returns 0
+ * on success, -1 on failure.
+ */
+int ambit3_read_settings_raw(ambit_object_t *object, uint8_t **out, size_t *out_len)
+{
+    if (object == NULL || out == NULL || out_len == NULL) return -1;
+    uint8_t zero4[4] = { 0, 0, 0, 0 };
+    *out = NULL;
+    *out_len = 0;
+    return libambit_protocol_command(object, AMBIT3_CMD_SETTINGS_READ, zero4, sizeof(zero4), out, out_len, 0);
+}
+
+/*
+ * Writes a real sml.DeviceSettings blob back via 0x1101 - real, hardware-confirmed
+ * 2026-08-08 (tools/settings_write.py's own docstring): André confirmed on a real
+ * connected Ambit3 Peak's own screen that flipping the Display.Invert byte in a blob
+ * obtained from ambit3_read_settings_raw() and writing it back here visibly switched the
+ * display Light -> Dark. `data`/`datalen` should be the *entire* settings blob (a single
+ * changed byte's worth of edits, not a partial tree) - the caller is responsible for
+ * reading first, patching the one field it wants to change, and passing the whole thing
+ * back, matching how the reference SuuntoLink client itself works
+ * (EmuDevice::saveSettings, see custom_modes_andre.md). The watch replies with an empty
+ * body on success (confirmed live) - *out/*out_len will be 0/NULL in that case, which is
+ * not itself a failure; callers should re-read via ambit3_read_settings_raw() to confirm
+ * a write actually took effect, the same "prove it, don't just trust the ACK" rule
+ * settings_write.py's own write_one() already applies. Returns 0 on success, -1 on
+ * failure.
+ */
+int ambit3_write_settings_raw(ambit_object_t *object, const uint8_t *data, size_t datalen, uint8_t **out, size_t *out_len)
+{
+    if (object == NULL || data == NULL || out == NULL || out_len == NULL) return -1;
+    *out = NULL;
+    *out_len = 0;
+    return libambit_protocol_command(object, AMBIT3_CMD_SETTINGS_WRITE, (uint8_t *)data, datalen, out, out_len, 0);
+}

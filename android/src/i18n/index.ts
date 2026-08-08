@@ -265,6 +265,15 @@ const fr = {
   poiImportedTitle: 'POI importés',
   poiImportedMsg: (n: number) => `${n} POI${n !== 1 ? 's' : ''} envoyé${n !== 1 ? 's' : ''} à la montre.`,
 
+  // SettingsScreen — Ambit3 Settings (2026-08-08)
+  ambitSettingsSection: 'Réglages Ambit3',
+  ambitSettingsDesc:
+    'Réglages réels de la montre (langue, formats, luminosité, etc.), lus et modifiés par ' +
+    'câble USB — confirmé sur du matériel réel le 8 août 2026.',
+  ambitSettingsReadBtn: 'Lire les réglages',
+  ambitSettingsRefreshBtn: 'Actualiser',
+  ambitSettingsReading: 'Lecture des réglages…',
+
   // SettingsScreen — À propos / mentions légales
   aboutSection: 'À propos',
   aboutVersion: (v: string) => `AmbitApp v${v}`,
@@ -576,6 +585,15 @@ const en: typeof fr = {
   poiImportWriting: (done: number, total: number) => `Sending POIs… (${done}/${total})`,
   poiImportedTitle: 'POIs imported',
   poiImportedMsg: (n: number) => `${n} POI${n !== 1 ? 's' : ''} sent to the watch.`,
+
+  // SettingsScreen — Ambit3 Settings (2026-08-08)
+  ambitSettingsSection: 'Ambit3 Settings',
+  ambitSettingsDesc:
+    'Real watch settings (language, formats, brightness, etc.), read and written over ' +
+    'USB cable - confirmed working against real hardware 2026-08-08.',
+  ambitSettingsReadBtn: 'Read Settings',
+  ambitSettingsRefreshBtn: 'Refresh',
+  ambitSettingsReading: 'Reading settings...',
 
   // SettingsScreen — About / legal
   aboutSection: 'About',
