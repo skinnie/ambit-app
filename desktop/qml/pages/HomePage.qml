@@ -1,5 +1,7 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Effects
+import QtQuick.Layouts
 import AmbitApp
 
 // Step 4: real device-hero layout. Step 5 adds real weather. Last Activity made real
@@ -30,20 +32,27 @@ Flickable {
     // identified the connected watch, so this can't just be another Component.onCompleted
     // call the way ActivityService.refresh() is - it has to react to isKailash itself
     // becoming true, including on a later reconnect after the page was already loaded.
+    // Real, 2026-08-09 ("Implement home city name" not showing up promptly) - the backend
+    // serializes every real watch request through one lock (server.py's own WATCH_LOCK),
+    // and refreshTrackLog() is a real ~1.3MB flash read (its own doc comment already calls
+    // out as slow) - firing it alongside the fast history/settings requests risked queuing
+    // the city-name lookup's own settings fetch behind it for a long time, not broken, just
+    // stuck waiting. Fast requests (history, settings) now go first; the slow TrackLog read
+    // goes last so it can't block anything else from completing promptly.
     Connections {
         target: HomeViewModel
         function onIsKailashChanged() {
             if (HomeViewModel.isKailash) {
                 KailashService.refreshHistory();
-                KailashService.refreshTrackLog();
-                // Real, 2026-08-09 - the watch's real HomeLocation setting lives in the
-                // generic Settings mechanism (same one SettingsPage.qml's own coord editor
-                // uses), not a Kailash-specific endpoint - fetched here too so Home's own
-                // Home-location card (below) has real coordinates without the user having
-                // to visit Settings first. onSettingsChanged below picks the two fields out
-                // once this reply lands.
+                // The watch's real HomeLocation setting lives in the generic Settings
+                // mechanism (same one SettingsPage.qml's own coord editor uses), not a
+                // Kailash-specific endpoint - fetched here too so Home's own Home-location
+                // card (below) has real coordinates without the user having to visit
+                // Settings first. onSettingsChanged below picks the two fields out once
+                // this reply lands.
                 SettingsWriteService.device = "kailash";
                 SettingsWriteService.refresh();
+                KailashService.refreshTrackLog();
             }
         }
     }
@@ -313,12 +322,21 @@ Flickable {
                     text: KailashService.lastError
                 }
 
-                Row {
+                // Real request 2026-08-09 ("Try to aligne the text on home by 'collumns'").
+                // GridLayout (not used anywhere else in this codebase before now) gives each
+                // column a consistent width across rows automatically - the plain Row-of-
+                // Columns this replaced only aligned within its own single row, so this stat
+                // block and the distance/furthest-from-home block below it didn't line up
+                // with each other. One shared GridLayout fixes that for both.
+                GridLayout {
                     visible: KailashService.historyOk
                     width: parent.width
-                    spacing: Theme.spacingLarge
+                    columns: 3
+                    columnSpacing: Theme.spacingLarge
+                    rowSpacing: Theme.spacingSmall
 
                     Column {
+                        Layout.fillWidth: true
                         spacing: 2
                         Text { text: qsTr("Cities visited"); color: Theme.mutedText; font.pixelSize: 12 }
                         Text {
@@ -327,6 +345,7 @@ Flickable {
                         }
                     }
                     Column {
+                        Layout.fillWidth: true
                         spacing: 2
                         Text { text: qsTr("Countries visited"); color: Theme.mutedText; font.pixelSize: 12 }
                         Text {
@@ -335,10 +354,30 @@ Flickable {
                         }
                     }
                     Column {
+                        Layout.fillWidth: true
                         spacing: 2
                         Text { text: qsTr("Travel days"); color: Theme.mutedText; font.pixelSize: 12 }
                         Text {
                             text: KailashService.travellingDays
+                            color: Theme.text; font.pixelSize: 13
+                        }
+                    }
+
+                    Column {
+                        Layout.fillWidth: true
+                        spacing: 2
+                        Text { text: qsTr("Travelled distance"); color: Theme.mutedText; font.pixelSize: 12 }
+                        Text {
+                            text: ActivityViewModel.formatDistance(KailashService.travelledDistanceMeters)
+                            color: Theme.text; font.pixelSize: 13
+                        }
+                    }
+                    Column {
+                        Layout.fillWidth: true
+                        spacing: 2
+                        Text { text: qsTr("Furthest from home"); color: Theme.mutedText; font.pixelSize: 12 }
+                        Text {
+                            text: ActivityViewModel.formatDistance(KailashService.furthestFromHomeMeters)
                             color: Theme.text; font.pixelSize: 13
                         }
                     }
@@ -411,29 +450,6 @@ Flickable {
                     }
                 }
 
-                Row {
-                    visible: KailashService.historyOk
-                    width: parent.width
-                    spacing: Theme.spacingLarge
-
-                    Column {
-                        spacing: 2
-                        Text { text: qsTr("Travelled distance"); color: Theme.mutedText; font.pixelSize: 12 }
-                        Text {
-                            text: ActivityViewModel.formatDistance(KailashService.travelledDistanceMeters)
-                            color: Theme.text; font.pixelSize: 13
-                        }
-                    }
-                    Column {
-                        spacing: 2
-                        Text { text: qsTr("Furthest from home"); color: Theme.mutedText; font.pixelSize: 12 }
-                        Text {
-                            text: ActivityViewModel.formatDistance(KailashService.furthestFromHomeMeters)
-                            color: Theme.text; font.pixelSize: 13
-                        }
-                    }
-                }
-
                 // World map of visited places - real, 2026-08-09 ("Add a world map with the
                 // points were kailash has been"). MapView's own real projection math
                 // auto-fits to whatever pins are given (see MapView.qml's own `markers`
@@ -451,14 +467,38 @@ Flickable {
                         color: Theme.mutedText
                         font.pixelSize: 12
                     }
+                    // Rounded corners - real request 2026-08-09 ("On the map if possible
+                    // put round corners"). QML's own `clip: true` only clips to an item's
+                    // plain bounding rectangle, not a rounded one, so the map tiles would
+                    // otherwise sit square-cornered inside this rounded card - the same
+                    // real Qt6 MultiEffect mask technique Card.qml already uses for its own
+                    // shadow (same module, already linked), applied here as a corner mask
+                    // instead.
                     Item {
+                        id: mapMask
                         width: parent.width
                         height: 200
+                        layer.enabled: true
+                        layer.effect: MultiEffect {
+                            maskEnabled: true
+                            maskSource: mapMaskShape
+                        }
                         MapView {
                             anchors.fill: parent
                             markers: KailashService.visitedPlaces
                             zoomLevel: 4  // only used for a single pin - see MapView.qml's
                                           // own _singlePoint comment; 2+ pins auto-fit
+                        }
+                        // Not a direct child of the outer Column above - Column explicitly
+                        // disallows anchored children ("Cannot specify... fill... anchors
+                        // for items inside Column"), so this has to nest one level deeper,
+                        // inside mapMask itself, where a plain anchors.fill is fine.
+                        Rectangle {
+                            id: mapMaskShape
+                            anchors.fill: parent
+                            radius: Theme.radiusCard
+                            color: "white"
+                            visible: false
                         }
                     }
                 }
@@ -523,12 +563,14 @@ Flickable {
                 width: parent.width
                 spacing: Theme.spacingSmall
 
-                // Kailash: KailashService.trackLogActivity is already a single activity, not
-                // a list (its own docstring: TrackLog is passive background tracking, not a
-                // per-session logbook the way GarminService/ActivityService's own activities
-                // are) - shown directly rather than run through mostRecent().
+                // Real, 2026-08-09: KailashService.trackLogActivities is now one real entry
+                // per DeviceHistory session (correlated against TrackLog's own GPS points,
+                // see kailash_tracklog.py's split_into_activities() docstring) rather than
+                // one bundled everything-activity - same list shape GarminService/
+                // ActivityService already use, so mostRecent() applies here too now.
                 readonly property var activity: HomeViewModel.isKailash
-                    ? (KailashService.trackLogOk ? KailashService.trackLogActivity : null)
+                    ? (KailashService.trackLogOk
+                       ? ActivityViewModel.mostRecent(KailashService.trackLogActivities) : null)
                     : ActivityViewModel.mostRecent(
                           HomeViewModel.isGarmin ? GarminService.activities : ActivityService.activities)
 

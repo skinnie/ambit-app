@@ -443,9 +443,13 @@ class Handler(BaseHTTPRequestHandler):
     def _handle_kailash_tracklog(self):
         """GET /api/kailash/tracklog - Kailash only. Real, read-only flash read of the
         TrackLog region (tools/kailash_tracklog.py --json, added 2026-08-08), reshaped into
-        the same activity JSON shape ActivityService/GarminService already use (name/
-        startTime/distanceMeters/durationSeconds/track/gpxText) so the existing ActivityCard/
-        MapView QML needs no new code to show it. No ascent/FIT here - TrackLog carries no
+        a JSON array `activities` of the same activity shape ActivityService/GarminService
+        already use (name/startTime/distanceMeters/durationSeconds/track/gpxText) so the
+        existing ActivityCard/MapView QML needs no new code to show them. Real, 2026-08-09:
+        each real DeviceHistory session (the "activity mode" logbook) gets its own real GPS
+        segment, correlated by timestamp against these TrackLog points (see
+        kailash_tracklog.py's own split_into_activities() docstring) - falls back to one
+        bundled activity if nothing correlates. No ascent/FIT here - TrackLog carries no
         confirmed altitude field and there's no FIT writer for this format (see that tool's
         own docstring). A real ~1.3MB flash read over USB, not a short SBEM query - slower
         than most endpoints here, hence the longer timeout. Live-verified this same session:

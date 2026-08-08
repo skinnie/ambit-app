@@ -48,11 +48,13 @@ class KailashService : public QObject
     // one real visited place so far). Each entry: {lat, lon, country}.
     Q_PROPERTY(QVariantList visitedPlaces READ visitedPlaces NOTIFY historyChanged)
 
-    // /api/kailash/tracklog - one synthesized activity, same field shape
-    // ActivityService::activities() entries already use, so ActivityCard/MapView need no
-    // new QML code to show it.
+    // /api/kailash/tracklog - one activity per real DeviceHistory session, correlated by
+    // timestamp against TrackLog's own GPS points (see kailash_tracklog.py's
+    // split_into_activities() docstring - real, 2026-08-09, replacing the single bundled-
+    // everything activity this used to be). Same field shape ActivityService::activities()
+    // entries already use, so ActivityCard/MapView need no new QML code to show them.
     Q_PROPERTY(bool trackLogOk READ trackLogOk NOTIFY trackLogChanged)
-    Q_PROPERTY(QVariantMap trackLogActivity READ trackLogActivity NOTIFY trackLogChanged)
+    Q_PROPERTY(QVariantList trackLogActivities READ trackLogActivities NOTIFY trackLogChanged)
 
     // Real, 2026-08-09 ("I believe you put a POI icon for home, name home and identify the
     // city by coordinates") - the watch's real HomeLocation setting (sml.DeviceSettings.
@@ -88,7 +90,7 @@ public:
     QVariantList visitedPlaces() const { return m_visitedPlaces; }
 
     bool trackLogOk() const { return m_trackLogOk; }
-    QVariantMap trackLogActivity() const { return m_trackLogActivity; }
+    QVariantList trackLogActivities() const { return m_trackLogActivities; }
 
     bool hasHomeLocation() const { return m_hasHomeLocation; }
     double homeLatitude() const { return m_homeLatitude; }
@@ -134,7 +136,7 @@ private:
     QVariantList m_visitedPlaces;
 
     bool m_trackLogOk = false;
-    QVariantMap m_trackLogActivity;
+    QVariantList m_trackLogActivities;
 
     bool m_hasHomeLocation = false;
     double m_homeLatitude = 0;

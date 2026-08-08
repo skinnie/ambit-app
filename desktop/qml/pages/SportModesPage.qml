@@ -27,13 +27,34 @@ Flickable {
         { bit: 0x0800, label: qsTr("Bike pod") },
     ]
 
+    // Real, 2026-08-09 ("sport mode return bad gateway") - the connected watch had become
+    // Kailash, which genuinely has no CustomModes region at all (confirmed empty - see
+    // custom_modes_andre.md's Kailash section), so custom_modes.py's own real flash read
+    // fails with a real, correct hardware error (0x0b17 short reply) - a genuine "this watch
+    // doesn't have this," not a bug, but showing that as a raw 502 is still wrong. NavRail
+    // already hides this page's own nav entry for Kailash, but that alone doesn't cover
+    // reaching this page some other way (open before a cable swap, deep navigation) - guard
+    // here too, and directly, rather than trusting the nav item to always be the only way in.
     Component.onCompleted: {
+        if (HomeViewModel.isKailash) return
         CustomModesService.refreshFieldTypes()
         CustomModesService.refresh()
     }
 
+    Text {
+        visible: HomeViewModel.isKailash
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.top: parent.top
+        anchors.topMargin: Theme.spacingLarge
+        width: 560
+        wrapMode: Text.WordWrap
+        color: Theme.mutedText
+        text: qsTr("Sport Modes isn't available on Kailash - it has no CustomModes region on this watch at all.")
+    }
+
     Column {
         id: column
+        visible: !HomeViewModel.isKailash
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.top: parent.top
         anchors.topMargin: Theme.spacingLarge

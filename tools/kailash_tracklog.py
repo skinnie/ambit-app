@@ -49,8 +49,10 @@ ExerciseLog, not a bug.
 import argparse
 import json
 import math
+import re
 import struct
 import sys
+from datetime import datetime, timedelta
 
 RECORD_START = 1
 RECORD_SIZE = 20
@@ -134,6 +136,87 @@ def to_activity(points):
     }
 
 
+def _parse_when(when_str):
+    """Pulls (year, month, day, hour, minute) out of a real DeviceHistory
+    Header.DateTime string (kailash_history.py's own `sessions[].when` - a real utf8
+    field, confirmed via sbem_schema.load(KAILASH_DESCRIPTOR).fields, but this project has
+    never captured a live sample of its exact separator formatting). Only the digit run
+    matters here - tolerant of "-"/":"/"T"/" " or no separator at all - since TrackLog's own
+    points are only ever compared at minute resolution anyway."""
+    m = re.match(r"(\d{4})\D?(\d{2})\D?(\d{2})\D?(\d{2})\D?(\d{2})", when_str or "")
+    if not m:
+        return None
+    y, mo, d, h, mi = (int(x) for x in m.groups())
+    try:
+        return datetime(y, mo, d, h, mi)
+    except ValueError:
+        return None
+
+
+def split_into_activities(points, sessions):
+    """One activity per real DeviceHistory session (kailash_history.py's own `sessions` -
+    the watch's "activity mode" logbook), correlating each session's own [when, when +
+    duration] window against TrackLog's own per-point timestamps. Real request 2026-08-09
+    ("Something is bizarre on the activities, they say no gps, but they have gps") -
+    DeviceHistory sessions carry summary stats only (no GPS of their own, see
+    kailash_history.py's own docstring), and until now ActivitiesPage.qml filled every
+    Kailash "Walk" card's track with an empty placeholder. This is what actually supplies it.
+
+    A +/-2 minute tolerance is applied on both ends: TrackLog points are minute-resolution
+    and Header.Duration is tenths-of-a-second, two independently-derived clocks off the same
+    watch, so exact-window matching would drop real points to real clock/rounding drift
+    between the two sources.
+
+    Always returns exactly one entry per session, in the same order `sessions` came in -
+    ActivitiesPage.qml zips this 1:1 against KailashService.sessions by index (both ultimately
+    decode the same real wire data in the same order, from two separate backend calls). A
+    session with no correlated points gets a real, honest empty track rather than being
+    dropped, matching this project's original per-session behaviour for the case where TrackLog
+    genuinely doesn't cover it (e.g. a session predating this watch's TrackLog capture start).
+    distanceMeters/durationSeconds/startTime always come from the session's own real watch-
+    reported stats, not the GPS-derived approximation - only `track`/`gpxText` come from
+    TrackLog, since a haversine sum over minute-resolution points is strictly less accurate
+    than the watch's own reported values.
+
+    Falls back to one bundled activity covering every point (this project's original,
+    pre-2026-08-09 behaviour) only when there are no sessions to correlate against at all
+    (e.g. the DeviceHistory query itself failed) - still shows something rather than nothing."""
+    if not sessions:
+        activity = to_activity(points)
+        return [activity] if activity else []
+
+    point_dts = []
+    for p in points:
+        try:
+            point_dts.append((datetime(p["year"], p["month"], p["day"], p["hour"], p["minute"]), p))
+        except ValueError:
+            continue
+
+    activities = []
+    for s in sessions:
+        matched = []
+        start = _parse_when(s.get("when"))
+        if start is not None:
+            end = start + timedelta(seconds=s.get("duration_s") or 0)
+            lo, hi = start - timedelta(minutes=2), end + timedelta(minutes=2)
+            matched = [p for dt, p in point_dts if lo <= dt <= hi]
+
+        activity = to_activity(matched) or {
+            "name": "Kailash Walk", "startTime": None, "distanceMeters": 0,
+            "durationSeconds": 0, "track": [], "gpxText": "",
+        }
+        activity["name"] = "Kailash Walk"
+        # The session's own real watch-reported stats win over the GPS-derived ones.
+        if s.get("when") is not None:
+            activity["startTime"] = s["when"]
+        if s.get("distance_m") is not None:
+            activity["distanceMeters"] = s["distance_m"]
+        if s.get("duration_s") is not None:
+            activity["durationSeconds"] = s["duration_s"]
+        activities.append(activity)
+    return activities
+
+
 def to_gpx(points):
     lines = ['<?xml version="1.0" encoding="UTF-8"?>',
              '<gpx version="1.1" creator="ambit-app kailash_tracklog.py">',
@@ -160,6 +243,7 @@ def main():
                           "for ambitapp-v2/backend/server.py, not meant for a person to read")
     args = ap.parse_args()
 
+    sessions = None
     if args.from_file:
         with open(args.from_file, "rb") as f:
             data = f.read()
@@ -175,14 +259,26 @@ def main():
                 f.write(data)
             if not args.json:
                 print(f"\nsaved raw dump to {args.save}")
+        # Real, 2026-08-09: reuses the same already-open `link` for the DeviceHistory query
+        # (0x1200, see kailash_history.py) needed to correlate real sessions against these
+        # TrackLog points - no second USB open/close round trip. Not fatal if it fails (a
+        # decode hiccup here shouldn't take down TrackLog reading, which is the whole point
+        # of this tool) - falls back to the bundled-everything activity in that case.
+        import kailash_history
+        try:
+            history = kailash_history.read_history(link, warn=lambda *_a, **_k: None)
+            if history.get("ok"):
+                sessions = history.get("sessions")
+        except Exception:
+            sessions = None
 
     points = list(walk_records(data))
 
     if args.json:
-        activity = to_activity(points)
-        print(json.dumps({"ok": True, "activity": activity} if activity
+        activities = split_into_activities(points, sessions)
+        print(json.dumps({"ok": True, "activities": activities} if activities
                           else {"ok": False, "error": "no real-looking points found"}))
-        return 0 if activity else 1
+        return 0 if activities else 1
 
     print(f"{len(points)} real-looking GPS record(s) found")
     for p in points[:20]:

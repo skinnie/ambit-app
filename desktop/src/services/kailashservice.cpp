@@ -120,34 +120,38 @@ void KailashService::refreshTrackLog()
             return;
         }
 
-        const auto activity = obj.value(QStringLiteral("activity")).toObject();
-        QVariantMap map;
-        map[QStringLiteral("name")] = activity.value(QStringLiteral("name")).toString();
-        map[QStringLiteral("startTime")] = activity.value(QStringLiteral("startTime")).toString();
-        map[QStringLiteral("distanceMeters")] =
-            activity.value(QStringLiteral("distanceMeters")).toDouble();
-        map[QStringLiteral("durationSeconds")] =
-            activity.value(QStringLiteral("durationSeconds")).toDouble();
-        // No confirmed altitude field in TrackLog and no FIT writer for this format yet
-        // (see kailash_tracklog.py's own docstring) - filled with the same defaults
-        // ActivityCard/MapView already tolerate for a GPX-only activity.
-        map[QStringLiteral("ascentMeters")] = 0;
-        map[QStringLiteral("sportTypeRaw")] = -1;
-        map[QStringLiteral("fitBase64")] = QString();
-        map[QStringLiteral("gpxText")] = activity.value(QStringLiteral("gpxText")).toString();
+        m_trackLogActivities.clear();
+        for (const auto &av : obj.value(QStringLiteral("activities")).toArray()) {
+            const auto activity = av.toObject();
+            QVariantMap map;
+            map[QStringLiteral("name")] = activity.value(QStringLiteral("name")).toString();
+            map[QStringLiteral("startTime")] = activity.value(QStringLiteral("startTime")).toString();
+            map[QStringLiteral("distanceMeters")] =
+                activity.value(QStringLiteral("distanceMeters")).toDouble();
+            map[QStringLiteral("durationSeconds")] =
+                activity.value(QStringLiteral("durationSeconds")).toDouble();
+            // No confirmed altitude field in TrackLog and no FIT writer for this format yet
+            // (see kailash_tracklog.py's own docstring) - filled with the same defaults
+            // ActivityCard/MapView already tolerate for a GPX-only activity.
+            map[QStringLiteral("ascentMeters")] = 0;
+            map[QStringLiteral("sportTypeRaw")] = -1;
+            map[QStringLiteral("fitBase64")] = QString();
+            map[QStringLiteral("gpxText")] = activity.value(QStringLiteral("gpxText")).toString();
 
-        QVariantList track;
-        for (const auto &v : activity.value(QStringLiteral("track")).toArray()) {
-            const auto p = v.toObject();
-            QVariantMap point;
-            point[QStringLiteral("lat")] = p.value(QStringLiteral("lat")).toDouble();
-            point[QStringLiteral("lon")] = p.value(QStringLiteral("lon")).toDouble();
-            point[QStringLiteral("ele")] = 0;  // not part of this format, see docstring
-            track.append(point);
+            QVariantList track;
+            for (const auto &v : activity.value(QStringLiteral("track")).toArray()) {
+                const auto p = v.toObject();
+                QVariantMap point;
+                point[QStringLiteral("lat")] = p.value(QStringLiteral("lat")).toDouble();
+                point[QStringLiteral("lon")] = p.value(QStringLiteral("lon")).toDouble();
+                point[QStringLiteral("ele")] = 0;  // not part of this format, see docstring
+                track.append(point);
+            }
+            map[QStringLiteral("track")] = track;
+
+            m_trackLogActivities.append(map);
         }
-        map[QStringLiteral("track")] = track;
 
-        m_trackLogActivity = map;
         setLastError(QString());
         emit trackLogChanged();
     });

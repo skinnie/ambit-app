@@ -26,18 +26,30 @@ Item {
     // new QML component is needed. Every session becomes a real "Walk" card - Kailash's own
     // DeviceHistory doesn't record which activity type each session was (unlike Ambit3's
     // real ExerciseLog), and "Walk" is the closest honest default for a GPS-adventure watch
-    // with no sport-mode concept at all, per this request. ascentMeters/track are honestly
-    // empty (this logbook has summary stats only, no per-session GPS track - the watch's
-    // separate, continuous TrackLog is shown on Home as "Recent Track" instead, not
-    // per-session) - ActivityCard.qml already renders that as "No GPS track", not broken.
-    readonly property var kailashActivities: KailashService.sessions.map(function(s) {
+    // with no sport-mode concept at all, per this request.
+    //
+    // Real, 2026-08-09 ("Something is bizarre on the activities, they say no gps, but they
+    // have gps") - ascentMeters/track used to be unconditionally empty here, described above
+    // as "this logbook has summary stats only, no per-session GPS track" - true of
+    // DeviceHistory sessions on their own, but wrong to leave it there: the watch's separate,
+    // continuous TrackLog DOES cover these same real time windows. KailashService.
+    // trackLogActivities now does that correlation server-side (see kailash_tracklog.py's
+    // split_into_activities() docstring) and comes back index-aligned 1:1 with
+    // KailashService.sessions - zipped together here so distance/duration keep coming from
+    // the watch's own real reported stats (more accurate than a GPS-derived approximation)
+    // while track comes from the real correlated GPS points. A session genuinely outside
+    // TrackLog's coverage (predates capture start, etc.) still gets a real empty track, not a
+    // wrong one - ActivityCard.qml already renders that as "No GPS track", which is correct
+    // for that specific case.
+    readonly property var kailashActivities: KailashService.sessions.map(function(s, i) {
+        var t = KailashService.trackLogActivities[i];
         return {
             name: qsTr("Walk"),
             startTime: s.when,
             distanceMeters: s.distanceMeters,
             durationSeconds: s.durationSeconds,
             ascentMeters: 0,
-            track: [],
+            track: (t && t.track) ? t.track : [],
         };
     })
 
@@ -54,6 +66,11 @@ Item {
         ActivityService.refresh()
         GarminService.refreshActivities()
         KailashService.refreshHistory()
+        // Real, 2026-08-09: needed for the real per-session track correlation above - this
+        // page didn't fetch TrackLog at all before (track was always the empty placeholder).
+        // A real ~1.3MB flash read (slow, see KailashService::refreshTrackLog()'s own
+        // comment) but this page is only opened on demand, not part of the Home hot path.
+        KailashService.refreshTrackLog()
     }
 
     // Real, not a guess: the watch's ExerciseLog region is ~5.3MB, read 1024 bytes at a
