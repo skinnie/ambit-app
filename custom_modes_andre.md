@@ -1247,3 +1247,69 @@ actually changing the watch's live, visible behavior. Real, unresolved - not yet
 whether it's BLE-only for changes that actually take effect, or whether cable writes do work
 and this session's own test setup missed something. No further live write tests were run
 after this finding pending direction on how to proceed.
+
+**Real, authoritative answer from André, settling the original question directly (not
+inferred)**: "ambit 3 settings can be changed via cable on suunto app. kailash settings can
+only be changed on suunto 7r app for ios via bluetooth." Confirms this project's own cable
+mechanism is the real, officially-supported path for the Ambit3 (SuuntoLink itself uses
+`0x1100`/`0x1101`, per the decompiled `EmuDevice::saveSettings` reference implementation
+already found in `SDSApplicationServer.exe.c`) - Kailash is BLE-only for settings changes,
+full stop, no cable path exists for it at all (matches the 7R app being the only app that
+talks to it in any capacity found so far).
+
+**Real, likely explanation for why the `Time.Format` write test showed no visible effect**:
+checked against real SuuntoLink screenshots of this exact Ambit3's own "General Settings"
+screen (`assets/ambit3 pcap/v2/general ambit settings/`, provided 2026-08-08) - there is no
+12h/24h toggle anywhere on that screen (Language, Backlight mode/brightness, Display,
+Tones, Button lock x2, GPS time keeping, GPS position format, Orientation, Alti-baro
+profile, Compass declination - the complete "General Settings" page, three screenshots,
+zero Time Format control). André separately confirmed directly: some settings are
+changeable on the watch's own physical menu (screen brightness is one), but 24h format is
+not. Between "not on the watch's own menu" and "not in SuuntoLink's own settings UI either,"
+there may be no real user-facing control for this specific field on this device at all -
+`Time.Format` (entry `0x09`) being a real, named field in the shared SBEM schema does not
+guarantee it has a live UI binding on every device that schema covers. This does not
+un-fail the earlier test (the write still showed no visible effect, and that is still real),
+but it substantially changes what the failure means: not "cable writes don't work," but "this
+specific field was very likely the wrong one to test with," which is a materially better
+place to be than an unexplained protocol-level mystery.
+
+**Real, separate, still-open discrepancy worth investigating further**: the same screenshot
+shows `Backlight brightness = 50%`, but a live `0x1100` read of the connected watch (this
+session, same day) read `Display.Backlight.Brightness = 2`. Not yet reconciled - real
+candidates, none confirmed: a stale/pre-change screenshot, a scale/unit mismatch (2 could be
+an index into a small preset scale rather than a direct 0-100 percent, though the schema's
+own `<FRM>` tag for this field is a plain `uint8` with no `<MOD>` conversion documented), or
+the value genuinely changed on the watch since the screenshot was taken (André confirmed
+brightness is one of the settings changeable directly on the watch's own physical menu, so a
+real, independent change between the screenshot and this session's read is plausible, not
+far-fetched).
+
+**Root cause of the earlier "write accepted but not applied" mystery, found and confirmed,
+2026-08-08**: entry IDs are per-descriptor, not stable across devices - Kailash's own schema
+(41 entries total) numbers `Time.Format` as `0x09` and `Backlight.Brightness` as `0x11`, but
+the Ambit3's own real schema (much larger - confirmed by direct `--all` dump) numbers
+completely different fields at those same two IDs: `0x09` is `Units.Altitude`, `0x11` is
+`Units.Language`. The earlier Ambit3 test reused entry-ID numbers read from an *unrelated
+Kailash dump* instead of the Ambit3's own - so "flipping Time.Format" actually flipped
+`Units.Altitude`, and the earlier "brightness" round-trip actually flipped `Units.Language`
+(briefly to an out-of-range value, `22`, which a real firmware would plausibly just clamp or
+ignore rather than crash on - consistent with no visible or lasting effect either way). Not a
+protocol problem at all - a test-methodology bug, real and now fixed.
+
+**Real, independently confirmed positive result, immediately after finding the bug**: re-ran
+`write_nav.py settings --device "ambit3 peak" --all` to get the Ambit3's own real entry IDs
+directly (not carried over from another device), found `Display.Invert` at `0x20` (value `0`,
+matching the real screenshot's "Display: Light" selection), flipped it to `1` via `0x1101`,
+and **André confirmed on the watch's own screen: it visibly switched to Dark.** Reverted to
+`0` immediately after, confirmed back to Light, both via protocol read-back and André's own
+visual check. This is the real, definitive, independently-verified answer to the original
+question: **settings writes over USB cable on the Ambit3 genuinely work and take live
+effect** - the earlier negative result was a wrong-field bug in this session's own test code,
+not a real limitation of the `0x1100`/`0x1101` mechanism. Matches André's own separate,
+authoritative confirmation above ("ambit 3 settings can be changed via cable on suunto app").
+
+**Practical lesson for any future settings-write work on this project**: always derive entry
+IDs from a fresh `--all` dump of the *specific* watch being written to - never reuse an ID
+number read from a different device's schema, even for a field with the same *name*, since
+the numbering is real per-descriptor and not portable.
