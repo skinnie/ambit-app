@@ -39,6 +39,11 @@ PRODUCT_IDS = {
     0x001B: "Ambit3 Peak (Emu)", 0x001C: "Ambit3 Sport (Finch)",
     0x001E: "Ambit3 Run (Ibisbill)", 0x002C: "Ambit3 Vertical (Kaka)",
     0x002B: "Traverse (Jabiru)", 0x002D: "Traverse Alpha (Loon)",
+    # Real, 2026-08-08: confirmed via `lsusb` against André's actual connected watch
+    # ("ID 1493:002a Suunto Kailash") while testing kailash_tracklog.py/kailash_eventlog.py -
+    # missing here meant Link.open() raised "no Ambit3 on the USB bus" even with the real
+    # device plugged in, since hid.enumerate() only ever looked at the product IDs above.
+    0x002A: "Kailash (Hoopoe)",
 }
 
 CMD_DEVICE_INFO = 0x0000
