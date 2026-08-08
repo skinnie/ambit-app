@@ -1313,3 +1313,30 @@ authoritative confirmation above ("ambit 3 settings can be changed via cable on 
 IDs from a fresh `--all` dump of the *specific* watch being written to - never reuse an ID
 number read from a different device's schema, even for a field with the same *name*, since
 the numbering is real per-descriptor and not portable.
+
+## Kailash settings ARE writable over cable too, real, hardware-confirmed, 2026-08-08
+
+Re-checked after the Ambit3 result above, since the underlying `0x1100`/`0x1101` mechanism
+is shared across the whole product family - not assumed, tested. Kailash's own real schema
+has the same `Display.Invert` field (at its own real entry ID, `0x27` - different from the
+Ambit3's `0x20`, the same per-descriptor numbering already established, `settings_write.py
+--device kailash --all` derives it correctly with no code changes needed). Flipped it 0->1
+via `--device kailash --set display_dark=1 --write`: confirmed by protocol re-read
+(`confirmed_value: 1`) *and* by André directly on the watch's own screen - it visibly
+switched Light -> Dark, same as the Ambit3. Reverted to `0`, confirmed both ways again.
+
+**This nuances, without contradicting, André's own earlier authoritative answer** ("kailash
+settings can only be changed on suunto 7r app for ios via bluetooth"): that's still true for
+how the *real 7R app* changes settings day to day - it's an iOS BLE app, it has no cable
+mode. What this session adds is narrower and lower-level: the watch's own firmware accepts
+the identical `0x1100`/`0x1101` write over USB cable regardless of which client sends it,
+the same as the Ambit3. A real, working path exists for *this project's own tooling* to
+write Kailash settings over cable, even though Suunto's own official app never uses it that
+way.
+
+Also surfaced along the way, real and worth flagging separately: Kailash's schema has a
+populated `WhitelistedBleDevices.Device` entry (`IsAuthenticated=1`, a real `EncodingKey`,
+`IsNspCapable=0`) - a genuine BLE pairing bond with a phone, redacted via `--redact` since
+it's real link-key material. Not investigated further this session, noted for anyone
+picking up Kailash BLE work later (mirrors the Ambit3's own `WhitelistedBleDevices`
+mechanism documented in HANDOFF.md's Milestone 7).
