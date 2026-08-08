@@ -132,6 +132,16 @@ export function readPoiListRaw(): Promise<string> {
   return NativeAmbit.readPoiListRaw();
 }
 
+/**
+ * Kailash only. Reads the watch's raw sml.DeviceHistory reply (0x1200, entry 0x67) in
+ * base64 - visited cities/countries, travel stats, and a real activity-mode logbook bundled
+ * in the same reply. Decoding happens in TS (KailashHistoryReader.ts), the same split
+ * readPoiListRaw() above already uses. The watch must already be connected.
+ */
+export function readDeviceHistoryRaw(): Promise<string> {
+  return NativeAmbit.readDeviceHistoryRaw();
+}
+
 // ─── Auto-sync on USB attach ───────────────────────────────────────────────────
 // AndroidManifest.xml (launchMode="singleTask" + USB_DEVICE_ATTACHED intent-filter
 // + device_filter.xml) already lets the OS launch/foreground the app when the

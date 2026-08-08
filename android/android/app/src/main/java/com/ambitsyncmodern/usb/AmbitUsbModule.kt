@@ -91,6 +91,7 @@ class AmbitUsbModule(private val reactContext: ReactApplicationContext) :
     private external fun nativeAmbitAddPoi(name: String, lat: Double, lon: Double): Boolean
     private external fun nativeAmbitReadRegion(address: Long, length: Long): String?
     private external fun nativeAmbitReadPoiListRaw(): String?
+    private external fun nativeAmbitReadDeviceHistoryRaw(): String?
     private external fun nativeAmbitDisconnect()
 
     // ─── État interne ─────────────────────────────────────────────────────────
@@ -541,6 +542,29 @@ class AmbitUsbModule(private val reactContext: ReactApplicationContext) :
                 else promise.reject("POI_READ_FAILED", "Failed to read POI list (see logcat AmbitJNI)")
             } catch (e: Exception) {
                 promise.reject("POI_READ_ERROR", e.message ?: "Unknown error")
+            }
+        }
+    }
+
+    // Real, 2026-08-08: Kailash's own sml.DeviceHistory (visited cities/countries, travel
+    // stats, plus a real activity-mode logbook bundled in the same reply) via the same
+    // 0x1200 "object by identifier" query write_nav.py's own CMD_LOG_HEADERS already uses -
+    // see ambit3_read_object_by_id_raw()'s own comment (device_driver_ambit3.c) for where
+    // entry 0x67 was found. Decoding happens in TS (KailashHistoryReader.ts), mirroring the
+    // companion research project's tools/kailash_history.py.
+    @ReactMethod
+    fun readDeviceHistoryRaw(promise: Promise) {
+        if (!jniLoaded) {
+            promise.reject("JNI_NOT_LOADED", "Native library unavailable")
+            return
+        }
+        executor.execute {
+            try {
+                val b64 = nativeAmbitReadDeviceHistoryRaw()
+                if (b64 != null) promise.resolve(b64)
+                else promise.reject("HISTORY_READ_FAILED", "Failed to read device history (see logcat AmbitJNI)")
+            } catch (e: Exception) {
+                promise.reject("HISTORY_READ_ERROR", e.message ?: "Unknown error")
             }
         }
     }

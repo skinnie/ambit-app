@@ -11,12 +11,23 @@ import { updateOrbitalData, OrbitalUpdateState } from '../services/SgeeService';
 import {
   connect as ambitConnect, disconnect as ambitDisconnect, getDeviceInfo, AmbitDeviceInfo,
   wasLaunchedViaUsbAttach, onUsbAttached, detectAttachedDeviceType, AttachedDeviceType,
+  readDeviceHistoryRaw,
 } from '../native/AmbitUsbModule';
 import * as Garmin from '../native/GarminModule';
 import type { GarminConnectResult } from '../native/GarminModule';
 import { syncGarminActivities, GarminActivitySyncState } from '../services/GarminActivityService';
+import { kailashDeviceProvider } from '../services/devices/KailashDeviceProvider';
+import { decodeDeviceHistory, KailashHistory } from '../services/KailashHistoryReader';
 import { APP_VERSION } from '../config/version';
 import { t } from '../i18n';
+
+// Real, 2026-08-08: Kailash ("Hoopoe") answers the same USB init + 0x0000 device-info
+// commands every Ambit/Traverse does (AmbitUsbModule.kt's SUUNTO_PID_NAMES/
+// device_filter.xml both now include its real product ID) - detectAttachedDeviceType()
+// already reports it as "ambit", no separate branch needed there. This is the one place
+// that distinguishes it: everywhere below that would otherwise assume Ambit3's own
+// ExerciseLog/sport-mode shape switches to the Kailash-specific path instead.
+const isKailash = (info: AmbitDeviceInfo | null) => info?.model === 'Hoopoe';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Home'>;
 type ActiveAction = 'sync' | 'orbital';
@@ -150,6 +161,9 @@ export default function HomeScreen() {
   const [waitingSeconds, setWaitingSeconds] = useState<number | null>(null);
   const [ambitInfo, setAmbitInfo] = useState<AmbitDeviceInfo | null>(null);
   const [garminInfo, setGarminInfo] = useState<GarminConnectResult | null>(null);
+  // Kailash only - visited cities/countries, travel stats, and the real activity-mode
+  // logbook, all fetched once at connect time (see connectFlow's own 'ambit' branch below).
+  const [kailashHistory, setKailashHistory] = useState<KailashHistory | null>(null);
 
   // Refs mirroring the state above — the search-poll interval and the
   // attach-event listener are both set up once and must always see the
@@ -177,6 +191,19 @@ export default function HomeScreen() {
         const info = await ambitConnect();
         let devInfo: AmbitDeviceInfo | null = null;
         try { devInfo = await getDeviceInfo(); } catch { /* non-fatal — hide the info block below */ }
+        // Real, 2026-08-08 ("resumind: 7r button, last city visit... if we could import
+        // this data which is on the watch and read it to our app would be awesome").
+        // Fetched here, still connected - readDeviceHistoryRaw() needs the same open link
+        // getDeviceInfo() just used, not a second connect(). Non-fatal like devInfo above:
+        // a failed history read shouldn't block showing the rest of Home.
+        if (isKailash(devInfo)) {
+          try {
+            const b64 = await readDeviceHistoryRaw();
+            setKailashHistory(decodeDeviceHistory(b64));
+          } catch { setKailashHistory(null); }
+        } else {
+          setKailashHistory(null);
+        }
         await ambitDisconnect().catch(() => {});
         setAmbitInfo(devInfo ?? {
           name: info.name, model: '', serial: '', fwVersion: '', hwVersion: '', battery: -1,
@@ -257,7 +284,12 @@ export default function HomeScreen() {
     if (isBusy) return;
     setLastActive('sync');
     try {
-      await runSync(setSync);
+      // Real, 2026-08-08: Kailash has no ExerciseLog for the default provider's native
+      // walker to find (see KailashDeviceProvider.ts's own header comment) - its one real
+      // activity source is the passive TrackLog region, decoded to GPX in TS and routed
+      // through this exact same sync pipeline (writeGpxFile/markActivitySynced) so no new
+      // "synced activities" list/UI is needed for it.
+      await runSync(setSync, isKailash(ambitInfo) ? kailashDeviceProvider : undefined);
     } catch (e: any) {
       Alert.alert(t.error, e?.message ?? t.unknownError);
       setSync(s => ({ ...s, phase: 'error' }));
@@ -475,6 +507,35 @@ export default function HomeScreen() {
           </Text>
           {ambitInfo.battery >= 0 && (
             <Text style={styles.deviceInfoSecondary}>{t.homeBatteryLabel} {ambitInfo.battery}%</Text>
+          )}
+        </View>
+      )}
+
+      {/* ── Kailash travel history - real, 2026-08-08 ("if we could import this data
+          which is on the watch and read it to our app would be awesome"). Reuses the same
+          deviceInfoBox styling as the block above rather than introducing a new one - this
+          is presentationally the same kind of "facts about the connected watch" card. ── */}
+      {deviceType === 'ambit' && isKailash(ambitInfo) && kailashHistory && (
+        <View style={styles.deviceInfoBox}>
+          <Text style={styles.deviceInfoPrimary}>{t.homeKailashTravelTitle}</Text>
+          <Text style={styles.deviceInfoSecondary}>
+            {t.homeKailashCitiesLabel} {kailashHistory.citiesVisited}
+            {'  ·  '}{t.homeKailashCountriesLabel} {kailashHistory.countriesVisited}
+          </Text>
+          {kailashHistory.hasLastKnownLocation && (
+            <Text style={styles.deviceInfoSecondary}>
+              {kailashHistory.lastKnownLatitude.toFixed(4)}, {kailashHistory.lastKnownLongitude.toFixed(4)}
+              {kailashHistory.lastKnownCountry ? ` (${kailashHistory.lastKnownCountry})` : ''}
+            </Text>
+          )}
+          <Text style={styles.deviceInfoSecondary}>
+            {t.homeKailashTravelledLabel} {(kailashHistory.travelledDistanceMeters / 1000).toFixed(1)} km
+            {'  ·  '}{t.homeKailashFurthestLabel} {(kailashHistory.furthestFromHomeMeters / 1000).toFixed(1)} km
+          </Text>
+          {kailashHistory.sessions.length > 0 && (
+            <Text style={styles.deviceInfoSecondary}>
+              {t.homeKailashLogbookLabel} {kailashHistory.sessions.length}
+            </Text>
           )}
         </View>
       )}

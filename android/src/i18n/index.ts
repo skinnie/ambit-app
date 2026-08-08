@@ -57,6 +57,14 @@ const fr = {
   homeBatteryLabel: 'batterie',
   homeHwLabel:      'matériel',
 
+  // Kailash travel history (2026-08-08)
+  homeKailashTravelTitle:     'Historique de voyage',
+  homeKailashCitiesLabel:     'villes visitées',
+  homeKailashCountriesLabel:  'pays visités',
+  homeKailashTravelledLabel:  'distance parcourue',
+  homeKailashFurthestLabel:   'plus loin de la maison',
+  homeKailashLogbookLabel:    'sessions enregistrées',
+
   // LogListScreen
   all:          'Toutes',
   loadError:    'Erreur chargement',
@@ -371,6 +379,14 @@ const en: typeof fr = {
   homeSyncActivitiesBtn: 'SYNC ACTIVITIES',
   homeBatteryLabel: 'battery',
   homeHwLabel:      'hardware',
+
+  // Kailash travel history (2026-08-08)
+  homeKailashTravelTitle:     'Travel History',
+  homeKailashCitiesLabel:     'cities visited',
+  homeKailashCountriesLabel:  'countries visited',
+  homeKailashTravelledLabel:  'travelled',
+  homeKailashFurthestLabel:   'furthest from home',
+  homeKailashLogbookLabel:    'recorded sessions',
 
   all:          'All',
   loadError:    'Load error',

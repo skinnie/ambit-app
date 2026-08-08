@@ -1401,3 +1401,37 @@ int ambit3_read_poi_list_raw(ambit_object_t *object, uint8_t **out, size_t *out_
     *out_len = 0;
     return libambit_protocol_command(object, AMBIT3_CMD_POI_READ, zero4, sizeof(zero4), out, out_len, 0);
 }
+
+#define AMBIT3_CMD_LOG_HEADERS 0x1200
+
+/*
+ * Reads a real, live "object by identifier" reply for the given SBEM entry ID via 0x1200 -
+ * the same command the companion research project's tools/write_nav.py already uses for
+ * sml.DeviceLogBook (entry 0x8d, its own CMD_LOG_HEADERS/LOGBOOK_REQUEST). Confirmed live
+ * against a real Suunto Kailash, 2026-08-08 (tools/kailash_history.py): entry 0x67 answers
+ * with sml.DeviceHistory (visited cities/countries, travel stats, plus a real "activity
+ * mode" logbook bundled in the same reply) - not Kailash-specific at the protocol level,
+ * just an entry ID this project happened to find via Kailash first. The request payload
+ * shape (4 zero bytes, u16 LE "1", u16 LE "10" = len("SBEM0102") + 2, the magic itself, then
+ * the 2-byte entry ID) is fixed across every use of this command seen so far - only the
+ * final entry_id byte varies.
+ *
+ * *out is allocated by libambit_protocol_command(); caller frees with plain free() (same as
+ * ambit3_read_poi_list_raw's own caller, jni_bridge.cpp - see its own comment on why plain
+ * free() is equivalent to libambit_protocol_free() here). Returns 0 on success, -1 on
+ * failure.
+ */
+int ambit3_read_object_by_id_raw(ambit_object_t *object, uint8_t entry_id, uint8_t **out, size_t *out_len)
+{
+    if (object == NULL || out == NULL || out_len == NULL) return -1;
+    uint8_t request[] = {
+        0x00, 0x00, 0x00, 0x00,
+        0x01, 0x00,
+        0x0a, 0x00,
+        'S', 'B', 'E', 'M', '0', '1', '0', '2',
+        entry_id, 0x00,
+    };
+    *out = NULL;
+    *out_len = 0;
+    return libambit_protocol_command(object, AMBIT3_CMD_LOG_HEADERS, request, sizeof(request), out, out_len, 0);
+}

@@ -38,9 +38,11 @@ extern "C" int ambit3_write_route_to_watch(ambit_object_t *object,
 extern "C" int ambit3_add_poi_to_watch(ambit_object_t *object,
                                         const char *name, double lat, double lon);
 
-// ambit3_read_flash_region() / ambit3_read_poi_list_raw() sont déclarées dans device_driver_ambit3.c
+// ambit3_read_flash_region() / ambit3_read_poi_list_raw() / ambit3_read_object_by_id_raw()
+// sont déclarées dans device_driver_ambit3.c
 extern "C" int ambit3_read_flash_region(ambit_object_t *object, uint32_t address, uint32_t length, uint8_t *out_buffer);
 extern "C" int ambit3_read_poi_list_raw(ambit_object_t *object, uint8_t **out, size_t *out_len);
+extern "C" int ambit3_read_object_by_id_raw(ambit_object_t *object, uint8_t entry_id, uint8_t **out, size_t *out_len);
 
 #undef  LOG_TAG
 #define LOG_TAG "AmbitJNI"
@@ -587,7 +589,11 @@ Java_com_ambitsyncmodern_usb_AmbitUsbModule_nativeAmbitReadRegion(
         jlong address, jlong length)
 {
     if (!g_device) { LOGE("nativeAmbitReadRegion: Not connected"); return nullptr; }
-    if (length <= 0 || length > 1024 * 1024) { LOGE("nativeAmbitReadRegion: implausible length %lld", (long long)length); return nullptr; }
+    // Real, 2026-08-08: Kailash's own TrackLog region is 1,310,713 bytes - the previous
+    // 1024*1024 (1,048,576) cap was tight enough to reject it outright before this device
+    // type existed to test against. Raised to 2MB, still a real sanity bound (every flash
+    // region this project has ever seen, on any watch, is well under that), not removed.
+    if (length <= 0 || length > 2 * 1024 * 1024) { LOGE("nativeAmbitReadRegion: implausible length %lld", (long long)length); return nullptr; }
 
     std::vector<uint8_t> buffer((size_t)length);
     LOGI("nativeAmbitReadRegion: reading 0x%06llx / %lld bytes", (long long)address, (long long)length);
@@ -623,6 +629,35 @@ Java_com_ambitsyncmodern_usb_AmbitUsbModule_nativeAmbitReadPoiListRaw(
     // not included here) is verified to be exactly `if (data) free(data);`, so plain free()
     // is equivalent and avoids pulling in protocol.h just for this.
     free(raw);
+    return env->NewStringUTF(b64.c_str());
+}
+
+/**
+ * nativeAmbitReadDeviceHistoryRaw
+ *
+ * Real, 2026-08-08 ("if we could import this data which is on the watch and read it to our
+ * app would be awesome"). Returns the watch's raw sml.DeviceHistory reply (0x1200, entry
+ * 0x67 - see ambit3_read_object_by_id_raw()'s own comment in device_driver_ambit3.c for how
+ * this was found), base64-encoded. Decoding (SBEM0102 entries, the two real unit
+ * conversions - Duration=raw/10, Location=float32 radians - and which entry IDs mean what)
+ * happens in TS, mirroring the companion research project's own tools/kailash_history.py
+ * exactly rather than re-deriving any of it here. Null on failure.
+ */
+JNIEXPORT jstring JNICALL
+Java_com_ambitsyncmodern_usb_AmbitUsbModule_nativeAmbitReadDeviceHistoryRaw(
+        JNIEnv *env, jobject /* thiz */)
+{
+    if (!g_device) { LOGE("nativeAmbitReadDeviceHistoryRaw: Not connected"); return nullptr; }
+
+    uint8_t *raw = nullptr;
+    size_t rawlen = 0;
+    int ret = ambit3_read_object_by_id_raw(g_device, 0x67, &raw, &rawlen);
+    if (ret != 0) {
+        LOGE("ambit3_read_object_by_id_raw(0x67) failed: %d", ret);
+        return nullptr;
+    }
+    std::string b64 = (raw && rawlen > 0) ? base64Encode(raw, rawlen) : std::string();
+    free(raw);  // same equivalence as nativeAmbitReadPoiListRaw's own free(), see its comment
     return env->NewStringUTF(b64.c_str());
 }
 
