@@ -409,6 +409,15 @@ export default function SettingsScreen() {
                 </View>
               )}
 
+              {/* Real, 2026-08-08, Kailash only (home_latitude/home_longitude) - found from
+                  a real BLE capture, read-only on purpose: no write test has been done
+                  against this entry yet, and a wrong write has real-world consequences
+                  (the app's own "furthest from home" stat) worth its own go-ahead before
+                  an editor gets built - see AmbitSettingsReader.ts's own field comment. */}
+              {row.kind === 'coord' && (
+                <Text style={styles.coordValue}>{row.value.toFixed(6)}°</Text>
+              )}
+
               {busy && <ActivityIndicator size="small" color="#00e5ff" style={{ marginLeft: 8 }} />}
             </View>
           );
@@ -494,4 +503,5 @@ const styles = StyleSheet.create({
   },
   stepperBtnText: { color: '#00e5ff', fontSize: 18, fontWeight: '700' },
   stepperValue: { color: '#fff', fontSize: 14, marginHorizontal: 10, minWidth: 30, textAlign: 'center' },
+  coordValue: { color: '#8899aa', fontSize: 13 },
 });

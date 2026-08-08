@@ -22,7 +22,7 @@ import { base64ToBytes } from './Base64';
 // DeviceHistory's LogHeaders was - see KailashHistoryReader.ts for that shape) - one
 // value, one entry, decoded directly.
 
-export type SettingKind = 'bool' | 'enum' | 'number';
+export type SettingKind = 'bool' | 'enum' | 'number' | 'coord';
 
 export interface SettingChoice {
   value: number;
@@ -34,11 +34,18 @@ export interface SettingField {
   entryId: number;
   kind: SettingKind;
   // 'bool' -> 1 byte (0/1). 'enum' -> 1 byte, raw integer indexes into `choices`.
-  // 'number' -> byteWidth bytes, unsigned unless `signed` is set; 'float' for float32.
+  // 'number'/'coord' -> byteWidth bytes, unsigned unless `signed` is set; 'float' for float32.
   byteWidth: 1 | 4;
   signed?: boolean;
   float?: boolean;
   choices?: SettingChoice[];
+  // Byte offset *within* the entry's own value - default 0. Needed for entries that pack
+  // more than one field (e.g. Kailash's home-location entry: two int32s in one 8-byte
+  // entry) - every other field in this file has exactly one value per entry, offset 0.
+  byteOffset?: number;
+  // Raw integer -> real value divisor (e.g. 1e7 for a lat/lon degrees*1e7 encoding,
+  // the same convention this project's POI lat/lon already uses). Default 1 (no scaling).
+  scale?: number;
 }
 
 // Real, live-confirmed 2026-08-08 against André's own Ambit3 Peak - every value below
@@ -120,6 +127,19 @@ export const KAILASH_SETTINGS_FIELDS: SettingField[] = [
   { key: 'backlight_brightness', entryId: 0x11, kind: 'number', byteWidth: 1 },
   { key: 'storm_alarm', entryId: 0x17, kind: 'bool', byteWidth: 1 },
   { key: 'display_dark', entryId: 0x27, kind: 'bool', byteWidth: 1 },
+  // Real, found 2026-08-08 from two real iOS PacketLogger BLE captures of the 7R app
+  // (kailashsethome.pklg / kailashsnotificationsandsethome.pklg) - entry 0x36 is an
+  // 8-byte value sitting right after the BLE device whitelist (entry 0x35) in the same
+  // sml.DeviceSettings tree: two little-endian int32s, degrees*1e7 (the same lat/lon
+  // encoding this project's own POI format already uses). Decoded from the real capture:
+  // 50.6240395, 3.0552564 - matches Lille, France (André's real home city) to within
+  // ~0.6 km. Read-only for now, on purpose - no write test has been done against this
+  // entry, and a wrong home-location write has real-world consequences (the app's own
+  // "furthest from home" stat) worth its own explicit go-ahead before wiring up an editor.
+  { key: 'home_latitude', entryId: 0x36, kind: 'coord', byteWidth: 4,
+    signed: true, byteOffset: 0, scale: 1e7 },
+  { key: 'home_longitude', entryId: 0x36, kind: 'coord', byteWidth: 4,
+    signed: true, byteOffset: 4, scale: 1e7 },
 ];
 
 const MAGIC = [0x53, 0x42, 0x45, 0x4d, 0x30, 0x31, 0x30, 0x32]; // "SBEM0102"
@@ -158,10 +178,12 @@ function sbemEntries(bytes: Uint8Array, start: number): SbemEntry[] {
 }
 
 function decodeField(bytes: Uint8Array, entry: SbemEntry, field: SettingField): number {
-  const view = new DataView(bytes.buffer, bytes.byteOffset + entry.start, field.byteWidth);
-  if (field.float) return view.getFloat32(0, true);
-  if (field.byteWidth === 1) return field.signed ? view.getInt8(0) : view.getUint8(0);
-  return field.signed ? view.getInt32(0, true) : view.getUint32(0, true);
+  const off = entry.start + (field.byteOffset ?? 0);
+  const view = new DataView(bytes.buffer, bytes.byteOffset + off, field.byteWidth);
+  const raw = field.float ? view.getFloat32(0, true)
+    : field.byteWidth === 1 ? (field.signed ? view.getInt8(0) : view.getUint8(0))
+    : (field.signed ? view.getInt32(0, true) : view.getUint32(0, true));
+  return field.scale ? raw / field.scale : raw;
 }
 
 export interface DecodedSetting {
@@ -192,7 +214,7 @@ export function decodeSettings(b64: string, fields: SettingField[]): DecodedSett
   const out: DecodedSetting[] = [];
   for (const field of fields) {
     const entry = byId.get(field.entryId);
-    if (!entry || entry.end - entry.start < field.byteWidth) continue;
+    if (!entry || entry.end - entry.start < (field.byteOffset ?? 0) + field.byteWidth) continue;
     out.push({
       key: field.key,
       path: `sml.DeviceSettings.${field.key}`,
