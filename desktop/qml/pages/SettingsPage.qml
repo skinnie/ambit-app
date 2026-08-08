@@ -171,6 +171,16 @@ Flickable {
                         readonly property bool hasRange:
                             modelData.min !== undefined && modelData.min !== null
                             && modelData.max !== undefined && modelData.max !== null
+                        // Real, 2026-08-08, Kailash only - HomeLocation.Latitude/Longitude
+                        // (entry 0x36, a GROUP - see settings_write.py's own KAILASH_SETTINGS
+                        // comment and the ambit_app_kailash_home_location_field memory).
+                        // describe_field() reports these as a plain "number" with no min/max
+                        // (like compass_declination), but unlike that field these ARE meant
+                        // to be editable - keyed off `path` since `kind` alone can't tell
+                        // them apart from compass_declination's own read-only display.
+                        readonly property bool isHomeCoord:
+                            modelData.path.endsWith("HomeLocation.Latitude")
+                            || modelData.path.endsWith("HomeLocation.Longitude")
 
                         Text {
                             width: 170
@@ -227,15 +237,41 @@ Flickable {
                             }
                         }
 
-                        // A "number" field with no confirmed min/max (only
-                        // compass_declination in this curated set) - shown, not editable,
-                        // rather than guessing at a sensible slider range.
+                        // A "number" field with no confirmed min/max (compass_declination) -
+                        // shown, not editable, rather than guessing at a sensible slider range.
                         Text {
-                            visible: modelData.kind === "number" && !parent.hasRange
+                            visible: modelData.kind === "number" && !parent.hasRange && !parent.isHomeCoord
                             anchors.verticalCenter: parent.verticalCenter
                             text: modelData.value
                             color: Theme.mutedText
                             font.pixelSize: 13
+                        }
+
+                        // HomeLocation.Latitude/Longitude - free-text degrees input rather
+                        // than a slider (no sensible min/max range for a GPS coordinate) or
+                        // a stepper (needs a leading "-" and sub-degree precision a +-N
+                        // button can't offer). Matches the Weather "Manual location" editor's
+                        // own TextField+Button pattern further down this same page.
+                        Row {
+                            visible: modelData.kind === "number" && !parent.hasRange && parent.isHomeCoord
+                            spacing: 8
+                            TextField {
+                                id: coordField
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 110
+                                text: modelData.value.toFixed(6)
+                                enabled: SettingsWriteService.writingKey !== modelData.key
+                            }
+                            Button {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: qsTr("Set")
+                                enabled: SettingsWriteService.writingKey !== modelData.key
+                                onClicked: {
+                                    const parsed = parseFloat(coordField.text);
+                                    if (isNaN(parsed)) return;
+                                    SettingsWriteService.writeSetting(modelData.key, parsed);
+                                }
+                            }
                         }
 
                         Text {

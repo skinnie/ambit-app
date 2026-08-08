@@ -128,14 +128,16 @@ export const KAILASH_SETTINGS_FIELDS: SettingField[] = [
   { key: 'storm_alarm', entryId: 0x17, kind: 'bool', byteWidth: 1 },
   { key: 'display_dark', entryId: 0x27, kind: 'bool', byteWidth: 1 },
   // Real, found 2026-08-08 from two real iOS PacketLogger BLE captures of the 7R app
-  // (kailashsethome.pklg / kailashsnotificationsandsethome.pklg) - entry 0x36 is an
-  // 8-byte value sitting right after the BLE device whitelist (entry 0x35) in the same
-  // sml.DeviceSettings tree: two little-endian int32s, degrees*1e7 (the same lat/lon
-  // encoding this project's own POI format already uses). Decoded from the real capture:
+  // (kailashsethome.pklg / kailashsnotificationsandsethome.pklg), then confirmed
+  // byte-exact against this watch's own real schema descriptor: entry 0x36 is a GROUP,
+  // sml.DeviceSettings.HomeLocation, packing two little-endian int32 sub-fields
+  // (Latitude, Longitude), each with a real <MOD> tag confirming the degrees*1e7
+  // encoding this project's own POI format already uses. Decoded from the real capture:
   // 50.6240395, 3.0552564 - matches Lille, France (André's real home city) to within
-  // ~0.6 km. Read-only for now, on purpose - no write test has been done against this
-  // entry, and a wrong home-location write has real-world consequences (the app's own
-  // "furthest from home" stat) worth its own explicit go-ahead before wiring up an editor.
+  // ~0.6 km. Writable (AmbitSettingsWriter.ts's own writeSetting(), range-checked to
+  // [-90,90]/[-180,180] before anything is sent, "prove it by re-read" like every other
+  // field) - not yet hardware-confirmed, same as every field in this table beyond
+  // display_dark, the only one individually checked live on this specific watch so far.
   { key: 'home_latitude', entryId: 0x36, kind: 'coord', byteWidth: 4,
     signed: true, byteOffset: 0, scale: 1e7 },
   { key: 'home_longitude', entryId: 0x36, kind: 'coord', byteWidth: 4,

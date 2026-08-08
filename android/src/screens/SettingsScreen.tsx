@@ -46,11 +46,22 @@ export default function SettingsScreen() {
     useState<'idle' | 'connecting' | 'reading' | 'done' | 'error'>('idle');
   const [ambitSettingsError, setAmbitSettingsError] = useState<string | undefined>();
   const [writingKey, setWritingKey] = useState<string | null>(null);
+  // Free-text edit state for 'coord' rows (home_latitude/home_longitude) - a plain
+  // TextInput needs its own string buffer, separate from the decoded numeric row.value,
+  // the same pattern SportModesScreen.tsx already uses for its own numeric fields.
+  const [coordEdits, setCoordEdits] = useState<Record<string, string>>({});
 
   async function handleReadAmbitSettings() {
     await readAmbitSettings(s => {
       setAmbitSettingsPhase(s.phase);
-      if (s.settings) setAmbitSettings(s.settings);
+      if (s.settings) {
+        setAmbitSettings(s.settings);
+        const coords: Record<string, string> = {};
+        for (const row of s.settings) {
+          if (row.kind === 'coord') coords[row.key] = row.value.toFixed(6);
+        }
+        setCoordEdits(coords);
+      }
       if (s.fields) setAmbitSettingsFields(s.fields);
       if (s.isKailash !== undefined) setAmbitIsKailash(s.isKailash);
       setAmbitSettingsError(s.error);
@@ -72,8 +83,32 @@ export default function SettingsScreen() {
           row.key === key && s.result!.confirmedValue !== null
             ? { ...row, value: s.result!.confirmedValue as number }
             : row));
+        if (s.result.confirmedValue !== null) {
+          setCoordEdits(prev => ({ ...prev, [key]: (s.result!.confirmedValue as number).toFixed(6) }));
+        }
       }
     });
+  }
+
+  // Real, hardware-independent range check, same bounds AmbitSettingsWriter.ts's own
+  // writeSetting() (and settings_write.py's write_one() on the desktop side) enforce
+  // again before ever sending a byte - this is just the earliest, UI-level catch for an
+  // obviously-invalid typed value.
+  function handleSetCoord(key: string) {
+    const parsed = parseFloat(coordEdits[key] ?? '');
+    if (!Number.isFinite(parsed)) {
+      Alert.alert(t.error, `${key}: not a valid number`);
+      return;
+    }
+    if (key === 'home_latitude' && (parsed < -90 || parsed > 90)) {
+      Alert.alert(t.error, `${key}=${parsed} out of range [-90, 90]`);
+      return;
+    }
+    if (key === 'home_longitude' && (parsed < -180 || parsed > 180)) {
+      Alert.alert(t.error, `${key}=${parsed} out of range [-180, 180]`);
+      return;
+    }
+    handleWriteAmbitSetting(key, parsed);
   }
 
   useFocusEffect(useCallback(() => {
@@ -409,13 +444,30 @@ export default function SettingsScreen() {
                 </View>
               )}
 
-              {/* Real, 2026-08-08, Kailash only (home_latitude/home_longitude) - found from
-                  a real BLE capture, read-only on purpose: no write test has been done
-                  against this entry yet, and a wrong write has real-world consequences
-                  (the app's own "furthest from home" stat) worth its own go-ahead before
-                  an editor gets built - see AmbitSettingsReader.ts's own field comment. */}
+              {/* Real, 2026-08-08, Kailash only (home_latitude/home_longitude) - found
+                  from real BLE captures, confirmed byte-exact against the watch's own
+                  real schema descriptor (entry 0x36, GROUP HomeLocation.Latitude/
+                  Longitude - see AmbitSettingsReader.ts's own field comment and the
+                  ambit_app_kailash_home_location_field memory). Free-text degrees input
+                  rather than a stepper (unlike 'number' above) - a +-5 nudge makes no
+                  sense for a GPS coordinate, and it needs to accept a leading "-". */}
               {row.kind === 'coord' && (
-                <Text style={styles.coordValue}>{row.value.toFixed(6)}°</Text>
+                <View style={styles.coordRow}>
+                  <TextInput
+                    style={styles.coordInput}
+                    value={coordEdits[row.key] ?? row.value.toFixed(6)}
+                    onChangeText={v => setCoordEdits(prev => ({ ...prev, [row.key]: v }))}
+                    editable={!busy}
+                    placeholderTextColor="#4a5a7a"
+                  />
+                  <TouchableOpacity
+                    style={styles.coordSetBtn}
+                    disabled={busy}
+                    onPress={() => handleSetCoord(row.key)}
+                  >
+                    <Text style={styles.btnText}>{t.saveBtn}</Text>
+                  </TouchableOpacity>
+                </View>
               )}
 
               {busy && <ActivityIndicator size="small" color="#00e5ff" style={{ marginLeft: 8 }} />}
@@ -503,5 +555,25 @@ const styles = StyleSheet.create({
   },
   stepperBtnText: { color: '#00e5ff', fontSize: 18, fontWeight: '700' },
   stepperValue: { color: '#fff', fontSize: 14, marginHorizontal: 10, minWidth: 30, textAlign: 'center' },
-  coordValue: { color: '#8899aa', fontSize: 13 },
+  coordRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  coordInput: {
+    backgroundColor: '#16213e',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#1a4a7a',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    color: '#fff',
+    fontSize: 13,
+    width: 110,
+    textAlign: 'right',
+  },
+  coordSetBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: '#00e5ff22',
+    borderWidth: 1,
+    borderColor: '#00e5ff',
+  },
 });

@@ -27,11 +27,15 @@ function findMagic(bytes: Uint8Array): number {
 /** Real byte offset of `field`'s own entry within this specific reply - walked fresh every
  * time, the same defensive principle settings_write.py's own write_one() uses, so a stale
  * offset from an earlier read (or, worse, another device's schema) can never be reused by
- * accident. Returns null if the entry isn't in this reply at all. */
+ * accident. Returns the entry's own start plus `field.byteOffset` (0 for every field
+ * except a packed multi-value entry like Kailash's HomeLocation - see
+ * AmbitSettingsReader.ts's own SettingField comment). Returns null if the entry isn't in
+ * this reply at all, or is too short for byteOffset + byteWidth. */
 function findFieldOffset(bytes: Uint8Array, field: SettingField): number | null {
   const head = findMagic(bytes);
   if (head < 0) return null;
   let off = head + 8;
+  const need = (field.byteOffset ?? 0) + field.byteWidth;
   while (off + 2 <= bytes.length) {
     const id = bytes[off];
     let len = bytes[off + 1];
@@ -42,7 +46,7 @@ function findFieldOffset(bytes: Uint8Array, field: SettingField): number | null 
       off += 4;
     }
     if (id === field.entryId) {
-      return len >= field.byteWidth ? off : null;
+      return len >= need ? off + (field.byteOffset ?? 0) : null;
     }
     off += len;
   }
@@ -50,10 +54,11 @@ function findFieldOffset(bytes: Uint8Array, field: SettingField): number | null 
 }
 
 function encodeField(bytes: Uint8Array, offset: number, field: SettingField, value: number): void {
+  const raw = field.scale ? Math.round(value * field.scale) : value;
   const view = new DataView(bytes.buffer, bytes.byteOffset + offset, field.byteWidth);
-  if (field.float) { view.setFloat32(0, value, true); return; }
-  if (field.byteWidth === 1) { (field.signed ? view.setInt8 : view.setUint8).call(view, 0, value); return; }
-  (field.signed ? view.setInt32 : view.setUint32).call(view, 0, value, true);
+  if (field.float) { view.setFloat32(0, raw, true); return; }
+  if (field.byteWidth === 1) { (field.signed ? view.setInt8 : view.setUint8).call(view, 0, raw); return; }
+  (field.signed ? view.setInt32 : view.setUint32).call(view, 0, raw, true);
 }
 
 export interface WriteSettingResult {
@@ -83,6 +88,17 @@ export async function writeSetting(
     return { ok: false, key, previousValue: null, requestedValue: value, confirmedValue: null,
       error: `unknown setting ${key}` };
   }
+  // Real, hardware-independent range check, same bounds settings_write.py's own
+  // write_one() enforces before ever sending a byte - a coordinate typo (e.g. a stray
+  // digit making a 500-degree latitude) should never even reach the watch.
+  if (key === 'home_latitude' && (value < -90 || value > 90)) {
+    return { ok: false, key, previousValue: null, requestedValue: value, confirmedValue: null,
+      error: `${key}=${value} out of range [-90, 90]` };
+  }
+  if (key === 'home_longitude' && (value < -180 || value > 180)) {
+    return { ok: false, key, previousValue: null, requestedValue: value, confirmedValue: null,
+      error: `${key}=${value} out of range [-180, 180]` };
+  }
 
   const beforeB64 = await readSettingsRaw();
   const before = base64ToBytes(beforeB64);
@@ -92,9 +108,10 @@ export async function writeSetting(
       error: `entry 0x${field.entryId.toString(16)} (${key}) not in this watch's current settings reply` };
   }
   const previousView = new DataView(before.buffer, before.byteOffset + offset, field.byteWidth);
-  const previousValue = field.float ? previousView.getFloat32(0, true)
+  const previousRaw = field.float ? previousView.getFloat32(0, true)
     : field.byteWidth === 1 ? (field.signed ? previousView.getInt8(0) : previousView.getUint8(0))
     : (field.signed ? previousView.getInt32(0, true) : previousView.getUint32(0, true));
+  const previousValue = field.scale ? previousRaw / field.scale : previousRaw;
 
   const modified = new Uint8Array(before);
   encodeField(modified, offset, field, value);
@@ -104,8 +121,22 @@ export async function writeSetting(
   const confirmed = after.find(s => s.key === key);
   const confirmedValue = confirmed ? confirmed.value : null;
 
+  // Real precision pitfall, found while verifying this exact change: a scaled field
+  // (home_latitude/home_longitude) can only round-trip 7 decimal digits - any real user
+  // input with more precision than that gets legitimately rounded by the raw int32
+  // encoding, so comparing confirmedValue directly against the caller's own unrounded
+  // `value` would report `ok: false` on nearly every real write even though it landed
+  // exactly as precisely as the format allows. Compare on the same rounded-to-raw
+  // representation both sides actually went through instead - mirrors
+  // settings_write.py's own write_one(), which compares confirmed_raw against
+  // raw_new_value (integers), never the display-scaled floats.
+  const requestedRaw = field.scale ? Math.round(value * field.scale) : value;
+  const confirmedRaw = confirmedValue !== null
+    ? (field.scale ? Math.round(confirmedValue * field.scale) : confirmedValue)
+    : null;
+
   return {
-    ok: confirmedValue === value,
+    ok: confirmedRaw === requestedRaw,
     key,
     previousValue,
     requestedValue: value,

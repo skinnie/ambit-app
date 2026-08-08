@@ -99,10 +99,15 @@ KAILASH_SETTINGS = {
     # Longitude 0x29), each with a real <MOD> tag confirming the degrees*1e7 encoding
     # this project's own POI format already uses. Confirmed absent from the Ambit3's own
     # descriptor entirely - Kailash-only. See ambit_app_kailash_home_location_field
-    # memory. Read-only, on purpose: unlike every other key in this table, these two are
-    # GROUP members, not top-level entries - read_all()/write_one() below treat that
-    # specially (no min/max offered, so the UI shows plain text; write_one() refuses
-    # outright rather than silently failing on a stale offset).
+    # memory. Unlike every other key in this table, these two are GROUP members, not
+    # top-level entries - read_all()/write_one() below resolve that generically. Values
+    # are decimal degrees (not the raw int32), range-checked before any write is sent;
+    # write_one() also refuses if the group ever turns out to hold more than one record
+    # (it doesn't for HomeLocation, but the check stays as a safety net for any other
+    # GROUP-member field added here later). NOT YET hardware-confirmed - no watch
+    # available in this environment to actually send the write; the read side is
+    # schema-confirmed, the write side follows the same 0x1101 mechanism already proven
+    # for every scalar field in this table.
     "home_latitude": "HomeLocation.Latitude",
     "home_longitude": "HomeLocation.Longitude",
 }
@@ -146,6 +151,21 @@ def _group_containing(schema, fid):
     for gid, members in schema.groups.items():
         if fid in members:
             return gid
+    return None
+
+
+def _field_offset_in_group(schema, group_id, target_fid):
+    """Byte offset of `target_fid` within its own group's single-record layout (e.g.
+    HomeLocation: Latitude at 0, Longitude at 4) - only meaningful for a group that
+    always encodes exactly one record. write_one() itself verifies the real entry length
+    matches before trusting this, so a repeating group (like
+    WhitelistedBleDevices.Device, where "which record" would be ambiguous) fails closed
+    instead of silently writing the wrong record."""
+    off = 0
+    for fid in schema.groups[group_id]:
+        if fid == target_fid:
+            return off
+        off += schema.fields[fid].size
     return None
 
 
@@ -213,11 +233,12 @@ def read_all(payload, descriptor, product_id=None):
         value = _entry_value(schema, entry_id, data, field.fid)
         desc = describe_field(field)
         if group_id is not None:
-            # A GROUP member's own min/max (describe_field's, from its raw int width) is
-            # meaningless without also knowing its siblings' byte layout, and write_one()
-            # below can't write it yet anyway - drop the range so the UI shows plain text
-            # instead of an editable control (matches the "number with no range" display
-            # this project already uses for compass_declination).
+            # A GROUP member's own min/max (describe_field's, from its raw int width -
+            # +-2^31 for a plain int32) is meaningless once the value is displayed in
+            # its real, scaled unit (decimal degrees for HomeLocation) - drop it so a
+            # generic "number" UI doesn't render a -2147483648..2147483647 slider for a
+            # latitude. A UI that wants a real geo editor for these two keys should key
+            # off `path` (ends in "HomeLocation.Latitude"/".Longitude"), not this range.
             desc = {"kind": desc["kind"]}
         if key in _DEGREES_X1E7_KEYS and value is not None:
             value = value / 10 ** 7
@@ -232,7 +253,12 @@ def write_one(link, descriptor, key, new_value, product_id=None):
     dict with `ok`, `previous_value`, `confirmed_value` - `ok` is only true if the re-read
     actually shows the new value, the same "prove it, don't just trust the ACK" standard
     this project's own live testing already established was necessary (see
-    custom_modes_andre.md)."""
+    custom_modes_andre.md).
+
+    `new_value` is always the *logical* value - the same one read_all() reports (an
+    enum's raw integer, a plain number, or for a `_DEGREES_X1E7_KEYS` field, decimal
+    degrees) - never the raw on-wire encoding; the degrees<->raw*1e7 conversion happens
+    in here, symmetric with read_all()'s own."""
     table = settings_table(product_id)
     if key not in table:
         return {"ok": False, "error": f"unknown setting {key!r} - known: {sorted(table)}"}
@@ -243,53 +269,80 @@ def write_one(link, descriptor, key, new_value, product_id=None):
         return {"ok": False, "error": str(exc)}
     if field.base == "utf8":
         return {"ok": False, "error": f"{key} is a text field - not supported by this tool"}
-    if _group_containing(schema, field.fid) is not None:
-        # A GROUP member (e.g. HomeLocation.Latitude/Longitude - see settings_table()'s
-        # own comment) never appears as its own top-level SBEM entry, only packed inside
-        # its parent group's single entry - the byte-patch logic below assumes every
-        # curated key IS a top-level entry, so it would silently never find `field.fid`
-        # and fail anyway. Refuse explicitly, with a clear reason, rather than let that
-        # happen by accident. No write test has been done against this shape yet either
-        # way - see ambit_app_kailash_home_location_field memory.
-        return {"ok": False, "error": f"{key} ({field.path}) is packed inside a GROUP "
-                                       "entry - writing group-member fields isn't "
-                                       "supported by this tool yet"}
+
+    group_id = _group_containing(schema, field.fid)
+    member_offset = 0
+    if group_id is not None:
+        member_offset = _field_offset_in_group(schema, group_id, field.fid)
+        group_size = sum(schema.fields[m].size for m in schema.groups[group_id])
+
+    if key in _DEGREES_X1E7_KEYS:
+        if not isinstance(new_value, (int, float)):
+            return {"ok": False, "error": f"{key} expects a decimal-degrees number"}
+        if key == "home_latitude" and not (-90 <= new_value <= 90):
+            return {"ok": False, "error": f"{key}={new_value} out of range [-90, 90]"}
+        if key == "home_longitude" and not (-180 <= new_value <= 180):
+            return {"ok": False, "error": f"{key}={new_value} out of range [-180, 180]"}
+        raw_new_value = round(new_value * 10 ** 7)
+    else:
+        raw_new_value = new_value
 
     before = link.command(CMD_SETTINGS_READ, b"\0\0\0\0")
     head = before.find(sbem_schema.MAGIC)
     if head < 0:
         return {"ok": False, "error": "no SBEM0102 payload in the read-back"}
 
+    entry_id = group_id if group_id is not None else field.fid
     off = head + 8
-    field_off = None
+    entry_start = None
+    entry_len = None
     while off + 2 <= len(before):
         eid, length = before[off], before[off + 1]
         off += 2
         if length == 0xFF:
             length, = struct.unpack_from("<I", before, off)
             off += 4
-        if eid == field.fid:
-            field_off = off
+        if eid == entry_id:
+            entry_start = off
+            entry_len = length
             break
         off += length
-    if field_off is None:
-        return {"ok": False, "error": f"entry 0x{field.fid:02x} ({field.path}) not in "
+    if entry_start is None:
+        return {"ok": False, "error": f"entry 0x{entry_id:02x} ({field.path}) not in "
                                        "this watch's current settings reply"}
 
-    previous_bytes = before[field_off:field_off + field.size]
-    previous = struct.unpack_from(field.fmt, before, field_off)[0]
+    if group_id is not None and entry_len != group_size:
+        return {"ok": False, "error": f"{field.path}'s group entry is {entry_len} bytes, "
+                                       f"expected exactly {group_size} (one record) - "
+                                       "writing a multi-record group isn't supported"}
 
-    packed = struct.pack(field.fmt, new_value)
+    field_off = entry_start + member_offset
+
+    previous_raw = struct.unpack_from(field.fmt, before, field_off)[0]
+
+    packed = struct.pack(field.fmt, raw_new_value)
     modified = bytearray(before)
     modified[field_off:field_off + field.size] = packed
     link.command(CMD_SETTINGS_WRITE, bytes(modified))
 
     after = link.command(CMD_SETTINGS_READ, b"\0\0\0\0")
-    confirmed = struct.unpack_from(field.fmt, after, field_off)[0] \
-        if len(after) > field_off + field.size else None
+    # Real bug, found 2026-08-08 while verifying this exact new field: `>` here is an
+    # off-by-one - a field occupying the very last bytes of the reply (home_longitude
+    # does, real payload observed 2026-08-08) has field_off + field.size == len(after)
+    # exactly, so the old `>` check always treated a perfectly good, in-bounds re-read as
+    # "too short" and silently reported confirmed_value=None / ok=False even though the
+    # write actually succeeded - a false negative on every prior field only by luck of
+    # never sitting last. Needs `>=`.
+    confirmed_raw = struct.unpack_from(field.fmt, after, field_off)[0] \
+        if len(after) >= field_off + field.size else None
+
+    scale = 10 ** 7 if key in _DEGREES_X1E7_KEYS else 1
+    previous = previous_raw / scale if scale != 1 else previous_raw
+    confirmed = (confirmed_raw / scale if scale != 1 else confirmed_raw) \
+        if confirmed_raw is not None else None
 
     return {
-        "ok": confirmed == new_value,
+        "ok": confirmed_raw == raw_new_value,
         "path": field.path,
         "previous_value": previous,
         "requested_value": new_value,
@@ -340,7 +393,8 @@ def main():
             return 0
         schema = sbem_schema.load(descriptor)
         field = _find_field(schema, table[key]) if key in table else None
-        new_value = float(raw_value) if field and field.base.startswith("float") else int(raw_value)
+        is_float = (field and field.base.startswith("float")) or key in _DEGREES_X1E7_KEYS
+        new_value = float(raw_value) if is_float else int(raw_value)
         result = write_one(link, descriptor, key, new_value, product_id)
         print(json.dumps(result)) if args.json else print(result)
         return 0 if result.get("ok") else 1
