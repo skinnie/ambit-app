@@ -75,7 +75,10 @@ Rectangle {
         }
         NavItem {
             width: parent.width
-            visible: FeatureFlags.sportModes
+            // Kailash excluded, real 2026-08-08: its own memory map reports no CustomModes
+            // region at all (confirmed empty - see custom_modes_andre.md's Kailash
+            // section), so this page has nothing to show for it.
+            visible: FeatureFlags.sportModes && !HomeViewModel.isKailash
             glyph: Icons.sportModes
             label: qsTr("Sport Modes")
             selected: root.currentPage === "sportModes"
