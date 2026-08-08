@@ -153,6 +153,25 @@ def _parse_when(when_str):
         return None
 
 
+
+# Real, found live 2026-08-09 debugging "activities still don't show gps track" after the
+# very first version of this correlation matched nothing at all: DeviceHistory's
+# LogHeaders.Header.DateTime (kailash_history.py's own `sessions[].when`) is the watch's
+# LOCAL time, while TrackLog's own embedded year/month/day/hour/minute fields are UTC - two
+# independently-decoded clocks with a real, non-obvious offset between them (no explicit
+# timezone marker on either field in the descriptor - see sbem_schema field 74/98 "DateTime"
+# vs field 81 "Sample.UTC" on a *different* object, the only explicit UTC-labelled sibling
+# field this project has found). Confirmed against three independent real events the same
+# day, not a guess: the 2026-08-03T08:25:27 session lines up exactly with TrackLog's
+# 06:26-06:53 UTC points, and 2026-08-08T19:32:56 (duration 1117s, ending ~19:51 local) lines
+# up exactly with TrackLog's own 17:33-17:51 UTC walk - both a clean 2-hour local-ahead-of-UTC
+# offset, i.e. CEST (France, August). NOT necessarily correct outside daylight saving time or
+# for a watch configured to a different timezone - there is no confirmed dynamic offset field
+# to read this from instead, so this is recorded as real-but-seasonal, worth revisiting the
+# next time this watch is read outside CEST.
+SESSION_LOCAL_UTC_OFFSET_HOURS = 2
+
+
 def split_into_activities(points, sessions):
     """One activity per real DeviceHistory session (kailash_history.py's own `sessions` -
     the watch's "activity mode" logbook), correlating each session's own [when, when +
@@ -162,10 +181,15 @@ def split_into_activities(points, sessions):
     kailash_history.py's own docstring), and until now ActivitiesPage.qml filled every
     Kailash "Walk" card's track with an empty placeholder. This is what actually supplies it.
 
-    A +/-2 minute tolerance is applied on both ends: TrackLog points are minute-resolution
-    and Header.Duration is tenths-of-a-second, two independently-derived clocks off the same
-    watch, so exact-window matching would drop real points to real clock/rounding drift
-    between the two sources.
+    `s["when"]` is converted from local time to UTC (SESSION_LOCAL_UTC_OFFSET_HOURS, see its
+    own comment - a real fix, not the original version of this function, which compared local
+    session times directly against UTC TrackLog points and silently matched nothing) before
+    comparing against TrackLog's own points.
+
+    A +/-2 minute tolerance is then applied on both ends: TrackLog points are minute-
+    resolution and Header.Duration is tenths-of-a-second, two independently-derived clocks
+    off the same watch, so exact-window matching would still drop real points to ordinary
+    clock/rounding drift between the two sources.
 
     Always returns exactly one entry per session, in the same order `sessions` came in -
     ActivitiesPage.qml zips this 1:1 against KailashService.sessions by index (both ultimately
@@ -197,6 +221,7 @@ def split_into_activities(points, sessions):
         matched = []
         start = _parse_when(s.get("when"))
         if start is not None:
+            start -= timedelta(hours=SESSION_LOCAL_UTC_OFFSET_HOURS)
             end = start + timedelta(seconds=s.get("duration_s") or 0)
             lo, hi = start - timedelta(minutes=2), end + timedelta(minutes=2)
             matched = [p for dt, p in point_dts if lo <= dt <= hi]

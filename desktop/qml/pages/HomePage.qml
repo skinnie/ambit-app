@@ -517,6 +517,12 @@ Flickable {
                         font.pixelSize: 12
                     }
 
+                    // Real, 2026-08-09 ("make the 3rd collumn of numbers of activity mode
+                    // logbook aligned") - duration/distance had no fixed width, so each row's
+                    // 2nd/3rd column landed wherever that row's own text happened to end,
+                    // same class of bug the Travel History GridLayout above already fixed.
+                    // A plain Row still works fine here (only 3 always-present columns, no
+                    // GridLayout needed) as long as every column gets a real fixed width.
                     Repeater {
                         model: KailashService.sessions
                         delegate: Row {
@@ -529,11 +535,15 @@ Flickable {
                                 font.pixelSize: 12
                             }
                             Text {
+                                width: 70
+                                horizontalAlignment: Text.AlignRight
                                 text: ActivityViewModel.formatDuration(modelData.durationSeconds)
                                 color: Theme.mutedText
                                 font.pixelSize: 12
                             }
                             Text {
+                                width: 70
+                                horizontalAlignment: Text.AlignRight
                                 text: ActivityViewModel.formatDistance(modelData.distanceMeters)
                                 color: Theme.mutedText
                                 font.pixelSize: 12
