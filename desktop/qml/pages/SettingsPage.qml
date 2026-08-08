@@ -13,6 +13,18 @@ Flickable {
     contentHeight: column.height + Theme.spacingLarge * 2
     clip: true
 
+    // Real, 2026-08-08 ("Settings on ambit 3 - if they are already cracked to be changed by
+    // cable, we will need to build a UI for it"). Cable settings-write is now confirmed
+    // working (SettingsWriteService's own header comment: André confirmed Display.Invert
+    // visibly switching the watch Light -> Dark) - fetched here so the Ambit3 Settings card
+    // below has real data as soon as this page opens, matching how HomePage.qml already
+    // fires its own service refreshes from Component.onCompleted.
+    Component.onCompleted: {
+        if (!HomeViewModel.isGarmin && !HomeViewModel.isKailash) {
+            SettingsWriteService.refresh();
+        }
+    }
+
     Column {
         id: column
         anchors.horizontalCenter: parent.horizontalCenter
@@ -93,6 +105,139 @@ Flickable {
                         text: qsTr("Garmin eTrex — connected (%1)").arg(GarminService.model)
                         color: Theme.text
                         font.pixelSize: 12
+                    }
+                }
+            }
+        }
+
+        // --- Ambit3 Settings - real, 2026-08-08. Generic, schema-driven: one delegate per
+        // row, picking Switch/ComboBox/Slider off `kind` (bool/enum/number) rather than a
+        // hand-built widget per field - SettingsWriteService.settings already carries
+        // exactly that shape from tools/settings_write.py's own describe_field(). Writes
+        // fire immediately on interaction (no separate confirm step), matching this app's
+        // own "an explicit tap/selection in the page itself is the confirmation" rule
+        // (DeviceService's GPS-orbit "tap to update" already works this way) - a Settings
+        // page toggling immediately, like any OS settings screen, is also the expected UX
+        // here, not a new pattern invented for this card. Kailash excluded: this whole
+        // curated field table came from the Ambit3's own real schema/screenshots and has
+        // never been checked against Kailash's much smaller one - see
+        // custom_modes_andre.md's Kailash section on why its schema can't be assumed to
+        // match. ---
+        Card {
+            width: parent.width
+            visible: !HomeViewModel.isGarmin && !HomeViewModel.isKailash
+            Column {
+                width: parent.width
+                spacing: Theme.spacingMedium
+
+                Text { text: qsTr("Ambit3 Settings"); font.bold: true; color: Theme.text }
+
+                Text {
+                    visible: SettingsWriteService.loading && SettingsWriteService.settings.length === 0
+                    color: Theme.mutedText
+                    text: qsTr("Reading settings off the watch...")
+                }
+
+                Text {
+                    visible: !SettingsWriteService.ok && SettingsWriteService.lastError.length > 0
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    color: Theme.error
+                    font.pixelSize: 12
+                    text: SettingsWriteService.lastError
+                }
+
+                Repeater {
+                    model: SettingsWriteService.settings
+                    delegate: Row {
+                        width: parent.width
+                        spacing: Theme.spacingSmall
+
+                        // "display_dark" -> "Display dark" - a light label formatter, not a
+                        // second name table to keep in sync with settings_write.py's own.
+                        readonly property string label: {
+                            const parts = modelData.key.split("_");
+                            parts[0] = parts[0].charAt(0).toUpperCase() + parts[0].slice(1);
+                            return parts.join(" ");
+                        }
+                        readonly property bool hasRange:
+                            modelData.min !== undefined && modelData.min !== null
+                            && modelData.max !== undefined && modelData.max !== null
+
+                        Text {
+                            width: 170
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: parent.label
+                            color: Theme.text
+                            font.pixelSize: 13
+                        }
+
+                        Switch {
+                            visible: modelData.kind === "bool"
+                            anchors.verticalCenter: parent.verticalCenter
+                            checked: modelData.value === 1 || modelData.value === true
+                            enabled: SettingsWriteService.writingKey !== modelData.key
+                            onToggled: SettingsWriteService.writeSetting(modelData.key, checked ? 1 : 0)
+                        }
+
+                        ComboBox {
+                            visible: modelData.kind === "enum"
+                            width: 220
+                            model: modelData.choices
+                            textRole: "label"
+                            valueRole: "value"
+                            enabled: SettingsWriteService.writingKey !== modelData.key
+                            currentIndex: {
+                                for (let i = 0; i < modelData.choices.length; i++) {
+                                    if (modelData.choices[i].value === modelData.value) return i;
+                                }
+                                return -1;
+                            }
+                            onActivated: SettingsWriteService.writeSetting(modelData.key, currentValue)
+                        }
+
+                        Row {
+                            visible: modelData.kind === "number" && parent.hasRange
+                            spacing: 8
+                            Slider {
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 160
+                                from: modelData.min
+                                // Real screenshot range for brightness/contrast is 0-100%
+                                // even though the schema's own uint8 type allows up to
+                                // 255 - clamped to the range SuuntoLink itself exposes.
+                                to: Math.min(modelData.max, 100)
+                                value: modelData.value
+                                enabled: SettingsWriteService.writingKey !== modelData.key
+                                onMoved: SettingsWriteService.writeSetting(modelData.key, Math.round(value))
+                            }
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: modelData.value
+                                color: Theme.mutedText
+                                font.pixelSize: 12
+                            }
+                        }
+
+                        // A "number" field with no confirmed min/max (only
+                        // compass_declination in this curated set) - shown, not editable,
+                        // rather than guessing at a sensible slider range.
+                        Text {
+                            visible: modelData.kind === "number" && !parent.hasRange
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: modelData.value
+                            color: Theme.mutedText
+                            font.pixelSize: 13
+                        }
+
+                        Text {
+                            visible: SettingsWriteService.writingKey === modelData.key
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: qsTr("saving...")
+                            color: Theme.mutedText
+                            font.pixelSize: 11
+                            font.italic: true
+                        }
                     }
                 }
             }
