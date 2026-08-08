@@ -40,6 +40,7 @@ import tempfile
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -119,7 +120,7 @@ class Handler(BaseHTTPRequestHandler):
             self._handle_kailash_history()
         elif self.path == "/api/kailash/tracklog":
             self._handle_kailash_tracklog()
-        elif self.path == "/api/settings":
+        elif self.path == "/api/settings" or self.path.startswith("/api/settings?"):
             self._handle_settings_read()
         elif self.path == "/api/agps/status":
             self._handle_agps_status()
@@ -448,14 +449,21 @@ class Handler(BaseHTTPRequestHandler):
         self._send_json(200 if info.get("ok") else 502, info)
 
     def _handle_settings_read(self):
-        """GET /api/settings - Ambit3 (and Traverse/Ambit2, same schema family). Real,
-        read-only 0x1100 DeviceSettings query, decoded through tools/settings_write.py's
-        curated, screenshot-verified field table (added 2026-08-08 - see that file's own
-        docstring and custom_modes_andre.md for how entry IDs were confirmed to only ever
-        be looked up fresh per-device, after a real bug where a hardcoded ID from one
-        watch's schema silently hit a different field on another). Every value live-
-        verified against real SuuntoLink screenshots for this exact watch."""
-        code, out, err = run_tool("settings_write.py", ["--json"])
+        """GET /api/settings[?device=kailash] - Ambit3 (and Traverse/Ambit2, same schema
+        family) by default; pass ?device=kailash for Kailash's own smaller, separately-
+        curated table (added 2026-08-08, same day as the Ambit3 one - see
+        tools/settings_write.py's own docstring for both tables' real sources: SuuntoLink's
+        screenshots for the Ambit3, the real 7R iOS app's own screenshots for Kailash).
+        Real, read-only 0x1100 DeviceSettings query - see custom_modes_andre.md for how
+        entry IDs were confirmed to only ever be looked up fresh per-device, after a real
+        bug where a hardcoded ID from one watch's schema silently hit a different field on
+        another. Every value in both tables live-verified against real screenshots."""
+        query = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+        device = query.get("device", [None])[0]
+        args = ["--json"]
+        if device:
+            args += ["--device", device]
+        code, out, err = run_tool("settings_write.py", args)
         info = self._parse_last_json_line(out)
         if info is None:
             self._send_json(502, {"ok": False, "error": "settings_write.py --json produced "
@@ -464,19 +472,23 @@ class Handler(BaseHTTPRequestHandler):
         self._send_json(200 if info.get("ok") else 502, info)
 
     def _handle_settings_write(self, body):
-        """POST /api/settings. Body: {"key": str, "value": number, "confirm": bool}. Same
-        rehearsal-first pattern as every other write in this backend: without confirm:true,
-        runs settings_write.py's own --set dry-run (shows current value and what would be
-        written, sends nothing); with confirm:true, adds --write for a real 0x1101 send,
-        confirmed by settings_write.py's own re-read (its own `ok` is only true if the
-        watch's re-read actually reflects the new value - see that file's own write_one())."""
+        """POST /api/settings. Body: {"key": str, "value": number, "confirm": bool,
+        "device": str (optional, e.g. "kailash")}. Same rehearsal-first pattern as every
+        other write in this backend: without confirm:true, runs settings_write.py's own
+        --set dry-run (shows current value and what would be written, sends nothing); with
+        confirm:true, adds --write for a real 0x1101 send, confirmed by settings_write.py's
+        own re-read (its own `ok` is only true if the watch's re-read actually reflects the
+        new value - see that file's own write_one())."""
         key = body.get("key")
         value = body.get("value")
         if key is None or value is None:
             self._send_json(400, {"error": "missing \"key\" or \"value\""})
             return
         confirm = bool(body.get("confirm", False))
+        device = body.get("device")
         args = ["--set", f"{key}={value}", "--json"]
+        if device:
+            args += ["--device", device]
         if confirm:
             args.append("--write")
         code, out, err = run_tool("settings_write.py", args)
