@@ -1,5 +1,7 @@
 # Orbital Data Sync Analysis — firmware vs orbitsync vs orbitsync2
 
+> **Historical** - early AGPS capture analysis; the format is now fully solved and documented in `sgee_andre.md` and `tools/README.md`. Kept for the derivation history only.
+
 ## Key Finding: orbitsync2 is a verification-only check, not a full sync
 
 | Capture | Orbit Data Size | Route Data | Packets | Duration (est.) | Type |

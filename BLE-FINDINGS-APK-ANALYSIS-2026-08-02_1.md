@@ -1,11 +1,13 @@
 # Ambit3 BLE — Findings from Suunto App APK Analysis (jadx)
 
+> **Historical** - early BLE APK-decompile findings; BLE understanding has moved on substantially since (see `HANDOFF.md`'s Milestone 7 and `unresolved_questions_for_devs.md`'s BLE note, both reflecting the 2026-08-06 real HCI capture). Kept for the derivation history only.
+
 **Source:** jadx-decompiled output of two APKs — `com.stt.android.suunto` v4.73.6
 (`4073006`, minAPI24) and v6.7.12 (`6007012`, minAPI26) — both `arm64-v8a` +
 `armeabi-v7a`, sourced via apkmirror.com. Both versions analyzed in parallel; findings
 below hold for both unless noted.
 
-**Purpose:** these findings update `AMBIT3-SUUNTO-HANDOFF.md` — specifically §8 (BLE
+**Purpose:** these findings update `obsolete/AMBIT3-SUUNTO-HANDOFF.md` (marked partly wrong at its own top - `HANDOFF.md` is current) — specifically §8 (BLE
 transport), §9 (native library map), and §17 (known unknowns). Merge into that doc; this
 is written to stand alone in the meantime.
 

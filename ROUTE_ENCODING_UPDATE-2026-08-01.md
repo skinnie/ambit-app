@@ -1,5 +1,7 @@
 # Ambit3 Route Encoding — Update from SuuntoLink Data Dump
 
+> **Historical** - an intermediate update note; its findings are folded into the current reference, `tools/README.md`. Kept for the derivation history only.
+
 **Source:** `Suuntolink.zip` — full SuuntoLink (SDSApplicationServer / Electron UI) application
 data folder for device `<SERIAL>` ("Emu" / Ambit3 Peak, fw 2.4.17).
 

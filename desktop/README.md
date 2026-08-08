@@ -185,7 +185,7 @@ talks to `DeviceService` directly - the layering is real, not just drawn in a di
 ## Layout
 
 ```
-ambitapp-v2/
+desktop/
   CMakeLists.txt
   src/
     main.cpp              - bootstraps the app, registers the bundled icon font, nothing else

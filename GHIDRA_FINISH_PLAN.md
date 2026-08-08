@@ -1,5 +1,7 @@
 # Finishing the Route Encoding (§5.4) — Ghidra Plan
 
+> **Historical, task complete** - this was a plan for finishing the route-point encoding; that work is done, see `tools/README.md`. Kept for the derivation history only.
+
 ## The win you just got
 
 You uploaded the **Windows SuuntoLink** installation files. This gave us:
@@ -54,7 +56,7 @@ If Ghidra bogs down in the 1.1M line export, do this:
 
 ## Key file locations
 
-- **Handoff (updated):** `/mnt/user-data/outputs/AMBIT3-SUUNTO-HANDOFF.md` (§5.4 specifics)
+- **Handoff (updated):** `obsolete/AMBIT3-SUUNTO-HANDOFF.md (marked partly wrong at its own top - HANDOFF.md is current)` (§5.4 specifics)
 - **SDS decompilation:** `/mnt/user-data/outputs/SDSApplicationServer_exe.c`
 - **Encoding summary:** `/mnt/user-data/outputs/ROUTE_ENCODING_SUMMARY.md` (all the decoded facts, example records)
 - **Captures:** `/mnt/user-data/uploads/route12km`, route128km, routesmall

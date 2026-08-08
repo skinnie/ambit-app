@@ -1,5 +1,7 @@
 # Route Point Encoding — Current Status & Remaining Unknown
 
+> **Historical, superseded** - the route encoding scale this doc calls unknown was solved in `ROUTE_ENCODING_UPDATE-2026-08-01.md` and is fully documented in `tools/README.md`. Kept for the derivation history only.
+
 ## What we know (PROVEN)
 
 **Route simplification (12 stored points from 1066 GPX points):**

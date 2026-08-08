@@ -1,5 +1,7 @@
 # OpenAMBIT Audit Report — Comparing Against SuuntoLink Reference
 
+> **Historical snapshot, 2026-07-31** - point-in-time comparison; several gaps it found (e.g. sport-mode write support) were substantially advanced since, see `V3_CHANGELOG.md` and `custom_modes_andre.md`. Not the current reference.
+
 **Date:** 2026-07-31  
 **Scope:** Ambit1, Ambit2, Ambit3 implementations in openambit vs. SuuntoLink (Windows)  
 **Artifacts:** SDSApplicationServer.exe decompilation, route.js, USB captures

@@ -1,7 +1,9 @@
 # Day-One Quickstart — Ambit3 Offline Route Sync
 
+> **Historical entry point** - written early in the project; `HANDOFF.md` is the current entry point.
+
 A one-page orientation for a developer (working with Claude) picking up this project. Read this
-first, then dive into `AMBIT3-SUUNTO-HANDOFF.md` for the full detail. **Do not write to a watch
+first, then dive into `obsolete/AMBIT3-SUUNTO-HANDOFF.md` (marked partly wrong at its own top - `HANDOFF.md` is current) for the full detail. **Do not write to a watch
 until you've read §19 (write-safety) of the full handoff.**
 
 ---
@@ -88,7 +90,7 @@ only new work is the BLE transport + the session-login token.
 
 ## Assets you must have (ask for these)
 
-Full handoff `AMBIT3-SUUNTO-HANDOFF.md` · the six pcap captures (`routesmall`, `route12km`,
+Full handoff `obsolete/AMBIT3-SUUNTO-HANDOFF.md` (marked partly wrong at its own top - `HANDOFF.md` is current) · the six pcap captures (`routesmall`, `route12km`,
 `route128km`, `sync`, `routedelete`, `poiimport`) · the two **matched source GPX** files ·
 `libkomposti-ng.so` (+ its Ghidra C export) · the deobfuscated SuuntoLink JS · openambit &
 opensportsync source.
@@ -104,7 +106,7 @@ handoff §16.3.)*
 
 ## First question to ask Claude on day one
 
-> "Read `AMBIT3-SUUNTO-HANDOFF.md` and the capture files. Confirm the delete/reset byte sequence
+> "Read `obsolete/AMBIT3-SUUNTO-HANDOFF.md` (marked partly wrong at its own top - `HANDOFF.md` is current) and the capture files. Confirm the delete/reset byte sequence
 > from `routedelete`, and give me the exact bytes I need to send to empty the Ambit3 route list.
 > Do not propose the full serializer yet."
 

@@ -24,6 +24,7 @@ hardware, and they carry the watch serial number.
 | File | Role |
 |---|---|
 | `ambit_pcap.py` | pcap -> reassembled HID messages -> sparse flash image |
+| `ble_pklg.py` | Apple PacketLogger (.pklg) BLE capture -> reassembled NSP messages, via `tshark` |
 | `ambit_format.py` | structures, CRC, region hash, relative geometry |
 | `decode_route.py` | dump of a capture with self-checks |
 | `regen_route.py` | reserialization, then comparison against the source GPX |
@@ -33,6 +34,20 @@ hardware, and they carry the watch serial number.
 | `hid_roundtrip.py` | re-encodes the outgoing messages and compares them to the captures |
 | `write_nav.py` | writes to the watch, or simulates; dry-run by default |
 | `sbem_schema.py` | SuuntoLink schema dictionary, names the SBEM payloads |
+| `custom_modes.py` | decodes CustomModes (sport modes): settings, displays, multisport, app rules |
+| `custom_modes_write.py` | encodes CustomModes' BXml body (inverse of `custom_modes.py`), verified byte-for-byte against real live watch data - see `V3_CHANGELOG.md` |
+| `custom_modes_writeback_test.py` | real-hardware-confirmed write of the CustomModes region (chunk writes + padded hash + commit) - see `V3_CHANGELOG.md` |
+| `apps.py` | decodes the Apps flash region (installed Suunto App bytecode), IDs against SuuntoLink's catalog |
+| `exercise_log.py` | decodes ExerciseLog (recorded moves) to GPX and FIT |
+| `sgee.py` | writes GPS/GLONASS orbital data (AGPS) to GpsSGEE |
+| `device_info.py` | model/serial/firmware/hardware version + live battery charge, verified on real hardware - see `V3_CHANGELOG.md` |
+| `firmware_check.py` | asks Suunto's real device-info service for the latest firmware + a real download link, given a model/hw version (or read live) - see `V3_CHANGELOG.md` |
+| `firmware_flash.py` | decodes/replays the firmware-update wire protocol against a downloaded firmware container; READ-ONLY, no `--write` - two real unknowns (bootloader-entry trigger, the 0x0e00 header's 8-byte prefix) still block a real install, see the module's own docstring |
+| `training_program.py` | EXPERIMENTAL - writes a TrainingProgram item; no real capture to verify against |
+| `workout.py` | generates App Zone source for a structured workout, compiles it via the live community compiler; portable, no OS/GUI dependency |
+| `workout_gui.py` | local browser GUI (wanarun.net-style step builder) on top of `workout.py`; packaged as a standalone desktop app, see `packaging/README.md` |
+| `suuntolink_catalog.py` | finds and safely appends to SuuntoLink's own `suunto-apps/index.json`, the documented real install path (`forum.suunto.com/topic/7592`) |
+| `workout_install.py` | EXPERIMENTAL, CLI-only - this project's own Apps/CustomModes flash writer; byte-exact encoding proven, but installed apps show an unresolved real "app error" on hardware, paused (`training_program_andre.md` Finding 19) |
 | `selftest.py` | chains everything over the whole corpus |
 
 ## Writing to the watch
@@ -121,6 +136,40 @@ The reassembly of a long reply is exercised by `--from`, which replays the 589-b
 `0x1100` of `ambit3full`. The live read path did run against the watch on 2026-08-03; the
 write path never has.
 
+`tools/sgee.py` writes GPS/GLONASS extended ephemeris (AGPS orbital data) to the `GpsSGEE`
+region `nav` skips. A separate file, not a `write_nav.py` action - it only imports `Link`/
+`send_plan`/the memory-map check from there for transport, matching `custom_modes.py`/
+`apps.py`/`exercise_log.py`'s pattern (it started as a `write_nav.py` action and was split
+out for consistency, 2026-08-05). Confirmed byte-exact against a real capture, 2026-08-05
+(`assets/ambit3 pcap/orbitsync`, a full sync session with routes/POIs/logs mixed in, not an
+SGEE-only recording): the wire format is a 4-byte little-endian length prefix followed by the
+raw ephemeris bytes, in the usual 1024-byte `0x0b16` chunks, closed by one `0x0b18` whose hash
+covers only the written bytes (`GpsSGEE`'s `HASH_WRITTEN` mode, not the whole padded region
+`Routes`/`Waypoints` use) - and, unlike those two, no `0x0b04` commit afterward, confirmed
+absent from the capture. `--compare` is address-scoped rather than whole-capture
+(`compare_sgee_with_capture`), since `orbitsync` carries far more than the SGEE write alone.
+
+```
+./tools/sgee.py FILE                          # simulates, nothing is emitted
+./tools/sgee.py FILE --compare CAPTURE         # checks against a capture
+./tools/sgee.py FILE --write                   # ACTUALLY EMITS
+```
+
+`FILE` is a raw ephemeris blob with no wrapper of its own - what SuuntoLink itself caches on
+disk, confirmed byte-identical to `assets/WIndows apps/Suuntolink/sgee.7d`. A live, free
+source exists and needs no account: `GET https://devices.suunto-operations.com/devices/{gps,
+glonass}orbit/binary`, found via `production.json`'s `serverUrl` and confirmed
+unauthenticated and current (2026-08-05) - unlike the rest of that host's API, which returns
+`401` without the `appKey` also in `production.json`. Real orbital data goes stale after
+roughly one to a few weeks; refetch periodically. GLONASS applies only to Traverse, Traverse
+Alpha and Ambit3 Vertical - not this project's reference Ambit3 Peak, and not verified against
+real hardware here for that reason, not because the endpoint doesn't work.
+
+`0x0b15` (`gps_orbit_head`, printed by `sgee` on a live run) is a 9-byte status decoded from a
+real before/after: `[u8 valid][u16 LE year][u8 month][u8 day][u32 LE seconds-since-midnight
+UTC]` - confirmed 2026-08-05 by writing fresh data and reading back the exact embedded
+timestamp of the source file. Full derivation: `sgee_andre.md`.
+
 Frame encoding is verified by round trip: the 4724 outgoing messages of the 9 captures,
 that is 47117 reports of 64 bytes, are re-encoded identically. Established along the way:
 `send_recv` and `format` are independent, contrary to what openambit's `legacy_format`
@@ -190,6 +239,19 @@ Waypoint descriptor tail (last 12 bytes out of 52):
 9  3 zero bytes
 ```
 
+**A route needs at least one attached waypoint to appear in the watch's own Navigation menu at
+all.** Confirmed on hardware 2026-08-04: a route written with 0 waypoints reads back
+self-consistent (both CRCs match) but never shows up in Navigation, regardless of otherwise
+valid `distance`/`ascent`/`descent`/timestamp; the same route with one waypoint attached shows
+up fine. Every route in every capture this project has ever examined already had one, which is
+why `build_route.py`'s `stamp_from_capture` hard-requires a match to recover a route's
+timestamp - but the display requirement itself was only established live, not merely inferred
+from the captures. `route_from_gpx` (`build_route.py`) now synthesizes a `Start`/`End` pair
+from the track's own first/last points when the source GPX supplies no `type="Waypoint"`
+entry, so this cannot silently recur. Note real Komoot/Suunto exports mark a route's start/end
+as `type="Begin"`/`type="End"`, not `type="Waypoint"` - those are a distinct GPX convention and
+are not treated as on-device waypoints by this project's tooling.
+
 Route index entry (20 bytes):
 
 ```
@@ -254,6 +316,14 @@ What the descriptor adds, beyond navigation:
   flash address of every activity, that is the whole read path for moves.
 - the `DeviceSettings` tree, readable (`0x1100`) and writable (`0x1101`), including
   `WhitelistedBleDevices` - see the BLE milestone in `HANDOFF.md`.
+- `settings_write.py`'s curated `AMBIT3_SETTINGS`/`KAILASH_SETTINGS` tables resolve most
+  fields directly by schema path, but some real settings are GROUPs packing more than one
+  value into a single entry rather than a plain scalar leaf - Kailash's own `HomeLocation`
+  (`Latitude`/`Longitude` packed into one 8-byte entry) is the first curated example,
+  found 2026-08-08 - see `custom_modes_andre.md`'s "Kailash Home Location" section.
+  `settings_write.py`'s `_group_containing()`/`_field_offset_in_group()` resolve a GROUP
+  member to its parent entry + byte offset generically, not special-cased to just this one
+  field.
 
 The regions declared by the `0x0b21` are nine, not three: `Waypoints`, `Routes`, `Apps`,
 `GpsSGEE`, `CustomModes`, `TrainingProgram`, `ExerciseLog`, `EventLog` and `BlePairingInfo`

@@ -4,6 +4,23 @@
 Kailash is a *different generation*, uses a *different app*, and its protocol lives in *different
 artifacts*. Do not build it on the Ambit3 foundation.
 
+> **2026-08-08 update — most of this note is now historical, not current.** Both forks in §4
+> below are resolved, and not the way §7 predicted: the Kailash's cable **and** BLE protocols
+> both turned out to be the **same NSP family the Ambit3 already uses**, not a modern/
+> Movesense-style stack. §7's "do not assume the Ambit3 findings apply" caution held for the
+> memory map and log formats, which really are Kailash-specific, but not for the wire protocol
+> itself. Concretely, since this note was written: `tools/write_nav.py`'s `Link`/`CMD_NAMES`/
+> `sbem_schema.py` machinery already drives the Kailash over cable (`tools/kailash_history.py`,
+> `tools/kailash_tracklog.py`, `tools/kailash_eventlog.py`, `tools/settings_write.py --device
+> kailash`, all real and hardware-confirmed - see git history), and a real 7R-app BLE capture
+> (§4's "decisive artifact", finally taken) confirms the **exact same GATT service/
+> characteristics and SLIP-framed NSP envelope as the Ambit3's own Milestone 7** work in
+> `HANDOFF.md`. Full writeup: `KAILASH-BLE-FINDINGS.md`. New BLE transport, usable by every
+> existing Kailash tool: `tools/ble_link.py` (built from the capture, not yet run against real
+> hardware - see its own docstring for what's confirmed vs. still needs a live test). The asset
+> checklist in §6 is updated accordingly; the rest of this note (§1-§3, §5's remaining
+> unknowns) is still accurate and worth reading for context.
+
 This note captures (1) what we know, (2) what to preserve *now* before it's lost, and (3) the
 most tractable path to a working offline tool, so the project can be picked up cleanly later.
 
@@ -93,14 +110,30 @@ the user already has (the Windows ThinkPad / any PC with SuuntoLink).
 Either way, the capture is the ground truth and tells you which project you're in **before** you
 invest in either library.
 
+> **Resolved, 2026-08-08: it's the first branch.** Both the cable protocol (already driving
+> `tools/kailash_*.py` and `settings_write.py --device kailash` in production, per the status
+> box at the top of this note) and, now also confirmed, the **7R app's own BLE protocol**
+> (`KAILASH-BLE-FINDINGS.md`) are the Ambit3's own NSP: 12-byte header
+> `[msgId][subId][flags][errFlags][connId][pktNum][dataSize]`, the same `0x0b`-family commands,
+> the same SBEM0102 settings/log encoding. Not "transferable knowledge" in the loose sense
+> predicted above - **literally the same protocol implementation**, down to sharing one fixed
+> GATT service UUID (`d0fd6b80-e62e-11e3-a2e9-0002a5d5c51b`) with the Ambit3. `libmds.so` and the
+> modern-stack/V2-handoff path never ended up needed for the wire protocol; they may still be
+> relevant to the Kailash's own activity/timeline *log format* (§5 item 4, still open), which is
+> a separate question from the transport this fork was actually about.
+
 ---
 
 ## 5. Unknowns to resolve (in rough order)
 
-1. **Cable transport family** — Ambit3-like NSP vs modern stack (§4 fork). *Resolved by one
-   SuuntoLink cable capture.*
-2. **Device identification** — the Kailash's USB VID/PID and identify handshake (so a tool can
-   recognize it). *From the same capture.*
+1. ~~**Cable transport family** — Ambit3-like NSP vs modern stack (§4 fork). *Resolved by one
+   SuuntoLink cable capture.*~~ **Resolved 2026-08-08, see the note directly above: Ambit3-like
+   NSP, confirmed over both cable and BLE.**
+2. ~~**Device identification** — the Kailash's USB VID/PID and identify handshake (so a tool can
+   recognize it). *From the same capture.*~~ **Resolved**: USB VID:PID `1493:002a` (see
+   `tools/write_nav.py`'s `PRODUCT_IDS`), and the BLE identify handshake is the same `0x0002`
+   "hello" the Ambit3 uses, carrying the codename `"Hoopoe"` and descriptor id
+   `79DC39510E000100` (`KAILASH-BLE-FINDINGS.md`).
 3. **Activity/log memory map** — where the Kailash stores activities/timeline, and the read
    command sequence. *From an activity-download capture.*
 4. **Activity data format** — the Kailash's log schema (travel/timeline-oriented: places, tracks,
@@ -119,32 +152,43 @@ invest in either library.
 | Encrypted iPhone backup w/ 7R + data | TODO | app container, activity DBs, format hints — **do now** |
 | Decrypted 7R `.ipa` | TODO (needs jailbreak) | the actual sync protocol — crown jewel |
 | `libmds.so` + modern Suunto app libs | yes (screenshot) | modern activity/timeline decode |
-| SuuntoLink ↔ Kailash **cable capture** | TODO | **the decisive artifact** — protocol family, identify, activity read |
-| 7R ↔ Kailash BLE capture (macOS PacketLogger) | optional | behavioral ground truth if going the app route |
-| V2 handoff (`SUUNTO-V2-HANDOFF.md`) | yes | methodology for the modern-stack case |
+| SuuntoLink ↔ Kailash **cable capture** | **done** | decided the fork (Ambit3-like NSP) — `tools/kailash_*.py`, `settings_write.py --device kailash` all built and hardware-confirmed on it |
+| 7R ↔ Kailash BLE capture (iOS PacketLogger) | **done, 2026-08-08** | confirmed the same NSP over BLE too — `assets/APK/kailash/kailashpair.pklg` + `kailash7rsettingschange.pklg`, see `KAILASH-BLE-FINDINGS.md`; transport tool `tools/ble_link.py` built from it, not yet run live |
+| V2 handoff (`SUUNTO-V2-HANDOFF.md`) | yes | turned out not to be the relevant methodology for the transport (see the §4 resolution note above) — may still matter for the activity/timeline log *format*, §5 item 4 |
 
 ---
 
 ## 7. Relationship to the Ambit3 work
 
-**Separate project. Do not merge.** Shared *only* at the level of general methodology (capture
-the official tool, treat the watch as ground truth, dry-run all writes, no cloud oracle). Do NOT
-assume the Ambit3 flash addresses, NSP details, route format, or `libkomposti` findings apply —
-the Kailash is a different generation and must be profiled from its own captures. The one thing
-that could bridge them is §4's fork: *if* the cable capture shows Ambit3-like NSP, then (and only
-then) the Ambit3 transport layer becomes a reusable head start.
+**Historical note — superseded by the §4 resolution above.** This section originally said
+"separate project, do not merge... the one thing that could bridge them is §4's fork," on the
+assumption that the fork would probably resolve the other way. It resolved toward the Ambit3
+side instead: the wire protocol (transport, framing, command set, GATT UUIDs) is now confirmed
+shared, and the Kailash tooling (`tools/kailash_*.py`, `settings_write.py`, now `ble_link.py`)
+deliberately builds on `write_nav.py`'s `Link`/`ambit_pcap.CMD_NAMES`/`sbem_schema.py`
+machinery rather than reinventing it — the opposite of "do not build it on the Ambit3
+foundation" above. What's still separate and still must be profiled from the Kailash's own
+captures, not assumed from the Ambit3: flash/memory addresses, the activity/timeline log
+format (§5 item 4), and anything specific to the 7R app's own UI/settings surface
+(`settings_write.py`'s `KAILASH_SETTINGS` table already reflects this — same mechanism,
+device-specific entry IDs, see that file's own docstring for a real bug this distinction
+already caught).
 
 ---
 
 ## 8. Recommended first session (when picked up)
 
-1. Preserve the firmware + make the encrypted iPhone backup (§3.1–3.2) — 30 minutes, prevents
-   permanent loss.
-2. Install SuuntoLink on the PC; capture a full Kailash cable sync (connect → activity download →
-   time → orbit) with USBPcap. Save the pcap.
-3. Bring the pcap (+ firmware + `libmds.so`) to a fresh analysis session. First question to
+**Historical — both steps below are done; see the status box at the top of this note and
+`KAILASH-BLE-FINDINGS.md` for what to pick up next instead (live-testing `tools/ble_link.py`
+against real hardware, and §5's remaining items 3-5).**
+
+1. ~~Preserve the firmware + make the encrypted iPhone backup (§3.1–3.2) — 30 minutes, prevents
+   permanent loss.~~
+2. ~~Install SuuntoLink on the PC; capture a full Kailash cable sync (connect → activity download →
+   time → orbit) with USBPcap. Save the pcap.~~
+3. ~~Bring the pcap (+ firmware + `libmds.so`) to a fresh analysis session. First question to
    resolve: **§4 fork — Ambit3-like or modern stack?** That single answer scopes the entire rest
-   of the project.
+   of the project.~~
 
 ---
 
