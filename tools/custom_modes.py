@@ -16,6 +16,7 @@ decompiled assets/APK/movescountapp/ghidra/libkomposti-ng.so.c - not guessed.
 
 import argparse
 import datetime
+import json
 import struct
 
 CUSTOM_MODES_BASE = 0x002000
@@ -423,6 +424,58 @@ def decode(data):
     return result
 
 
+def to_json(result):
+    """A JSON-friendly view of decode()'s own result dict, for backend/server.py - added
+    2026-08-08 alongside the real CustomModes write tools (custom_modes_rename_test.py/
+    custom_modes_field_write_test.py/custom_modes_display_field_write_test.py). Every field
+    name here matches what those write tools themselves expect (SETTING_FIELDS' own real
+    names for --set, FIELD_TYPES' own real names for --to/--type), so a UI built against
+    this can round-trip without a second name-mapping layer."""
+    modes = []
+    for mode in result["exercise_modes"]:
+        s = mode.get("Settings", {})
+        modes.append({
+            "name": s.get("Name"),
+            "activityId": s.get("ActivityID"),
+            "customModeId": s.get("CustomModeID"),
+            "useHw": s.get("UseHw"),
+            "altiBaroMode": s.get("AltiBaroMode"),
+            "recordingInterval": s.get("RecordingInterval"),
+            "autolap": s.get("Autolap"),
+            "hrHigh": s.get("HrHigh"),
+            "hrLow": s.get("HrLow"),
+            "hrLimitsUse": s.get("HrLimitsUse"),
+            "autoStart": s.get("AutoStart"),
+            "autoPause": s.get("AutoPause"),
+            "autoScrolling": s.get("AutoScrolling"),
+            "intTimerFlags": s.get("IntTimerFlags"),
+            "intTimerCount": s.get("IntTimerCount"),
+            "backlightMode": s.get("BacklightModeName"),
+            "displayMode": s.get("DisplayModeName"),
+            "quickNavigation": s.get("QuickNavigationName"),
+            "displays": [
+                {
+                    "index": i,
+                    "template": disp["TemplateName"],
+                    "fields": [
+                        {"indexName": f["IndexName"], "type": f["Type"]}
+                        for f in disp["Fields"]
+                    ],
+                }
+                for i, disp in enumerate(mode["Displays"])
+            ],
+            "rules": mode["Rules"],
+        })
+
+    sport_modes = [
+        {"name": slot["Name"], "activityId": slot["ActivityID"], "legs": slot["Exercises"]}
+        for slot in result["sport_modes"] if slot["Name"]
+    ]
+
+    return {"ok": True, "formatType": result.get("format_type"),
+            "exerciseModes": modes, "sportModes": sport_modes}
+
+
 def show(result, verbose=False):
     print(f"format_type={result.get('format_type')}")
     print(f"\n{len(result['exercise_modes'])} exercise mode(s):")
@@ -481,6 +534,9 @@ def main():
     ap.add_argument("--save", metavar="FILE",
                      help="also save the raw region bytes here (only meaningful when reading"
                           " live from the watch) - for capturing a clean before/after pair")
+    ap.add_argument("--json", action="store_true",
+                     help="print one JSON line instead of human-readable output - for "
+                          "ambitapp-v2/backend/server.py, not meant for a person to read")
     args = ap.parse_args()
 
     if args.from_file:
@@ -488,16 +544,22 @@ def main():
             data = f.read()
     else:
         from write_nav import Link, read_flash
-        link = Link(dry_run=False, verbose=False)
-        print("read-only: 0x0b17 reads flash, nothing is written")
+        link = Link(dry_run=False, verbose=not args.json)
+        if not args.json:
+            print("read-only: 0x0b17 reads flash, nothing is written")
         link.open()
         data = read_flash(link, CUSTOM_MODES_BASE, CUSTOM_MODES_SIZE, label="CustomModes")
         if args.save:
             with open(args.save, "wb") as f:
                 f.write(data)
-            print(f"\nsaved raw dump to {args.save}")
+            if not args.json:
+                print(f"\nsaved raw dump to {args.save}")
 
-    show(decode(data), verbose=args.displays)
+    result = decode(data)
+    if args.json:
+        print(json.dumps(to_json(result)))
+    else:
+        show(result, verbose=args.displays)
     return 0
 
 

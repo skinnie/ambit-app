@@ -34,6 +34,7 @@ found the same day (custom_modes_andre.md).
 """
 import argparse
 import datetime
+import json
 import pathlib
 import sys
 
@@ -133,50 +134,65 @@ def main():
     ap.add_argument("--write", action="store_true",
                      help="actually write; without this, only reads, locates the field, "
                           "and reports what would change")
+    ap.add_argument("--json", action="store_true",
+                     help="print one JSON line instead of human-readable output - for "
+                          "ambitapp-v2/backend/server.py, not meant for a person to read")
     args = ap.parse_args()
+    quiet = args.json
+
+    def out(msg):
+        if not quiet:
+            print(msg)
+
+    def finish(payload, code):
+        if quiet:
+            print(json.dumps(payload))
+        return code
 
     new_bytes = args.to_name.encode("iso-8859-15") + b"\0"
     if len(new_bytes) > NAME_FIELD_WIDTH:
-        print(f"ABORT: {args.to_name!r} is {len(new_bytes)} bytes encoded, "
-              f"doesn't fit in the {NAME_FIELD_WIDTH}-byte field.")
-        return 1
+        msg = f"{args.to_name!r} is {len(new_bytes)} bytes encoded, doesn't fit in the {NAME_FIELD_WIDTH}-byte field."
+        out(f"ABORT: {msg}")
+        return finish({"ok": False, "error": msg}, 1)
 
-    link = Link(dry_run=False, verbose=False)
+    link = Link(dry_run=False, verbose=not quiet)
     link.open()
 
-    print("Checking memory map before touching anything...")
+    out("Checking memory map before touching anything...")
     found = read_memory_map(link)
     if not check_memory_map(found):
-        print("ABORT: memory map does not match expectations, refusing to write.")
-        return 1
+        msg = "memory map does not match expectations, refusing to write."
+        out(f"ABORT: {msg}")
+        return finish({"ok": False, "error": msg}, 1)
 
-    print("Reading CustomModes...")
+    out("Reading CustomModes...")
     fresh = read_flash(link, F.CUSTOM_MODES_BASE, F.CUSTOM_MODES_REGION_SIZE, label="CustomModes")
 
     offsets = find_name_offsets(fresh, args.from_name)
     if not offsets:
-        print(f"ABORT: {args.from_name!r} not found anywhere in the real, currently-parsed "
-              f"BXml tree - check the exact spelling against custom_modes.py's own output.")
-        return 1
-    print(f"Found {args.from_name!r} in the real parsed tree at {len(offsets)} "
-          f"place(s): {[f'0x{o:x}' for o in offsets]}")
+        msg = f"{args.from_name!r} not found anywhere in the real, currently-parsed BXml tree."
+        out(f"ABORT: {msg}")
+        return finish({"ok": False, "error": msg}, 1)
+    out(f"Found {args.from_name!r} in the real parsed tree at {len(offsets)} "
+        f"place(s): {[f'0x{o:x}' for o in offsets]}")
 
     modified = bytearray(fresh)
     for offset in offsets:
         modified[offset:offset + NAME_FIELD_WIDTH] = new_bytes.ljust(NAME_FIELD_WIDTH, b"\0")
     changed = sum(1 for a, b in zip(fresh, modified) if a != b)
-    print(f"Would change {changed} byte(s) across {len(offsets)} name field(s) "
-          f"({NAME_FIELD_WIDTH} bytes each)")
+    out(f"Would change {changed} byte(s) across {len(offsets)} name field(s) "
+        f"({NAME_FIELD_WIDTH} bytes each)")
 
     if not args.write:
-        print("Read-only (pass --write to actually send this).")
-        return 0
+        out("Read-only (pass --write to actually send this).")
+        return finish({"ok": True, "dryRun": True, "from": args.from_name, "to": args.to_name,
+                        "offsets": offsets, "bytesChanged": changed}, 0)
 
     BACKUP_DIR.mkdir(parents=True, exist_ok=True)
     stamp = datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
     backup_path = BACKUP_DIR / f"before_rename_{stamp}.bin"
     backup_path.write_bytes(fresh)
-    print(f"Backup written to {backup_path}")
+    out(f"Backup written to {backup_path}")
 
     flash = FlashImage()
     flash.write(F.CUSTOM_MODES_BASE, bytes(modified))
@@ -184,25 +200,27 @@ def main():
                F.CUSTOM_MODES_BASE, bytes(modified)),
               ("tail", F.CUSTOM_MODES_BASE, None)]
 
-    print("Writing modified content + CMD_DATA_TAIL (padded-region SHA256) + CMD_NAV_COMMIT...")
+    out("Writing modified content + CMD_DATA_TAIL (padded-region SHA256) + CMD_NAV_COMMIT...")
     send_plan(link, flash, layout, commit=True)
-    print("  send_plan returned without raising - no protocol-level rejection seen")
+    out("  send_plan returned without raising - no protocol-level rejection seen")
 
-    print("Reading CustomModes back to verify...")
+    out("Reading CustomModes back to verify...")
     after = read_flash(link, F.CUSTOM_MODES_BASE, F.CUSTOM_MODES_REGION_SIZE, label="CustomModes")
 
     if bytes(after) == bytes(modified):
-        print(f"\nSUCCESS: region read back byte-for-byte matching the intended edit.")
-        print(f"PLEASE CHECK THE WATCH NOW: {args.from_name!r} should now show as {args.to_name!r}")
-        return 0
+        out(f"\nSUCCESS: region read back byte-for-byte matching the intended edit.")
+        out(f"PLEASE CHECK THE WATCH NOW: {args.from_name!r} should now show as {args.to_name!r}")
+        return finish({"ok": True, "dryRun": False, "from": args.from_name, "to": args.to_name,
+                        "offsets": offsets, "bytesChanged": changed}, 0)
     else:
         diffs = sum(1 for a, b in zip(after, modified) if a != b)
-        print(f"\nMISMATCH: {diffs} bytes differ from what was intended.")
+        out(f"\nMISMATCH: {diffs} bytes differ from what was intended.")
         mismatch_path = BACKUP_DIR / f"after_rename_{stamp}.bin"
         mismatch_path.write_bytes(after)
-        print(f"Post-write state saved to {mismatch_path} for inspection. "
-              f"Restore from {backup_path} if needed.")
-        return 1
+        out(f"Post-write state saved to {mismatch_path} for inspection. "
+            f"Restore from {backup_path} if needed.")
+        return finish({"ok": False, "error": f"{diffs} bytes differ from what was intended after write",
+                        "mismatchPath": str(mismatch_path), "backupPath": str(backup_path)}, 1)
 
 
 if __name__ == "__main__":

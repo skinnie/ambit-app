@@ -21,6 +21,7 @@ recomputed from this same offset logic and matched exactly before any write was 
 """
 import argparse
 import datetime
+import json
 import pathlib
 import struct
 import sys
@@ -95,84 +96,105 @@ def main():
     ap.add_argument("--write", action="store_true",
                      help="actually write; without this, only reads, locates the fields, "
                           "and reports what would change")
+    ap.add_argument("--json", action="store_true",
+                     help="print one JSON line instead of human-readable output - for "
+                          "ambitapp-v2/backend/server.py, not meant for a person to read")
     args = ap.parse_args()
+    quiet = args.json
+
+    def out(msg):
+        if not quiet:
+            print(msg)
+
+    def finish(payload, code):
+        if quiet:
+            print(json.dumps(payload))
+        return code
 
     if not args.set:
-        print("ABORT: no --set given, nothing to do.")
-        return 1
+        out("ABORT: no --set given, nothing to do.")
+        return finish({"ok": False, "error": "no --set given"}, 1)
 
     changes = {}
     for item in args.set:
         field, _, raw = item.partition("=")
         if field not in FIELD_OFFSETS:
-            print(f"ABORT: unknown field {field!r} - known: {sorted(FIELD_OFFSETS)}")
-            return 1
+            msg = f"unknown field {field!r} - known: {sorted(FIELD_OFFSETS)}"
+            out(f"ABORT: {msg}")
+            return finish({"ok": False, "error": msg}, 1)
         changes[field] = int(raw)
 
-    link = Link(dry_run=False, verbose=False)
+    link = Link(dry_run=False, verbose=not quiet)
     link.open()
 
-    print("Checking memory map before touching anything...")
+    out("Checking memory map before touching anything...")
     found = read_memory_map(link)
     if not check_memory_map(found):
-        print("ABORT: memory map does not match expectations, refusing to write.")
-        return 1
+        msg = "memory map does not match expectations, refusing to write."
+        out(f"ABORT: {msg}")
+        return finish({"ok": False, "error": msg}, 1)
 
-    print("Reading CustomModes...")
+    out("Reading CustomModes...")
     fresh = read_flash(link, F.CUSTOM_MODES_BASE, F.CUSTOM_MODES_REGION_SIZE, label="CustomModes")
 
     base = find_settings_base(fresh, args.mode)
     if base is None:
-        print(f"ABORT: {args.mode!r} not found as a real exercise mode in this reply.")
-        return 1
-    print(f"Found {args.mode!r} settings block at region offset {base} (0x{base:x})")
+        msg = f"{args.mode!r} not found as a real exercise mode in this reply."
+        out(f"ABORT: {msg}")
+        return finish({"ok": False, "error": msg}, 1)
+    out(f"Found {args.mode!r} settings block at region offset {base} (0x{base:x})")
 
     modified = bytearray(fresh)
+    changed_fields = {}
     for field, value in changes.items():
         off = base + FIELD_OFFSETS[field]
         fmt = "<" + FIELD_FORMATS[field]
         before_value = struct.unpack_from(fmt, fresh, off)[0]
         struct.pack_into(fmt, modified, off, value)
-        print(f"  {field}: {before_value} -> {value}  (region offset {off}, 0x{off:x})")
+        changed_fields[field] = {"previous": before_value, "requested": value, "offset": off}
+        out(f"  {field}: {before_value} -> {value}  (region offset {off}, 0x{off:x})")
 
     changed = sum(1 for a, b in zip(fresh, modified) if a != b)
-    print(f"Would change {changed} byte(s) total")
+    out(f"Would change {changed} byte(s) total")
 
     if not args.write:
-        print("Read-only (pass --write to actually send this).")
-        return 0
+        out("Read-only (pass --write to actually send this).")
+        return finish({"ok": True, "dryRun": True, "mode": args.mode,
+                        "fields": changed_fields, "bytesChanged": changed}, 0)
 
     BACKUP_DIR.mkdir(parents=True, exist_ok=True)
     stamp = datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
     backup_path = BACKUP_DIR / f"before_fieldwrite_{stamp}.bin"
     backup_path.write_bytes(fresh)
-    print(f"Backup written to {backup_path}")
+    out(f"Backup written to {backup_path}")
 
     flash = FlashImage()
     flash.write(F.CUSTOM_MODES_BASE, bytes(modified))
     layout = [(f"CustomModes ({args.mode} field write)", F.CUSTOM_MODES_BASE, bytes(modified)),
               ("tail", F.CUSTOM_MODES_BASE, None)]
 
-    print("Writing modified content + CMD_DATA_TAIL (padded-region SHA256) + CMD_NAV_COMMIT...")
+    out("Writing modified content + CMD_DATA_TAIL (padded-region SHA256) + CMD_NAV_COMMIT...")
     send_plan(link, flash, layout, commit=True)
-    print("  send_plan returned without raising - no protocol-level rejection seen")
+    out("  send_plan returned without raising - no protocol-level rejection seen")
 
-    print("Reading CustomModes back to verify...")
+    out("Reading CustomModes back to verify...")
     after = read_flash(link, F.CUSTOM_MODES_BASE, F.CUSTOM_MODES_REGION_SIZE, label="CustomModes")
 
     if bytes(after) == bytes(modified):
-        print(f"\nSUCCESS: region read back byte-for-byte matching the intended edit.")
+        out(f"\nSUCCESS: region read back byte-for-byte matching the intended edit.")
         for field, value in changes.items():
-            print(f"  {args.mode}.{field} is now {value}")
-        return 0
+            out(f"  {args.mode}.{field} is now {value}")
+        return finish({"ok": True, "dryRun": False, "mode": args.mode,
+                        "fields": changed_fields, "bytesChanged": changed}, 0)
     else:
         diffs = sum(1 for a, b in zip(after, modified) if a != b)
-        print(f"\nMISMATCH: {diffs} bytes differ from what was intended.")
+        out(f"\nMISMATCH: {diffs} bytes differ from what was intended.")
         mismatch_path = BACKUP_DIR / f"after_fieldwrite_{stamp}.bin"
         mismatch_path.write_bytes(after)
-        print(f"Post-write state saved to {mismatch_path} for inspection. "
-              f"Restore from {backup_path} if needed.")
-        return 1
+        out(f"Post-write state saved to {mismatch_path} for inspection. "
+            f"Restore from {backup_path} if needed.")
+        return finish({"ok": False, "error": f"{diffs} bytes differ from what was intended after write",
+                        "mismatchPath": str(mismatch_path), "backupPath": str(backup_path)}, 1)
 
 
 if __name__ == "__main__":

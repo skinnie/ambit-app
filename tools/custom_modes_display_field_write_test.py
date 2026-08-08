@@ -9,18 +9,27 @@ EXERCISE_MODES_MODE -> EXERCISE_MODES_DISPLAYS -> EXERCISE_MODES_DISPLAY ->
 EXERCISE_MODES_DISP_FIELD -> EXERCISE_MODES_DISP_FIELD_SETTING), addressed by (mode name,
 display index, field index within that display) - never a hardcoded region offset.
 
-**Scope**: only the `Index` value changes (which FIELD_TYPES entry is shown - e.g.
-FT_HEART_RATE_CURR). `Type` (a format/subtype selector custom_modes.py's own docstring
-already flags as not fully pinned down) and every other byte in the region are left
-untouched. Fixed-width leaf, so this is a same-width in-place substitution - no BXml tag
-length changes, same risk class as the earlier confirmed rename/field-value writes, not
-the harder "add/remove a row" class of edit.
+**Scope**: `--to` changes `Index`, `--type` changes `Type` (either or both, at least one
+required) - every other byte in the region is left untouched. Fixed-width leaf, so this is
+a same-width in-place substitution - no BXml tag length changes, same risk class as the
+earlier confirmed rename/field-value writes, not the harder "add/remove a row" class of
+edit.
 
-    ./tools/custom_modes_display_field_write_test.py --mode Walk --display 0 --field 1 --to FT_HEART_RATE_CURR
-    ./tools/custom_modes_display_field_write_test.py --mode Walk --display 0 --field 1 --to FT_HEART_RATE_CURR --write
+**Real, live-confirmed 2026-08-08**: for the common `Index=FT_TIME` "numeric value slot"
+case seen on every real display this project has read, `Type` (not `Index`) is what
+actually selects the rendered content - found by cross-referencing a real, working example
+(Running's own Display 1 Field 1, `Type=21=0x15=FT_HEART_RATE_CURR` exactly) after an
+`Index`-only edit was confirmed byte-exact by re-read but produced no visible change on the
+real watch screen. See custom_modes_andre.md's own write-up for the full story, including
+the independent confirmation (the wrong field read back as `Type=11=FT_VELOCITY`, an exact
+match for the real "Speed" being seen instead of the intended edit).
+
+    ./tools/custom_modes_display_field_write_test.py --mode Walk --display 0 --field 1 --to FT_TIME --type FT_HEART_RATE_CURR
+    ./tools/custom_modes_display_field_write_test.py --mode Walk --display 0 --field 1 --to FT_TIME --type FT_HEART_RATE_CURR --write
 """
 import argparse
 import datetime
+import json
 import pathlib
 import struct
 import sys
@@ -153,11 +162,24 @@ def main():
     ap.add_argument("--write", action="store_true",
                      help="actually write; without this, only reads, locates the field, "
                           "and reports what would change")
+    ap.add_argument("--json", action="store_true",
+                     help="print one JSON line instead of human-readable output - for "
+                          "ambitapp-v2/backend/server.py, not meant for a person to read")
     args = ap.parse_args()
+    quiet = args.json
+
+    def out(msg):
+        if not quiet:
+            print(msg)
+
+    def finish(payload, code):
+        if quiet:
+            print(json.dumps(payload))
+        return code
 
     if args.to is None and args.new_type is None:
-        print("ABORT: give --to and/or --type - nothing to change otherwise.")
-        return 1
+        out("ABORT: give --to and/or --type - nothing to change otherwise.")
+        return finish({"ok": False, "error": "give --to and/or --type"}, 1)
 
     def resolve(raw):
         if raw in NAME_TO_INDEX:
@@ -165,30 +187,31 @@ def main():
         try:
             return int(raw, 0)
         except ValueError:
-            print(f"ABORT: {raw!r} is not a known FIELD_TYPES name and not a valid "
-                  f"integer. Known names: {sorted(NAME_TO_INDEX)}")
+            out(f"ABORT: {raw!r} is not a known FIELD_TYPES name and not a valid integer.")
+            print(json.dumps({"ok": False, "error": f"{raw!r} is not a known FIELD_TYPES name"})) if quiet else None
             raise SystemExit(1)
 
     new_index = resolve(args.to) if args.to is not None else None
     new_type = resolve(args.new_type) if args.new_type is not None else None
 
-    link = Link(dry_run=False, verbose=False)
+    link = Link(dry_run=False, verbose=not quiet)
     link.open()
 
-    print("Checking memory map before touching anything...")
+    out("Checking memory map before touching anything...")
     found = read_memory_map(link)
     if not check_memory_map(found):
-        print("ABORT: memory map does not match expectations, refusing to write.")
-        return 1
+        msg = "memory map does not match expectations, refusing to write."
+        out(f"ABORT: {msg}")
+        return finish({"ok": False, "error": msg}, 1)
 
-    print("Reading CustomModes...")
+    out("Reading CustomModes...")
     fresh = read_flash(link, F.CUSTOM_MODES_BASE, F.CUSTOM_MODES_REGION_SIZE, label="CustomModes")
 
     located = find_field_setting_offset(fresh, args.mode, args.display, args.field)
     if located is None:
-        print(f"ABORT: {args.mode!r} display {args.display} field {args.field} not found "
-              f"in the real parsed tree.")
-        return 1
+        msg = f"{args.mode!r} display {args.display} field {args.field} not found in the real parsed tree."
+        out(f"ABORT: {msg}")
+        return finish({"ok": False, "error": msg}, 1)
     offset, cur_idx, cur_typ = located
     cur_idx_name = CM.FIELD_TYPES.get(cur_idx, f"0x{cur_idx:04x}")
     cur_typ_name = CM.FIELD_TYPES.get(cur_typ, f"0x{cur_typ:04x}")
@@ -196,15 +219,21 @@ def main():
     final_type = new_type if new_type is not None else cur_typ
     final_idx_name = CM.FIELD_TYPES.get(final_index, f"0x{final_index:04x}")
     final_typ_name = CM.FIELD_TYPES.get(final_type, f"0x{final_type:04x}")
-    print(f"Found {args.mode!r} display {args.display} field {args.field} at region "
-          f"offset {offset} (0x{offset:x}): Index={cur_idx} ({cur_idx_name}), "
-          f"Type={cur_typ} ({cur_typ_name})")
-    print(f"Would change to: Index={final_index} ({final_idx_name}), "
-          f"Type={final_type} ({final_typ_name})")
+    out(f"Found {args.mode!r} display {args.display} field {args.field} at region "
+        f"offset {offset} (0x{offset:x}): Index={cur_idx} ({cur_idx_name}), "
+        f"Type={cur_typ} ({cur_typ_name})")
+    out(f"Would change to: Index={final_index} ({final_idx_name}), "
+        f"Type={final_type} ({final_typ_name})")
+
+    result_common = {
+        "mode": args.mode, "display": args.display, "field": args.field,
+        "previousIndex": cur_idx_name, "previousType": cur_typ_name,
+        "index": final_idx_name, "type": final_typ_name,
+    }
 
     if not args.write:
-        print("Read-only (pass --write to actually send this).")
-        return 0
+        out("Read-only (pass --write to actually send this).")
+        return finish({"ok": True, "dryRun": True, **result_common}, 0)
 
     modified = bytearray(fresh)
     struct.pack_into("<HH", modified, offset, final_index, final_type)
@@ -213,7 +242,7 @@ def main():
     stamp = datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
     backup_path = BACKUP_DIR / f"before_dispfield_{stamp}.bin"
     backup_path.write_bytes(fresh)
-    print(f"Backup written to {backup_path}")
+    out(f"Backup written to {backup_path}")
 
     flash = FlashImage()
     flash.write(F.CUSTOM_MODES_BASE, bytes(modified))
@@ -222,26 +251,27 @@ def main():
                F.CUSTOM_MODES_BASE, bytes(modified)),
               ("tail", F.CUSTOM_MODES_BASE, None)]
 
-    print("Writing modified content + CMD_DATA_TAIL (padded-region SHA256) + CMD_NAV_COMMIT...")
+    out("Writing modified content + CMD_DATA_TAIL (padded-region SHA256) + CMD_NAV_COMMIT...")
     send_plan(link, flash, layout, commit=True)
-    print("  send_plan returned without raising - no protocol-level rejection seen")
+    out("  send_plan returned without raising - no protocol-level rejection seen")
 
-    print("Reading CustomModes back to verify...")
+    out("Reading CustomModes back to verify...")
     after = read_flash(link, F.CUSTOM_MODES_BASE, F.CUSTOM_MODES_REGION_SIZE, label="CustomModes")
 
     if bytes(after) == bytes(modified):
-        print(f"\nSUCCESS: region read back byte-for-byte matching the intended edit.")
-        print(f"  {args.mode} display {args.display} field {args.field} is now "
-              f"Index={final_idx_name} Type={final_typ_name}")
-        return 0
+        out(f"\nSUCCESS: region read back byte-for-byte matching the intended edit.")
+        out(f"  {args.mode} display {args.display} field {args.field} is now "
+            f"Index={final_idx_name} Type={final_typ_name}")
+        return finish({"ok": True, "dryRun": False, **result_common}, 0)
     else:
         diffs = sum(1 for a, b in zip(after, modified) if a != b)
-        print(f"\nMISMATCH: {diffs} bytes differ from what was intended.")
+        out(f"\nMISMATCH: {diffs} bytes differ from what was intended.")
         mismatch_path = BACKUP_DIR / f"after_dispfield_{stamp}.bin"
         mismatch_path.write_bytes(after)
-        print(f"Post-write state saved to {mismatch_path} for inspection. "
-              f"Restore from {backup_path} if needed.")
-        return 1
+        out(f"Post-write state saved to {mismatch_path} for inspection. "
+            f"Restore from {backup_path} if needed.")
+        return finish({"ok": False, "error": f"{diffs} bytes differ from what was intended after write",
+                        "mismatchPath": str(mismatch_path), "backupPath": str(backup_path)}, 1)
 
 
 if __name__ == "__main__":
