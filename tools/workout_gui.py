@@ -33,7 +33,11 @@ from pathlib import Path
 import suuntolink_catalog
 from workout import build_compile_request, compile_source, generate_source
 
-SAVE_DIR = Path.home() / "AmbitWorkouts"
+# Real, 2026-08-08 ("app is installed in some strange directory, please install it in
+# Downloads directory"): was Path.home() / "AmbitWorkouts" (e.g. C:\Users\<user>\AmbitWorkouts
+# on Windows) - moved under Downloads so saved workouts land somewhere the user actually
+# expects to look, keeping the same named subfolder for organization.
+SAVE_DIR = Path.home() / "Downloads" / "AmbitWorkouts"
 README_PATH = SAVE_DIR / "README - read this on Linux.txt"
 
 LINUX_README = """Ambit3 Workout Builder - using a compiled workout on Linux
@@ -167,7 +171,7 @@ that's SuuntoLink's own install step, not something this tool does directly.</p>
 <div id="linuxNote" style="display:none">
   <p class="hint"><strong>Linux note:</strong> SuuntoLink has no native Linux build, so
   there's no "Add to SuuntoLink" button here - every compiled workout is still saved to
-  <code>~/AmbitWorkouts</code>, ready to use another way.</p>
+  <code>~/Downloads/AmbitWorkouts</code>, ready to use another way.</p>
   <p class="hint">Either copy the saved <code>.json</code> to a Windows or Mac machine that
   runs SuuntoLink and use its own "Advanced &rarr; Import compiled JSON" + "Add to
   SuuntoLink" there, or run SuuntoLink yourself under Wine or in a VM on this machine and do

@@ -60,12 +60,31 @@ def _backup_path(index_path):
     return f"{root}_old{ext}"
 
 
+# The real catalog's own entry schema, confirmed empirically against a real
+# suunto-apps/index.json (13,105 entries, 2026-08-08): every entry has exactly these six
+# fields plus ruleId, always - `description` is the one truly optional field (missing on
+# ~38% of real entries; never fabricated here if compiled doesn't have one either).
+_CATALOG_FIELDS = ("name", "categoryId", "activityId", "userCount", "binary", "compatibleVariants")
+_OPTIONAL_CATALOG_FIELDS = ("description",)
+
+
 def add_entry(index_path, compiled):
     """Appends `compiled` (a `compile_source()`-shaped dict) to the real catalog at
     `index_path`, backing up the original file first (see `_backup_path`). Returns
     (backup_path, new_rule_id). Assigns a fresh, collision-free ruleId - `compile_source()`
     always returns the same placeholder (11000001) regardless of what was compiled, which
-    would collide the second time this is used."""
+    would collide the second time this is used.
+
+    Real bug, found 2026-08-08 (broke SuuntoLink on Windows after a real "Add to
+    SuuntoLink" - see assets/issue_workout_builder_windows/): this used to do
+    `entry = dict(compiled)`, copying `compiled` wholesale into the shared catalog file -
+    including `savedTo`, a field workout_gui.py's own /api/compile response adds purely for
+    its own "Saved to <path>" UI message (a real local Windows file path, entirely
+    meaningless to SuuntoLink itself). Confirmed against a real 13,105-entry catalog: not one
+    legitimate entry has ever had a `savedTo` key, and both of this tool's own two prior
+    catalog writes did - real, reproducible pollution, not a one-off. Filtered explicitly to
+    the real catalog's own known schema now, so any future extra field workout_gui.py's
+    response happens to carry (savedTo or otherwise) can't leak into SuuntoLink's file again."""
     with open(index_path, encoding="utf-8") as f:
         catalog = json.load(f)
     if not isinstance(catalog, list):
@@ -74,7 +93,8 @@ def add_entry(index_path, compiled):
     backup_path = _backup_path(index_path)
     shutil.copy2(index_path, backup_path)
 
-    entry = dict(compiled)
+    entry = {field: compiled[field] for field in _CATALOG_FIELDS if field in compiled}
+    entry.update({field: compiled[field] for field in _OPTIONAL_CATALOG_FIELDS if field in compiled})
     entry["ruleId"] = _safe_rule_id(catalog)
     catalog.append(entry)
 
