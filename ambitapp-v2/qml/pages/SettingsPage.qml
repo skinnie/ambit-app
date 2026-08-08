@@ -77,7 +77,7 @@ Flickable {
                         color: Theme.mutedText
                     }
                     Text {
-                        text: qsTr("Suunto Ambit3 (USB, via the local backend)")
+                        text: qsTr("Suunto Ambit 3 (USB, via the local backend)")
                         color: Theme.mutedText
                         font.pixelSize: 12
                     }

@@ -37,15 +37,19 @@ QtObject {
     // 0x0000 reply itself has no commercial name to give back. Same confirmed codename
     // table history.md documents (and tools/workout_gui.py's own VARIANT_NAMES already
     // uses for the same reason) - not guessed here a second time.
+    // 2026-08-08: spacing between "Ambit" and its generation number added on request
+    // ("Ambit3 Peak" -> "Ambit 3 Peak") - applied to every Ambit2/Ambit3 entry, not just
+    // Emu, for consistency. "Ambit" (Bluebird, the original) has no number, so it's
+    // unaffected.
     readonly property var _modelNames: ({
-        Bluebird: "Ambit", Duck: "Ambit2", Colibri: "Ambit2 S", Greentit: "Ambit2 R",
-        Emu: "Ambit3 Peak", Finch: "Ambit3 Sport", Ibisbill: "Ambit3 Run", Kaka: "Ambit3 Vertical",
+        Bluebird: "Ambit", Duck: "Ambit 2", Colibri: "Ambit 2 S", Greentit: "Ambit 2 R",
+        Emu: "Ambit 3 Peak", Finch: "Ambit 3 Sport", Ibisbill: "Ambit 3 Run", Kaka: "Ambit 3 Vertical",
         Jabiru: "Traverse", Loon: "Traverse Alpha",
     })
     readonly property string deviceDisplayName:
         DeviceService.deviceInfoOk
             ? (_modelNames[DeviceService.model] || DeviceService.model)
-            : qsTr("Suunto Ambit3 Peak")  // static fallback - this project's one reference watch
+            : qsTr("Suunto Ambit 3 Peak")  // static fallback - this project's one reference watch
 
     readonly property string batteryText:
         DeviceService.deviceInfoOk && DeviceService.batteryPercent >= 0

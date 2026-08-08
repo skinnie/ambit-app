@@ -21,6 +21,7 @@ ApplicationWindow {
         backup: "pages/BackupPage.qml",
         settings: "pages/SettingsPage.qml",
         sportModes: "pages/SportModesPage.qml",
+        intervals: "pages/IntervalsPage.qml",
     })
 
     Row {

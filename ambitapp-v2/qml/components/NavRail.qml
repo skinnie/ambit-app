@@ -55,6 +55,17 @@ Rectangle {
             selected: root.currentPage === "backup"
             onClicked: root.pageSelected("backup")
         }
+        // Real, 2026-08-08 ("a new menu, for suunto, called Intervals") - Suunto-only, same
+        // as the App-Zone compiler it launches (tools/workout_gui.py) being an Ambit3
+        // mechanism with no Garmin equivalent.
+        NavItem {
+            width: parent.width
+            visible: !HomeViewModel.isGarmin
+            useIntervalsIcon: true
+            label: qsTr("Intervals")
+            selected: root.currentPage === "intervals"
+            onClicked: root.pageSelected("intervals")
+        }
         NavItem {
             width: parent.width
             glyph: Icons.settings

@@ -7,6 +7,44 @@ they land, on the way to what André/Vincent have been calling "V3": wireless sy
 
 ---
 
+## 2026-08-08: Intervals menu, Ambit3 Peak icon export, eTrex icon redrawn against a real photo, "Ambit 3" naming
+
+- **New "Intervals" nav entry (Suunto-only)**: launches `tools/workout_gui.py` (the App-Zone
+  interval workout compiler, already packaged via PyInstaller - `dist/linux/Ambit3 Workout
+  Builder`) as a real detached process rather than embedding a browser view in-app (would
+  need `Qt6::WebEngine`, a dependency this project doesn't otherwise carry, just to duplicate
+  what the user's own default browser already does once the tool's local server is up). New
+  `IntervalsService::launch()` prefers the packaged build for the current OS (checked
+  directly - only Linux exists so far), falling back to `python3 tools/workout_gui.py`; the
+  repo-root path it needs is baked in at CMake configure time (`AMBITAPP_REPO_ROOT`), the
+  same "fixed convention" reasoning `DeviceService`'s hardcoded backend address already uses.
+  Live-verified: clicking "Open Workout Builder" opened a real browser tab on
+  `127.0.0.1:8765` showing the real tool. New `IntervalsIcon.qml` (four bars, alternating
+  low/high heights) redraws `tools/packaging/icon.png`'s own motif as a monochrome
+  `color`-driven shape instead of embedding that raster PNG directly - keeps NavItem's
+  selected-state color inversion working the same way it does for every other nav icon,
+  which a fixed two-tone PNG sitting on a solid selected background would have broken.
+- **Ambit3 Peak icon exported to Downloads**: no such asset existed inside `ambitapp-v2`
+  itself (it draws the Ambit hero icon as a plain Material Symbols glyph, not a custom image -
+  see `HomePage.qml`'s own comment on why a real product photo isn't embedded there, a
+  licensing call, unrelated to this). The real one turned out to already be sitting in the
+  decompiled SuuntoLink assets, found via the codename match confirmed elsewhere in this repo
+  (`ambit3peak_Emu-fw...zip` -> codename "Emu"): `assets/WIndows apps/suuntoapp_local/img/
+  watch-emu.png`, copied to `~/Downloads/Ambit3_Peak_Icon.png`.
+- **eTrex icon redrawn against a real reference photo** (`etrex10.jpg`) instead of the first
+  pass's guessed silhouette: removed the antenna "bump" (a real eTrex 10 has a flat/rounded
+  top, no dome - that detail belonged to a different model), added the real side button nubs
+  (up/down/menu on the left, back/page on the right) and the backlight-button circle, and
+  enlarged the screen to fill most of the lower body instead of a small upper strip. Follow-
+  up same day: screen fill changed from solid grey to white with a grey frame, closer to a
+  real monochrome GPS LCD than a flat grey block.
+- **"Ambit3" -> "Ambit 3" spacing** added everywhere the app displays a Suunto model name
+  (`HomeViewModel._modelNames`' whole Ambit2/Ambit3 family, its static fallback, and
+  Settings' "Supported devices" list) - explicit request, applied consistently rather than
+  just the one Home-screen instance first reported.
+
+---
+
 ## 2026-08-08: Real-hardware follow-ups - map zoom actually fits now, Garmin re-detects live, Ambit disconnect no longer gets stuck
 
 - **Map auto-fit zoom, second pass**: the first fix (padding margin 0.8→0.65) still cropped

@@ -77,6 +77,7 @@ qt_add_qml_module(ambitapp
         qml/components/ActivityCard.qml
         qml/components/ActivityDetail.qml
         qml/components/EtrexIcon.qml
+        qml/components/IntervalsIcon.qml
         qml/MapService.qml
         qml/viewmodels/HomeViewModel.qml
         qml/viewmodels/WeatherViewModel.qml
@@ -89,6 +90,7 @@ qt_add_qml_module(ambitapp
         qml/pages/BackupPage.qml
         qml/pages/SettingsPage.qml
         qml/pages/SportModesPage.qml
+        qml/pages/IntervalsPage.qml
     # Step 10+ pages/components get added here as they're built - each spec step should
     # compile independently, so this list grows incrementally rather than all at once.
     SOURCES
@@ -110,6 +112,8 @@ qt_add_qml_module(ambitapp
         src/services/localfileservice.cpp
         src/services/garminservice.h
         src/services/garminservice.cpp
+        src/services/intervalsservice.h
+        src/services/intervalsservice.cpp
     RESOURCES
         assets/fonts/MaterialSymbolsRounded.ttf
         # assets/map/osm-raster-style.json was MapLibre's own style file - unused since the
@@ -131,4 +135,11 @@ target_link_libraries(ambitapp PRIVATE
 # one of those checks silently fails and the include gets skipped (2026-08-07, first real build).
 target_include_directories(ambitapp PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/services
+)
+
+# IntervalsService's own repo-root path for launching tools/workout_gui.py / dist/<os>/ - see
+# that Service's own header comment for why this is baked in at configure time rather than
+# guessed at runtime.
+target_compile_definitions(ambitapp PRIVATE
+    AMBITAPP_REPO_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/.."
 )
