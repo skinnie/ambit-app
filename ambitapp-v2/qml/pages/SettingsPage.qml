@@ -481,7 +481,7 @@ Flickable {
                 spacing: Theme.spacingSmall
                 Text { text: qsTr("About"); font.bold: true; color: Theme.text }
                 Text {
-                    text: qsTr("AmbitApp V2.5.0")
+                    text: qsTr("AmbitApp V2.5.9")
                     color: Theme.text
                     font.pixelSize: 13
                 }

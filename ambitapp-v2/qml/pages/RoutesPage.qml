@@ -121,13 +121,15 @@ Flickable {
                 // own explicit instruction that the UI must show a visible warning, not just
                 // enforce it silently. GarminService.writeGpxToDevice() also enforces this
                 // itself (real, not UI-only), this is the "warn the user" half of the rule.
+                // Real request 2026-08-08 (real hardware confirmed working): plain white
+                // card background + grey text, matching the rest of this page's own muted
+                // description text, instead of a loud tinted warning box.
                 Rectangle {
                     visible: HomeViewModel.isGarmin
                     width: parent.width
                     height: warningText.implicitHeight + Theme.spacingSmall * 2
                     radius: Theme.radiusSmall
-                    color: Theme.warning
-                    opacity: 0.15
+                    color: Theme.card
                     border.color: Theme.warning
                     border.width: 1
                     Text {
@@ -135,13 +137,14 @@ Flickable {
                         anchors.fill: parent
                         anchors.margins: Theme.spacingSmall
                         wrapMode: Text.WordWrap
-                        color: Theme.warning
+                        color: Theme.mutedText
                         font.pixelSize: 11
                         text: GarminService.hasSdCard
-                            ? qsTr("This will be sent to the SD card only - Garmin devices " +
-                                    "never accept writes to internal memory.")
+                            ? qsTr("This will be sent to the SD card only - writing to " +
+                                    "internal memory can break your device.")
                             : qsTr("No SD card detected in this Garmin device - sending a " +
-                                    "route is disabled. Internal memory is never written to.")
+                                    "route is disabled. Writing to internal memory can " +
+                                    "break your device.")
                     }
                 }
 
