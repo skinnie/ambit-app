@@ -5,35 +5,41 @@ initial hypothesis (reusing Ambit3's own `ExerciseLog` PMEM20 format) was tried 
 falsified (no PMEM magic, implausible master-index numbers - see git history/
 `custom_modes_andre.md` for that attempt).
 
-**Real format, confirmed against real hardware, not guessed:**
+**Real format, confirmed against real hardware AND a real known location, corrected once
+already - worth reading, not just trusting the numbers below:** the first pass at this had
+every field right except the record boundary, off by exactly one byte. That misalignment
+still produced smoothly-varying, plausible-*looking* coordinates (a real, coherent-seeming
+track through the Canadian Arctic) - "varies smoothly" alone was not proof of a correct
+decode, and it took André pointing out the real location should be Lille, France for the
+actual bug (a one-byte record-boundary shift) to surface. Corrected by searching the raw bytes
+directly for Lille's own real coordinates (~50.63N, ~3.06E) rather than trusting the earlier
+alignment, which is what pinned the true record start.
+
+    record stride: 20 bytes, starting at region offset 1 - the region's own byte 0 is a real,
+    currently-unexplained leading byte, not part of any record
 
     offset  size  field
     0       4     lat, int32 LE, degrees * 1e7 (same convention as this project's own
                    WaypointDescriptor/exercise_log.py samples)
     4       4     lon, int32 LE, degrees * 1e7
-    8       4     third field - real values cluster tightly (500,000-2,200,000), plausibly
-                   altitude in millimeters (500-2200m - real, physically sensible elevation
-                   for the actual real terrain the confirmed coordinates below sit in).
-                   Not fully confirmed (no independent altitude source cross-checked yet),
-                   kept as a raw field rather than asserted as "Altitude" outright.
-    12      1     flags/type byte - 0x00 on every real record seen; a real record must have
-                   this to avoid false-positives against the region's own unused/padding tail
-    13      2     year, u16 LE (confirmed: 0x07ea = 2026, matching the real capture date)
-    15      1     month
-    16      1     day
-    17      1     hour
-    18      1     minute
-    19      1     sub-field - real values span the full 0-255 byte range, not 0-59, so this
-                   is *not* a plain seconds field; plausibly a sub-second tick counter.
-                   Reported raw, not asserted.
+    8       4     third field - real values cluster in the low thousands (roughly
+                   2,000-9,000 across real records) - unit/meaning not confirmed
+                   (accuracy/HDOP is plausible; not cross-checked against another source)
+    12      2     year, u16 LE (confirmed: 0x07ea = 2026, matching the real capture date)
+    14      1     month
+    15      1     day
+    16      1     hour
+    17      1     minute
+    18      2     two more bytes, real values, no clear pattern found yet - reported raw,
+                   not asserted (a sub-second/sequence/checksum field is plausible, unconfirmed)
 
 Confirmed against real hardware, 2026-08-08: 56 consecutive real-looking records (index 1-56;
-index 0 has a completely different byte shape - almost certainly a header/init record, not a
-GPS fix, and is skipped) spanning 2026-08-02 through 2026-08-07, lat ~74.7-75.8, lon ~-76 to
--79 - real, physically coherent Canadian high-Arctic coordinates (Ellesmere Island area) that
-vary smoothly point to point, exactly like a real walked/hiked GPS track, not noise. Past
-record 56 the same fields degrade into implausible values (year outside a real range, etc.) -
-the same "real data, then unused flash" pattern already established for Ambit3's own
+index 0 has a completely different byte shape, unrelated third-field magnitude and an
+implausible lat - almost certainly a header/init record, not a GPS fix, and is skipped)
+spanning 2026-08-02 through 2026-08-07, coordinates matching André's own real, independently
+known location (Lille, France) closely and consistently across every real record - the actual
+confirmation, not just "looks smooth." Past record 56 the same fields degrade into implausible
+values - the same "real data, then unused flash" pattern already established for Ambit3's own
 ExerciseLog, not a bug.
 
     ./tools/kailash_tracklog.py --gpx-out /tmp/kailash_track.gpx
@@ -44,6 +50,7 @@ import argparse
 import struct
 import sys
 
+RECORD_START = 1
 RECORD_SIZE = 20
 
 # From the real kailash capture's own 0x0b21 memory-map reply, parsed directly (see
@@ -53,34 +60,35 @@ TRACKLOG_SIZE = 1310713
 
 
 def walk_records(data):
-    """Every 20-byte slot that looks like a real GPS fix, in order, stopping at the first
-    run of implausible ones (the region's own unused/padding tail - see module docstring)."""
-    n = len(data) // RECORD_SIZE
+    """Every 20-byte slot (starting at RECORD_START, not 0) that looks like a real GPS fix,
+    in order, stopping at the first run of implausible ones (the region's own unused/padding
+    tail - see module docstring)."""
+    n = (len(data) - RECORD_START) // RECORD_SIZE
     bad_streak = 0
     for i in range(n):
-        rec = data[i * RECORD_SIZE:(i + 1) * RECORD_SIZE]
+        off = RECORD_START + i * RECORD_SIZE
+        rec = data[off:off + RECORD_SIZE]
         lat, lon, third = struct.unpack_from("<iii", rec, 0)
-        flags = rec[12]
-        year = struct.unpack_from("<H", rec, 13)[0]
-        month, day, hour, minute, sub = rec[15], rec[16], rec[17], rec[18], rec[19]
+        year = struct.unpack_from("<H", rec, 12)[0]
+        month, day, hour, minute = rec[14], rec[15], rec[16], rec[17]
+        trailer = rec[18:20]
         plausible = (
-            flags == 0
-            and 2015 <= year <= 2035 and 1 <= month <= 12 and 1 <= day <= 31
+            2015 <= year <= 2035 and 1 <= month <= 12 and 1 <= day <= 31
             and hour <= 23 and minute <= 59
             and -900000000 <= lat <= 900000000 and -1800000000 <= lon <= 1800000000
             # Real bound, not guessed: every confirmed record's own "third" field clusters
-            # tightly in 500,000-2,200,000 - wide enough for real variation, still narrow
-            # enough to reject record 0's own 956,315,666 (a different-shaped header/init
-            # record whose lat/lon alone happen to fall in-range too, so this field is what
+            # tightly (roughly 2,000-9,000) - wide enough for real variation, still narrow
+            # enough to reject record 0's own 3,735,608 (a different-shaped header/init
+            # record whose date fields alone happen to look valid too, so this field is what
             # actually tells the two apart).
-            and 100000 <= third <= 5000000
+            and 500 <= third <= 50000
         )
         if plausible:
             bad_streak = 0
             yield {
                 "index": i, "lat": lat / 1e7, "lon": lon / 1e7, "third_raw": third,
                 "year": year, "month": month, "day": day, "hour": hour, "minute": minute,
-                "sub": sub,
+                "trailer": trailer,
             }
         else:
             bad_streak += 1
@@ -130,7 +138,7 @@ def main():
     for p in points[:20]:
         print(f"  [{p['index']:5}] {p['year']:04d}-{p['month']:02d}-{p['day']:02d} "
               f"{p['hour']:02d}:{p['minute']:02d}  lat={p['lat']:.5f} lon={p['lon']:.5f}  "
-              f"third_raw={p['third_raw']}")
+              f"third_raw={p['third_raw']}  trailer={p['trailer'].hex()}")
     if len(points) > 20:
         print(f"  ... and {len(points) - 20} more")
 

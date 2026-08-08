@@ -987,11 +987,123 @@ wholesale rather than reimplementing anything:
   share at least some struct layouts, not just a hopeful guess to reuse this one for EventLog
   too.
 
-**Both are real hypotheses, not confirmed decodes** - neither has touched a single real byte
-of an actual Kailash `TrackLog`/`EventLog` yet, only synthetic test data built to prove the
-tools themselves work correctly. A low or zero plausibility rate against real bytes would be
-genuine, useful information (the format guess is wrong), not a tool failure - both scripts say
-so explicitly rather than failing silently. Needs a real connected Kailash to actually run.
+**Both were real hypotheses, not confirmed decodes** - and both got tested for real,
+2026-08-08, against André's actual connected Kailash. One real bug found and fixed along the
+way: `write_nav.py`'s own `PRODUCT_IDS` whitelist (and the system's `/etc/udev/rules.d/
+libambit.rules`, a separate per-product-ID whitelist at the OS permission level) never had
+Kailash's own real product ID (`0x002a`, confirmed via `lsusb`, "Hoopoe" already matched the
+device_info reply) - `Link.open()` reported "no Ambit3 on the USB bus" with the watch plugged
+in and working, because it was never in either list. Both now updated.
+
+**`EventLog` - hypothesis falsified, and the real content explains why.** The
+`WaypointDescriptor`-shaped scan did find a real 13.2% hit rate (1018/7692 slots) against real
+bytes - but the decoded "names" are literal C source filenames (`hwGpsComm.c`, `psComm.c`,
+`ppBattery.c`, `appUsb.c`), not place names. This region is not a POI/places-visited log at
+all - it reads like an internal firmware diagnostic/event log (GPS comm, battery, USB
+subsystem events), which is a completely different, and arguably more literal, reading of
+"EventLog" than the working hypothesis assumed. Real information, not a dead end - just not
+the one this session set out to find. Decoding it properly is real follow-up work of its own.
+
+**`TrackLog` - hypothesis about the *format* was wrong, but the *data* is real and now
+decoded - and the first decode attempt was itself wrong in a real, instructive way.**
+`parse_master_header()`/`walk_entries()` failed cleanly exactly as designed (no PMEM magic,
+implausible master-index numbers) - the Ambit3 `ExerciseLog` shape genuinely doesn't apply
+here. Direct byte analysis of the real dump found something better: a clean, perfectly regular
+20-byte fixed-stride record. The *first* attempt at reading it got every field's identity
+right but the record boundary wrong by exactly one byte - and the misaligned read still
+produced smoothly-varying, plausible-*looking* GPS coordinates (a coherent-seeming track
+through the Canadian Arctic) purely by coincidence, because shifting a mostly-numeric record
+by one byte doesn't turn it into obvious garbage. **"Varies smoothly" is not the same as
+"correct"** - the actual bug only surfaced when André pointed out the real location should be
+Lille, France, not the Arctic. Corrected by searching the raw bytes directly for Lille's own
+real coordinates (~50.63N, ~3.06E) rather than trusting the earlier alignment, which is what
+pinned the true record start. Confirmed, real layout:
+
+    record stride: 20 bytes, starting at region offset 1 (not 0 - the region's own first byte
+    is a real, currently-unexplained leading byte, not part of any record)
+
+    offset  size  field
+    0       4     lat, int32 LE, degrees*1e7 (same convention as this project's own
+                   WaypointDescriptor/exercise_log.py samples)
+    4       4     lon, int32 LE, degrees*1e7
+    8       4     "third" field - clusters tightly (roughly 2,000-9,000 across every real
+                   record) - unit/meaning not confirmed (accuracy/HDOP is plausible)
+    12      2     year, u16 LE (`0x07ea` = 2026, exact)
+    14      1     month
+    15      1     day
+    16      1     hour
+    17      1     minute
+    18      2     two more real bytes, no clear pattern found yet - reported raw, not
+                   asserted
+
+**56 real GPS points decoded and exported to a real GPX track** (`tools/kailash_tracklog.py`,
+rewritten twice around this format - once for the initial 20-byte-stride discovery, again for
+the one-byte alignment correction), spanning 2026-08-02 through 2026-08-07, coordinates
+matching André's own real, independently known location (Lille, France) closely and
+consistently across every real record - lat clustering at ~50.624N, lon drifting smoothly
+~3.045-3.060E record to record, exactly like a real short walked/hiked track around a single
+real place, not noise. One earlier record (index 0) has a completely different byte shape
+(`third` field `3,735,608`, well outside the real ~2,000-9,000 cluster, even though its own
+date fields alone happen to look valid too) - almost certainly a header/init record, not a GPS
+fix; the decoder's plausibility filter bounds the `third` field specifically because that's
+the one thing that actually tells the two apart. Past record 56, the same fields degrade into
+implausible values - the exact same "real data, then unused flash" shape already established
+for Ambit3's own `ExerciseLog`, not a new phenomenon.
+
+**Complete, independent ground-truth confirmation found afterward - not just "matches a known
+place," a real row-for-row match.** André pointed at `assets/APK/kailash/Suunto 7R/` (a real
+iOS app container extraction, the actual "7R" app he described as the Traverse-family's own
+history/log viewer). Two real finds in it:
+
+- `Container/Documents/descr+79DC39510E000100+2.0.5` - a real SBEM0102 schema descriptor for
+  *this exact watch* (serial and firmware match precisely), parseable with this project's own
+  already-existing `tools/sbem_schema.py` unmodified. Confirms `sml.DeviceHistory.Histories.
+  History` has `VisitedCities`/`VisitedCountries` (float32 lat/lon, a genuinely different
+  encoding from everything else in this schema, which is otherwise all int32*1e7) and
+  `LogHeaders` (per-move `DateTime`/`Duration`/`Distance`/`Speed.Max` summaries) - real
+  confirmation that "cities you visited" is a real, named on-device concept, distinct from
+  plain GPS samples (`sml.DeviceLog.Samples.Sample.Latitude/Longitude`, the same int32*1e7
+  convention `TrackLog` uses). `EventLog`'s raw bytes were checked directly against this -
+  no `SBEM0102` magic anywhere in it, ruling out that encoding for this specific region
+  outright, not just leaving it unconfirmed. Combined with the real embedded C filenames
+  already found in it, `EventLog` firmly reads as a low-level firmware diagnostic log, and
+  `VisitedCities` most likely lives elsewhere - probably computed phone-side (it needs
+  reverse geocoding, which needs the phone's own connectivity, not something a watch would
+  do standalone) rather than stored on the watch's own flash at all.
+- `Container/Library/Application Support/7r-trackLog.db` - a real SQLite database, the app's
+  own already-parsed history: `track_logs` (`unix_date, latitude, longitude, altitude, speed`
+  - 58 real rows) and `device_history` (`visited_cities=1, visited_countries=1,
+  travelling_days=0, travelled_distance=0, furthest_from_home=0` - a real, small, recent-use
+  device, consistent with everything else confirmed here). Compared directly against the
+  56-point decode above, row for row: **the two oldest DB rows (2026-03-15, 2026-03-16)
+  aren't in the current `TrackLog` flash dump at all** (already synced and rotated out of the
+  small on-device buffer, the same "real data, then it's gone" lifecycle already seen
+  elsewhere in this project for on-watch logs) - the remaining **56 DB rows match this
+  decoder's 56 accepted records exactly, in the same order, lat/lon agreeing to 5+ decimal
+  places** (e.g. DB row 4: `50.6246684, 3.0453514`; this decoder's record 1:
+  `50.62467, 3.04535`). This is the real confirmation the earlier "matches a known place"
+  framing was reaching for - not approximate, a genuine one-to-one match against ground truth
+  independently computed by the real phone app, field by field. The `third`/trailer bytes
+  still don't map cleanly to the DB's own real `altitude`/`speed` columns by any simple linear
+  scale tried so far - open, not resolved, but no longer the blocking question for a working
+  decode, since `lat`/`lon`/`timestamp` (the fields that actually matter for a GPX track) are
+  now fully confirmed.
+
+**The real user guide (`assets/manuals/Suunto_Kailash_UserGuide_EN.pdf`) confirms the whole
+picture precisely, and clarifies what's still missing.** Real, official text, not inferred:
+"Cities visited: 1,000 steps in the same city is required to consider the city visited" -
+`VisitedCities` is step-count-gated, not a raw GPS-track derivation, which is exactly why it
+wasn't found as a simple lat/lon array anywhere in `TrackLog` or `EventLog`. More directly
+useful: "GLONASS is only used in activity mode. **Normal tracking for 7R statistics** uses
+[GPS alone]" and "every time you use **activity mode**, your watch stores a log of the
+recording in the **logbook**... distance, duration, average speed, maximum [speed]." Real
+confirmation of two genuinely separate tracking systems, not one: **passive "normal tracking"
+(low precision, always-on, feeds cities/countries/step stats) is what `TrackLog` actually is**
+- a flat rolling buffer of periodic samples with no per-session start/stop shape, exactly
+matching what was decoded above - while explicit **"activity mode" recordings go into a
+separate "logbook"** (matching the SBEM schema's own `LogHeaders` group:
+`DateTime`/`Duration`/`Distance`/`Speed.Max`) that hasn't been located in flash yet - real,
+scoped follow-up work, not part of `TrackLog`/`EventLog` at all.
 
 **Firmware dump - corrected, was wrong above.** An earlier draft of this section called this
 "genuinely unconfirmed" after checking only for a device-side flash mechanism (there's no
