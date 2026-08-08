@@ -1340,3 +1340,48 @@ populated `WhitelistedBleDevices.Device` entry (`IsAuthenticated=1`, a real `Enc
 it's real link-key material. Not investigated further this session, noted for anyone
 picking up Kailash BLE work later (mirrors the Ambit3's own `WhitelistedBleDevices`
 mechanism documented in HANDOFF.md's Milestone 7).
+
+## CustomModes: first real, edited-content write, confirmed on real hardware, 2026-08-08
+
+**Real milestone**: every prior real-hardware `CustomModes` write in this project was a
+same-content no-op (`custom_modes_writeback_test.py`, confirmed 2026-08-07 - proved the
+transport, not an edit). This is the first real edit - explicitly scoped down from the
+still-blocked "Suunto Apps install" problem (Finding 19, `training_program_andre.md`) to
+something genuinely simpler and never actually confirmed before: renaming an existing
+exercise mode's own name field, real request 2026-08-08 ("try read/write custom sports
+modes to the ambit 3... don't assume, always ask").
+
+**Real trap found and avoided, worth recording precisely**: a blind byte search for the
+watch's real current mode name ("Walk") matched **three** 64-byte, correctly-shaped,
+NUL-padded candidate fields in the live dump - not the two expected (the exercise mode's
+own `EXERCISE_MODES_SETTING_NAME_LEN64` field and its multisport slot's own
+`SPORT_MODE_SETTING_NAME_LEN64` field). Tracing the *real* decoder's own tag walk (the
+exact same `DEVICE_CUSTOM -> EXERCISE_MODES -> EXERCISE_MODES_MODE` /
+`DEVICE_CUSTOM -> SPORT_MODES -> SPORT_MODE -> SPORT_MODE_SETTING_NAME_LEN64` traversal
+`custom_modes.py`'s own `decode()` performs, not a second guess) showed the third match
+sits outside the tree the firmware's own parser ever visits - real, live-confirmed stale
+bytes, not a field that does anything. Patching it would have been harmless in isolation
+(never read by the real parse) but false confidence about "found all the copies" is exactly
+the kind of assumption the standing "don't assume, always ask" instruction exists to catch -
+so `tools/custom_modes_rename_test.py` walks the real tag tree structurally to find every
+genuinely-live occurrence, rather than pattern-matching raw bytes.
+
+**Confirmed end to end, both directions, on André's own connected Ambit3 Peak**: renamed
+"Walk" -> "Hiking" (patched exactly 2 real 64-byte fields, 12 bytes actually differing,
+everything else in the 12288-byte region byte-identical), sent via the exact same proven
+transport as the earlier no-op test (`write_nav.py`'s `send_plan`: `CMD_DATA_WRITE` chunks +
+`CMD_DATA_TAIL` padded-region SHA256 + `CMD_NAV_COMMIT`) - confirmed by a fresh read-back
+matching byte-for-byte, *and* by André directly on the watch's own mode list: it showed
+"Hiking". Reverted the same way immediately after, confirmed "Walk" again both by protocol
+read-back and on the watch's own screen.
+
+**What this settles**: the fixed-width `Name` fields (both `EXERCISE_MODES` and
+`SPORT_MODES` flavors) can be edited in place, safely, with no dependency on the still-
+unconfirmed closing-structure question `custom_modes_write.py`'s own docstring flags (this
+approach never re-encodes anything beyond the exact bytes read from the watch itself,
+sidestepping that open question entirely for this kind of edit). **What this does NOT
+settle**: anything involving the BXml tag-length structure itself (adding/removing a
+display row, a rule, or a whole exercise mode would change tag lengths and therefore every
+downstream offset in the region - a materially different, harder problem than a same-width
+name swap) or the separately-blocked "Suunto Apps install" feature (Finding 19) - both real,
+open, and not what this test attempted.
