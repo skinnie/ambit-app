@@ -933,6 +933,40 @@ same commands as Ambit3. GPS orbit write landed at `0x0704e0` (not the Ambit3's 
 not a blocker on its own, since neither `sgee.py` nor this trace hardcodes that address; it's
 discovered from the `gps_orbit_head` (`0x0b15`) reply at connect time either way.
 
+**Real answer to "does Kailash have sport modes / does the Ambit3 activity-download protocol
+work for it," from the device's own memory map, not guessed:** the same capture's `0x0b21`
+(`ambit3_memory_map`) reply is self-describing - a real, `write_nav.py`
+`read_memory_map()`-style list of `[name]\0[hash]\0[u32 start][u32 size]` entries - and parsing
+it directly (same regex approach `read_memory_map()` already uses, just widened past its
+current `Waypoints|Routes|GpsSGEE`-only pattern) gives the real, complete picture:
+
+| Region | start | size | present? |
+|---|---|---|---|
+| Waypoints | `0x005000` | 16384 | yes |
+| Routes | `0x14c080` | 130000 | yes |
+| GpsSGEE | `0x0704e0` | 140000 | yes (matches the write address above exactly) |
+| GlonassSGEE | `0x1339e0` | 100000 | yes - a **second**, separate orbit region Ambit3 doesn't have at all |
+| BlePairingInfo | `0x000546` | 450 | yes |
+| EventLog | `0x0c3500` | 400000 | yes - **not a region name this project has ever seen on Ambit3** |
+| TrackLog | `0x48a1c0` | 1310713 | yes - also never seen on Ambit3; the largest real region on the device |
+| Apps | `0xffffffff` | 0 | **no** |
+| CustomModes | `0xffffffff` | 0 | **no - confirms André's own recollection directly, from the hardware itself** |
+| ExerciseLog | `0xffffffff` | 0 | **no - the Ambit3's own activity-log mechanism plainly doesn't exist here** |
+
+Real conclusion, not assumed: **Kailash needs its own activity-download implementation, not a
+reuse of `exercise_log.py`'s `EXERCISE_LOG_BASE`/`EXERCISE_LOG_SIZE`.** That mechanism reads a
+region this device reports as absent. The real data almost certainly lives in `TrackLog`
+(GPS/exercise samples, by name and size - over a million bytes, the same order of magnitude as
+Ambit3's own multi-megabyte `ExerciseLog`) and/or `EventLog` (400000 bytes - plausibly lap/
+event markers, a smaller, different-shaped record than raw samples) - genuinely new formats,
+neither one decoded here, real follow-up work. Orbital update (`GpsSGEE`) is unaffected by any
+of this and already confirmed working end-to-end with the existing `sgee.py`, address and all.
+Firmware dump: not exercised by this capture at all (no distinct command beyond what's already
+listed above), and there's no separate "Firmware" region in this same memory-map dump either -
+genuinely unconfirmed, not just unresolved. `firmware_check.py` itself doesn't query the watch
+live at all; it only looks up a `model`/`hw_version` pair already obtained from `device_info`
+against a static table, so it isn't a starting point for an actual dump mechanism either way.
+
 **`appstopscreensunrisunset` - a real data point, deliberately not turned into a claim.**
 Chronologically the last capture in this whole batch, right after
 `installcyclingappmiddlescreenheartzone1-5` (`Cycling`'s own `AppMeta` timestamp confirms the
