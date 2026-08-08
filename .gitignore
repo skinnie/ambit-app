@@ -36,3 +36,18 @@ HANDOFF-append-*.md
 desktop/build/
 desktop/*.log
 desktop/*.exitcode
+
+# Repo-root debris found during the 2026-08-08 documentation audit (parallel-session
+# artifacts, not source): a MEGAsync ignore-list config, a stray tools/ backup archive, an
+# accidental clipboard-paste image, and a scratch terminal-session paste. None referenced
+# from any doc.
+/.megaignore
+/tools.tar.gz
+/image.png
+/Unsaved Document 1
+
+# Raw route/waypoint flash-region dumps from real hardware test sessions (before/after/
+# backup/pre-mirror-test snapshots) - scratch captured while debugging, not source, and
+# potentially carrying real personal route data - never meant to be versioned.
+*-routes.bin
+*-waypoints.bin
