@@ -13,7 +13,10 @@ Flickable {
     contentHeight: column.height + Theme.spacingLarge * 2
     clip: true
 
-    Component.onCompleted: RouteService.refresh()
+    Component.onCompleted: {
+        RouteService.refresh()
+        GarminService.refreshDeviceGpx()
+    }
 
     // Which on-watch route the last "Export" tap was for - the backend response
     // (exportedGpx) doesn't carry the route's name back, so it's kept here to suggest a
@@ -40,8 +43,14 @@ Flickable {
         fileMode: FileDialog.SaveFile
         nameFilters: [qsTr("GPX files (*.gpx)")]
         currentFolder: LocalFileService.downloadsLocation
+        // Garmin's own on-device routes already carry their real GPX text (no fetch step
+        // needed, see the Export button's own onClicked below) - set right before open()
+        // and cleared after use so a later Ambit export doesn't accidentally reuse it.
+        property string pendingGpxOverride: ""
         onAccepted: {
-            root.saveError = LocalFileService.saveText(selectedFile, RouteService.exportedGpx)
+            const gpx = pendingGpxOverride.length > 0 ? pendingGpxOverride : RouteService.exportedGpx
+            root.saveError = LocalFileService.saveText(selectedFile, gpx)
+            pendingGpxOverride = ""
         }
     }
 
@@ -105,39 +114,110 @@ Flickable {
                     font.pixelSize: 13
                 }
 
+                // Real, 2026-08-08 ("routes/POI we maintain the same feature... but on the
+                // modes that send to the watch, they only should send for sdcard, check
+                // android app"): GARMIN_USB_IMPORT_SPEC.md's own explicit, non-negotiable
+                // rule - never write to a Garmin's internal memory, no exceptions - and its
+                // own explicit instruction that the UI must show a visible warning, not just
+                // enforce it silently. GarminService.writeGpxToDevice() also enforces this
+                // itself (real, not UI-only), this is the "warn the user" half of the rule.
+                Rectangle {
+                    visible: HomeViewModel.isGarmin
+                    width: parent.width
+                    height: warningText.implicitHeight + Theme.spacingSmall * 2
+                    radius: Theme.radiusSmall
+                    color: Theme.warning
+                    opacity: 0.15
+                    border.color: Theme.warning
+                    border.width: 1
+                    Text {
+                        id: warningText
+                        anchors.fill: parent
+                        anchors.margins: Theme.spacingSmall
+                        wrapMode: Text.WordWrap
+                        color: Theme.warning
+                        font.pixelSize: 11
+                        text: GarminService.hasSdCard
+                            ? qsTr("This will be sent to the SD card only - Garmin devices " +
+                                    "never accept writes to internal memory.")
+                            : qsTr("No SD card detected in this Garmin device - sending a " +
+                                    "route is disabled. Internal memory is never written to.")
+                    }
+                }
+
                 Row {
                     visible: RouteService.pendingRoute.name !== undefined
                     spacing: Theme.spacingSmall
+
                     Button {
+                        visible: !HomeViewModel.isGarmin
                         text: qsTr("Rehearse (no write)")
                         onClicked: RouteService.uploadPendingRoute(false)
                     }
                     Button {
-                        text: qsTr("Upload to watch")
-                        onClicked: RouteService.uploadPendingRoute(true)
+                        text: HomeViewModel.isGarmin ? qsTr("Send to SD card") : qsTr("Upload to watch")
+                        enabled: !HomeViewModel.isGarmin || GarminService.hasSdCard
+                        onClicked: {
+                            if (HomeViewModel.isGarmin) {
+                                const safeName = (RouteService.pendingRoute.name || "route")
+                                    .replace(/[\\/:*?"<>|]/g, "_")
+                                GarminService.writeGpxToDevice(
+                                    safeName + ".gpx", RouteService.pendingRouteGpxText)
+                            } else {
+                                RouteService.uploadPendingRoute(true)
+                            }
+                        }
                     }
                 }
 
                 Text {
-                    visible: RouteService.uploadResultText.length > 0
+                    visible: !HomeViewModel.isGarmin && RouteService.uploadResultText.length > 0
                     width: parent.width
                     wrapMode: Text.WordWrap
                     font.pixelSize: 11
                     color: RouteService.uploadOk ? Theme.success : Theme.error
                     text: RouteService.uploadResultText
                 }
+                Text {
+                    visible: HomeViewModel.isGarmin && GarminService.writeError.length > 0
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    font.pixelSize: 11
+                    color: Theme.error
+                    text: GarminService.writeError
+                }
+                Text {
+                    visible: HomeViewModel.isGarmin && GarminService.writeOk
+                             && GarminService.writeError.length === 0
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    font.pixelSize: 11
+                    color: Theme.success
+                    text: qsTr("Sent to the SD card.")
+                }
             }
         }
 
-        // --- On-watch routes ---
+        // --- On the watch/device - real, 2026-08-08: device-aware, same structure either
+        // way (RouteService.onWatchRoutes for Ambit, GarminService.onDeviceRoutes for
+        // Garmin - both share the same {name, pointCount, distanceMeters, ascentMeters,
+        // descentMeters, track} shape on purpose). Garmin's own export needs no async fetch
+        // step: its route objects already carry gpxText straight from the local file
+        // that's already been read, unlike Ambit's own routes which need a real backend/USB
+        // round trip per Export tap (see RouteService.exportRoute()). ---
         Card {
+            id: onDeviceCard
             width: parent.width
+            readonly property bool loading:
+                HomeViewModel.isGarmin ? GarminService.deviceGpxLoading : RouteService.loading
+            readonly property var onDeviceRoutes:
+                HomeViewModel.isGarmin ? GarminService.onDeviceRoutes : RouteService.onWatchRoutes
             Column {
                 width: parent.width
                 spacing: Theme.spacingSmall
 
                 Text {
-                    text: qsTr("On the watch")
+                    text: HomeViewModel.isGarmin ? qsTr("On the device") : qsTr("On the watch")
                     font.bold: true
                     color: Theme.text
                 }
@@ -147,13 +227,14 @@ Flickable {
                 // finished, which reads the whole navigation database over USB and can take
                 // a real, noticeable moment.
                 Text {
-                    visible: RouteService.loading
+                    visible: onDeviceCard.loading
                     color: Theme.mutedText
-                    text: qsTr("Reading routes off the watch...")
+                    text: qsTr("Reading routes off the %1...")
+                        .arg(HomeViewModel.isGarmin ? qsTr("device") : qsTr("watch"))
                 }
 
                 Text {
-                    visible: RouteService.exportError.length > 0
+                    visible: !HomeViewModel.isGarmin && RouteService.exportError.length > 0
                     width: parent.width
                     wrapMode: Text.WordWrap
                     color: Theme.error
@@ -170,7 +251,7 @@ Flickable {
                 }
 
                 Repeater {
-                    model: RouteService.loading ? [] : RouteService.onWatchRoutes
+                    model: onDeviceCard.loading ? [] : onDeviceCard.onDeviceRoutes
                     delegate: Column {
                         width: parent.width
                         spacing: Theme.spacingSmall
@@ -179,7 +260,8 @@ Flickable {
                         // not a placeholder: RouteService.onWatchRoutes' own track field now
                         // comes straight from write_nav.py's nav --json (see RouteService's
                         // own comment), the same already-read data the summary below uses,
-                        // no extra USB round trip per route.
+                        // no extra USB round trip per route. Garmin's own track field comes
+                        // straight from the local GPX file already read.
                         Item {
                             visible: modelData.track && modelData.track.length > 1
                             width: parent.width
@@ -223,9 +305,20 @@ Flickable {
                                     ? qsTr("Exporting...") : qsTr("Export")
                                 enabled: !RouteService.exporting
                                 onClicked: {
-                                    root.pendingExportIndex = index
-                                    root.pendingExportName = modelData.name
-                                    RouteService.exportRoute(index)
+                                    if (HomeViewModel.isGarmin) {
+                                        // Already have the real bytes - no fetch step needed.
+                                        const safeName = (modelData.name || "route")
+                                            .replace(/[\\/:*?"<>|]/g, "_")
+                                        exportDialog.currentFile =
+                                            LocalFileService.downloadsLocation + "/" + safeName + ".gpx"
+                                        root.saveError = ""
+                                        exportDialog.pendingGpxOverride = modelData.gpxText
+                                        exportDialog.open()
+                                    } else {
+                                        root.pendingExportIndex = index
+                                        root.pendingExportName = modelData.name
+                                        RouteService.exportRoute(index)
+                                    }
                                 }
                             }
                         }
@@ -236,15 +329,19 @@ Flickable {
                     // Real bug, found 2026-08-07: this used to say "no routes, or couldn't
                     // read it" either way, so a genuinely empty watch (real, confirmed live -
                     // "routes 0 points 0 waypoints 0") read exactly like an error. Split by
-                    // whether lastError actually has anything in it.
-                    visible: !RouteService.loading && RouteService.onWatchRoutes.length === 0
-                             && RouteService.lastError.length === 0
-                    text: qsTr("No routes on the watch.")
+                    // whether lastError actually has anything in it. Garmin has no separate
+                    // error concept here - a local file read just finds nothing or it doesn't.
+                    visible: !onDeviceCard.loading && onDeviceCard.onDeviceRoutes.length === 0
+                             && (HomeViewModel.isGarmin || RouteService.lastError.length === 0)
+                    text: HomeViewModel.isGarmin
+                        ? qsTr("No routes on this Garmin device.")
+                        : qsTr("No routes on the watch.")
                     color: Theme.mutedText
                     font.pixelSize: 12
                 }
                 Text {
-                    visible: !RouteService.loading && RouteService.onWatchRoutes.length === 0
+                    visible: !HomeViewModel.isGarmin && !onDeviceCard.loading
+                             && RouteService.onWatchRoutes.length === 0
                              && RouteService.lastError.length > 0
                     text: qsTr("Couldn't read routes: %1").arg(RouteService.lastError)
                     color: Theme.error

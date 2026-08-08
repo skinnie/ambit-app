@@ -21,9 +21,14 @@ Flickable {
         width: 480
         spacing: Theme.spacingMedium
 
-        // --- General ---
+        // --- General - Suunto-specific (it's reporting the Python backend bridge's own
+        // status, which Garmin support has nothing to do with - GarminService talks
+        // directly to a mounted filesystem, no backend involved at all). Real, 2026-08-08:
+        // swapped for a plain "Supported devices" card while a Garmin is connected, rather
+        // than just hidden outright - own suggestion, in place of showing nothing here. ---
         Card {
             width: parent.width
+            visible: !HomeViewModel.isGarmin
             Column {
                 width: parent.width
                 spacing: Theme.spacingSmall
@@ -54,6 +59,41 @@ Flickable {
                     text: qsTr("Backend address is fixed to 127.0.0.1:8766 for now - making " +
                                 "it configurable needs every Service updated together, not " +
                                 "done here (see DeviceService's own comment on this).")
+                }
+            }
+        }
+        Card {
+            width: parent.width
+            visible: HomeViewModel.isGarmin
+            Column {
+                width: parent.width
+                spacing: Theme.spacingSmall
+                Text { text: qsTr("Supported devices"); font.bold: true; color: Theme.text }
+                Row {
+                    spacing: 6
+                    Rectangle {
+                        width: 8; height: 8; radius: 4
+                        anchors.verticalCenter: parent.verticalCenter
+                        color: Theme.mutedText
+                    }
+                    Text {
+                        text: qsTr("Suunto Ambit3 (USB, via the local backend)")
+                        color: Theme.mutedText
+                        font.pixelSize: 12
+                    }
+                }
+                Row {
+                    spacing: 6
+                    Rectangle {
+                        width: 8; height: 8; radius: 4
+                        anchors.verticalCenter: parent.verticalCenter
+                        color: Theme.success
+                    }
+                    Text {
+                        text: qsTr("Garmin eTrex — connected (%1)").arg(GarminService.model)
+                        color: Theme.text
+                        font.pixelSize: 12
+                    }
                 }
             }
         }
@@ -441,7 +481,7 @@ Flickable {
                 spacing: Theme.spacingSmall
                 Text { text: qsTr("About"); font.bold: true; color: Theme.text }
                 Text {
-                    text: qsTr("AmbitApp V2.3.0")
+                    text: qsTr("AmbitApp V2.5.0")
                     color: Theme.text
                     font.pixelSize: 13
                 }
@@ -451,7 +491,7 @@ Flickable {
                     color: Theme.mutedText
                     font.pixelSize: 11
                     text: qsTr("Independent, unofficial software - not affiliated with, " +
-                                "endorsed by, or supported by Suunto. Map data © " +
+                                "endorsed by, or supported by Suunto or Garmin. Map data © " +
                                 "OpenStreetMap contributors. Icons: Google Material " +
                                 "Symbols (Apache License 2.0).")
                 }

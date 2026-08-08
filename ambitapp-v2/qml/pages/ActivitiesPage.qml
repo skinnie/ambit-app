@@ -9,14 +9,29 @@ Item {
     id: root
     property var selectedActivity: null
 
-    Component.onCompleted: ActivityService.refresh()
+    // Real, 2026-08-08 ("activities, just import the ones on the garmin device") - this
+    // page is device-aware rather than duplicated: same grid/detail UI either way, sourced
+    // from ActivityService (Ambit3, real watch log) or GarminService (Garmin, real GPX
+    // files already sitting on the device) depending on which one HomeViewModel says is
+    // actually connected. Matches the real Android app's own "no sub menu needed, just read
+    // and log" simplicity for Garmin.
+    readonly property bool loading:
+        HomeViewModel.isGarmin ? GarminService.activitiesLoading : ActivityService.loading
+    readonly property var activeActivities:
+        HomeViewModel.isGarmin ? GarminService.activities : ActivityService.activities
+
+    Component.onCompleted: {
+        ActivityService.refresh()
+        GarminService.refreshActivities()
+    }
 
     // Real, not a guess: the watch's ExerciseLog region is ~5.3MB, read 1024 bytes at a
     // time over USB - genuinely takes a couple of minutes. Without this, the page was a
     // blank white screen the whole time (found 2026-08-07 via real testing) - looked broken,
-    // wasn't.
+    // wasn't. Garmin's own read is a plain local file read - fast - so this message only
+    // applies to the Ambit3 path.
     Text {
-        visible: root.selectedActivity === null && ActivityService.loading
+        visible: root.selectedActivity === null && root.loading && !HomeViewModel.isGarmin
         anchors.horizontalCenter: parent.horizontalCenter
         y: Theme.spacingLarge
         color: Theme.mutedText
@@ -27,9 +42,10 @@ Item {
     // Real request 2026-08-07: "activities... saved in the computer... loads when watch is
     // not plugged" - ActivityService now caches every successful read locally and falls
     // back to that cache when a live read fails, flagged here rather than silently shown as
-    // if it were current.
+    // if it were current. Garmin has no separate cache concept - its own files already live
+    // on the device's own storage, read fresh every time.
     Text {
-        visible: root.selectedActivity === null && !ActivityService.loading
+        visible: root.selectedActivity === null && !root.loading && !HomeViewModel.isGarmin
                  && ActivityService.showingCachedData
         anchors.horizontalCenter: parent.horizontalCenter
         y: Theme.spacingLarge
@@ -40,23 +56,25 @@ Item {
 
     Column {
         visible: root.selectedActivity === null
-                 && !ActivityService.loading && ActivityService.activities.length === 0
+                 && !root.loading && root.activeActivities.length === 0
         anchors.horizontalCenter: parent.horizontalCenter
         y: Theme.spacingLarge
         spacing: Theme.spacingSmall
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
             color: Theme.mutedText
-            text: ActivityService.ok
-                ? qsTr("No recorded activities on the watch.")
-                : qsTr("Couldn't load activities: %1").arg(ActivityService.lastError)
+            text: HomeViewModel.isGarmin
+                ? qsTr("No recorded activities on this Garmin device.")
+                : (ActivityService.ok
+                    ? qsTr("No recorded activities on the watch.")
+                    : qsTr("Couldn't load activities: %1").arg(ActivityService.lastError))
         }
         // Real fix, not cosmetic: the only way to retry used to be navigating away and
         // back (which happens to re-run Component.onCompleted since Main.qml's Loader
         // recreates the page) - not discoverable, and a real problem if this page's very
         // first load raced the watch still connecting (found 2026-08-07 via real testing).
         Button {
-            visible: !ActivityService.ok
+            visible: HomeViewModel.isGarmin ? false : !ActivityService.ok
             anchors.horizontalCenter: parent.horizontalCenter
             text: qsTr("Retry")
             onClicked: ActivityService.refresh()
@@ -82,7 +100,7 @@ Item {
         cellWidth: 360 + Theme.spacingMedium
         cellHeight: 280 + Theme.spacingMedium
         reuseItems: true
-        model: ActivityService.activities
+        model: root.activeActivities
         delegate: Item {
             width: GridView.view.cellWidth
             height: GridView.view.cellHeight

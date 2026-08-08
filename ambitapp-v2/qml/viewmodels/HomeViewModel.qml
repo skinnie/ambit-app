@@ -7,6 +7,16 @@ import AmbitApp
 // real presentation logic (the status text/color) - as Weather/Activities services land in
 // later steps, Home's view of them gets added here too, not scattered across HomePage.qml.
 QtObject {
+    // Real, 2026-08-08 ("home page: instead of ambit it detects an etrex... like on the
+    // android version"). Ambit and Garmin are two completely separate device mechanisms
+    // (NSP flash protocol vs. plain USB-mass-storage GPX files - see GarminService's own
+    // header comment), so Home shows whichever one is actually present rather than trying
+    // to merge them into one card. Ambit takes priority if, implausibly, both are connected
+    // at once - it's this app's original/primary device, and the two would never really be
+    // plugged in together in practice.
+    readonly property bool isGarmin: !connected && GarminService.connected
+    readonly property bool isAmbit: connected
+
     // 2026-08-07: switched from DeviceService.navOk to deviceInfoOk - navOk came from a
     // slow, unnecessary full flash read (see DeviceService's own header comment); a
     // deviceInfoOk. checking one small identity command is both faster and just as real a

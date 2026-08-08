@@ -1,11 +1,14 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Dialogs
 import AmbitApp
 
 // Step 10. Real backup/restore, built on write_nav.py's own `nav --save` / `restore
 // PREFIX --write` - "the backup that milestone 4 asked for and never had" (that file's own
 // words). "Sport Modes, Settings, Profiles" (the spec's own "Future" list here) aren't
 // covered by this mechanism, which only ever touched routes/waypoints - not simulated.
+// Garmin backup (real, 2026-08-08) is a genuinely different, simpler mechanism - a plain
+// file copy, not this flash-region save/restore - see its own Card below.
 Flickable {
     id: root
     contentWidth: width
@@ -17,6 +20,13 @@ Flickable {
         BackupService.checkFirmware();
     }
 
+    FolderDialog {
+        id: garminBackupDialog
+        title: qsTr("Choose a backup folder")
+        currentFolder: LocalFileService.downloadsLocation
+        onAccepted: GarminService.backupToFolder(selectedFolder)
+    }
+
     Column {
         id: column
         anchors.horizontalCenter: parent.horizontalCenter
@@ -25,8 +35,13 @@ Flickable {
         width: 480
         spacing: Theme.spacingMedium
 
+        // Real, 2026-08-08 ("when a garmin device is detected, hide backup&restore and
+        // existing backups, since those are suunto specific") - this mechanism only ever
+        // touches the Ambit3's own flash regions (write_nav.py's nav --save/restore), so it
+        // has nothing to do while a Garmin is the connected device.
         Card {
             width: parent.width
+            visible: !HomeViewModel.isGarmin
             Column {
                 width: parent.width
                 spacing: Theme.spacingSmall
@@ -61,6 +76,7 @@ Flickable {
 
         Card {
             width: parent.width
+            visible: !HomeViewModel.isGarmin
             Column {
                 width: parent.width
                 spacing: Theme.spacingSmall
@@ -106,9 +122,12 @@ Flickable {
             }
         }
 
-        // --- Firmware backup - added 2026-08-07, see V3_CHANGELOG.md ---
+        // --- Firmware backup - added 2026-08-07, see V3_CHANGELOG.md. Also Suunto-specific
+        // (its own text says so - "Suunto's own official app") - same reasoning as the two
+        // Cards above, hidden for the same real, 2026-08-08 request. ---
         Card {
             width: parent.width
+            visible: !HomeViewModel.isGarmin
             Column {
                 width: parent.width
                 spacing: Theme.spacingSmall
@@ -164,6 +183,55 @@ Flickable {
                     font.pixelSize: 11
                     color: BackupService.firmwareActionOk ? Theme.success : Theme.error
                     text: BackupService.firmwareActionText
+                }
+            }
+        }
+
+        // --- Garmin backup - real, 2026-08-08 ("backups gpx from Garmin\GPX ... both
+        // from internal memory and sdcard to a folder that user should choose, by
+        // default Downloads"). Real file copy, not a database export or a re-serialized
+        // parse - GarminService.backupToFolder() copies every real .gpx file already
+        // sitting in Garmin/GPX on every mounted volume (internal memory and SD card)
+        // into one subfolder per volume. No separate Garmin\POI folder exists on real
+        // hardware (confirmed against real hardware, GARMIN_USB_IMPORT_SPEC.md) - POI
+        // files already live inside the same Garmin/GPX folder as routes, just named
+        // "Waypoints*.gpx", so backing up that one real folder covers both. ---
+        Card {
+            width: parent.width
+            visible: HomeViewModel.isGarmin
+            Column {
+                width: parent.width
+                spacing: Theme.spacingSmall
+
+                Text { text: qsTr("Garmin backup"); font.bold: true; color: Theme.text }
+                Text {
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    color: Theme.mutedText
+                    font.pixelSize: 12
+                    text: qsTr("Copies every real GPX file from Garmin/GPX on this device " +
+                                "- routes and POIs together, since they live in the same " +
+                                "real folder on real hardware - from both internal memory " +
+                                "and the SD card if one is present.")
+                }
+
+                // Real request 2026-08-08: "rename to Create backup now, to match Suunto
+                // Backup and restore" - still opens the folder-choose dialog first (a real
+                // difference from Suunto's own fixed ~/AmbitAppBackups location), just
+                // worded the same way.
+                Button {
+                    text: GarminService.backingUp ? qsTr("Working…") : qsTr("Create backup now")
+                    enabled: !GarminService.backingUp
+                    onClicked: garminBackupDialog.open()
+                }
+
+                Text {
+                    visible: GarminService.backupResultText.length > 0
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    font.pixelSize: 11
+                    color: GarminService.backupOk ? Theme.success : Theme.error
+                    text: GarminService.backupResultText
                 }
             }
         }

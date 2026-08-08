@@ -844,3 +844,104 @@ round trip needed for one point that's already fully known client-side), fed int
 
 Backend server restarted again after these changes (see the earlier stale-process lesson in
 this same entry) before any of the above was verified live.
+
+---
+
+## 2026-08-08: v2.3.0 tagged, connection auto-refresh redesigned, Garmin eTrex support built
+
+**v2.3.0, tagged and committed for the first time.** This whole `ambitapp-v2/` tree (and the
+supporting `tools/*.py` changes underneath it) had never actually been committed to this
+repo before - a huge amount of real, hardware-verified work sitting only in the working
+tree. Committed the real source (Qt app, backend, the `tools/*.py` files it depends on,
+`AMBITAPP_SPEC.md`/`CREDITS.md`/`LICENSE`) - deliberately not the many scratch/binary
+artifacts sitting alongside it in this same working tree (test flash-region dumps, `dist/`,
+`obsolete/`, build logs, a couple of personal-route GPX files left out on privacy grounds
+given the remote is a real public GitHub repo) - and tagged `v2.3.0` as stable. `CMakeLists.
+txt`'s own `project(... VERSION ...)` and Settings' About text both bumped to match.
+
+**Connection auto-refresh, redesigned again.** The 5s-always-polling design from earlier
+this session is gone - real request: "if watch is connected don't refresh, if not connected
+refresh with a 1 second interval... remove the refresh button." This is a genuine
+improvement on the earlier design, not a reversion to the 2s ask that was flagged as too
+heavy: `DeviceService` now polls at 1s *only* while genuinely searching for the watch
+(uncapped, unlike the old 6-try retry logic it replaces) and stops entirely, at zero
+ongoing cost, the instant `deviceInfoOk` is true. The manual "Refresh" button was removed
+from Home - nothing left for it to do that isn't already happening automatically.
+
+**Garmin eTrex support, built from a real spec.** Checked the real Android app
+(opensportsync-main) first, as asked, before writing anything: a fully-built feature set
+(`GarminModule.kt/.ts`, `GarminActivityService.ts`, `GarminGpxExportService.ts`, two
+screens) backed by `GARMIN_USB_IMPORT_SPEC.md`, confirmed against real hardware (the
+author's own eTrex 30). Garmin devices are nothing like the Ambit3 - plain USB Mass Storage
+(FAT filesystem), not the NSP flash protocol - so this is a genuinely separate feature set,
+not an extension of the existing Services, matching that spec's own explicit stance.
+
+The one real architectural win over the Android implementation: Android needed `libaums` (a
+userspace USB/SCSI/FAT driver) because BlissOS didn't reliably auto-mount MSC devices. The
+same spec doc already confirmed a real eTrex 30 auto-mounts cleanly on desktop Linux via
+udisks2, zero special handling - so the new `GarminService` needs no native USB code at
+all: `QStorageInfo` finds the already-mounted volume, `QDir`/`QFile`/`QXmlStreamReader` do
+everything else.
+
+- **Discovery**: scans every mounted volume for `Garmin/GarminDevice.xml` (real, confirmed
+  file) and parses `<Model>` (Description/SoftwareVersion/PartNumber - firmware formatted
+  with Garmin's own "implied decimal point two digits from the right" convention, 501 ->
+  5.01) plus the `GPSData` `DataType`'s two `<File>` entries, told apart by
+  `TransferDirection` (`OutputFromUnit` = real activities live here; `InputToUnit` = where
+  to write, always `Garmin/GPX`) - no hardcoded paths.
+- **SD card detection**: real-hardware-unverified (this session had no SD card to test
+  against) - Android identifies it via real USB topology (`libaums` sees both volumes are
+  the same physical device); a desktop mounted filesystem doesn't expose that through
+  `QStorageInfo` directly, so this instead treats another volume under the same parent
+  removable-media directory without its own `GarminDevice.xml` as the SD card. Flagged
+  honestly in the code as a heuristic, not claimed as confirmed the way the rest of this
+  class's discovery logic is.
+- **Activities, Routes, POI - real GPX parsing, real derived stats.** Real eTrex GPX carries
+  none of `exercise_log.py`'s own `<extensions>` block (that's this project's own
+  Ambit3-specific convention) - so distance/duration/ascent for a Garmin activity or route
+  are computed from the track's own points: a real haversine great-circle formula for
+  distance (a known formula, not derived custom math, matching this project's own stated
+  preference), elevation-gain summation for ascent, first-to-last `<time>` for duration.
+  POI files are recognized by BaseCamp's own real "Waypoints*.gpx" naming convention
+  (confirmed against real files already on the reference eTrex).
+- **SAFETY RULE, enforced in code, not just the UI**: `writeGpxToDevice()` refuses outright
+  if no SD card volume is present - internal memory is never written to, no exceptions,
+  matching the real Android app's own non-negotiable rule (confirmed with that app's
+  author). Every "send to device" button in the UI (Routes, POI - both add-form and
+  imported-list rows) is also disabled and shows an explicit warning box when this applies,
+  per that same spec's own instruction that this has to be visible to the user, not just
+  silently enforced.
+- **UI, device-aware rather than duplicated**: Home's hero card shows either the Ambit3 or
+  the new `EtrexIcon.qml` (a plain-shapes silhouette - a body, the eTrex's own distinctive
+  antenna bump, a screen, two buttons - drawn rather than added as a font glyph, since no
+  icon in this app's Material Symbols subset represents a handheld GPS unit) plus real
+  firmware/part-number/SD-card fields, matching `GARMIN_USB_IMPORT_SPEC.md`'s own
+  "Implementation-ready: device identification" section layout exactly. Activities/Routes/
+  POIs are the *same* pages/UI as the Ambit3 versions, sourced from `GarminService` instead
+  of `ActivityService`/`RouteService`/`PoiService` when a Garmin is the connected device
+  (`HomeViewModel.isGarmin`) - matching the real request to reuse the existing feature
+  rather than duplicate it. New Garmin backup Card (Backup page, Garmin-only, real file
+  copy - not a database export or a parsed re-serialization) copies every real file from
+  `Garmin/GPX` on every mounted volume into a user-chosen folder (default Downloads) - no
+  separate `Garmin\POI` folder exists on real hardware per the same spec, POI files already
+  live inside that same `Garmin/GPX` folder, so backing that one up covers both.
+
+**Real bug caught and fixed during this same pass**: two spots (`RoutesPage.qml`'s new
+device-aware Card) initially used `parent.parent.<property>` to reach a `Card`'s own custom
+properties from a descendant - broken, because `Card.qml`'s `default property alias
+content: contentItem.data` reparents a `Card`'s children into an internal `contentItem`,
+not the `Card` itself, so `parent.parent` actually resolved to `contentItem`, not the
+`Card`. The exact same class of bug as the earlier `SettingsPage.qml` `oauthDialogService`
+scope issue this session, caught this time before ever compiling rather than after - fixed
+by giving the `Card` an explicit `id` and referencing it directly (ids resolve by name
+across the whole file regardless of the visual parent-child tree, unlike `parent`).
+
+**Honesty note on verification**: everything above compiled cleanly and was verified live
+against the real, connected Ambit3 to confirm zero regression to the existing path (device
+hero, GPS orbit, cached Last Activity, Routes/POIs/Backup/Settings all navigated with no
+QML errors in the app's own log). **No real Garmin/eTrex hardware was available this
+session to verify the Garmin-specific code paths against** - the discovery/parsing/write
+logic is built directly from `GARMIN_USB_IMPORT_SPEC.md`'s own real-hardware findings, not
+guessed, but "matches a real spec" and "verified against real hardware" are different
+claims, and only the former is true for this entry. A real eTrex test is still owed before
+trusting this with an actual SD-card write.

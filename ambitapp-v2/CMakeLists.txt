@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(AmbitApp VERSION 2.3.0 LANGUAGES CXX)
+project(AmbitApp VERSION 2.5.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -76,6 +76,7 @@ qt_add_qml_module(ambitapp
         qml/components/MapView.qml
         qml/components/ActivityCard.qml
         qml/components/ActivityDetail.qml
+        qml/components/EtrexIcon.qml
         qml/MapService.qml
         qml/viewmodels/HomeViewModel.qml
         qml/viewmodels/WeatherViewModel.qml
@@ -107,6 +108,8 @@ qt_add_qml_module(ambitapp
         src/services/connectionsservice.cpp
         src/services/localfileservice.h
         src/services/localfileservice.cpp
+        src/services/garminservice.h
+        src/services/garminservice.cpp
     RESOURCES
         assets/fonts/MaterialSymbolsRounded.ttf
         # assets/map/osm-raster-style.json was MapLibre's own style file - unused since the

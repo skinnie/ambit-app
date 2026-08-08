@@ -16,7 +16,10 @@ Flickable {
     clip: true
     property string saveError: ""
 
-    Component.onCompleted: PoiService.refresh()
+    Component.onCompleted: {
+        PoiService.refresh()
+        GarminService.refreshDeviceGpx()
+    }
 
     FileDialog {
         id: poiFileDialog
@@ -106,18 +109,73 @@ Flickable {
                     }
                 }
 
+                // Real, 2026-08-08 ("routes/POI we maintain the same feature... but on the
+                // modes that send to the watch, they only should send for sdcard, check
+                // android app") - same rule and same warning as Routes' own Send button,
+                // see RoutesPage.qml's own comment on this for the full reasoning.
+                Rectangle {
+                    visible: HomeViewModel.isGarmin
+                    width: parent.width
+                    height: addWarningText.implicitHeight + Theme.spacingSmall * 2
+                    radius: Theme.radiusSmall
+                    color: Theme.warning
+                    opacity: 0.15
+                    border.color: Theme.warning
+                    border.width: 1
+                    Text {
+                        id: addWarningText
+                        anchors.fill: parent
+                        anchors.margins: Theme.spacingSmall
+                        wrapMode: Text.WordWrap
+                        color: Theme.warning
+                        font.pixelSize: 11
+                        text: GarminService.hasSdCard
+                            ? qsTr("This will be sent to the SD card only - Garmin devices " +
+                                    "never accept writes to internal memory.")
+                            : qsTr("No SD card detected in this Garmin device - sending a " +
+                                    "POI is disabled. Internal memory is never written to.")
+                    }
+                }
+
                 Button {
-                    text: qsTr("Add")
-                    onClicked: PoiService.addPoi(root.poiName, root.poiLat, root.poiLon)
+                    text: HomeViewModel.isGarmin ? qsTr("Send to SD card") : qsTr("Add")
+                    enabled: !HomeViewModel.isGarmin || GarminService.hasSdCard
+                    onClicked: {
+                        if (HomeViewModel.isGarmin) {
+                            const safeName = (root.poiName || "poi").replace(/[\\/:*?"<>|]/g, "_")
+                            GarminService.writeGpxToDevice(
+                                "Waypoints_" + safeName + ".gpx",
+                                PoiService.buildWaypointGpx(root.poiName, root.poiLat, root.poiLon))
+                        } else {
+                            PoiService.addPoi(root.poiName, root.poiLat, root.poiLon)
+                        }
+                    }
                 }
 
                 Text {
-                    visible: PoiService.addResultText.length > 0
+                    visible: !HomeViewModel.isGarmin && PoiService.addResultText.length > 0
                     width: parent.width
                     wrapMode: Text.WordWrap
                     font.pixelSize: 11
                     color: Theme.error
                     text: PoiService.addResultText
+                }
+                Text {
+                    visible: HomeViewModel.isGarmin && GarminService.writeError.length > 0
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    font.pixelSize: 11
+                    color: Theme.error
+                    text: GarminService.writeError
+                }
+                Text {
+                    visible: HomeViewModel.isGarmin && GarminService.writeOk
+                             && GarminService.writeError.length === 0
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    font.pixelSize: 11
+                    color: Theme.success
+                    text: qsTr("Sent to the SD card.")
                 }
             }
         }
@@ -167,8 +225,18 @@ Flickable {
                         }
                         Button {
                             id: addImportedButton
-                            text: qsTr("Add")
-                            onClicked: PoiService.addPoi(modelData.name, modelData.lat, modelData.lon)
+                            text: HomeViewModel.isGarmin ? qsTr("Send to SD card") : qsTr("Add")
+                            enabled: !HomeViewModel.isGarmin || GarminService.hasSdCard
+                            onClicked: {
+                                if (HomeViewModel.isGarmin) {
+                                    const safeName = (modelData.name || "poi").replace(/[\\/:*?"<>|]/g, "_")
+                                    GarminService.writeGpxToDevice(
+                                        "Waypoints_" + safeName + ".gpx",
+                                        PoiService.buildWaypointGpx(modelData.name, modelData.lat, modelData.lon))
+                                } else {
+                                    PoiService.addPoi(modelData.name, modelData.lat, modelData.lon)
+                                }
+                            }
                         }
                     }
                 }
@@ -183,19 +251,29 @@ Flickable {
         // extra over what refresh() already fetched - lat/lon come straight from the same
         // parsed record, no per-POI network/USB round trip. ---
         Card {
+            id: onDevicePoiCard
             width: parent.width
+            readonly property bool loading:
+                HomeViewModel.isGarmin ? GarminService.deviceGpxLoading : PoiService.loading
+            readonly property var onDevicePois:
+                HomeViewModel.isGarmin ? GarminService.onDevicePois : PoiService.onWatchPois
             Column {
                 width: parent.width
                 spacing: Theme.spacingSmall
-                Text { text: qsTr("On the watch"); font.bold: true; color: Theme.text }
+                Text {
+                    text: HomeViewModel.isGarmin ? qsTr("On the device") : qsTr("On the watch")
+                    font.bold: true
+                    color: Theme.text
+                }
 
                 Text {
-                    visible: PoiService.loading
+                    visible: onDevicePoiCard.loading
                     color: Theme.mutedText
-                    text: qsTr("Reading POIs off the watch...")
+                    text: qsTr("Reading POIs off the %1...")
+                        .arg(HomeViewModel.isGarmin ? qsTr("device") : qsTr("watch"))
                 }
                 Text {
-                    visible: !PoiService.loading && !PoiService.ok
+                    visible: !HomeViewModel.isGarmin && !PoiService.loading && !PoiService.ok
                     width: parent.width
                     wrapMode: Text.WordWrap
                     color: Theme.error
@@ -203,9 +281,12 @@ Flickable {
                     text: qsTr("Couldn't read POIs: %1").arg(PoiService.lastError)
                 }
                 Text {
-                    visible: !PoiService.loading && PoiService.ok && PoiService.onWatchPois.length === 0
+                    visible: !onDevicePoiCard.loading && onDevicePoiCard.onDevicePois.length === 0
+                             && (HomeViewModel.isGarmin || PoiService.ok)
                     color: Theme.mutedText
-                    text: qsTr("No POIs on the watch.")
+                    text: HomeViewModel.isGarmin
+                        ? qsTr("No POIs on this Garmin device.")
+                        : qsTr("No POIs on the watch.")
                 }
                 Text {
                     visible: root.saveError.length > 0
@@ -217,7 +298,7 @@ Flickable {
                 }
 
                 Repeater {
-                    model: PoiService.loading ? [] : PoiService.onWatchPois
+                    model: onDevicePoiCard.loading ? [] : onDevicePoiCard.onDevicePois
                     delegate: Column {
                         width: parent.width
                         spacing: Theme.spacingSmall
