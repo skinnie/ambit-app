@@ -13,12 +13,11 @@ static const QString kBackendBase = QStringLiteral("http://127.0.0.1:8766");
 
 DeviceService::DeviceService(QObject *parent) : QObject(parent)
 {
-    m_retryTimer.setSingleShot(true);
-    connect(&m_retryTimer, &QTimer::timeout, this, &DeviceService::refresh);
+    m_pollTimer.setSingleShot(true);
+    connect(&m_pollTimer, &QTimer::timeout, this, &DeviceService::refresh);
 
-    m_autoRefreshTimer.setInterval(kAutoRefreshIntervalMs);
-    connect(&m_autoRefreshTimer, &QTimer::timeout, this, &DeviceService::refresh);
-    m_autoRefreshTimer.start();
+    m_heartbeatTimer.setSingleShot(true);
+    connect(&m_heartbeatTimer, &QTimer::timeout, this, &DeviceService::refresh);
 }
 
 QUrl DeviceService::backendUrl(const QString &path)
@@ -57,19 +56,10 @@ void DeviceService::setLastError(const QString &friendlyMessage, const QString &
     emit lastErrorChanged();
 }
 
-void DeviceService::scheduleRetry()
-{
-    if (m_retryCount >= kMaxRetries) {
-        logToFile(QStringLiteral("giving up after %1 retries").arg(m_retryCount));
-        return;
-    }
-    m_retryCount++;
-    m_retryTimer.start(kRetryIntervalMs);
-}
-
 void DeviceService::refresh()
 {
-    m_retryTimer.stop();
+    m_pollTimer.stop();
+    m_heartbeatTimer.stop();
     setLoading(true);
 
     QNetworkReply *reply = m_network.get(QNetworkRequest(backendUrl(QStringLiteral("/api/health"))));
@@ -84,7 +74,7 @@ void DeviceService::refresh()
             setLoading(false);
             setLastError(QStringLiteral("Backend not running"),
                 QStringLiteral("GET /api/health: %1").arg(reply->errorString()));
-            scheduleRetry();
+            m_pollTimer.start(kPollIntervalMs);
             return;
         }
         fetchDeviceInfo();
@@ -109,15 +99,25 @@ void DeviceService::fetchDeviceInfo()
             m_firmwareVersion = obj.value(QStringLiteral("fw_version")).toString();
             m_hardwareVersion = obj.value(QStringLiteral("hw_version")).toString();
             m_batteryPercent = obj.value(QStringLiteral("battery_percent")).toInt(-1);
-            m_retryCount = 0;
             setLastError(QString(), QString());
+            // Connected - real request 2026-08-08 ("if watch is connected don't refresh"):
+            // m_pollTimer (the fast 1s "searching" poll) stays stopped. But a real
+            // disconnect must still eventually be noticed (found live, same day: "it is
+            // blocked on ambit connected even if it disconnected" - the manual Refresh
+            // button was removed in the same change, so with nothing polling there was
+            // no way back). This slow heartbeat re-checks every 10s while connected -
+            // enough to catch a real unplug within a bounded time without hammering the
+            // USB link the way continuous 1s polling would.
+            m_heartbeatTimer.start(kHeartbeatIntervalMs);
         } else {
             const QString technical = reply->error() != QNetworkReply::NoError
                 ? QStringLiteral("GET /api/device: %1").arg(reply->errorString())
                 : QStringLiteral("GET /api/device: %1")
                     .arg(obj.value(QStringLiteral("stderr")).toString());
             setLastError(QStringLiteral("Watch not connected"), technical);
-            scheduleRetry();
+            // Not connected - real request 2026-08-08 ("if not connected, refresh with a 1
+            // second interval"): keep polling, uncapped, until it connects.
+            m_pollTimer.start(kPollIntervalMs);
         }
         emit deviceInfoChanged();
     });

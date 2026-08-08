@@ -7,6 +7,36 @@ they land, on the way to what André/Vincent have been calling "V3": wireless sy
 
 ---
 
+## 2026-08-08: Real-hardware follow-ups - map zoom actually fits now, Garmin re-detects live, Ambit disconnect no longer gets stuck
+
+- **Map auto-fit zoom, second pass**: the first fix (padding margin 0.8→0.65) still cropped
+  the track on one side, confirmed by zooming into the actual screenshot pixels rather than
+  guessing ("as you can see the route still doesn't fit totally when you are inside the
+  activity"). Tightened the margin further (0.65→0.5) and moved the initial-fit trigger
+  (`Component.onCompleted`, `onTrackPointsChanged`) to `Qt.callLater(_refitZoom)` to rule out
+  a layout-timing race in deeply-nested items (`Card`→`Column`→`Item`→`MapView`) not having
+  their final resolved width/height yet on the first call. Confirmed live against the same
+  real eTrex "Current Track" file ("now the map is fixed").
+- **Garmin device state going stale on Home** ("I had two devices connected at the same
+  time. It only shows one, and it takes a bit of time to re-detect the etrex after I unplug
+  the suunto"): `GarminService::detect()` used to only ever run once, from `HomePage.qml`'s
+  own `Component.onCompleted` - if you're already on Home when the other device's state
+  changes, nothing re-triggers it. Unlike `DeviceService`'s Ambit3 polling (a real USB round
+  trip through a Python subprocess, deliberately not polled continuously), `detect()` here is
+  a cheap filesystem check (`QStorageInfo` + one small XML file) - now runs on its own
+  continuous 2s `QTimer`, decoupled from page navigation, only re-parsing activity/route
+  files on an actual connect-state transition rather than every tick.
+- **Self-caused regression, found and fixed same day**: the earlier "if watch is connected
+  don't refresh, remove the refresh button" change (this same file, 2026-08-08 entry below)
+  had no mechanism left to ever notice a *subsequent* disconnection once
+  `DeviceService::deviceInfoOk` went true - no timer running, no button to fall back on. Real
+  symptom: "it is blocked on ambit connected even if it disconnected." Fixed with a slow
+  10s heartbeat (`m_heartbeatTimer`) that only runs while connected, distinct from the fast
+  1s "searching" `m_pollTimer` - a real disconnect is now noticed within a bounded time
+  without going back to continuous fast polling.
+
+---
+
 ## 2026-08-07: Qt's OSM plugin abandoned too - a plain direct tile renderer instead; real connection-speed fix; Runalyze corrected
 
 - **Maps, for real this time**: the "missing API key" watermark survived two separate
@@ -965,3 +995,46 @@ superseding v2.3.0 as the current baseline (that tag is left in place, not delet
 earlier milestone, not a mistake). Committed with the same scoping discipline as the
 v2.3.0 commit (real source only, no build artifacts/logs). Neither tag has been pushed to
 origin - that needs separate, explicit confirmation.
+
+---
+
+## 2026-08-08: Garmin support confirmed on real eTrex 30 hardware - v2.5.9, then a real bug fix
+
+**Real hardware test, first one for the Garmin side of this app**: André's own eTrex 30,
+the exact reference unit `GARMIN_USB_IMPORT_SPEC.md` was written against - confirmed via
+Home showing the real firmware (5.01) and part number (006-B1305-00), matching that spec's
+own worked example exactly. `screenshots/v8/` and `v9_home_real.png` are real captures from
+this session, not staged.
+
+**v2.5.9**: real feedback from that first test - the SD-card-only warning box on Routes/POI
+had a loud tinted-orange background; restyled to a plain white (`Theme.card`) background
+with grey (`Theme.mutedText`) text. Wording changed: "Garmin devices never accept writes to
+internal memory" -> "writing to internal memory can break your device." Version bumped to
+v2.5.9 and tagged stable (v2.3.0/v2.5.0 left in place, not moved).
+
+**Follow-up, same session - two more real requests, then a real bug found from the live
+data itself:**
+- The warning box lost its frame entirely per a second round of feedback - now plain text
+  matching each page's own muted description text one level down, no `Rectangle` wrapper at
+  all.
+- `MapView`'s auto-fit zoom margin loosened from 0.8 to 0.65 (35% padding instead of 20%)
+  after a real track still looked slightly cropped by default.
+- **Real bug, found directly from the live eTrex still connected to this session**: opening
+  the real device's own "Current Track" activity showed **"Duration: 997h 21m"** for a
+  35 km move - obviously wrong, caught by inspection, not a test failure. Root cause: a
+  Garmin `Current.gpx` file can hold multiple disjoint `<trkseg>` recording sessions (real
+  device behavior - nothing guarantees the file gets cleared between separate recordings),
+  and `GarminService::parseActivityGpx()` was summing distance/duration across the *whole*
+  file as if it were one continuous move - bridging a real multi-day gap between two
+  sessions into one bogus number. Fixed: track points and timestamps are now grouped by
+  segment (indexed by segment number, not a raw pointer into the growing `QList` - `QList::
+  append()` can reallocate and invalidate that), and both distance and duration are summed
+  *within* each segment only, never across a segment boundary. **Verified live against the
+  same real file, same real session**: 997h 21m -> a correct **3h 38m**; 35.0 km -> **33.2
+  km** (the bogus cross-segment "teleport" distance excluded). This is the first Garmin-side
+  bug this project found from real data rather than from reading the spec - a genuine
+  confirmation the earlier "not yet verified on real hardware" caveat was honest, not just
+  cautious phrasing.
+
+All four changes committed together (not yet re-tagged - a bugfix follow-up on v2.5.9, not
+a new version number on its own).

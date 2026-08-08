@@ -30,7 +30,12 @@ double haversineMeters(double lat1, double lon1, double lat2, double lon2)
 
 }  // namespace
 
-GarminService::GarminService(QObject *parent) : QObject(parent) {}
+GarminService::GarminService(QObject *parent) : QObject(parent)
+{
+    m_detectTimer.setInterval(kDetectIntervalMs);
+    connect(&m_detectTimer, &QTimer::timeout, this, &GarminService::detect);
+    m_detectTimer.start();
+}
 
 QString GarminService::formatFirmwareVersion(const QString &raw)
 {
@@ -176,6 +181,13 @@ void GarminService::detect()
         }
     }
 
+    // Only re-read/re-parse activity and route files on a real connect transition (a fresh
+    // plug-in, or a different device swapped in) - detect() itself now runs continuously
+    // (see m_detectTimer's own comment), and re-parsing every real GPX file on the device
+    // every 2s even while nothing changed would be real, needless disk work.
+    const bool wasConnected = m_connected;
+    const QString previousModel = m_model;
+
     m_connected = !m_volumes.isEmpty() && !model.isEmpty();
     m_model = model;
     m_firmwareVersion = firmware;
@@ -186,9 +198,15 @@ void GarminService::detect()
     emit detectingChanged();
     emit deviceChanged();
 
-    if (m_connected) {
+    if (m_connected && (!wasConnected || previousModel != m_model)) {
         refreshActivities();
         refreshDeviceGpx();
+    } else if (!m_connected && wasConnected) {
+        m_activities.clear();
+        m_onDeviceRoutes.clear();
+        m_onDevicePois.clear();
+        emit activitiesChanged();
+        emit deviceGpxChanged();
     }
 }
 

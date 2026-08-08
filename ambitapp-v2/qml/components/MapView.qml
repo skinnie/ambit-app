@@ -78,16 +78,23 @@ Item {
     // to fit into - a thumbnail card and the large detail view naturally end up at
     // different zooms for the same track, which is correct (more screen space fits a
     // tighter view). Real request 2026-08-08 ("make the default zoom level enough so we
-    // can see the full trace") - margin loosened from 0.8 to 0.65 (35% padding instead of
-    // 20%) after real eTrex hardware testing showed the tighter fit could still crop part
-    // of a real track - erring toward showing more than the bare minimum by default.
+    // can see the full trace") - margin loosened twice (0.8 -> 0.65 -> 0.5, i.e. 50%
+    // padding) after real eTrex hardware testing kept showing a real track still slightly
+    // cropped - erring toward showing clearly more than the bare minimum by default.
+    // Component.onCompleted now defers its first fit via Qt.callLater(): a real, standard
+    // QML technique for "wait until this item's own layout pass (anchors.fill against a
+    // parent whose own size may still be settling through a Card/Column chain) has actually
+    // finished" - calling _refitZoom() synchronously here could still see a stale width on
+    // a items several layout levels deep, which onWidthChanged then only partially
+    // recovers from since it re-fits from whatever *that* stale width was, not a fully
+    // resolved one.
     property int currentZoom: zoomLevel
     function _refitZoom() {
         if (!_trackBounds || width <= 0 || height <= 0) {
             currentZoom = zoomLevel
             return
         }
-        const margin = 0.65
+        const margin = 0.5
         let z = 18
         for (; z > 1; z--) {
             const span = _spanPxAt(z, _trackBounds)
@@ -95,8 +102,8 @@ Item {
         }
         currentZoom = z
     }
-    Component.onCompleted: _refitZoom()
-    onTrackPointsChanged: _refitZoom()
+    Component.onCompleted: Qt.callLater(_refitZoom)
+    onTrackPointsChanged: Qt.callLater(_refitZoom)
     onWidthChanged: _refitZoom()
     onHeightChanged: _refitZoom()
 

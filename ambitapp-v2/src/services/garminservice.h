@@ -2,6 +2,7 @@
 
 #include <QObject>
 #include <QQmlEngine>
+#include <QTimer>
 #include <QVariantList>
 
 // Real, 2026-08-08 ("let's forward to implement the garmin support as we did in the
@@ -138,6 +139,19 @@ private:
     bool m_hasSdCard = false;
 
     QList<Volume> m_volumes;
+
+    // Real bug, 2026-08-08 ("I had two devices connected at the same time. It only shows
+    // one, and it takes a bit of time to re-detect the etrex after I unplug the suunto"):
+    // detect() used to only ever run once, from HomePage.qml's own Component.onCompleted -
+    // if you're already on Home when you unplug the Ambit3, nothing re-triggers it, so the
+    // UI stays showing whichever device was found first until you navigate away and back.
+    // Unlike DeviceService's own Ambit3 polling (a real USB round trip through a Python
+    // subprocess, deliberately *not* polled continuously - see its own header comment),
+    // detect() here is a plain filesystem check (QStorageInfo + one small XML file) - cheap
+    // enough to just poll continuously, decoupling "is a Garmin here" from page navigation
+    // entirely, the same way WeatherService's own background timer runs unconditionally.
+    QTimer m_detectTimer;
+    static constexpr int kDetectIntervalMs = 2000;
 
     bool m_activitiesLoading = false;
     QVariantList m_activities;

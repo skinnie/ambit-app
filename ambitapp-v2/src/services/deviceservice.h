@@ -66,8 +66,7 @@ public:
     int batteryPercent() const { return m_batteryPercent; }
 
     // Checks /api/health, then /api/device (identity, battery). Read-only on the backend
-    // side, safe to call any time. Resets the auto-retry counter below - a manual click on
-    // "Refresh" always gets the full retry budget again, not whatever was left over.
+    // side, safe to call any time.
     Q_INVOKABLE void refresh();
 
     bool gpsOrbitBusy() const { return m_gpsOrbitBusy; }
@@ -109,32 +108,27 @@ private:
     bool m_gpsOrbitBusy = false;
     QString m_gpsOrbitStatusText;
 
-    // Real auto-retry, matching what the real Android app does on its own Home screen
-    // (poll every ~1.2s for up to 15s while searching for the device) - found missing here
-    // via real testing, 2026-08-07. Adapted to this backend's real per-attempt cost (a
-    // subprocess round trip, not a cheap OS-level USB query): fewer, further-apart
-    // attempts, not a tight poll loop.
-    QTimer m_retryTimer;
-    int m_retryCount = 0;
-    static constexpr int kMaxRetries = 6;
-    static constexpr int kRetryIntervalMs = 3000;
+    // Auto-refresh, real request 2026-08-08 ("if watch is connected don't refresh, if not
+    // connected refresh with a 1 second interval, remove the refresh button"). Superseded
+    // an earlier 5s-always-polling design (see V3_CHANGELOG.md).
+    QTimer m_pollTimer;
+    static constexpr int kPollIntervalMs = 1000;
 
-    // Background auto-refresh, real request 2026-08-08 ("refresh is not automatic to the
-    // watch"). 2s was asked for but explicitly flagged back as too aggressive: unlike
-    // WeatherService's own timer (a plain HTTPS GET), every refresh() here is a real
-    // subprocess spawn plus a real USB open/command/close round trip against physical
-    // hardware, serialized behind WATCH_LOCK with every other watch action (Activities,
-    // Routes, POIs, GPS orbit) - polling that every 2s indefinitely would mean real,
-    // continuous CPU/process churn and could make an unrelated tap feel stalled if it lands
-    // mid-poll. 5s keeps "did I just plug in the watch" feeling responsive at a fraction of
-    // the churn - see V3_CHANGELOG.md for the fuller reasoning.
-    QTimer m_autoRefreshTimer;
-    static constexpr int kAutoRefreshIntervalMs = 5000;
+    // Real bug, found live 2026-08-08 ("it is blocked on ambit connected even if it
+    // disconnected"): taking "don't refresh once connected" completely literally - stopping
+    // m_pollTimer outright and also removing the manual Refresh button in the same round -
+    // meant a real disconnection was *never* noticed once deviceInfoOk had gone true: with
+    // nothing polling and no button, refresh() would simply never run again. This slower
+    // heartbeat is the real fix - not a return to fast polling, just a low-cost "is it still
+    // there" check every 10s while connected, so a real unplug gets noticed within a bounded
+    // time instead of being stuck forever. m_pollTimer (1s) stays reserved for the "actively
+    // searching" case; the two are never running at the same time.
+    QTimer m_heartbeatTimer;
+    static constexpr int kHeartbeatIntervalMs = 10000;
 
     void setLoading(bool value);
     void setLastError(const QString &friendlyMessage, const QString &technicalDetail);
     void fetchDeviceInfo();
-    void scheduleRetry();
     void logToFile(const QString &line);
 
     static QUrl backendUrl(const QString &path);
