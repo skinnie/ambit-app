@@ -46,6 +46,21 @@ PRODUCT_IDS = {
     0x002A: "Kailash (Hoopoe)",
 }
 
+
+def resolve_product_id(name):
+    """`--device NAME` -> a PRODUCT_IDS key, or raises SystemExit with the real candidate
+    list if NAME matches none or more than one (an ambiguous match picking the wrong watch
+    silently would defeat the entire point of this flag)."""
+    name_lower = name.lower()
+    matches = [pid for pid, label in PRODUCT_IDS.items() if name_lower in label.lower()]
+    if len(matches) == 1:
+        return matches[0]
+    labels = ", ".join(f"{v!r}" for v in PRODUCT_IDS.values())
+    if not matches:
+        raise SystemExit(f"--device {name!r} matches none of: {labels}")
+    raise SystemExit(f"--device {name!r} is ambiguous, matches more than one of: {labels}")
+
+
 CMD_DEVICE_INFO = 0x0000
 CMD_SETTINGS_READ = 0x1100
 CMD_MEMORY_MAP = 0x0B21
@@ -117,9 +132,16 @@ def open_hid(hid, path):
 class Link:
     """HID transport. In dry-run no device is opened."""
 
-    def __init__(self, dry_run=True, verbose=False):
+    def __init__(self, dry_run=True, verbose=False, product_id=None):
         self.dry_run = dry_run
         self.verbose = verbose
+        # Real, 2026-08-08: with an Ambit3 and a Kailash plugged in at once (a real, ongoing
+        # setup this session, not hypothetical), open()'s old "try every known product_id,
+        # take whichever opens first" always landed on whichever PRODUCT_IDS lists earlier -
+        # silently the wrong watch for anything that needs to target one specifically. None
+        # (the default) keeps that exact prior behavior; pass a specific key from
+        # PRODUCT_IDS to open only that one even with others also connected.
+        self.product_id = product_id
         self.sequence = 0
         self.device = None
         self.sent = []
@@ -146,16 +168,24 @@ class Link:
         import hid  # imported only when a device is really opened
         import time
 
+        wanted = ({self.product_id: PRODUCT_IDS[self.product_id]} if self.product_id is not None
+                  else PRODUCT_IDS)
+
         attempts = 5
         delay_s = 0.4
         failures = []
         for attempt in range(1, attempts + 1):
-            found = [(entry, label) for product_id, label in PRODUCT_IDS.items()
+            found = [(entry, label) for product_id, label in wanted.items()
                      for entry in hid.enumerate(VENDOR_ID, product_id)]
             if not found:
                 if attempt < attempts:
                     time.sleep(delay_s)
                     continue
+                if self.product_id is not None:
+                    raise RuntimeError(
+                        f"no {PRODUCT_IDS[self.product_id]} on the USB bus (looked only for "
+                        f"product_id 0x{self.product_id:04x} - other Suunto watches may still "
+                        "be connected). Check the cable and that `lsusb` lists it.")
                 raise RuntimeError(
                     "no Ambit3 on the USB bus. Check the cable, then that `lsusb` lists "
                     "a device whose id starts with 1493:")
@@ -373,7 +403,7 @@ def run_nav(args):
         print(f"### {args.from_capture}, navigation database as written")
         return 0 if show_navigation(flash) else 1
 
-    link = Link(dry_run=False, verbose=args.verbose)
+    link = Link(dry_run=False, verbose=args.verbose, product_id=args.product_id)
     print("read-only: 0x0b17 reads flash, nothing is written")
     link.open()
     regions = {}
@@ -413,6 +443,22 @@ def run_nav(args):
     return 0 if ok else 1
 
 
+def descriptor_for_product_id(product_id):
+    """Real bug, found 2026-08-08 investigating whether Kailash's settings are writable over
+    cable (task: "Investigate Kailash settings write path"): show_settings()/show_entries()
+    both unconditionally called sbem_schema.default_descriptor(), which globs for Ambit3's
+    own reference firmware (2.4.17) - exactly the same silent-wrong-schema bug already found
+    and fixed in kailash_history.py's own KAILASH_DESCRIPTOR. Returns Kailash's own real
+    descriptor for its product_id (0x002A), None for everything else - callers fall back to
+    sbem_schema.default_descriptor() in that case, unchanged from before this existed."""
+    import sbem_schema
+    if product_id == 0x002A:
+        path = (sbem_schema.ASSETS / "APK" / "kailash" / "Suunto 7R" / "Container"
+                / "Documents" / "descr+79DC39510E000100+2.0.5")
+        return path if path.exists() else None
+    return None
+
+
 def settings_from_capture(capture):
     """The 0x1100 reply of a capture, for exercising the decoding without a watch."""
     for m in messages(capture):
@@ -421,7 +467,7 @@ def settings_from_capture(capture):
     raise ValueError(f"no 0x1100 reply in {capture}")
 
 
-def show_settings(payload, show_all=False, redacted=False):
+def show_settings(payload, show_all=False, redacted=False, descriptor=None):
     """Decodes a 0x1100 reply through the SuuntoLink schema. Returns the list of BLE
     bonds carrying a key, or None when the schema is missing and the question cannot
     be answered. Never return an empty list in that case: an absent descriptor once
@@ -433,7 +479,7 @@ def show_settings(payload, show_all=False, redacted=False):
         print("  no SBEM0102 payload in the reply")
         return None
 
-    descriptor = sbem_schema.default_descriptor()
+    descriptor = descriptor or sbem_schema.default_descriptor()
     if not descriptor.exists():
         print(f"  CANNOT DECIDE: the SuuntoLink descriptor is missing.\n"
               f"  Expected a descr+SERIAL+{sbem_schema.REFERENCE_FW} file in "
@@ -762,18 +808,19 @@ def run_query(args):
             return 1
         print(f"### {args.from_capture}, 0x{command:04x} reply ({len(payload)} B)")
     else:
-        link = Link(dry_run=False, verbose=args.verbose)
+        link = Link(dry_run=False, verbose=args.verbose, product_id=args.product_id)
         print(f"read-only: the 0x{command:04x} query, nothing is written")
         link.open()
         payload = link.command(command, request)
         print(f"  reply {len(payload)} B")
 
+    descriptor = descriptor_for_product_id(args.product_id) if not args.from_capture else None
     if args.action == "settings":
-        return 0 if show_settings(payload, args.all, args.redact) is not None else 1
-    return 0 if show_entries(payload, interesting, args.all, args.redact) is not None else 1
+        return 0 if show_settings(payload, args.all, args.redact, descriptor) is not None else 1
+    return 0 if show_entries(payload, interesting, args.all, args.redact, descriptor) is not None else 1
 
 
-def show_entries(payload, interesting, show_all=False, redacted=False):
+def show_entries(payload, interesting, show_all=False, redacted=False, descriptor=None):
     """Names and decodes a reply's SBEM entries. Returns None when the schema is missing,
     for the same reason show_settings() does: an unnamed dump must not read as an answer.
     """
@@ -783,7 +830,7 @@ def show_entries(payload, interesting, show_all=False, redacted=False):
     if head < 0:
         print("  no SBEM0102 payload in the reply")
         return None
-    descriptor = sbem_schema.default_descriptor()
+    descriptor = descriptor or sbem_schema.default_descriptor()
     if not descriptor.exists():
         print(f"  CANNOT DECIDE: the SuuntoLink descriptor is missing from "
               f"{descriptor.parent},\n  so the entries cannot be named. See "
@@ -839,7 +886,13 @@ def main():
                              "same flash data already read for the summary above it")
     parser.add_argument("--verbose", action="store_true",
                         help="logs every 64-byte report")
+    parser.add_argument("--device", metavar="NAME",
+                        help="case-insensitive substring match against PRODUCT_IDS' own "
+                             "labels (e.g. 'kailash', 'ambit3 peak') - which watch to open "
+                             "when more than one is plugged in at once; without this, the "
+                             "first one that opens wins, same as always")
     args = parser.parse_args()
+    args.product_id = resolve_product_id(args.device) if args.device else None
 
     if args.action == "route" and not args.gpx:
         parser.error("route expects at least one GPX")
@@ -856,7 +909,7 @@ def main():
     if args.from_capture or args.all or args.redact or args.save:
         parser.error("--from, --all, --redact and --save do not apply to reset or route")
 
-    link = Link(dry_run=not args.write, verbose=args.verbose)
+    link = Link(dry_run=not args.write, verbose=args.verbose, product_id=args.product_id)
     if args.write:
         print("!! REAL WRITE requested")
         link.open()
