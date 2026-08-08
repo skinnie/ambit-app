@@ -201,7 +201,18 @@ QVariantMap GarminService::parseActivityGpx(const QString &gpxText)
     result[QStringLiteral("fitBase64")] = QString();  // Garmin activities read here are GPX-only
 
     QVariantList track;
-    QList<QDateTime> times;
+    // Real bug found from real hardware data, 2026-08-08: a Garmin "Current.gpx" file can
+    // contain multiple disjoint <trkseg> recording sessions (real device behavior, not
+    // malformed data - the file isn't necessarily cleared between separate recordings), and
+    // the very first version of this summed distance/duration across the *whole* file as if
+    // it were one continuous move - a real track showed "997h duration" for a 35 km move
+    // because of a multi-day gap between two sessions in the same file. Points and
+    // timestamps are now grouped by segment (segments[] indexed by segment number, never by
+    // a pointer into the QList, which QList::append() can invalidate on reallocation), and
+    // both distance and duration are computed *within* each segment only - a segment
+    // boundary is a real recording gap, not a move, so it's never bridged.
+    QList<QList<QDateTime>> segments;
+    int currentSegmentIndex = -1;
     QXmlStreamReader xml(gpxText);
     QString currentTag, pendingLat, pendingLon, pendingEle, pendingTime;
     bool haveName = false;
@@ -210,7 +221,10 @@ QVariantMap GarminService::parseActivityGpx(const QString &gpxText)
         const auto token = xml.readNext();
         if (token == QXmlStreamReader::StartElement) {
             currentTag = xml.name().toString();
-            if (currentTag == QStringLiteral("trkpt")) {
+            if (currentTag == QStringLiteral("trkseg")) {
+                segments.append(QList<QDateTime>());
+                currentSegmentIndex = segments.size() - 1;
+            } else if (currentTag == QStringLiteral("trkpt")) {
                 pendingLat = xml.attributes().value(QStringLiteral("lat")).toString();
                 pendingLon = xml.attributes().value(QStringLiteral("lon")).toString();
                 pendingEle.clear();
@@ -219,14 +233,22 @@ QVariantMap GarminService::parseActivityGpx(const QString &gpxText)
         } else if (token == QXmlStreamReader::EndElement) {
             const QString tag = xml.name().toString();
             if (tag == QStringLiteral("trkpt")) {
+                if (currentSegmentIndex < 0) {
+                    // Defensive: a bare <trkpt> directly under <trk>, no <trkseg> wrapper -
+                    // not real GPX per spec, but treated as its own one-segment file rather
+                    // than dropped.
+                    segments.append(QList<QDateTime>());
+                    currentSegmentIndex = segments.size() - 1;
+                }
                 QVariantMap point;
                 point[QStringLiteral("lat")] = pendingLat.toDouble();
                 point[QStringLiteral("lon")] = pendingLon.toDouble();
                 point[QStringLiteral("ele")] = pendingEle.toDouble();
+                point[QStringLiteral("_seg")] = currentSegmentIndex;
                 track.append(point);
                 const auto dt = QDateTime::fromString(pendingTime, Qt::ISODate);
                 if (dt.isValid())
-                    times.append(dt);
+                    segments[currentSegmentIndex].append(dt);
             }
             currentTag.clear();
         } else if (token == QXmlStreamReader::Characters && !xml.isWhitespace()) {
@@ -248,6 +270,8 @@ QVariantMap GarminService::parseActivityGpx(const QString &gpxText)
     for (int i = 1; i < track.size(); i++) {
         const auto prev = track.at(i - 1).toMap();
         const auto cur = track.at(i).toMap();
+        if (prev.value(QStringLiteral("_seg")).toInt() != cur.value(QStringLiteral("_seg")).toInt())
+            continue;  // a real recording-session boundary, not a real move between them
         distance += haversineMeters(prev.value(QStringLiteral("lat")).toDouble(),
                                      prev.value(QStringLiteral("lon")).toDouble(),
                                      cur.value(QStringLiteral("lat")).toDouble(),
@@ -257,7 +281,12 @@ QVariantMap GarminService::parseActivityGpx(const QString &gpxText)
         if (eleDelta > 0)
             ascent += eleDelta;
     }
-    const qint64 durationSeconds = times.size() >= 2 ? times.first().secsTo(times.last()) : 0;
+
+    qint64 durationSeconds = 0;
+    for (const auto &seg : segments) {
+        if (seg.size() >= 2)
+            durationSeconds += seg.first().secsTo(seg.last());
+    }
 
     result[QStringLiteral("distanceMeters")] = distance;
     result[QStringLiteral("durationSeconds")] = durationSeconds;

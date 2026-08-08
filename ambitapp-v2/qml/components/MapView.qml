@@ -73,17 +73,21 @@ Item {
         return { w: lonSpan * pxPerLon, h: spanLatPx }
     }
 
-    // Auto-fit zoom: the highest zoom where the track's bbox (with ~20% padding) still
-    // fits inside this view. Only takes over when there's a real track and real size to fit
-    // into - a thumbnail card and the large detail view naturally end up at different zooms
-    // for the same track, which is correct (more screen space fits a tighter view).
+    // Auto-fit zoom: the highest zoom where the track's bbox (with real padding around it)
+    // still fits inside this view. Only takes over when there's a real track and real size
+    // to fit into - a thumbnail card and the large detail view naturally end up at
+    // different zooms for the same track, which is correct (more screen space fits a
+    // tighter view). Real request 2026-08-08 ("make the default zoom level enough so we
+    // can see the full trace") - margin loosened from 0.8 to 0.65 (35% padding instead of
+    // 20%) after real eTrex hardware testing showed the tighter fit could still crop part
+    // of a real track - erring toward showing more than the bare minimum by default.
     property int currentZoom: zoomLevel
     function _refitZoom() {
         if (!_trackBounds || width <= 0 || height <= 0) {
             currentZoom = zoomLevel
             return
         }
-        const margin = 0.8
+        const margin = 0.65
         let z = 18
         for (; z > 1; z--) {
             const span = _spanPxAt(z, _trackBounds)

@@ -113,31 +113,21 @@ Flickable {
                 // modes that send to the watch, they only should send for sdcard, check
                 // android app") - same rule and same warning as Routes' own Send button,
                 // see RoutesPage.qml's own comment on this for the full reasoning.
-                // Real request 2026-08-08 (real hardware confirmed working): plain white
-                // card background + grey text, matching this page's own muted description
-                // text, instead of a loud tinted warning box.
-                Rectangle {
+                // Real request 2026-08-08 (real hardware confirmed working): no frame at
+                // all - plain text matching this page's own muted description text, not a
+                // boxed warning.
+                Text {
                     visible: HomeViewModel.isGarmin
                     width: parent.width
-                    height: addWarningText.implicitHeight + Theme.spacingSmall * 2
-                    radius: Theme.radiusSmall
-                    color: Theme.card
-                    border.color: Theme.warning
-                    border.width: 1
-                    Text {
-                        id: addWarningText
-                        anchors.fill: parent
-                        anchors.margins: Theme.spacingSmall
-                        wrapMode: Text.WordWrap
-                        color: Theme.mutedText
-                        font.pixelSize: 11
-                        text: GarminService.hasSdCard
-                            ? qsTr("This will be sent to the SD card only - writing to " +
-                                    "internal memory can break your device.")
-                            : qsTr("No SD card detected in this Garmin device - sending a " +
-                                    "POI is disabled. Writing to internal memory can " +
-                                    "break your device.")
-                    }
+                    wrapMode: Text.WordWrap
+                    color: Theme.mutedText
+                    font.pixelSize: 11
+                    text: GarminService.hasSdCard
+                        ? qsTr("This will be sent to the SD card only - writing to " +
+                                "internal memory can break your device.")
+                        : qsTr("No SD card detected in this Garmin device - sending a " +
+                                "POI is disabled. Writing to internal memory can " +
+                                "break your device.")
                 }
 
                 Button {
