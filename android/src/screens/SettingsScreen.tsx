@@ -4,7 +4,7 @@ import {
   StyleSheet, Alert, ScrollView, ActivityIndicator, Linking,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { DecodedSetting } from '../services/AmbitSettingsReader';
+import { DecodedSetting, SettingField } from '../services/AmbitSettingsReader';
 import { readAmbitSettings, writeAmbitSetting } from '../services/AmbitSettingsService';
 import {
   getRunalyzeApiKey, saveRunalyzeApiKey, removeRunalyzeApiKey,
@@ -40,6 +40,8 @@ export default function SettingsScreen() {
   // Settings" tap instead (same "explicit action, no surprise USB traffic" spirit as the
   // rest of this app's own on-demand connect/read/disconnect flows - see PoiService.ts).
   const [ambitSettings, setAmbitSettings] = useState<DecodedSetting[] | null>(null);
+  const [ambitSettingsFields, setAmbitSettingsFields] = useState<SettingField[] | null>(null);
+  const [ambitIsKailash, setAmbitIsKailash] = useState(false);
   const [ambitSettingsPhase, setAmbitSettingsPhase] =
     useState<'idle' | 'connecting' | 'reading' | 'done' | 'error'>('idle');
   const [ambitSettingsError, setAmbitSettingsError] = useState<string | undefined>();
@@ -49,13 +51,16 @@ export default function SettingsScreen() {
     await readAmbitSettings(s => {
       setAmbitSettingsPhase(s.phase);
       if (s.settings) setAmbitSettings(s.settings);
+      if (s.fields) setAmbitSettingsFields(s.fields);
+      if (s.isKailash !== undefined) setAmbitIsKailash(s.isKailash);
       setAmbitSettingsError(s.error);
     });
   }
 
   async function handleWriteAmbitSetting(key: string, value: number) {
+    if (!ambitSettingsFields) return;
     setWritingKey(key);
-    await writeAmbitSetting(key, value, s => {
+    await writeAmbitSetting(key, value, ambitSettingsFields, s => {
       if (s.phase === 'done' || s.phase === 'error') {
         setWritingKey(null);
         if (s.error) Alert.alert(t.error, s.error);
@@ -312,14 +317,16 @@ export default function SettingsScreen() {
         )}
       </View>
 
-      {/* ── Ambit3 Settings - real, 2026-08-08. Cable settings-write is confirmed
-          working (see AmbitSettingsWriter.ts's own header comment: André confirmed on the
-          watch's own screen that flipping display_dark visibly switched it Light -> Dark).
-          Not for Kailash: this curated field table came from the Ambit3's own real schema
-          and screenshots and hasn't been checked against Kailash's much smaller,
-          differently-numbered one - see custom_modes_andre.md. ── */}
+      {/* ── Watch Settings - real, 2026-08-08. Cable settings-write is confirmed working
+          for both device types (see AmbitSettingsWriter.ts's own header comment: André
+          confirmed on each watch's own screen that flipping display_dark visibly switched
+          it Light -> Dark) - readAmbitSettings() detects which one is connected and picks
+          the matching curated table (AmbitSettingsService.ts's own header comment), so
+          this section works unmodified for either. ── */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>{t.ambitSettingsSection}</Text>
+        <Text style={styles.sectionTitle}>
+          {ambitIsKailash ? t.kailashSettingsSection : t.ambitSettingsSection}
+        </Text>
         <Text style={styles.sectionDesc}>{t.ambitSettingsDesc}</Text>
 
         {!ambitSettings && ambitSettingsPhase !== 'connecting' && ambitSettingsPhase !== 'reading' && (

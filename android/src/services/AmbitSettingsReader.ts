@@ -1,20 +1,22 @@
 import { base64ToBytes } from './Base64';
 
-// Decodes the Ambit3's real sml.DeviceSettings reply (0x1100) - a curated table of real,
-// SuuntoLink-screenshot-visible fields, mirroring the companion research project's
-// tools/settings_write.py exactly (same fields, same real entry IDs/enum choices, all
-// confirmed live against André's own connected Ambit3 Peak, 2026-08-08 - see that file's
-// own docstring and custom_modes_andre.md's "settings write" section for the full story,
-// including a real bug found there: entry IDs are assigned per schema descriptor and are
-// NOT portable across watches - reusing an ID read from one device's schema against
-// another silently hits a different field, with no error at all).
+// Decodes a real sml.DeviceSettings reply (0x1100) - two curated tables, one per real
+// schema family, mirroring the companion research project's tools/settings_write.py
+// exactly (same fields, same real entry IDs/enum choices, all confirmed live against
+// André's own connected watches, 2026-08-08 - see that file's own docstring and
+// custom_modes_andre.md's "settings write" sections for the full story, including a real
+// bug found there: entry IDs are assigned per schema descriptor and are NOT portable
+// across watches - reusing an ID read from one device's schema against another silently
+// hits a different field, with no error at all).
 //
 // Unlike the desktop tool, this hardcodes the real entry IDs directly rather than parsing
 // a schema descriptor file at runtime - Android doesn't ship (and has no use for) the
-// SuuntoLink `descr+SERIAL+FW` file the desktop side reads. These IDs were read live off a
-// real Ambit3 Peak and are specific to that schema family (Ambit3/Traverse/Ambit2) - not
-// assumed to apply to Kailash, whose own real schema is confirmed elsewhere in this
-// project to be meaningfully smaller and differently numbered.
+// SuuntoLink `descr+SERIAL+FW` file the desktop side reads. AMBIT3_SETTINGS_FIELDS was
+// read live off a real Ambit3 Peak (Ambit3/Traverse/Ambit2 schema family);
+// KAILASH_SETTINGS_FIELDS was read live off a real Kailash - its own real, differently-
+// numbered, smaller schema (e.g. Display.Invert is entry 0x27 there vs. the Ambit3's
+// 0x20), sourced from the real 7R iOS app's own settings screenshots
+// (assets/APK/kailash/IMG_2741.png, IMG_2742.png), not the Ambit3's SuuntoLink ones.
 //
 // Every field here is a plain top-level SBEM entry (id/len/data, no nested GROUP the way
 // DeviceHistory's LogHeaders was - see KailashHistoryReader.ts for that shape) - one
@@ -42,7 +44,7 @@ export interface SettingField {
 // Real, live-confirmed 2026-08-08 against André's own Ambit3 Peak - every value below
 // matched the real SuuntoLink "General Settings" screenshots exactly once entry IDs were
 // derived correctly (assets/ambit3 pcap/v2/general ambit settings/).
-export const SETTINGS_FIELDS: SettingField[] = [
+export const AMBIT3_SETTINGS_FIELDS: SettingField[] = [
   { key: 'date_format', entryId: 0x01, kind: 'enum', byteWidth: 1,
     choices: [{ value: 0, label: 'DDMM' }, { value: 1, label: 'MMDD' }] },
   { key: 'tones', entryId: 0x02, kind: 'enum', byteWidth: 1,
@@ -83,6 +85,41 @@ export const SETTINGS_FIELDS: SettingField[] = [
     choices: [{ value: 0, label: 'Normal' }, { value: 1, label: 'Off' }, { value: 2, label: 'Night' }, { value: 3, label: 'Toggle' }] },
   { key: 'backlight_brightness', entryId: 0x22, kind: 'number', byteWidth: 1 },
   { key: 'storm_alarm', entryId: 0x27, kind: 'bool', byteWidth: 1 },
+];
+
+// Kailash's own real, smaller schema (41 entries total vs. the Ambit3's ~324) - every
+// field here is exactly what the real 7R iOS app's own settings screen shows (see this
+// file's own header comment for the screenshot source), except `display_dark`: not shown
+// in the 7R app's own UI at all, but included anyway - it's the one field independently,
+// live-hardware-confirmed on this exact watch (André confirmed on the Kailash's own
+// screen that it visibly switched Light -> Dark), a stronger bar than everything else in
+// this table has individually cleared. Real, live-confirmed 2026-08-08.
+export const KAILASH_SETTINGS_FIELDS: SettingField[] = [
+  { key: 'date_format', entryId: 0x01, kind: 'enum', byteWidth: 1,
+    choices: [{ value: 0, label: 'DDMM' }, { value: 1, label: 'MMDD' }] },
+  { key: 'tones', entryId: 0x02, kind: 'enum', byteWidth: 1,
+    choices: [{ value: 0, label: 'Buttons off' }, { value: 1, label: 'All on' }, { value: 2, label: 'All off' }] },
+  { key: 'vibration', entryId: 0x03, kind: 'enum', byteWidth: 1,
+    choices: [{ value: 0, label: 'Buttons off' }, { value: 1, label: 'All on' }, { value: 2, label: 'All off' }] },
+  { key: 'units_mode', entryId: 0x07, kind: 'enum', byteWidth: 1,
+    choices: [{ value: 0, label: 'Metric' }, { value: 1, label: 'Imperial' }] },
+  { key: 'language', entryId: 0x08, kind: 'enum', byteWidth: 1,
+    choices: [
+      { value: 0, label: 'Dansk' }, { value: 1, label: 'Deutsch' }, { value: 2, label: 'English' },
+      { value: 3, label: 'Espanol' }, { value: 4, label: 'Francais' }, { value: 5, label: 'Italiano' },
+      { value: 6, label: 'Nederlands' }, { value: 7, label: 'Norsk' }, { value: 8, label: 'Portugues' },
+      { value: 9, label: 'Suomi' }, { value: 10, label: 'Svenska' }, { value: 11, label: 'Chinese' },
+      { value: 12, label: 'Japanese' }, { value: 13, label: 'Korean' }, { value: 14, label: 'Cestina' },
+      { value: 15, label: 'Polski' }, { value: 16, label: 'Russian' },
+    ] },
+  { key: 'time_format', entryId: 0x09, kind: 'enum', byteWidth: 1,
+    choices: [{ value: 0, label: '24h' }, { value: 1, label: '12h' }] },
+  { key: 'display_contrast', entryId: 0x0f, kind: 'number', byteWidth: 1 },
+  { key: 'backlight_mode', entryId: 0x10, kind: 'enum', byteWidth: 1,
+    choices: [{ value: 0, label: 'Normal' }, { value: 1, label: 'Off' }, { value: 2, label: 'Night' }, { value: 3, label: 'Toggle' }] },
+  { key: 'backlight_brightness', entryId: 0x11, kind: 'number', byteWidth: 1 },
+  { key: 'storm_alarm', entryId: 0x17, kind: 'bool', byteWidth: 1 },
+  { key: 'display_dark', entryId: 0x27, kind: 'bool', byteWidth: 1 },
 ];
 
 const MAGIC = [0x53, 0x42, 0x45, 0x4d, 0x30, 0x31, 0x30, 0x32]; // "SBEM0102"
@@ -136,11 +173,13 @@ export interface DecodedSetting {
 }
 
 /** Decodes a base64 sml.DeviceSettings reply (see readSettingsRaw() in
- * native/AmbitUsbModule.ts). Returns every SETTINGS_FIELDS entry actually present in this
- * reply - a smaller/different schema (e.g. Kailash, if ever pointed at this decoder by
- * mistake) simply yields fewer rows, not an error, the same "missing is not broken" rule
- * KailashHistoryReader.ts's own decode already follows. */
-export function decodeSettings(b64: string): DecodedSetting[] {
+ * native/AmbitUsbModule.ts) against `fields` (AMBIT3_SETTINGS_FIELDS or
+ * KAILASH_SETTINGS_FIELDS - the caller must pick the right one for the connected watch,
+ * the same discipline settings_write.py's own settings_table(product_id) enforces on the
+ * desktop side). Returns every field actually present in this reply - a field missing
+ * from a given reply simply yields no row for it, not an error, the same "missing is not
+ * broken" rule KailashHistoryReader.ts's own decode already follows. */
+export function decodeSettings(b64: string, fields: SettingField[]): DecodedSetting[] {
   if (!b64) return [];
   const bytes = base64ToBytes(b64);
   const head = findMagic(bytes);
@@ -151,7 +190,7 @@ export function decodeSettings(b64: string): DecodedSetting[] {
   for (const e of entries) byId.set(e.id, e);
 
   const out: DecodedSetting[] = [];
-  for (const field of SETTINGS_FIELDS) {
+  for (const field of fields) {
     const entry = byId.get(field.entryId);
     if (!entry || entry.end - entry.start < field.byteWidth) continue;
     out.push({

@@ -267,6 +267,7 @@ const fr = {
 
   // SettingsScreen — Ambit3 Settings (2026-08-08)
   ambitSettingsSection: 'Réglages Ambit3',
+  kailashSettingsSection: 'Réglages Kailash',
   ambitSettingsDesc:
     'Réglages réels de la montre (langue, formats, luminosité, etc.), lus et modifiés par ' +
     'câble USB — confirmé sur du matériel réel le 8 août 2026.',
@@ -588,6 +589,7 @@ const en: typeof fr = {
 
   // SettingsScreen — Ambit3 Settings (2026-08-08)
   ambitSettingsSection: 'Ambit3 Settings',
+  kailashSettingsSection: 'Kailash Settings',
   ambitSettingsDesc:
     'Real watch settings (language, formats, brightness, etc.), read and written over ' +
     'USB cable - confirmed working against real hardware 2026-08-08.',
