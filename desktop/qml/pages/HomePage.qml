@@ -25,6 +25,21 @@ Flickable {
         DeviceService.checkGpsOrbitStatus();
     }
 
+    // Real, 2026-08-08 ("Yes I want to implement it both to desktop and android version").
+    // isKailash only becomes true once DeviceService.refresh() (fired above) has actually
+    // identified the connected watch, so this can't just be another Component.onCompleted
+    // call the way ActivityService.refresh() is - it has to react to isKailash itself
+    // becoming true, including on a later reconnect after the page was already loaded.
+    Connections {
+        target: HomeViewModel
+        function onIsKailashChanged() {
+            if (HomeViewModel.isKailash) {
+                KailashService.refreshHistory();
+                KailashService.refreshTrackLog();
+            }
+        }
+    }
+
     Column {
         id: column
         anchors.horizontalCenter: parent.horizontalCenter
@@ -229,6 +244,172 @@ Flickable {
         // --- Weather (Step 5) - collapses to nothing on its own if unavailable ---
         WeatherCard {}
 
+        // --- Kailash travel history & activity-mode logbook - real, 2026-08-08 ("resumind:
+        // 7r button, last city visit... if we could import this data which is on the watch
+        // and read it to our app would be awesome"). Kailash has no routes/POIs/sport-mode
+        // UI (it doesn't have sport modes at all - real, same day), so this is its one
+        // Kailash-specific card: visited cities/countries and travel stats matching the
+        // watch's own "7R" screen exactly, plus the real activity-mode logbook that turned
+        // out to be bundled in the same query (see KailashService's own header comment for
+        // where that was found - this project had separately been unable to locate it as
+        // its own flash region). No place names shown - the watch itself only ever reports
+        // coordinates + country code, not a city name; inventing a reverse-geocode lookup
+        // here wasn't asked for. ---
+        Card {
+            width: parent.width
+            visible: HomeViewModel.isKailash
+                     && (KailashService.loading || KailashService.historyOk
+                         || KailashService.lastError.length > 0)
+
+            Column {
+                width: parent.width
+                spacing: Theme.spacingMedium
+
+                Text { text: qsTr("Travel History"); font.bold: true; color: Theme.text }
+
+                Text {
+                    visible: KailashService.loading && !KailashService.historyOk
+                    color: Theme.mutedText
+                    text: qsTr("Reading travel history off the watch...")
+                }
+
+                Text {
+                    visible: !KailashService.loading && !KailashService.historyOk
+                             && KailashService.lastError.length > 0
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    color: Theme.error
+                    font.pixelSize: 12
+                    text: KailashService.lastError
+                }
+
+                Row {
+                    visible: KailashService.historyOk
+                    width: parent.width
+                    spacing: Theme.spacingLarge
+
+                    Column {
+                        spacing: 2
+                        Text { text: qsTr("Cities visited"); color: Theme.mutedText; font.pixelSize: 12 }
+                        Text {
+                            text: KailashService.citiesVisited
+                            color: Theme.text; font.pixelSize: 13
+                        }
+                    }
+                    Column {
+                        spacing: 2
+                        Text { text: qsTr("Countries visited"); color: Theme.mutedText; font.pixelSize: 12 }
+                        Text {
+                            text: KailashService.countriesVisited
+                            color: Theme.text; font.pixelSize: 13
+                        }
+                    }
+                    Column {
+                        spacing: 2
+                        Text { text: qsTr("Travel days"); color: Theme.mutedText; font.pixelSize: 12 }
+                        Text {
+                            text: KailashService.travellingDays
+                            color: Theme.text; font.pixelSize: 13
+                        }
+                    }
+                }
+
+                Row {
+                    visible: KailashService.historyOk
+                    width: parent.width
+                    spacing: Theme.spacingMedium
+
+                    Icon { glyph: Icons.pois; size: 24; color: Theme.primary }
+
+                    Column {
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: 2
+                        Text {
+                            text: KailashService.hasLastKnownLocation
+                                ? qsTr("%1, %2").arg(KailashService.lastKnownLatitude.toFixed(4))
+                                                .arg(KailashService.lastKnownLongitude.toFixed(4))
+                                : qsTr("No known location yet")
+                            color: Theme.text
+                            font.pixelSize: 13
+                        }
+                        Text {
+                            visible: KailashService.lastKnownCountry.length > 0
+                                     || KailashService.lastKnownTime.length > 0
+                            text: [KailashService.lastKnownCountry,
+                                   KailashService.lastKnownTime
+                                       ? qsTr("last seen %1").arg(
+                                             ActivityViewModel.formatDate(KailashService.lastKnownTime))
+                                       : ""].filter(s => s.length > 0).join(" · ")
+                            color: Theme.mutedText
+                            font.pixelSize: 12
+                        }
+                    }
+                }
+
+                Row {
+                    visible: KailashService.historyOk
+                    width: parent.width
+                    spacing: Theme.spacingLarge
+
+                    Column {
+                        spacing: 2
+                        Text { text: qsTr("Travelled distance"); color: Theme.mutedText; font.pixelSize: 12 }
+                        Text {
+                            text: ActivityViewModel.formatDistance(KailashService.travelledDistanceMeters)
+                            color: Theme.text; font.pixelSize: 13
+                        }
+                    }
+                    Column {
+                        spacing: 2
+                        Text { text: qsTr("Furthest from home"); color: Theme.mutedText; font.pixelSize: 12 }
+                        Text {
+                            text: ActivityViewModel.formatDistance(KailashService.furthestFromHomeMeters)
+                            color: Theme.text; font.pixelSize: 13
+                        }
+                    }
+                }
+
+                // Activity-mode logbook - a real, separate system from the passive TrackLog
+                // shown in "Last Activity" below (see kailash_history.py's own docstring):
+                // explicit recorded sessions, summary stats only, no GPS track.
+                Column {
+                    visible: KailashService.historyOk && KailashService.sessions.length > 0
+                    width: parent.width
+                    spacing: Theme.spacingSmall
+
+                    Text {
+                        text: qsTr("Activity mode logbook (%1)").arg(KailashService.sessions.length)
+                        color: Theme.mutedText
+                        font.pixelSize: 12
+                    }
+
+                    Repeater {
+                        model: KailashService.sessions
+                        delegate: Row {
+                            width: parent.width
+                            spacing: Theme.spacingMedium
+                            Text {
+                                width: 140
+                                text: ActivityViewModel.formatDate(modelData.when)
+                                color: Theme.text
+                                font.pixelSize: 12
+                            }
+                            Text {
+                                text: ActivityViewModel.formatDuration(modelData.durationSeconds)
+                                color: Theme.mutedText
+                                font.pixelSize: 12
+                            }
+                            Text {
+                                text: ActivityViewModel.formatDistance(modelData.distanceMeters)
+                                color: Theme.mutedText
+                                font.pixelSize: 12
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // --- Last Activity - real, 2026-08-07 (was a Step 7 placeholder before
         // ActivityService actually worked; "New Activities" and the Home "Connections" card
         // were both dropped the same day - New Activities duplicated this card with nothing
@@ -237,22 +418,36 @@ Flickable {
             id: lastActivityCard
             width: parent.width
             readonly property bool activityLoading:
-                HomeViewModel.isGarmin ? GarminService.activitiesLoading : ActivityService.loading
+                HomeViewModel.isGarmin ? GarminService.activitiesLoading
+                : HomeViewModel.isKailash ? (KailashService.loading && !KailashService.trackLogOk)
+                : ActivityService.loading
             visible: activityLoading || lastActivityColumn.activity !== null
-                     || (!HomeViewModel.isGarmin && ActivityService.lastError.length > 0)
+                     || (!HomeViewModel.isGarmin && !HomeViewModel.isKailash
+                         && ActivityService.lastError.length > 0)
             Column {
                 id: lastActivityColumn
                 width: parent.width
                 spacing: Theme.spacingSmall
 
-                readonly property var activity: ActivityViewModel.mostRecent(
-                    HomeViewModel.isGarmin ? GarminService.activities : ActivityService.activities)
+                // Kailash: KailashService.trackLogActivity is already a single activity, not
+                // a list (its own docstring: TrackLog is passive background tracking, not a
+                // per-session logbook the way GarminService/ActivityService's own activities
+                // are) - shown directly rather than run through mostRecent().
+                readonly property var activity: HomeViewModel.isKailash
+                    ? (KailashService.trackLogOk ? KailashService.trackLogActivity : null)
+                    : ActivityViewModel.mostRecent(
+                          HomeViewModel.isGarmin ? GarminService.activities : ActivityService.activities)
 
                 Row {
                     spacing: Theme.spacingSmall
-                    Text { text: qsTr("Last Activity"); font.bold: true; color: Theme.text }
                     Text {
-                        visible: !HomeViewModel.isGarmin && ActivityService.showingCachedData
+                        text: HomeViewModel.isKailash ? qsTr("Recent Track") : qsTr("Last Activity")
+                        font.bold: true
+                        color: Theme.text
+                    }
+                    Text {
+                        visible: !HomeViewModel.isGarmin && !HomeViewModel.isKailash
+                                 && ActivityService.showingCachedData
                         anchors.verticalCenter: parent.verticalCenter
                         text: qsTr("(cached)")
                         font.italic: true
@@ -262,20 +457,33 @@ Flickable {
                 }
 
                 Text {
-                    visible: HomeViewModel.isGarmin
-                        ? GarminService.activitiesLoading : ActivityService.loading
+                    visible: HomeViewModel.isGarmin ? GarminService.activitiesLoading
+                        : HomeViewModel.isKailash ? (KailashService.loading && !KailashService.trackLogOk)
+                        : ActivityService.loading
                     color: Theme.mutedText
-                    text: qsTr("Reading activities off the watch...")
+                    text: HomeViewModel.isKailash
+                        ? qsTr("Reading the passive GPS track off the watch...")
+                        : qsTr("Reading activities off the watch...")
                 }
 
                 Text {
-                    visible: !HomeViewModel.isGarmin && !ActivityService.loading
+                    visible: !HomeViewModel.isGarmin && !HomeViewModel.isKailash && !ActivityService.loading
                              && ActivityService.lastError.length > 0
                     width: parent.width
                     wrapMode: Text.WordWrap
                     color: Theme.error
                     font.pixelSize: 12
                     text: ActivityService.lastError
+                }
+
+                Text {
+                    visible: HomeViewModel.isKailash && !KailashService.loading
+                             && !KailashService.trackLogOk && KailashService.lastError.length > 0
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    color: Theme.error
+                    font.pixelSize: 12
+                    text: KailashService.lastError
                 }
 
                 Row {
