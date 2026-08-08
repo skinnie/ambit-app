@@ -537,7 +537,15 @@ def main():
     ap.add_argument("--json", action="store_true",
                      help="print one JSON line instead of human-readable output - for "
                           "ambitapp-v2/backend/server.py, not meant for a person to read")
+    ap.add_argument("--list-field-types", action="store_true",
+                     help="print the real FIELD_TYPES catalog as one JSON line and exit - "
+                          "no watch touched, for a UI's own data-field picker")
     args = ap.parse_args()
+
+    if args.list_field_types:
+        print(json.dumps({"ok": True, "fieldTypes": [
+            {"value": k, "name": v} for k, v in sorted(FIELD_TYPES.items())]}))
+        return 0
 
     if args.from_file:
         with open(args.from_file, "rb") as f:

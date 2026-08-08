@@ -124,6 +124,8 @@ class Handler(BaseHTTPRequestHandler):
             self._handle_settings_read()
         elif self.path == "/api/customodes":
             self._handle_customodes_read()
+        elif self.path == "/api/customodes/field-types":
+            self._handle_customodes_field_types()
         elif self.path == "/api/agps/status":
             self._handle_agps_status()
         else:
@@ -519,6 +521,18 @@ class Handler(BaseHTTPRequestHandler):
         if info is None:
             self._send_json(502, {"ok": False, "error": "custom_modes.py --json produced "
                                    "no parseable JSON", "raw_output": out, "stderr": err})
+            return
+        self._send_json(200 if info.get("ok") else 502, info)
+
+    def _handle_customodes_field_types(self):
+        """GET /api/customodes/field-types - the real FIELD_TYPES catalog (95 entries),
+        for a UI's own data-field picker when editing a display row's "type". No watch
+        touched at all - custom_modes.py --list-field-types just dumps a static dict."""
+        code, out, err = run_tool("custom_modes.py", ["--list-field-types"])
+        info = self._parse_last_json_line(out)
+        if info is None:
+            self._send_json(502, {"ok": False, "error": "custom_modes.py --list-field-types "
+                                   "produced no parseable JSON", "raw_output": out, "stderr": err})
             return
         self._send_json(200 if info.get("ok") else 502, info)
 
