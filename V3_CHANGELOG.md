@@ -7,6 +7,42 @@ they land, on the way to what André/Vincent have been calling "V3": wireless sy
 
 ---
 
+## 2026-08-08: eTrex screen inset further; Workout Builder gets a real light/dark/system theme and text cleanup
+
+- **eTrex icon screen inset further** - the white/grey-framed screen from the same day's
+  earlier pass was still touching the body's own outline at this icon's small sizes; shrunk
+  (0.74/0.5 of body size -> 0.62/0.42) with a bit more bottom margin so it sits clearly
+  inside the frame.
+- **`tools/workout_gui.py` (the Intervals launcher's actual UI) reworked, then rebuilt into
+  `dist/linux/Ambit3 Workout Builder`** (the packaged binary `IntervalsService` launches -
+  without a rebuild the running app keeps serving whatever was packaged before, which is
+  exactly what happened mid-session here: the first round of fixes were correct in source
+  but invisible until the binary was actually rebuilt):
+  - Real light/dark/system theme (CSS variables + a `data-theme` cycle button,
+    `light -> dark -> system`, persisted in `localStorage`) - previously just a bare
+    `color-scheme: light dark` hint with no explicit light palette and no way to force one.
+  - Intro text split into real paragraphs instead of one comma/semicolon-run-on block; the
+    "Add to SuuntoLink" / SuuntoLink's own "Add Suunto App" picker relationship got its own
+    dedicated paragraph, spelled out as two separate steps (this tool's button, then
+    SuuntoLink's own picker) rather than folded into the compile explanation.
+    "Important"/macOS-permission/disclaimer text moved out of the top of the page into a
+    `#notes` section at the very bottom, so the page opens on the actual builder instead of a
+    wall of caveats.
+  - New inline Linux note (two paragraphs, split at "Either") explaining the real options
+    since there's no native SuuntoLink for Linux: copy the compiled `.json` to a Windows/Mac
+    SuuntoLink install, or run SuuntoLink under Wine/a VM on the same machine and do the same
+    "Import compiled JSON" + "Add to SuuntoLink" steps there - explicitly marked untested/
+    unsupported either way, not a documented path. The old "Open instructions" button (which
+    just opened a README file saying roughly the same thing) was removed on Linux along with
+    its now-dead backend route/handler (`/api/open-instructions`, `open_path()`) - the
+    guidance lives on the page itself now, nothing to click for it.
+  - `VARIANT_NAMES` (the compiled-app compatibility list) gets the same "Ambit3" -> "Ambit 3"
+    spacing as `ambitapp-v2`'s own `HomeViewModel._modelNames` - the tool's own product name
+    ("Ambit3 Workout Builder") is intentionally unchanged, only the Suunto watch model names
+    it reports.
+
+---
+
 ## 2026-08-08: Intervals menu, Ambit3 Peak icon export, eTrex icon redrawn against a real photo, "Ambit 3" naming
 
 - **New "Intervals" nav entry (Suunto-only)**: launches `tools/workout_gui.py` (the App-Zone

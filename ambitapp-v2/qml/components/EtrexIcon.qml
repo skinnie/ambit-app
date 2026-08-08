@@ -99,12 +99,12 @@ Item {
     // real eTrex 10's screen is a light monochrome LCD, not a dark panel, so white reads
     // truer than the flat `root.color` fill this had before.
     Rectangle {
-        width: body.width * 0.74
-        height: body.height * 0.5
+        width: body.width * 0.62
+        height: body.height * 0.42
         radius: width * 0.08
         anchors.horizontalCenter: body.horizontalCenter
         anchors.bottom: body.bottom
-        anchors.bottomMargin: body.height * 0.12
+        anchors.bottomMargin: body.height * 0.16
         color: "white"
         border.color: root.color
         border.width: Math.max(1, root.size * 0.035)
