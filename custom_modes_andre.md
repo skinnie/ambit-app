@@ -1463,3 +1463,105 @@ live-observed-on-the-actual-watch-screen capabilities - a substantial, real expa
 the original rename-only milestone, all from a single focused session building on the exact
 same proven transport and the same "verify against a real known-working example before
 trusting an edit" discipline throughout.
+
+## CustomModes ported to Android - built, NOT yet hardware-confirmed on that platform
+
+Same day, following "yes full throttle. This weekend we will full debug the two watches and
+built the apps." Everything above this section is desktop, hardware-confirmed. This section
+is the Android port of the same feature - native C (`ambit3_read/write_custom_modes_raw()`
+in `device_driver_ambit3.c`, reusing already-proven primitives: `ambit3_read_flash_region`,
+`libambit_pmem20_data_write`, `sha256()`, the exact `CMD_DATA_TAIL`/`CMD_NAV_COMMIT`
+sequence) through JNI/Kotlin to a full TypeScript decoder/writer/service
+(`CustomModesReader.ts`/`Writer.ts`/`Service.ts`, generated from `tools/custom_modes.py`'s
+own `FIELD_TYPES`/`SETTING_FIELDS` rather than hand-transcribed, to rule out transcription
+errors) and a real `SportModesScreen.tsx` mirroring the desktop `SportModesPage.qml`'s own
+feature set (rename, autolap, HR limits, sensor pods, per-display field type). Found along
+the way: the pre-existing `libambit_pmem20_sport_mode_write()` in this codebase's own
+`libambit` is incomplete (calls the raw region write but ignores its own
+`include_sha256_hash` parameter, no tail/commit at all) - not used, superseded by the new
+function. **Explicit, standing caveat, distinct from every other native addition this
+session**: those all replayed an already-proven exact command sequence; this is a genuinely
+new composition of proven primitives that has itself never touched an Android device -
+`tsc`/`selftest.py`-level verification only, no watch. First real test is the weekend
+hardware session.
+
+## Kailash Home Location - a new field found from real BLE captures, confirmed against the
+## watch's own schema, now read+write on both platforms
+
+Same day. Checked two real iOS PacketLogger captures André provided (`assets/APK/kailash/
+kailashsethome.pklg`, `kailashsnotificationsandsethome.pklg`) with `tools/ble_pklg.py` - the
+same NSP-over-BLE frame reader the Ambit3 BLE work already built. Decoded the real 296-byte
+`sml.DeviceSettings` push and found entry `0x36`, not previously in `KAILASH_SETTINGS_FIELDS`
+at all: 8 bytes, two little-endian int32s, decoding (÷1e7) to `50.6240395, 3.0552564` -
+Lille, France, André's real home city, to within ~0.6 km.
+
+**Upgraded from "matches a real city" to schema-confirmed**, checking the real Kailash
+schema descriptor already on disk for that exact watch serial (`assets/APK/kailash/Suunto
+7R/Container/Documents/descr+79DC39510E000100+2.0.5`, matched via `tools/sbem_schema.py`):
+entry `0x36` is a **GROUP**, `sml.DeviceSettings.HomeLocation`, packing two int32 sub-fields
+(`Latitude` at `0x28`, `Longitude` at `0x29`), each with a real `<MOD>` tag
+(`PI*x/(10^7*180)`) confirming the degrees×1e7 encoding directly - not inferred. Confirmed
+absent from the Ambit3's own descriptor entirely - genuinely Kailash-only, not an Ambit3
+oversight. Also confirmed, re-checking something André specifically recalled: path strings
+(`Display.Backlight.Mode`, `Display.Invert`, `Time.Format`, ...) really are identical across
+both watches' descriptors, only the numeric entry ID differs per device - exactly why
+`settings_write.py` resolves fields by path suffix, live, per watch, and exactly the check
+that should happen before assuming a new capture is needed for a field suspected to exist on
+both devices.
+
+**Real, concrete gap this surfaced**: `HomeLocation` is the first curated field that's a
+GROUP, not a scalar leaf - `settings_write.py`'s `read_all()`/`write_one()` both assumed
+every curated key was a top-level SBEM entry. Fixed with `_group_containing()`
+(which GROUP, if any, owns a field id) and `_field_offset_in_group()`/`_entry_value()`
+(resolve a member's real byte position, reusing `sbem_schema.Schema.decode_entry()` rather
+than reimplementing offset math) - generic infrastructure, not special-cased to just these
+two keys, so a future GROUP-member field slots in the same way.
+
+**Full read+write built on request, both platforms, range-checked ([-90,90]/[-180,180]
+before anything is sent) and confirmed-by-reread like every other write in this project.**
+`SettingsScreen.tsx`/`SettingsPage.qml` render it as a free-text degrees input + Set button
+(no slider - no sane min/max for a coordinate; no stepper - needs a leading "-").
+
+**Two real bugs found while verifying this against the real captured bytes (no watch
+available in this environment - verification means a mock/FakeLink harness fed the real
+captured payload, not live hardware):**
+1. **Pre-existing, not introduced by this work**: `settings_write.py`'s `write_one()`
+   re-read confirmation used `len(after) > field_off + field.size` - an off-by-one. A field
+   occupying the very last bytes of the settings reply (`home_longitude` does, confirmed
+   against the real captured payload) has `field_off + field.size == len(after)` exactly,
+   so this always treated a perfectly good re-read as "too short" and silently reported a
+   false `ok: false` even when the write landed correctly. Never triggered before because no
+   existing curated field happened to sit at the very end of the payload. Fixed: `>=`.
+2. **Introduced by this change, caught before shipping**: the Android writer's `ok` check
+   compared the scale-divided `confirmedValue` directly against the caller's own unrounded
+   input - since a raw int32 can only round-trip 7 decimal digits, any realistic user input
+   with more precision would have reported `ok: false` on nearly every real write. Fixed by
+   comparing both sides in the same rounded-to-raw representation, mirroring
+   `settings_write.py`'s own `confirmed_raw == raw_new_value` (integer) comparison.
+
+**Not yet hardware-confirmed** - same standing caveat as CustomModes-on-Android above; the
+read side is schema-confirmed (as strong as this project's evidence gets without a live
+device), the write side follows the identical proven `0x1100`/`0x1101` mechanism, but
+nothing here has touched a real watch yet. Full technical derivation, including the exact
+byte-level verification commands, in the `ambit_app_kailash_home_location_field` memory.
+
+## Real documentation audit, same day: `android/` vs. `oss/opensportsync-main`
+
+Prompted by "since there were new findings, re-check all documentation again." Found a real,
+significant staleness while doing that, not just missing entries for the work above:
+`HANDOFF.md`'s "Two real apps" note and `CREDITS.md` both still described this project's
+Android app as living at `oss/opensportsync-main`, an unversioned sibling folder on the
+external drive - true for most of this project's life (flagged 2026-08-07 in
+`V3_CHANGELOG.md` as a real backup risk), but **already resolved earlier the same day this
+session's own work happened**: commits `bc35f15` (a real `git subtree` import of
+`guiguoz/opensportsync`'s own upstream history, 29 commits, at prefix `android/`) and
+`a4d2680` (the real diverged state - Garmin, BLE, everything since - landed on top) mean the
+live, git-tracked copy has been this repo's own `android/` all along today, not the external
+folder. Checked directly rather than assumed: diffed `oss/opensportsync-main` against
+`android/` file by file - every difference is `android/` being ahead (newer version number,
+more screens/services), nothing unique left behind on the external copy, so nothing was at
+risk of being lost. Fixed the stale claims in `HANDOFF.md`/`CREDITS.md`, added a resolving
+entry to `V3_CHANGELOG.md` rather than rewriting its original 2026-08-07 entry. One real,
+still-open item surfaced by re-reading `a4d2680`'s own commit message, not resolved here:
+`src/services/UpdateService.ts` exists in the real upstream project but wasn't carried into
+this fork's checkout - flagged for André/Vincent to decide, not silently dropped.

@@ -1112,3 +1112,27 @@ data itself:**
 
 All four changes committed together (not yet re-tagged - a bugfix follow-up on v2.5.9, not
 a new version number on its own).
+
+## 2026-08-08: the "opensportsync-main has no git repository at all" risk (flagged above,
+## 2026-08-07 entry) is resolved
+
+Real `git subtree` import (not squashed) of `guiguoz/opensportsync`'s own upstream history
+(29 commits) at prefix `android/` (commit `bc35f15`), then the real diverged state (Garmin
+support, BLE, everything built on top since) landed as a follow-up commit (`a4d2680`) - see
+that commit's own message for the file-by-file summary. `oss/opensportsync-main` on the
+external drive is now a stale, no-longer-updated snapshot (last real edit 2026-08-07,
+`2.3.4-beta`); checked directly, every difference between it and this repo's `android/` is
+`android/` being ahead - nothing unique was left behind on the external copy. `HANDOFF.md`'s
+"Two real apps" note and `CREDITS.md` updated to stop pointing anyone at the external
+folder. One real, still-open item from the import itself, not resolved by this entry:
+`a4d2680`'s own message flags `src/services/UpdateService.ts` as present in the real
+upstream project but not carried into this fork's checkout - unconfirmed whether that's
+because it was added upstream after this fork's snapshot was taken, or dropped locally on
+purpose. Flagged for André/Vincent to decide.
+
+Separately, real Android feature work landed the same day on top of this import - Kailash
+support (settings read/write, including a writable Home Location field found from real BLE
+captures and confirmed against the watch's own schema descriptor) and Ambit3 CustomModes
+sport-mode editing (rename, autolap, HR limits, sensor pods, per-display field type) - not
+detailed here to avoid duplicating the full write-up; see `custom_modes_andre.md`'s own
+dated entries for the technical derivation.

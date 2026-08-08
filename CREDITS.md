@@ -11,8 +11,9 @@ reverse-engineering here would have been possible, or would have taken far longe
   of - see `csrc/`'s own notes on why openambit's GPLv3 code was kept out of this repo.
 
 - **[opensportsync](https://github.com/guiguoz/opensportsync)** and its author - the React
-  Native base this project's own Android app (`oss/opensportsync-main`, a sibling of this
-  repo) was forked from.
+  Native base this project's own Android app (`android/` in this repo - imported via a real
+  `git subtree` merge of the upstream history, 2026-08-08, after living as an unversioned
+  sibling folder for most of this project's life) was forked from.
 
 - **[marguslt](https://github.com/marguslt)** - several independent, real contributions cited
   throughout this project: the firmware-download-link recipe

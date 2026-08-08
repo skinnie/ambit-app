@@ -3,6 +3,34 @@
 All notable changes to the AmbitApp Android app (fork of `guiguoz/opensportsync`) are
 recorded here, newest first.
 
+## 2.5.11 (2026-08-08)
+
+Real feature work, sourced from this file's own git history rather than reconstructed from
+memory - intermediate version numbers between 2.3.4-beta and this one were not individually
+itemized in this file, this entry covers the whole real gap. Same day, this repo's own
+`android/` also absorbed `guiguoz/opensportsync`'s real upstream git history via a `git
+subtree` import (internal repo housekeeping, not a user-facing change - see
+`V3_CHANGELOG.md`'s own dated entry for that).
+
+- **Kailash (7R) support, real and hardware-confirmed**: USB product ID recognition
+  (`0x002a`), travel-history and TrackLog sync (visited cities/countries, last known
+  location, logbook), and a device-aware Settings screen sharing the same UI as the Ambit3
+  (its own separately-curated field table, since the two watches' schemas don't share entry
+  IDs even for identically-named fields).
+- **Ambit3 Settings UI**: real cable settings read/write (`0x1100`/`0x1101`), confirmed on
+  real hardware.
+- **Kailash Home Location**: a real settings field (`sml.DeviceSettings.HomeLocation`,
+  `Latitude`/`Longitude`) found from real BLE captures and confirmed against the watch's own
+  schema descriptor - read+write, range-checked, confirmed-by-reread. See
+  `custom_modes_andre.md`'s "Kailash Home Location" section for the full derivation. Not yet
+  hardware-tested for the write side specifically.
+- **Sport Modes screen (Ambit3-only, CustomModes)**: rename, autolap, HR limits, sensor
+  pods, and per-display field type editing - the same real, hardware-confirmed mechanism the
+  desktop app already has, ported to native/JNI/TypeScript. The native write path itself is
+  not yet hardware-confirmed on this platform specifically (every prior write re-reads to
+  confirm; a broken composition would show up as a write that doesn't stick, not a silent
+  false "done").
+
 ## V2.3.4 beta - 2.3.4-beta (2026-08-07)
 
 - Fixed "activities disappear after unplugging the device": they never actually did — the
