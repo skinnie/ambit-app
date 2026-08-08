@@ -1466,7 +1466,7 @@ int ambit3_read_settings_raw(ambit_object_t *object, uint8_t **out, size_t *out_
  * reading first, patching the one field it wants to change, and passing the whole thing
  * back, matching how the reference SuuntoLink client itself works
  * (EmuDevice::saveSettings, see custom_modes_andre.md). The watch replies with an empty
- * body on success (confirmed live) - *out/*out_len will be 0/NULL in that case, which is
+ * body on success (confirmed live) - *out / *out_len will be 0/NULL in that case, which is
  * not itself a failure; callers should re-read via ambit3_read_settings_raw() to confirm
  * a write actually took effect, the same "prove it, don't just trust the ACK" rule
  * settings_write.py's own write_one() already applies. Returns 0 on success, -1 on
