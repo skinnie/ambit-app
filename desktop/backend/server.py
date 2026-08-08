@@ -115,6 +115,10 @@ class Handler(BaseHTTPRequestHandler):
             self._handle_device()
         elif self.path == "/api/firmware":
             self._handle_firmware_check()
+        elif self.path == "/api/kailash/history":
+            self._handle_kailash_history()
+        elif self.path == "/api/kailash/tracklog":
+            self._handle_kailash_tracklog()
         elif self.path == "/api/agps/status":
             self._handle_agps_status()
         else:
@@ -404,6 +408,40 @@ class Handler(BaseHTTPRequestHandler):
                                    "no parseable JSON", "raw_output": out})
             return
         self._send_json(200, info)
+
+    def _handle_kailash_history(self):
+        """GET /api/kailash/history - Kailash only. Real, read-only 0x1200
+        sml.DeviceHistory query (tools/kailash_history.py --json, added 2026-08-08): visited
+        cities/countries, travel stats, and the "activity mode" logbook, all bundled in the
+        same reply - see that tool's own docstring for how the query and its two real unit
+        conversions (Duration=raw/10, Location=float32 radians) were found and confirmed
+        against real hardware. Live-verified end to end this same session against André's own
+        watch (1 city/country, Lille France - matches the watch's own "7R" screen exactly)."""
+        code, out, err = run_tool("kailash_history.py", ["--json"])
+        info = self._parse_last_json_line(out)
+        if info is None:
+            self._send_json(502, {"ok": False, "error": "kailash_history.py --json produced "
+                                   "no parseable JSON", "raw_output": out, "stderr": err})
+            return
+        self._send_json(200 if info.get("ok") else 502, info)
+
+    def _handle_kailash_tracklog(self):
+        """GET /api/kailash/tracklog - Kailash only. Real, read-only flash read of the
+        TrackLog region (tools/kailash_tracklog.py --json, added 2026-08-08), reshaped into
+        the same activity JSON shape ActivityService/GarminService already use (name/
+        startTime/distanceMeters/durationSeconds/track/gpxText) so the existing ActivityCard/
+        MapView QML needs no new code to show it. No ascent/FIT here - TrackLog carries no
+        confirmed altitude field and there's no FIT writer for this format (see that tool's
+        own docstring). A real ~1.3MB flash read over USB, not a short SBEM query - slower
+        than most endpoints here, hence the longer timeout. Live-verified this same session:
+        56 real points, distance/track matching André's own known location (Lille, France)."""
+        code, out, err = run_tool("kailash_tracklog.py", ["--json"], timeout=300)
+        info = self._parse_last_json_line(out)
+        if info is None:
+            self._send_json(502, {"ok": False, "error": "kailash_tracklog.py --json produced "
+                                   "no parseable JSON", "raw_output": out, "stderr": err})
+            return
+        self._send_json(200 if info.get("ok") else 502, info)
 
     def _handle_firmware_download(self):
         """Saves the current firmware file locally - for backup only. It cannot be used to
