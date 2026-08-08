@@ -92,7 +92,26 @@ KAILASH_SETTINGS = {
     "backlight_brightness": "Display.Backlight.Brightness",
     "storm_alarm": "AltiBaro.StormAlarm",
     "display_dark": "Display.Invert",  # confirmed live, 2026-08-08 - see docstring above
+    # Real, found 2026-08-08 from two real iOS PacketLogger BLE captures of the 7R app
+    # (kailashsethome.pklg / kailashsnotificationsandsethome.pklg), then confirmed
+    # byte-exact against this watch's own real schema descriptor: entry 0x36 is a GROUP,
+    # sml.DeviceSettings.HomeLocation, packing two int32 sub-fields (Latitude 0x28,
+    # Longitude 0x29), each with a real <MOD> tag confirming the degrees*1e7 encoding
+    # this project's own POI format already uses. Confirmed absent from the Ambit3's own
+    # descriptor entirely - Kailash-only. See ambit_app_kailash_home_location_field
+    # memory. Read-only, on purpose: unlike every other key in this table, these two are
+    # GROUP members, not top-level entries - read_all()/write_one() below treat that
+    # specially (no min/max offered, so the UI shows plain text; write_one() refuses
+    # outright rather than silently failing on a stale offset).
+    "home_latitude": "HomeLocation.Latitude",
+    "home_longitude": "HomeLocation.Longitude",
 }
+
+# Real MOD conversion straight from the schema descriptor for these two fields
+# (`PI*x/(10^7*180)` - radians for on-device math; dividing by 1e7 alone gives plain
+# decimal degrees, the useful value for a human/UI). Not applied generically - no other
+# curated field here has a <MOD> tag yet - just named explicitly for these two.
+_DEGREES_X1E7_KEYS = {"home_latitude", "home_longitude"}
 
 
 def settings_table(product_id):
@@ -116,6 +135,34 @@ def _find_field(schema, path_suffix):
         raise KeyError(f"{len(matches)} fields end in {suffix!r} - ambiguous: "
                         + ", ".join(m.path for m in matches))
     return matches[0]
+
+
+def _group_containing(schema, fid):
+    """The id of the GROUP entry that packs `fid` as one of its own sub-fields, or None
+    if `fid` is itself a plain top-level scalar entry (true for every curated field until
+    HomeLocation - see ambit_app_kailash_home_location_field memory). On the wire, a
+    group's members never appear as their own top-level SBEM entries, only packed
+    together inside their parent group's single entry."""
+    for gid, members in schema.groups.items():
+        if fid in members:
+            return gid
+    return None
+
+
+def _entry_value(schema, entry_id, data, target_fid):
+    """The decoded value of `target_fid` within `entry_id`'s own wire entry - handles
+    both a plain scalar entry (entry_id == target_fid, schema.decode_entry's own
+    single-field path) and a field packed inside a GROUP entry (entry_id is the group's
+    own id, target_fid one of its members) uniformly, via the same decode_entry() every
+    other read in this project already trusts."""
+    records = schema.decode_entry(entry_id, data)
+    if not records:
+        return None
+    for record in records:
+        for f, value in record:
+            if f.fid == target_fid:
+                return value
+    return None
 
 
 def describe_field(field):
@@ -157,13 +204,24 @@ def read_all(payload, descriptor, product_id=None):
         except KeyError as exc:
             out[key] = {"ok": False, "error": str(exc)}
             continue
-        data = entries.get(field.fid)
+        group_id = _group_containing(schema, field.fid)
+        entry_id = group_id if group_id is not None else field.fid
+        data = entries.get(entry_id)
         if data is None:
-            out[key] = {"ok": False, "error": f"entry 0x{field.fid:02x} not in this reply"}
+            out[key] = {"ok": False, "error": f"entry 0x{entry_id:02x} not in this reply"}
             continue
-        decoded = schema.decode_entry(field.fid, data)
-        value = decoded[0][0][1] if decoded else None
-        out[key] = {"ok": True, "value": value, "path": field.path, **describe_field(field)}
+        value = _entry_value(schema, entry_id, data, field.fid)
+        desc = describe_field(field)
+        if group_id is not None:
+            # A GROUP member's own min/max (describe_field's, from its raw int width) is
+            # meaningless without also knowing its siblings' byte layout, and write_one()
+            # below can't write it yet anyway - drop the range so the UI shows plain text
+            # instead of an editable control (matches the "number with no range" display
+            # this project already uses for compass_declination).
+            desc = {"kind": desc["kind"]}
+        if key in _DEGREES_X1E7_KEYS and value is not None:
+            value = value / 10 ** 7
+        out[key] = {"ok": True, "value": value, "path": field.path, **desc}
     return {"ok": True, "settings": out}
 
 
@@ -185,6 +243,17 @@ def write_one(link, descriptor, key, new_value, product_id=None):
         return {"ok": False, "error": str(exc)}
     if field.base == "utf8":
         return {"ok": False, "error": f"{key} is a text field - not supported by this tool"}
+    if _group_containing(schema, field.fid) is not None:
+        # A GROUP member (e.g. HomeLocation.Latitude/Longitude - see settings_table()'s
+        # own comment) never appears as its own top-level SBEM entry, only packed inside
+        # its parent group's single entry - the byte-patch logic below assumes every
+        # curated key IS a top-level entry, so it would silently never find `field.fid`
+        # and fail anyway. Refuse explicitly, with a clear reason, rather than let that
+        # happen by accident. No write test has been done against this shape yet either
+        # way - see ambit_app_kailash_home_location_field memory.
+        return {"ok": False, "error": f"{key} ({field.path}) is packed inside a GROUP "
+                                       "entry - writing group-member fields isn't "
+                                       "supported by this tool yet"}
 
     before = link.command(CMD_SETTINGS_READ, b"\0\0\0\0")
     head = before.find(sbem_schema.MAGIC)
