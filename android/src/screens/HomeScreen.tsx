@@ -604,6 +604,18 @@ export default function HomeScreen() {
             onPress={() => navigation.navigate('Backup')}
             disabled={isBusy}
           />
+          {/* Real, 2026-08-08 - Ambit3-only: Kailash's own memory map has no CustomModes
+              region at all (confirmed empty, see custom_modes_andre.md's Kailash section),
+              the same exclusion the desktop app's own NavRail.qml applies. */}
+          {!isKailash(ambitInfo) && (
+            <ActionButton
+              label={t.sportModesButton}
+              active={false}
+              color="#8b5cf6"
+              onPress={() => navigation.navigate('SportModes')}
+              disabled={isBusy}
+            />
+          )}
         </View>
       )}
 

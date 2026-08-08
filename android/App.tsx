@@ -13,6 +13,7 @@ import RouteScreen from './src/screens/RouteScreen';
 import GarminRouteScreen from './src/screens/GarminRouteScreen';
 import GarminPoiScreen from './src/screens/GarminPoiScreen';
 import BackupScreen from './src/screens/BackupScreen';
+import SportModesScreen from './src/screens/SportModesScreen';
 import type { GarminConnectResult } from './src/native/GarminModule';
 import { ActivityRecord } from './src/database/db';
 import { handleOAuthCallback as handleLiveloxCallback } from './src/services/ApiLivelox';
@@ -37,6 +38,9 @@ export type RootStackParamList = {
   GarminRoute: { info: GarminConnectResult };
   GarminPoi: { info: GarminConnectResult };
   Backup: undefined;
+  // Real, 2026-08-08 - Ambit3-only (Kailash's own memory map has no CustomModes region),
+  // HomeScreen only routes here for that device type - see SportModesScreen.tsx.
+  SportModes: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -136,6 +140,11 @@ export default function App() {
             name="Backup"
             component={BackupScreen}
             options={{ title: t.backupScreenTitle }}
+          />
+          <Stack.Screen
+            name="SportModes"
+            component={SportModesScreen}
+            options={{ title: t.sportModesScreenTitle }}
           />
         </Stack.Navigator>
       </NavigationContainer>

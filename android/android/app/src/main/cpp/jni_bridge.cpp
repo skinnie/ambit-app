@@ -45,6 +45,8 @@ extern "C" int ambit3_read_poi_list_raw(ambit_object_t *object, uint8_t **out, s
 extern "C" int ambit3_read_object_by_id_raw(ambit_object_t *object, uint8_t entry_id, uint8_t **out, size_t *out_len);
 extern "C" int ambit3_read_settings_raw(ambit_object_t *object, uint8_t **out, size_t *out_len);
 extern "C" int ambit3_write_settings_raw(ambit_object_t *object, const uint8_t *data, size_t datalen, uint8_t **out, size_t *out_len);
+extern "C" int ambit3_read_custom_modes_raw(ambit_object_t *object, uint8_t *out_buffer);
+extern "C" int ambit3_write_custom_modes_raw(ambit_object_t *object, const uint8_t *data, size_t datalen);
 
 #undef  LOG_TAG
 #define LOG_TAG "AmbitJNI"
@@ -719,6 +721,71 @@ Java_com_ambitsyncmodern_usb_AmbitUsbModule_nativeAmbitWriteSettingsRaw(
     free(reply);  // expected empty on success (confirmed live) - not returned to Kotlin
     if (ret != 0) {
         LOGE("ambit3_write_settings_raw failed: %d", ret);
+        return JNI_FALSE;
+    }
+    return JNI_TRUE;
+}
+
+/**
+ * nativeAmbitReadCustomModesRaw
+ *
+ * Real, 2026-08-08 ("This weekend we will full debug the two watches and built the apps").
+ * Returns the watch's raw 12288-byte CustomModes region (sport modes), base64-encoded, via
+ * the existing generic ambit3_read_flash_region() path (see
+ * ambit3_read_custom_modes_raw()'s own comment in device_driver_ambit3.c). Decoding
+ * (the BXml tag tree - exercise modes, displays, sport-mode slots) happens in TS, mirroring
+ * the companion research project's own tools/custom_modes.py. Null on failure.
+ */
+JNIEXPORT jstring JNICALL
+Java_com_ambitsyncmodern_usb_AmbitUsbModule_nativeAmbitReadCustomModesRaw(
+        JNIEnv *env, jobject /* thiz */)
+{
+    if (!g_device) { LOGE("nativeAmbitReadCustomModesRaw: Not connected"); return nullptr; }
+
+    std::vector<uint8_t> buffer(12288);
+    int ret = ambit3_read_custom_modes_raw(g_device, buffer.data());
+    if (ret != 0) {
+        LOGE("ambit3_read_custom_modes_raw failed: %d", ret);
+        return nullptr;
+    }
+    std::string b64 = base64Encode(buffer.data(), buffer.size());
+    return env->NewStringUTF(b64.c_str());
+}
+
+/**
+ * nativeAmbitWriteCustomModesRaw
+ *
+ * Real mechanism, NOT yet hardware-confirmed on Android specifically - see
+ * ambit3_write_custom_modes_raw()'s own detailed comment in device_driver_ambit3.c for
+ * exactly what is and isn't proven here (the desktop side of this same mechanism is fully
+ * confirmed working; this native port reuses only already-proven building blocks but has
+ * not itself been tested against real hardware). `data` must be the *entire* 12288-byte
+ * CustomModes region (read first via nativeAmbitReadCustomModesRaw(), patch only the
+ * specific bytes to change, send the whole thing back) - matching the discipline every one
+ * of this session's Python write tools already follows. Returns true only if the full
+ * write+tail+commit sequence completed without a protocol-level failure - this does NOT by
+ * itself confirm the watch's live state actually reflects the write; the caller should
+ * re-read via nativeAmbitReadCustomModesRaw() and compare, the same "prove it" rule already
+ * established for settings writes.
+ */
+JNIEXPORT jboolean JNICALL
+Java_com_ambitsyncmodern_usb_AmbitUsbModule_nativeAmbitWriteCustomModesRaw(
+        JNIEnv *env, jobject /* thiz */, jbyteArray data)
+{
+    if (!g_device) { LOGE("nativeAmbitWriteCustomModesRaw: Not connected"); return JNI_FALSE; }
+    if (!data) { LOGE("nativeAmbitWriteCustomModesRaw: null data"); return JNI_FALSE; }
+
+    jsize len = env->GetArrayLength(data);
+    if (len != 12288) {
+        LOGE("nativeAmbitWriteCustomModesRaw: expected 12288 bytes, got %d", (int)len);
+        return JNI_FALSE;
+    }
+    std::vector<uint8_t> buffer((size_t)len);
+    env->GetByteArrayRegion(data, 0, len, reinterpret_cast<jbyte *>(buffer.data()));
+
+    int ret = ambit3_write_custom_modes_raw(g_device, buffer.data(), buffer.size());
+    if (ret != 0) {
+        LOGE("ambit3_write_custom_modes_raw failed: %d", ret);
         return JNI_FALSE;
     }
     return JNI_TRUE;

@@ -165,6 +165,30 @@ export function writeSettingsRaw(dataBase64: string): Promise<boolean> {
   return NativeAmbit.writeSettingsRaw(dataBase64);
 }
 
+/**
+ * Real, 2026-08-08. Reads the watch's raw 12288-byte CustomModes region (sport modes) in
+ * base64 - the same region tools/custom_modes.py already reads. Decoding happens in TS
+ * (CustomModesReader.ts). The watch must already be connected.
+ */
+export function readCustomModesRaw(): Promise<string> {
+  return NativeAmbit.readCustomModesRaw();
+}
+
+/**
+ * Real mechanism, NOT yet hardware-confirmed on Android specifically - see
+ * ambit3_write_custom_modes_raw()'s own comment in device_driver_ambit3.c for exactly what
+ * is and isn't proven (the desktop side of this same write mechanism is fully confirmed
+ * working - custom_modes_andre.md; this native Android port reuses the same proven
+ * building blocks but the composition itself hasn't been tested on this platform yet).
+ * `dataBase64` must be the *entire* 12288-byte region (read first, patch specific bytes,
+ * send the whole thing back). Resolving `true` only means the write+tail+commit sequence
+ * completed without a protocol-level failure - it does NOT confirm the watch's live state
+ * reflects it; the caller re-reads to check, the same "prove it" rule already established.
+ */
+export function writeCustomModesRaw(dataBase64: string): Promise<boolean> {
+  return NativeAmbit.writeCustomModesRaw(dataBase64);
+}
+
 // ─── Auto-sync on USB attach ───────────────────────────────────────────────────
 // AndroidManifest.xml (launchMode="singleTask" + USB_DEVICE_ATTACHED intent-filter
 // + device_filter.xml) already lets the OS launch/foreground the app when the

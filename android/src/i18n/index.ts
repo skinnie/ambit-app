@@ -275,6 +275,31 @@ const fr = {
   ambitSettingsRefreshBtn: 'Actualiser',
   ambitSettingsReading: 'Lecture des réglages…',
 
+  // SportModesScreen — Ambit3 CustomModes (2026-08-08), Ambit3-only, pas disponible sur Kailash
+  sportModesButton:      'MODES SPORT',
+  sportModesScreenTitle: 'Modes sport',
+  sportModesDesc:
+    'Modifie les modes sport réels de la montre (noms, autolap, limites FC, capteurs, ' +
+    'affichages) par câble USB — mécanisme confirmé sur le bureau, pas encore confirmé sur ' +
+    'du matériel réel via Android.',
+  sportModesReadBtn: 'Lire les modes sport',
+  sportModesReading: 'Lecture des modes sport…',
+  sportModesRefreshBtn: 'Actualiser',
+  sportModesRenameBtn: 'Renommer',
+  sportModesExpandBtn: 'Détails',
+  sportModesCollapseBtn: 'Masquer',
+  sportModesAutolapLabel: 'Autolap (m)',
+  sportModesSetBtn: 'Appliquer',
+  sportModesHrLimitsLabel: 'Limites FC',
+  sportModesHrLowLabel: 'Basse',
+  sportModesHrHighLabel: 'Haute',
+  sportModesPodsLabel: 'Capteurs externes',
+  sportModesDisplaysLabel: 'Affichages',
+  sportModesChangeBtn: 'Changer',
+  sportModesPickerTitle: 'Choisir le type de champ',
+  sportModesCloseBtn: 'Fermer',
+  sportModesWriteSentNotConfirmed: 'Écriture envoyée mais non confirmée par relecture.',
+
   // SettingsScreen — À propos / mentions légales
   aboutSection: 'À propos',
   aboutVersion: (v: string) => `AmbitApp v${v}`,
@@ -596,6 +621,31 @@ const en: typeof fr = {
   ambitSettingsReadBtn: 'Read Settings',
   ambitSettingsRefreshBtn: 'Refresh',
   ambitSettingsReading: 'Reading settings...',
+
+  // SportModesScreen — Ambit3 CustomModes (2026-08-08), Ambit3-only, not available on Kailash
+  sportModesButton:      'SPORT MODES',
+  sportModesScreenTitle: 'Sport Modes',
+  sportModesDesc:
+    'Edits the watch\'s real sport modes (names, autolap, HR limits, sensors, displays) ' +
+    'over USB cable - the write mechanism is confirmed working on desktop, not yet ' +
+    'hardware-confirmed via Android.',
+  sportModesReadBtn: 'Read Sport Modes',
+  sportModesReading: 'Reading sport modes...',
+  sportModesRefreshBtn: 'Refresh',
+  sportModesRenameBtn: 'Rename',
+  sportModesExpandBtn: 'Details',
+  sportModesCollapseBtn: 'Hide',
+  sportModesAutolapLabel: 'Autolap (m)',
+  sportModesSetBtn: 'Set',
+  sportModesHrLimitsLabel: 'HR limits',
+  sportModesHrLowLabel: 'Low',
+  sportModesHrHighLabel: 'High',
+  sportModesPodsLabel: 'External sensors',
+  sportModesDisplaysLabel: 'Displays',
+  sportModesChangeBtn: 'Change',
+  sportModesPickerTitle: 'Choose field type',
+  sportModesCloseBtn: 'Close',
+  sportModesWriteSentNotConfirmed: 'Write sent but not confirmed by re-read.',
 
   // SettingsScreen — About / legal
   aboutSection: 'About',

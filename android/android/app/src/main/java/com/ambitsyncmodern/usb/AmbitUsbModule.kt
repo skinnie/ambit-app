@@ -95,6 +95,8 @@ class AmbitUsbModule(private val reactContext: ReactApplicationContext) :
     private external fun nativeAmbitReadDeviceHistoryRaw(): String?
     private external fun nativeAmbitReadSettingsRaw(): String?
     private external fun nativeAmbitWriteSettingsRaw(data: ByteArray): Boolean
+    private external fun nativeAmbitReadCustomModesRaw(): String?
+    private external fun nativeAmbitWriteCustomModesRaw(data: ByteArray): Boolean
     private external fun nativeAmbitDisconnect()
 
     // ─── État interne ─────────────────────────────────────────────────────────
@@ -613,6 +615,48 @@ class AmbitUsbModule(private val reactContext: ReactApplicationContext) :
                 else promise.reject("SETTINGS_WRITE_FAILED", "Failed to write settings (see logcat AmbitJNI)")
             } catch (e: Exception) {
                 promise.reject("SETTINGS_WRITE_ERROR", e.message ?: "Unknown error")
+            }
+        }
+    }
+
+    // Real, 2026-08-08. Real, read-only 0x0b17 flash read of the 12288-byte CustomModes
+    // region (sport modes) - the same region tools/custom_modes.py already reads.
+    // Decoding happens in TS (CustomModesReader.ts).
+    @ReactMethod
+    fun readCustomModesRaw(promise: Promise) {
+        if (!jniLoaded) {
+            promise.reject("JNI_NOT_LOADED", "Native library unavailable")
+            return
+        }
+        executor.execute {
+            try {
+                val b64 = nativeAmbitReadCustomModesRaw()
+                if (b64 != null) promise.resolve(b64)
+                else promise.reject("CUSTOMMODES_READ_FAILED", "Failed to read CustomModes (see logcat AmbitJNI)")
+            } catch (e: Exception) {
+                promise.reject("CUSTOMMODES_READ_ERROR", e.message ?: "Unknown error")
+            }
+        }
+    }
+
+    // Real mechanism, NOT yet hardware-confirmed on Android specifically - see
+    // ambit3_write_custom_modes_raw()'s own detailed comment in device_driver_ambit3.c.
+    // `dataBase64` must be the *entire* 12288-byte CustomModes region (read first, patch
+    // only the specific bytes to change, send the whole thing back).
+    @ReactMethod
+    fun writeCustomModesRaw(dataBase64: String, promise: Promise) {
+        if (!jniLoaded) {
+            promise.reject("JNI_NOT_LOADED", "Native library unavailable")
+            return
+        }
+        executor.execute {
+            try {
+                val data = Base64.decode(dataBase64, Base64.DEFAULT)
+                val ok = nativeAmbitWriteCustomModesRaw(data)
+                if (ok) promise.resolve(true)
+                else promise.reject("CUSTOMMODES_WRITE_FAILED", "Failed to write CustomModes (see logcat AmbitJNI)")
+            } catch (e: Exception) {
+                promise.reject("CUSTOMMODES_WRITE_ERROR", e.message ?: "Unknown error")
             }
         }
     }

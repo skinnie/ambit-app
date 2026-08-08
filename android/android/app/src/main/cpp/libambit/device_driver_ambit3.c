@@ -27,6 +27,7 @@
 #include "pmem20.h"
 #include "personal.h"
 #include "sbem0102.h"
+#include "sha256.h"
 #include "utils.h"
 #include "debug.h"
 #include "device_driver_ambit3_navigation.h"
@@ -1477,4 +1478,89 @@ int ambit3_write_settings_raw(ambit_object_t *object, const uint8_t *data, size_
     *out = NULL;
     *out_len = 0;
     return libambit_protocol_command(object, AMBIT3_CMD_SETTINGS_WRITE, (uint8_t *)data, datalen, out, out_len, 0);
+}
+
+#define AMBIT3_CUSTOM_MODES_BASE 0x002000
+#define AMBIT3_CUSTOM_MODES_SIZE 12288
+
+/*
+ * Reads the watch's real CustomModes flash region (sport modes) - the same 12288-byte
+ * region the companion research project's tools/custom_modes.py already reads via 0x0b17.
+ * Thin wrapper over the existing generic ambit3_read_flash_region(). Returns 0 on success,
+ * -1 on failure (including a short/failed read - out_buffer is only valid on success).
+ */
+int ambit3_read_custom_modes_raw(ambit_object_t *object, uint8_t *out_buffer)
+{
+    if (object == NULL || out_buffer == NULL) return -1;
+    return ambit3_read_flash_region(object, AMBIT3_CUSTOM_MODES_BASE, AMBIT3_CUSTOM_MODES_SIZE, out_buffer);
+}
+
+/*
+ * Writes a full CustomModes region back - real, hardware-confirmed mechanism, 2026-08-08
+ * (custom_modes_andre.md's "first real, hardware-confirmed CustomModes content edit" and
+ * follow-up sections): chunked CMD_DATA_WRITE (reusing the existing generic
+ * libambit_pmem20_data_write(), the same chunker Routes/Waypoints already use) + a
+ * CMD_DATA_TAIL closing hash (SHA256 of the *entire* `datalen`-byte buffer, uppercase hex -
+ * confirmed exactly matching the companion Python project's own `region_hash()`
+ * HASH_PADDED mode, see tools/ambit_format.py) + CMD_NAV_COMMIT (0x0b04) - the identical
+ * three-step sequence Routes/Waypoints already use via ambit3_write_route_to_watch(), not
+ * a new mechanism invented for this.
+ *
+ * `datalen` MUST be the full real region size (AMBIT3_CUSTOM_MODES_SIZE) - the caller is
+ * responsible for reading the current region first (ambit3_read_custom_modes_raw()),
+ * patching only the specific bytes it wants to change, and passing the *whole* buffer
+ * back, exactly the same discipline every one of this session's Python write tools already
+ * follows (never a partial-region write).
+ *
+ * **Real, honest caveat, unlike this session's other native additions**: the desktop side
+ * of this exact mechanism (write_nav.py's send_plan()) was live-tested repeatedly against
+ * real hardware this session (custom_modes_rename_test.py and friends) and is fully
+ * confirmed working. This native Android port has NOT been - it reuses already-proven
+ * building blocks (the pmem20 chunker Routes/Waypoints already use in production, the same
+ * sha256.c already linked into this binary, the same CMD_NAV_COMMIT Routes/Waypoints
+ * already send) but the composition itself, on this platform, is new and untested. Treat
+ * this as needing real hardware verification before trusting it with anything other than a
+ * deliberate, backed-up test write - the same caution this project's own "bounds-check
+ * before write" lesson calls for.
+ *
+ * Returns 0 on success, -1 on failure (a failed intermediate write or tail send aborts
+ * immediately - the watch's own commit is the only thing that makes a partial write
+ * visible, so an aborted sequence before commit should leave the watch's live state
+ * unchanged, matching how the Routes/Waypoints path already behaves on a mid-sequence
+ * failure).
+ */
+int ambit3_write_custom_modes_raw(ambit_object_t *object, const uint8_t *data, size_t datalen)
+{
+    if (object == NULL || data == NULL || datalen != AMBIT3_CUSTOM_MODES_SIZE) return -1;
+
+    if (libambit_pmem20_data_write(&object->driver_data->pmem20, AMBIT3_CUSTOM_MODES_BASE, data, datalen) != 0) {
+        LOG_ERROR("ambit3_write_custom_modes_raw: region write failed");
+        return -1;
+    }
+
+    uint8_t hash[32];
+    sha256(data, datalen, hash);
+    char hash_hex[65];
+    for (int i = 0; i < 32; i++) {
+        sprintf(hash_hex + i * 2, "%02X", hash[i]);
+    }
+    hash_hex[64] = '\0';
+
+    uint8_t tail[4 + 4 + 64];
+    uint32_t addr_le = htole32((uint32_t)AMBIT3_CUSTOM_MODES_BASE);
+    memcpy(tail, &addr_le, 4);
+    memset(tail + 4, 0, 4);
+    memcpy(tail + 8, hash_hex, 64);
+    if (libambit_protocol_command(object, ambit_command_data_tail_len, tail, sizeof(tail), NULL, NULL, 0) != 0) {
+        LOG_ERROR("ambit3_write_custom_modes_raw: tail send failed");
+        return -1;
+    }
+
+    if (libambit_protocol_command(object, AMBIT3_CMD_NAV_COMMIT, NULL, 0, NULL, NULL, 0) != 0) {
+        LOG_ERROR("ambit3_write_custom_modes_raw: commit failed - the watch's CustomModes "
+                   "region may be left in a partially-written state. A backup taken before "
+                   "this write is the only way back.");
+        return -1;
+    }
+    return 0;
 }
