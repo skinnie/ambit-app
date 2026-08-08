@@ -32,9 +32,17 @@ private val SUUNTO_PID_NAMES = mapOf(
     0x001c to "Suunto Ambit3 Sport",   // codename Finch
     0x001d to "Suunto Ambit2 R",       // codename Greentit
     0x001e to "Suunto Ambit3 Run",     // codename Ibisbill
+    0x002a to "Suunto Kailash",        // codename Hoopoe
     0x002b to "Suunto Traverse",       // codename Jabiru
     0x002c to "Suunto Ambit3 Vertical",// codename Kaka
     0x002d to "Suunto Traverse Alpha", // codename Loon
+    // Real, 2026-08-08: found missing here the same way it was found missing from
+    // tools/write_nav.py's own PRODUCT_IDS dict this same session (confirmed via `lsusb`
+    // against a real connected Kailash, "ID 1493:002a Suunto Kailash") - without this entry,
+    // `it.productId in SUUNTO_PID_NAMES` below silently excludes a real, working Kailash from
+    // both device detection and permission requests (both check membership in this same
+    // map), the exact same failure mode ("no Ambit3 on the USB bus" despite the watch being
+    // genuinely connected) write_nav.py had.
 )
 
 private const val ACTION_USB_PERMISSION = "com.ambitsyncmodern.USB_PERMISSION"

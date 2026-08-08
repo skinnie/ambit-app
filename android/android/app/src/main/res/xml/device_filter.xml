@@ -9,6 +9,13 @@
     <usb-device vendor-id="5267" product-id="28" />   <!-- 0x001c Ambit3 Sport      -->
     <usb-device vendor-id="5267" product-id="29" />   <!-- 0x001d Ambit2 R          -->
     <usb-device vendor-id="5267" product-id="30" />   <!-- 0x001e Ambit3 Run        -->
+    <!-- 0x002a Kailash - real, 2026-08-08: found missing here the same way it was found
+         missing from tools/write_nav.py's own PRODUCT_IDS dict and this file's own sibling
+         SUUNTO_PID_NAMES map (AmbitUsbModule.kt) this same session - without this entry,
+         Android never even offers to launch this app when a real Kailash is plugged in via
+         USB, since this file is what AndroidManifest.xml's USB_DEVICE_ATTACHED intent-filter
+         actually matches against. -->
+    <usb-device vendor-id="5267" product-id="42" />   <!-- 0x002a Kailash           -->
     <usb-device vendor-id="5267" product-id="43" />   <!-- 0x002b Traverse          -->
     <usb-device vendor-id="5267" product-id="44" />   <!-- 0x002c Ambit3 Vertical   -->
     <usb-device vendor-id="5267" product-id="45" />   <!-- 0x002d Traverse Alpha    -->
