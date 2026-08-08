@@ -14,17 +14,21 @@ watch's own screen that it visibly changed - the first real, independently-verif
 confirmation in this project that a cable settings write (`0x1101`) actually takes live
 effect, not just an accepted-and-echoed-but-inert write.
 
-The curated `SETTINGS` table below only includes fields also visible in SuuntoLink's own
-real "General Settings" screen (`assets/ambit3 pcap/v2/general ambit settings/`) - real,
-user-facing settings, not every one of the Ambit3's ~324 DeviceSettings entries. Each
-field's real type/enum comes directly from the schema itself (`<FRM>` tag), not hand-mapped -
-`describe_field()` turns that into a JSON-friendly shape (enum choices, or a numeric
-range) for a UI to render generically.
+Two curated tables, one per real schema family - `AMBIT3_SETTINGS` (Ambit3/Traverse/
+Ambit2) only includes fields visible in SuuntoLink's own real "General Settings" screen
+(`assets/ambit3 pcap/v2/general ambit settings/`); `KAILASH_SETTINGS` only includes fields
+visible in the real 7R iOS app's own settings screen (`assets/APK/kailash/IMG_2741.png`,
+`IMG_2742.png` - a real screenshot pair, not the Ambit3's). `settings_table()` picks the
+right one from a product_id, defaulting to the Ambit3 table for every non-Kailash ID (the
+whole family shares that schema shape). Each field's real type/enum comes directly from the
+schema itself (`<FRM>` tag), not hand-mapped - `describe_field()` turns that into a
+JSON-friendly shape (enum choices, or a numeric range) for a UI to render generically.
 
     ./tools/settings_write.py                                    # read every known setting
     ./tools/settings_write.py --json                              # same, as one JSON line
     ./tools/settings_write.py --set display_dark=1 --write        # real write, confirmed by re-read
     ./tools/settings_write.py --set display_dark=1                # dry-run: shows what would change
+    ./tools/settings_write.py --device kailash                    # Kailash's own curated table
 """
 
 import argparse
@@ -37,6 +41,7 @@ import sbem_schema
 from write_nav import CMD_SETTINGS_READ, Link, descriptor_for_product_id
 
 CMD_SETTINGS_WRITE = 0x1101
+KAILASH_PRODUCT_ID = 0x002A
 
 # key -> a unique suffix of the real schema path (matched via .endswith(), so
 # "Display.Invert" only ever matches sml.DeviceSettings.Display.Invert, not some other
@@ -47,7 +52,7 @@ CMD_SETTINGS_WRITE = 0x1101
 # mechanism and schema-driven encoding, so there's no principled reason to expect them to
 # behave differently, but they haven't each individually been checked against the watch's
 # own screen the way display_dark has.
-SETTINGS = {
+AMBIT3_SETTINGS = {
     "language": "Units.Language",
     "date_format": "Date.Format",
     "time_format": "Time.Format",
@@ -64,6 +69,37 @@ SETTINGS = {
     "backlight_brightness": "Display.Backlight.Brightness",
     "storm_alarm": "AltiBaro.StormAlarm",
 }
+
+# Kailash's own real, smaller schema (confirmed 41 entries total vs. the Ambit3's ~324) -
+# every key here maps to its own real entry ID, independently confirmed live 2026-08-08
+# (`settings_write.py --device kailash --all`), not assumed to match the Ambit3's numbering
+# (it doesn't - e.g. Display.Invert is 0x27 here, 0x20 on the Ambit3). `date_format`
+# through `storm_alarm` are exactly the fields the real 7R iOS app's own settings screen
+# shows (see this file's own docstring for the screenshot source); `display_dark` is not
+# shown in the 7R app's own UI at all, but is included anyway - it's the one field
+# independently, live-hardware-confirmed on THIS watch (protocol re-read *and* André
+# confirming on the Kailash's own screen that it visibly switched Light -> Dark), a
+# stronger bar than everything else in this table has individually cleared.
+KAILASH_SETTINGS = {
+    "date_format": "Date.Format",
+    "tones": "Audio.Mode",
+    "vibration": "Vibration.Mode",
+    "units_mode": "Units.Mode",
+    "language": "Units.Language",
+    "time_format": "Time.Format",
+    "display_contrast": "Display.Contrast",
+    "backlight_mode": "Display.Backlight.Mode",
+    "backlight_brightness": "Display.Backlight.Brightness",
+    "storm_alarm": "AltiBaro.StormAlarm",
+    "display_dark": "Display.Invert",  # confirmed live, 2026-08-08 - see docstring above
+}
+
+
+def settings_table(product_id):
+    """Which curated table applies to `product_id` - Kailash's own smaller one for its real
+    product ID, the Ambit3's table for everything else (Traverse/Ambit2 share that same
+    schema family)."""
+    return KAILASH_SETTINGS if product_id == KAILASH_PRODUCT_ID else AMBIT3_SETTINGS
 
 _ENUM_RE = re.compile(r"^enum:(.+)$")
 
@@ -104,11 +140,10 @@ def describe_field(field):
     return {"kind": "raw"}
 
 
-def read_all(payload, descriptor):
-    """Every SETTINGS entry's current value, decoded through the given descriptor. Returns
-    {key: {"value": ..., "path": ..., **describe_field()}}. Skips (with a note, not a
-    crash) any key whose field isn't in this watch's own schema - real for a smaller
-    schema like Kailash's, where most of this Ambit3-sourced table doesn't apply."""
+def read_all(payload, descriptor, product_id=None):
+    """Every entry of the curated table for `product_id` (see settings_table()), decoded
+    through the given descriptor. Returns {key: {"value": ..., "path": ..., **describe_field()}}.
+    Skips (with a note, not a crash) any key whose field isn't in this watch's own schema."""
     schema = sbem_schema.load(descriptor)
     head = payload.find(sbem_schema.MAGIC)
     if head < 0:
@@ -116,7 +151,7 @@ def read_all(payload, descriptor):
 
     entries = dict(sbem_schema.entries(payload[head:]))
     out = {}
-    for key, suffix in SETTINGS.items():
+    for key, suffix in settings_table(product_id).items():
         try:
             field = _find_field(schema, suffix)
         except KeyError as exc:
@@ -132,7 +167,7 @@ def read_all(payload, descriptor):
     return {"ok": True, "settings": out}
 
 
-def write_one(link, descriptor, key, new_value):
+def write_one(link, descriptor, key, new_value, product_id=None):
     """Real write: reads the current settings blob fresh, patches exactly the bytes for
     `key`'s real field (found in THIS watch's own schema, never a hardcoded ID - see this
     file's own docstring), writes it back via 0x1101, and re-reads to confirm. Returns a
@@ -140,11 +175,12 @@ def write_one(link, descriptor, key, new_value):
     actually shows the new value, the same "prove it, don't just trust the ACK" standard
     this project's own live testing already established was necessary (see
     custom_modes_andre.md)."""
-    if key not in SETTINGS:
-        return {"ok": False, "error": f"unknown setting {key!r} - known: {sorted(SETTINGS)}"}
+    table = settings_table(product_id)
+    if key not in table:
+        return {"ok": False, "error": f"unknown setting {key!r} - known: {sorted(table)}"}
     schema = sbem_schema.load(descriptor)
     try:
-        field = _find_field(schema, SETTINGS[key])
+        field = _find_field(schema, table[key])
     except KeyError as exc:
         return {"ok": False, "error": str(exc)}
     if field.base == "utf8":
@@ -220,11 +256,12 @@ def main():
         print(json.dumps({"ok": False, "error": msg})) if args.json else print(msg)
         return 1
 
+    table = settings_table(product_id)
     if args.set:
         key, _, raw_value = args.set.partition("=")
         if not args.write:
             payload = link.command(CMD_SETTINGS_READ, b"\0\0\0\0")
-            current = read_all(payload, descriptor)
+            current = read_all(payload, descriptor, product_id)
             info = current.get("settings", {}).get(key)
             msg = {"ok": True, "dry_run": True, "key": key,
                    "current": info, "would_write": raw_value}
@@ -233,14 +270,14 @@ def main():
                 f"(pass --write to actually send it)")
             return 0
         schema = sbem_schema.load(descriptor)
-        field = _find_field(schema, SETTINGS[key]) if key in SETTINGS else None
+        field = _find_field(schema, table[key]) if key in table else None
         new_value = float(raw_value) if field and field.base.startswith("float") else int(raw_value)
-        result = write_one(link, descriptor, key, new_value)
+        result = write_one(link, descriptor, key, new_value, product_id)
         print(json.dumps(result)) if args.json else print(result)
         return 0 if result.get("ok") else 1
 
     payload = link.command(CMD_SETTINGS_READ, b"\0\0\0\0")
-    result = read_all(payload, descriptor)
+    result = read_all(payload, descriptor, product_id)
     if args.json:
         print(json.dumps(result))
     else:
