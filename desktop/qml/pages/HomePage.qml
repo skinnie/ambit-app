@@ -1,6 +1,5 @@
 import QtQuick
 import QtQuick.Controls
-import QtQuick.Effects
 import QtQuick.Layouts
 import AmbitApp
 
@@ -467,38 +466,24 @@ Flickable {
                         color: Theme.mutedText
                         font.pixelSize: 12
                     }
-                    // Rounded corners - real request 2026-08-09 ("On the map if possible
-                    // put round corners"). QML's own `clip: true` only clips to an item's
-                    // plain bounding rectangle, not a rounded one, so the map tiles would
-                    // otherwise sit square-cornered inside this rounded card - the same
-                    // real Qt6 MultiEffect mask technique Card.qml already uses for its own
-                    // shadow (same module, already linked), applied here as a corner mask
-                    // instead.
+                    // Real, 2026-08-09 ("On the map if possible put round corners"), reverted
+                    // the same day: a QtQuick.Effects MultiEffect maskSource/maskEnabled
+                    // attempt here left this map rendering as a real blank area (confirmed
+                    // live - "Home page Places visited world map... blank/empty space"), not
+                    // just square-cornered as intended. Not worth re-attempting blind (no way
+                    // to visually verify a shader-based fix from here) - square corners here
+                    // match every other map in the app already (ActivityCard's own map
+                    // preview has no rounding either), so this is a real regression fix, not
+                    // a downgrade from some established look.
                     Item {
-                        id: mapMask
                         width: parent.width
                         height: 200
-                        layer.enabled: true
-                        layer.effect: MultiEffect {
-                            maskEnabled: true
-                            maskSource: mapMaskShape
-                        }
+                        clip: true
                         MapView {
                             anchors.fill: parent
                             markers: KailashService.visitedPlaces
                             zoomLevel: 4  // only used for a single pin - see MapView.qml's
                                           // own _singlePoint comment; 2+ pins auto-fit
-                        }
-                        // Not a direct child of the outer Column above - Column explicitly
-                        // disallows anchored children ("Cannot specify... fill... anchors
-                        // for items inside Column"), so this has to nest one level deeper,
-                        // inside mapMask itself, where a plain anchors.fill is fine.
-                        Rectangle {
-                            id: mapMaskShape
-                            anchors.fill: parent
-                            radius: Theme.radiusCard
-                            color: "white"
-                            visible: false
                         }
                     }
                 }
