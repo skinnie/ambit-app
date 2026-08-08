@@ -13,7 +13,7 @@
  *   H <region> <hash>
  */
 
-#include "../device_driver_ambit3_navigation.h"
+#include "../../shared/libambit/device_driver_ambit3_navigation.h"
 
 #include <stdio.h>
 #include <stdlib.h>

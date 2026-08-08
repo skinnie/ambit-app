@@ -12,7 +12,7 @@
 // ─── libambit ─────────────────────────────────────────────────────────────────
 #include "libambit/libambit.h"
 #include "libambit/libambit_int.h"
-#include "libambit/device_driver_ambit3_navigation.h"
+#include "device_driver_ambit3_navigation.h"
 
 // libambit_new_from_fd() est déclaré dans libambit_android.c
 extern "C" ambit_object_t *libambit_new_from_fd(int fd, int ep_in, int ep_out,

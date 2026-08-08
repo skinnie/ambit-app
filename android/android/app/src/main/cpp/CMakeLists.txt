@@ -38,13 +38,24 @@ target_sources(appmodules PRIVATE
 # libambit_android.c fournit libambit_new_from_fd() pour ouvrir la montre
 # via le FileDescriptor Android USB.
 
+# device_driver_ambit3_navigation.c/.h and device_driver_ambit3_sport_modes.c/.h moved to
+# ../../../../../../shared/libambit (2026-08-08 repo consolidation) - this project's own
+# clean-room driver additions, confirmed byte-identical to what used to be vendored here
+# separately before the move. One real copy now, shared with csrc/'s own build instead of
+# the two silently drifting apart (this copy had already gained BLE additions the other
+# hadn't).
+set(SHARED_LIBAMBIT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../../../../../shared/libambit)
+
 file(GLOB LIBAMBIT_SOURCES
     "libambit/*.c"
     "libambit/hidapi/hid-android.c"
 )
-add_library(ambit STATIC ${LIBAMBIT_SOURCES})
+add_library(ambit STATIC ${LIBAMBIT_SOURCES}
+    ${SHARED_LIBAMBIT_DIR}/device_driver_ambit3_navigation.c
+    ${SHARED_LIBAMBIT_DIR}/device_driver_ambit3_sport_modes.c
+)
 set_target_properties(ambit PROPERTIES C_STANDARD 11)
-target_include_directories(ambit PUBLIC libambit libambit/hidapi)
+target_include_directories(ambit PUBLIC libambit libambit/hidapi ${SHARED_LIBAMBIT_DIR})
 # le16toh/le32toh sont dans <endian.h> sur Android/Bionic
 # libambit desktop les obtenait via glibc; on force-include ici
 target_compile_options(ambit PRIVATE -include endian.h)
