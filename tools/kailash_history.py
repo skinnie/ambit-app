@@ -115,6 +115,18 @@ def read_history(link, warn=print):
     location = None
     country = None
     sessions = []
+    # Real, 2026-08-09 ("Add a world map with the points were kailash has been") - every
+    # real VisitedCities.Location/VisitedCountries.CountryCode entry encountered, not just
+    # the last one. Before this, `location`/`country` above (kept for backward
+    # compatibility - `last_known_location` still means the same thing) only ever held the
+    # final value seen, silently discarding every earlier visited place on a watch with real
+    # multi-place travel history. This reference watch has only ever had exactly one real
+    # visited place (Lille) the whole time this project has tested against it, so the
+    # "overwrite" bug never had a visible symptom to catch it by - genuinely unconfirmed
+    # whether a second real place preserves the same paired order assumed here (Location
+    # then CountryCode, appearing in real visit order) until a watch with real multi-place
+    # history is available to check against.
+    visited_places = []
     for entry_id, data in entries:
         try:
             records = schema.decode_entry(entry_id, data) or []
@@ -128,8 +140,11 @@ def read_history(link, warn=print):
                 lon_rad, lat_rad = fields.get("Longitude"), fields.get("Latitude")
                 if lon_rad is not None and lat_rad is not None:
                     location = (lat_rad * 180 / math.pi, lon_rad * 180 / math.pi)
+                    visited_places.append({"lat": location[0], "lon": location[1], "country": None})
             elif entry_id == 0x5C:
                 country = fields.get("CountryCode")
+                if visited_places:
+                    visited_places[-1]["country"] = country
             elif entry_id == 0x66:  # LogHeaders.Header - real "activity mode" logbook entry
                 sessions.append({
                     "when": fields.get("DateTime"),
@@ -155,6 +170,7 @@ def read_history(link, warn=print):
         "cumulated_distance_m": summary.get(p + "CumulatedDistance"),
         "furthest_from_home_m": summary.get(p + "FurthestFromHome"),
         "sessions": sessions,
+        "visited_places": visited_places,  # [{lat, lon, country}, ...] - see comment above
     }
 
 

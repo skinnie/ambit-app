@@ -4,6 +4,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QNetworkReply>
+#include <QUrlQuery>
 
 static const QString kBackendBase = QStringLiteral("http://127.0.0.1:8766");
 
@@ -81,6 +82,16 @@ void KailashService::refreshHistory()
             m_sessions.append(session);
         }
 
+        m_visitedPlaces.clear();
+        for (const auto &v : obj.value(QStringLiteral("visited_places")).toArray()) {
+            const auto p = v.toObject();
+            QVariantMap place;
+            place[QStringLiteral("lat")] = p.value(QStringLiteral("lat")).toDouble();
+            place[QStringLiteral("lon")] = p.value(QStringLiteral("lon")).toDouble();
+            place[QStringLiteral("country")] = p.value(QStringLiteral("country")).toString();
+            m_visitedPlaces.append(place);
+        }
+
         setLastError(QString());
         emit historyChanged();
     });
@@ -139,5 +150,50 @@ void KailashService::refreshTrackLog()
         m_trackLogActivity = map;
         setLastError(QString());
         emit trackLogChanged();
+    });
+}
+
+void KailashService::refreshHomeLocation(double latitude, double longitude)
+{
+    m_hasHomeLocation = true;
+    m_homeLatitude = latitude;
+    m_homeLongitude = longitude;
+    m_homeCity = QString();
+    emit homeLocationChanged();
+
+    // Same real Nominatim reverse-geocode WeatherService::fetchPlaceName() already uses -
+    // see that function's own comments for the address-hierarchy fallback reasoning and the
+    // real-User-Agent requirement (OSM's own usage policy).
+    QUrl url(QStringLiteral("https://nominatim.openstreetmap.org/reverse"));
+    QUrlQuery query;
+    query.addQueryItem(QStringLiteral("lat"), QString::number(latitude));
+    query.addQueryItem(QStringLiteral("lon"), QString::number(longitude));
+    query.addQueryItem(QStringLiteral("format"), QStringLiteral("json"));
+    query.addQueryItem(QStringLiteral("zoom"), QStringLiteral("10"));  // city/town level
+    url.setQuery(query);
+
+    QNetworkRequest request(url);
+    request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("AmbitApp/2.0"));
+
+    QNetworkReply *reply = m_network.get(request);
+    connect(reply, &QNetworkReply::finished, this, [this, reply, latitude, longitude] {
+        reply->deleteLater();
+        if (reply->error() != QNetworkReply::NoError)
+            return;  // same "just don't show it" rule WeatherService's own lookup uses
+        // A later call for different coordinates may have started (and finished) while
+        // this one was in flight - don't let a stale reply overwrite a newer result.
+        if (m_homeLatitude != latitude || m_homeLongitude != longitude)
+            return;
+
+        const auto doc = QJsonDocument::fromJson(reply->readAll());
+        const auto address = doc.object().value(QStringLiteral("address")).toObject();
+        for (const auto &key : {"city", "town", "village", "municipality", "county"}) {
+            const auto value = address.value(QLatin1String(key)).toString();
+            if (!value.isEmpty()) {
+                m_homeCity = value;
+                emit homeLocationChanged();
+                break;
+            }
+        }
     });
 }

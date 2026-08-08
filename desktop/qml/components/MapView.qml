@@ -37,27 +37,47 @@ Item {
     property var trackPoints: []   // [{lat, lon}, ...] - draws a line if 2+ points given
     property bool showMarker: false  // draws a single pin at (latitude, longitude)
     property bool showZoomControls: false
+    // Real, 2026-08-09 ("Add a world map with the points were kailash has been") - discrete
+    // pins at real positions, genuinely different from trackPoints (a connected line - right
+    // for a continuous GPS breadcrumb trail, wrong for a list of separately-visited places)
+    // and from showMarker (always exactly one pin, always centered - right for "here's the
+    // one place being edited," wrong for "here's everywhere a watch has been"). Each entry
+    // may carry an optional `label` (shown nowhere yet - reserved for a future tap/tooltip).
+    property var markers: []       // [{lat, lon, label?}, ...] - each drawn as its own pin
 
     clip: true
 
     readonly property int tileSize: 256
 
-    // The track's own bounding box, in degrees - null with fewer than 2 points (nothing to
-    // fit to; falls back to latitude/longitude/zoomLevel as before).
+    // The real bounding box (in degrees) of everything there is to fit to - trackPoints AND
+    // markers together, so a world map of scattered visited-place pins with no track at all
+    // still auto-fits correctly (trackPoints alone was the only input before markers
+    // existed). Null with fewer than 2 points total - nothing to fit to; falls back to
+    // latitude/longitude/zoomLevel as before.
     readonly property var _trackBounds: {
-        if (!trackPoints || trackPoints.length < 2) return null
+        const points = (trackPoints || []).concat(markers || [])
+        if (points.length < 2) return null
         let minLat = 90, maxLat = -90, minLon = 180, maxLon = -180
-        for (const p of trackPoints) {
+        for (const p of points) {
             minLat = Math.min(minLat, p.lat); maxLat = Math.max(maxLat, p.lat)
             minLon = Math.min(minLon, p.lon); maxLon = Math.max(maxLon, p.lon)
         }
         return { minLat, maxLat, minLon, maxLon }
     }
 
+    // A single real point (no bbox to compute - _trackBounds needs 2+) still deserves to be
+    // the real center, not the arbitrary Alps-ish latitude/longitude default - falls back to
+    // that default only when there's truly nothing real to show at all.
+    readonly property var _singlePoint: {
+        const points = (trackPoints || []).concat(markers || [])
+        return points.length === 1 ? points[0] : null
+    }
     readonly property real _centerLat:
-        _trackBounds ? (_trackBounds.minLat + _trackBounds.maxLat) / 2 : latitude
+        _trackBounds ? (_trackBounds.minLat + _trackBounds.maxLat) / 2
+        : _singlePoint ? _singlePoint.lat : latitude
     readonly property real _centerLon:
-        _trackBounds ? (_trackBounds.minLon + _trackBounds.maxLon) / 2 : longitude
+        _trackBounds ? (_trackBounds.minLon + _trackBounds.maxLon) / 2
+        : _singlePoint ? _singlePoint.lon : longitude
 
     // World-pixel span of a degree box at a given zoom - the same projection tileZ/
     // tilesPerSide/lonToWorldX/latToWorldY use below, parameterized so it can be tried at
@@ -104,6 +124,7 @@ Item {
     }
     Component.onCompleted: Qt.callLater(_refitZoom)
     onTrackPointsChanged: Qt.callLater(_refitZoom)
+    onMarkersChanged: Qt.callLater(_refitZoom)
     onWidthChanged: _refitZoom()
     onHeightChanged: _refitZoom()
 
@@ -233,6 +254,42 @@ Item {
             anchors.horizontalCenter: parent.horizontalCenter
             anchors.bottom: parent.bottom
             anchors.bottomMargin: 12
+        }
+    }
+
+    // Multiple discrete pins, each at its own real projected position - see `markers`
+    // property's own comment above for why this exists separately from the single centered
+    // marker above. Same visual (white halo + Theme.primary POI glyph), just positioned via
+    // the same lonToWorldX/latToWorldY projection the track polyline already uses instead of
+    // being fixed at screen center.
+    Repeater {
+        model: root.markers
+        delegate: Item {
+            required property var modelData
+            width: 30
+            height: 38
+            x: root.lonToWorldX(modelData.lon) - root.originX - width / 2
+            y: root.latToWorldY(modelData.lat) - root.originY - height
+
+            Rectangle {
+                width: 26
+                height: 26
+                radius: 13
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.bottom: parent.bottom
+                anchors.bottomMargin: 4
+                color: "white"
+                border.color: Theme.primary
+                border.width: 2
+            }
+            Icon {
+                glyph: Icons.pois
+                size: 16
+                color: Theme.primary
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.bottom: parent.bottom
+                anchors.bottomMargin: 9
+            }
         }
     }
 

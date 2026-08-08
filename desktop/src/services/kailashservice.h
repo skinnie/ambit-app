@@ -41,12 +41,31 @@ class KailashService : public QObject
     // docstring for how this was found (this project had separately been unable to locate
     // it as its own flash region).
     Q_PROPERTY(QVariantList sessions READ sessions NOTIFY historyChanged)
+    // Real, 2026-08-09 ("Add a world map with the points were kailash has been") - every
+    // real visited place (lat/lon/country), not just the last one - see
+    // kailash_history.py's own comment on why this only recently stopped being an
+    // overwrite-the-last-one bug (never had a visible symptom against a watch with just
+    // one real visited place so far). Each entry: {lat, lon, country}.
+    Q_PROPERTY(QVariantList visitedPlaces READ visitedPlaces NOTIFY historyChanged)
 
     // /api/kailash/tracklog - one synthesized activity, same field shape
     // ActivityService::activities() entries already use, so ActivityCard/MapView need no
     // new QML code to show it.
     Q_PROPERTY(bool trackLogOk READ trackLogOk NOTIFY trackLogChanged)
     Q_PROPERTY(QVariantMap trackLogActivity READ trackLogActivity NOTIFY trackLogChanged)
+
+    // Real, 2026-08-09 ("I believe you put a POI icon for home, name home and identify the
+    // city by coordinates") - the watch's real HomeLocation setting (sml.DeviceSettings.
+    // HomeLocation, see ambit_app_kailash_home_location_field memory) already gets read
+    // into SettingsWriteService.settings; QML passes those two coordinates in here rather
+    // than this class re-fetching settings itself (it has nothing to do with settings
+    // otherwise). Reverse-geocoded via the same real Nominatim call WeatherService's own
+    // fetchPlaceName() already uses and already proved compliant with (real User-Agent
+    // header, OSM's own usage policy) - not a new mechanism, the same one reused.
+    Q_PROPERTY(bool hasHomeLocation READ hasHomeLocation NOTIFY homeLocationChanged)
+    Q_PROPERTY(double homeLatitude READ homeLatitude NOTIFY homeLocationChanged)
+    Q_PROPERTY(double homeLongitude READ homeLongitude NOTIFY homeLocationChanged)
+    Q_PROPERTY(QString homeCity READ homeCity NOTIFY homeLocationChanged)
 
 public:
     explicit KailashService(QObject *parent = nullptr);
@@ -66,9 +85,15 @@ public:
     double travelledDistanceMeters() const { return m_travelledDistanceMeters; }
     double furthestFromHomeMeters() const { return m_furthestFromHomeMeters; }
     QVariantList sessions() const { return m_sessions; }
+    QVariantList visitedPlaces() const { return m_visitedPlaces; }
 
     bool trackLogOk() const { return m_trackLogOk; }
     QVariantMap trackLogActivity() const { return m_trackLogActivity; }
+
+    bool hasHomeLocation() const { return m_hasHomeLocation; }
+    double homeLatitude() const { return m_homeLatitude; }
+    double homeLongitude() const { return m_homeLongitude; }
+    QString homeCity() const { return m_homeCity; }
 
     // GET /api/kailash/history - real, read-only (a single 0x1200 SBEM query), safe any time.
     Q_INVOKABLE void refreshHistory();
@@ -77,12 +102,17 @@ public:
     // alongside refreshHistory(); the UI triggers it explicitly so a quick Home refresh
     // doesn't always pay this cost.
     Q_INVOKABLE void refreshTrackLog();
+    // Real Nominatim reverse-geocode of the watch's own HomeLocation coordinates (caller
+    // supplies them - see this property's own header comment for why). No watch access at
+    // all, a plain internet call - safe to call as soon as the coordinates are known.
+    Q_INVOKABLE void refreshHomeLocation(double latitude, double longitude);
 
 signals:
     void loadingChanged();
     void lastErrorChanged();
     void historyChanged();
     void trackLogChanged();
+    void homeLocationChanged();
 
 private:
     QNetworkAccessManager m_network;
@@ -101,9 +131,15 @@ private:
     double m_travelledDistanceMeters = 0;
     double m_furthestFromHomeMeters = 0;
     QVariantList m_sessions;
+    QVariantList m_visitedPlaces;
 
     bool m_trackLogOk = false;
     QVariantMap m_trackLogActivity;
+
+    bool m_hasHomeLocation = false;
+    double m_homeLatitude = 0;
+    double m_homeLongitude = 0;
+    QString m_homeCity;
 
     void setLoading(bool value);
     void setLastError(const QString &message);

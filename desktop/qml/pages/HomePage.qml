@@ -36,6 +36,36 @@ Flickable {
             if (HomeViewModel.isKailash) {
                 KailashService.refreshHistory();
                 KailashService.refreshTrackLog();
+                // Real, 2026-08-09 - the watch's real HomeLocation setting lives in the
+                // generic Settings mechanism (same one SettingsPage.qml's own coord editor
+                // uses), not a Kailash-specific endpoint - fetched here too so Home's own
+                // Home-location card (below) has real coordinates without the user having
+                // to visit Settings first. onSettingsChanged below picks the two fields out
+                // once this reply lands.
+                SettingsWriteService.device = "kailash";
+                SettingsWriteService.refresh();
+            }
+        }
+    }
+
+    // Real, 2026-08-09 ("I believe you put a POI icon for home, name home and identify the
+    // city by coordinates"). SettingsWriteService.settings is a flat list of every curated
+    // setting for whichever device is connected - picks out home_latitude/home_longitude
+    // specifically (see AmbitSettingsReader.ts's own field comment / the
+    // ambit_app_kailash_home_location_field memory for why those two exist at all) and
+    // hands them to KailashService.refreshHomeLocation() for the actual reverse-geocode.
+    Connections {
+        target: SettingsWriteService
+        function onSettingsChanged() {
+            if (!HomeViewModel.isKailash) return;
+            let lat = null, lon = null;
+            for (const row of SettingsWriteService.settings) {
+                if (row.key === "home_latitude") lat = row.value;
+                else if (row.key === "home_longitude") lon = row.value;
+            }
+            if (lat !== null && lon !== null
+                && (lat !== KailashService.homeLatitude || lon !== KailashService.homeLongitude)) {
+                KailashService.refreshHomeLocation(lat, lon);
             }
         }
     }
@@ -346,6 +376,41 @@ Flickable {
                     }
                 }
 
+                // Home location - real, 2026-08-09 ("I believe you put a POI icon for home,
+                // name home and identify the city by coordinates"). Same real HomeLocation
+                // setting SettingsPage.qml's own coord editor reads/writes (entry 0x36,
+                // ambit_app_kailash_home_location_field memory) - genuinely different data
+                // from "last known location" above (that's the watch's own last GPS fix,
+                // this is the fixed reference point used for furthestFromHome).
+                Row {
+                    visible: KailashService.hasHomeLocation
+                    width: parent.width
+                    spacing: Theme.spacingMedium
+
+                    Icon { glyph: Icons.pois; size: 24; color: Theme.primary }
+
+                    Column {
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: 2
+                        Text {
+                            text: qsTr("Home")
+                            color: Theme.text
+                            font.pixelSize: 13
+                            font.bold: true
+                        }
+                        Text {
+                            text: KailashService.homeCity.length > 0
+                                ? qsTr("%1 (%2, %3)").arg(KailashService.homeCity)
+                                                      .arg(KailashService.homeLatitude.toFixed(4))
+                                                      .arg(KailashService.homeLongitude.toFixed(4))
+                                : qsTr("%1, %2").arg(KailashService.homeLatitude.toFixed(4))
+                                                 .arg(KailashService.homeLongitude.toFixed(4))
+                            color: Theme.mutedText
+                            font.pixelSize: 12
+                        }
+                    }
+                }
+
                 Row {
                     visible: KailashService.historyOk
                     width: parent.width
@@ -365,6 +430,35 @@ Flickable {
                         Text {
                             text: ActivityViewModel.formatDistance(KailashService.furthestFromHomeMeters)
                             color: Theme.text; font.pixelSize: 13
+                        }
+                    }
+                }
+
+                // World map of visited places - real, 2026-08-09 ("Add a world map with the
+                // points were kailash has been"). MapView's own real projection math
+                // auto-fits to whatever pins are given (see MapView.qml's own `markers`
+                // property comment) - a single real visited place so far on this reference
+                // watch (Lille) shows as a single centered pin, exactly as accurate as this
+                // watch's own real travel history; more pins appear here automatically as
+                // more real travel gets recorded, no further wiring needed.
+                Column {
+                    visible: KailashService.historyOk && KailashService.visitedPlaces.length > 0
+                    width: parent.width
+                    spacing: Theme.spacingSmall
+
+                    Text {
+                        text: qsTr("Places visited (%1)").arg(KailashService.visitedPlaces.length)
+                        color: Theme.mutedText
+                        font.pixelSize: 12
+                    }
+                    Item {
+                        width: parent.width
+                        height: 200
+                        MapView {
+                            anchors.fill: parent
+                            markers: KailashService.visitedPlaces
+                            zoomLevel: 4  // only used for a single pin - see MapView.qml's
+                                          // own _singlePoint comment; 2+ pins auto-fit
                         }
                     }
                 }
