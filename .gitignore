@@ -30,8 +30,9 @@ full-assets/
 # values redacted; the raw notes stay local.
 HANDOFF-append-*.md
 
-# ambitapp-v2's own build tree and one-off cmake/make stdout captures made while
-# iterating on real builds - scratch, not source.
-ambitapp-v2/build/
-ambitapp-v2/*.log
-ambitapp-v2/*.exitcode
+# desktop/ (Qt app, was ambitapp-v2/ until the 2026-08-08 repo consolidation) own build tree
+# and one-off cmake/make stdout captures made while iterating on real builds - scratch, not
+# source.
+desktop/build/
+desktop/*.log
+desktop/*.exitcode
