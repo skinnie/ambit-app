@@ -15,12 +15,15 @@ Flickable {
 
     // Real, 2026-08-08 ("Settings on ambit 3 - if they are already cracked to be changed by
     // cable, we will need to build a UI for it"). Cable settings-write is now confirmed
-    // working (SettingsWriteService's own header comment: André confirmed Display.Invert
-    // visibly switching the watch Light -> Dark) - fetched here so the Ambit3 Settings card
-    // below has real data as soon as this page opens, matching how HomePage.qml already
-    // fires its own service refreshes from Component.onCompleted.
+    // working for both the Ambit3 (SettingsWriteService's own header comment: André
+    // confirmed Display.Invert visibly switching the watch Light -> Dark) and, checked the
+    // same way right after, Kailash too - SettingsWriteService.device picks which curated
+    // table the backend uses (see its own header comment). Fetched here so the Settings
+    // card below has real data as soon as this page opens, matching how HomePage.qml
+    // already fires its own service refreshes from Component.onCompleted.
     Component.onCompleted: {
-        if (!HomeViewModel.isGarmin && !HomeViewModel.isKailash) {
+        if (!HomeViewModel.isGarmin) {
+            SettingsWriteService.device = HomeViewModel.isKailash ? "kailash" : "";
             SettingsWriteService.refresh();
         }
     }
@@ -110,7 +113,7 @@ Flickable {
             }
         }
 
-        // --- Ambit3 Settings - real, 2026-08-08. Generic, schema-driven: one delegate per
+        // --- Watch Settings - real, 2026-08-08. Generic, schema-driven: one delegate per
         // row, picking Switch/ComboBox/Slider off `kind` (bool/enum/number) rather than a
         // hand-built widget per field - SettingsWriteService.settings already carries
         // exactly that shape from tools/settings_write.py's own describe_field(). Writes
@@ -118,19 +121,24 @@ Flickable {
         // own "an explicit tap/selection in the page itself is the confirmation" rule
         // (DeviceService's GPS-orbit "tap to update" already works this way) - a Settings
         // page toggling immediately, like any OS settings screen, is also the expected UX
-        // here, not a new pattern invented for this card. Kailash excluded: this whole
-        // curated field table came from the Ambit3's own real schema/screenshots and has
-        // never been checked against Kailash's much smaller one - see
-        // custom_modes_andre.md's Kailash section on why its schema can't be assumed to
-        // match. ---
+        // here, not a new pattern invented for this card. Kailash now included too, real,
+        // same day: SettingsWriteService.device (set in Component.onCompleted above) picks
+        // Kailash's own separately-curated table (sourced from the real 7R app's own
+        // screenshots, not the Ambit3's) - both tables independently hardware-confirmed,
+        // see custom_modes_andre.md's "Kailash settings ARE writable over cable too"
+        // section. ---
         Card {
             width: parent.width
-            visible: !HomeViewModel.isGarmin && !HomeViewModel.isKailash
+            visible: !HomeViewModel.isGarmin
             Column {
                 width: parent.width
                 spacing: Theme.spacingMedium
 
-                Text { text: qsTr("Ambit3 Settings"); font.bold: true; color: Theme.text }
+                Text {
+                    text: HomeViewModel.isKailash ? qsTr("Kailash Settings") : qsTr("Ambit3 Settings")
+                    font.bold: true
+                    color: Theme.text
+                }
 
                 Text {
                     visible: SettingsWriteService.loading && SettingsWriteService.settings.length === 0

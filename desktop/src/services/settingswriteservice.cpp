@@ -38,11 +38,21 @@ void SettingsWriteService::setWritingKey(const QString &key)
     emit writingKeyChanged();
 }
 
+void SettingsWriteService::setDevice(const QString &value)
+{
+    if (m_device == value)
+        return;
+    m_device = value;
+    emit deviceChanged();
+}
+
 void SettingsWriteService::refresh()
 {
     setLoading(true);
-    QNetworkReply *reply =
-        m_network.get(QNetworkRequest(backendUrl(QStringLiteral("/api/settings"))));
+    QString path = QStringLiteral("/api/settings");
+    if (!m_device.isEmpty())
+        path += QStringLiteral("?device=") + QUrl::toPercentEncoding(m_device);
+    QNetworkReply *reply = m_network.get(QNetworkRequest(backendUrl(path)));
     connect(reply, &QNetworkReply::finished, this, [this, reply] {
         reply->deleteLater();
         setLoading(false);
@@ -105,6 +115,8 @@ void SettingsWriteService::writeSetting(const QString &key, const QVariant &valu
     // backend/tool only ever needs a plain numeric value, never a display label.
     body[QStringLiteral("value")] = QJsonValue::fromVariant(value);
     body[QStringLiteral("confirm")] = true;
+    if (!m_device.isEmpty())
+        body[QStringLiteral("device")] = m_device;
 
     QNetworkReply *reply = m_network.post(request, QJsonDocument(body).toJson(QJsonDocument::Compact));
     connect(reply, &QNetworkReply::finished, this, [this, reply, key] {

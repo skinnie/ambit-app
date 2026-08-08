@@ -23,6 +23,11 @@ class SettingsWriteService : public QObject
     Q_PROPERTY(bool loading READ loading NOTIFY loadingChanged)
     Q_PROPERTY(bool ok READ ok NOTIFY settingsChanged)
     Q_PROPERTY(QString lastError READ lastError NOTIFY lastErrorChanged)
+    // Which watch's own curated settings table to use - "" (default) for the Ambit3's,
+    // "kailash" for Kailash's own (added 2026-08-08, see backend/server.py's own
+    // _handle_settings_read()/_handle_settings_write() comments). Set from QML before
+    // calling refresh()/writeSetting() based on HomeViewModel.isKailash.
+    Q_PROPERTY(QString device READ device WRITE setDevice NOTIFY deviceChanged)
     // Each entry: {key, path, kind ("bool"/"enum"/"number"/"raw"), value, choices
     // ([[intValue, label], ...] for "enum"), min, max (for "number")}. Kailash or a smaller
     // schema than Ambit3's own may legitimately be missing some of these (per-entry "ok"
@@ -41,6 +46,8 @@ public:
     QString lastError() const { return m_lastError; }
     QVariantList settings() const { return m_settings; }
     QString writingKey() const { return m_writingKey; }
+    QString device() const { return m_device; }
+    void setDevice(const QString &value);
 
     // GET /api/settings - real, read-only (a single 0x1100 query), safe any time.
     Q_INVOKABLE void refresh();
@@ -57,6 +64,7 @@ signals:
     void settingsChanged();
     void lastErrorChanged();
     void writingKeyChanged();
+    void deviceChanged();
 
 private:
     QNetworkAccessManager m_network;
@@ -65,6 +73,7 @@ private:
     QString m_lastError;
     QVariantList m_settings;
     QString m_writingKey;
+    QString m_device;
 
     void setLoading(bool value);
     void setLastError(const QString &message);
