@@ -1,0 +1,60 @@
+name: Build APK
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: 17
+          distribution: temurin
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install NDK
+        run: echo "y" | sdkmanager "ndk;26.3.11579264"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Create secrets.ts
+        run: |
+          mkdir -p src/config
+          cat > src/config/secrets.ts << 'SECRETS'
+          export const LIVELOX_CLIENT_ID     = '${{ secrets.LIVELOX_CLIENT_ID }}';
+          export const STRAVA_CLIENT_ID      = '${{ secrets.STRAVA_CLIENT_ID }}';
+          export const STRAVA_CLIENT_SECRET  = '${{ secrets.STRAVA_CLIENT_SECRET }}';
+          SECRETS
+
+      - name: Create version.ts
+        run: echo "export const BUILD_SHA = '${{ github.sha }}';" > src/config/version.ts
+
+      - name: Build APK
+        run: cd android && chmod +x gradlew && ./gradlew assembleDebug --no-daemon -Porg.gradle.jvmargs="-Xmx4096m"
+
+      - name: Publish Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: "OpenSportsSync — dernière version"
+          body: "Commit : ${{ github.sha }}"
+          target_commitish: ${{ github.sha }}
+          files: android/app/build/outputs/apk/debug/app-debug.apk
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
