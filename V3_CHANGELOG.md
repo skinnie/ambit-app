@@ -945,3 +945,23 @@ logic is built directly from `GARMIN_USB_IMPORT_SPEC.md`'s own real-hardware fin
 guessed, but "matches a real spec" and "verified against real hardware" are different
 claims, and only the former is true for this entry. A real eTrex test is still owed before
 trusting this with an actual SD-card write.
+
+**Follow-up, same day: Backup/Settings polish, v2.5.0 tagged.** Three small real requests
+after reviewing the Garmin work above:
+- Backup's "Backup & Restore," "Existing backups," and "Firmware" Cards are all Suunto-
+  specific (the last one's own text even says "Suunto's own official app") - all three now
+  hidden (`visible: !HomeViewModel.isGarmin`) while a Garmin is connected, since none of
+  them have anything to do while one is.
+- The Garmin backup button was "Choose folder and back up"; renamed to "Create backup now"
+  to match Suunto's own wording exactly - still opens the folder-choose dialog first (a
+  real difference from Suunto's fixed `~/AmbitAppBackups`), just worded the same way.
+- Settings' "General" Card reports the Python backend bridge's own status, which Garmin
+  support has nothing to do with (`GarminService` talks directly to a mounted filesystem,
+  no backend involved). Swapped for a "Supported devices" Card while a Garmin is connected,
+  rather than just hidden outright.
+
+Version bumped to **v2.5.0** (`CMakeLists.txt`, Settings' About text) and tagged as stable,
+superseding v2.3.0 as the current baseline (that tag is left in place, not deleted - a real
+earlier milestone, not a mistake). Committed with the same scoping discipline as the
+v2.3.0 commit (real source only, no build artifacts/logs). Neither tag has been pushed to
+origin - that needs separate, explicit confirmation.
