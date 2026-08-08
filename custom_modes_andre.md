@@ -933,6 +933,19 @@ same commands as Ambit3. GPS orbit write landed at `0x0704e0` (not the Ambit3's 
 not a blocker on its own, since neither `sgee.py` nor this trace hardcodes that address; it's
 discovered from the `gps_orbit_head` (`0x0b15`) reply at connect time either way.
 
+**`appstopscreensunrisunset` - a real data point, deliberately not turned into a claim.**
+Chronologically the last capture in this whole batch, right after
+`installcyclingappmiddlescreenheartzone1-5` (`Cycling`'s own `AppMeta` timestamp confirms the
+ordering). Diffing `Cycling`'s displays between the two shows `Display[0]`'s `Fields[0]`
+(`FT_SHORTCUT`, the "top" row) `Type` going `1 -> 51` - plausibly the sunrise/sunset
+assignment - but `Fields[1]` (`FT_TIME`, "middle," not the row this action should have
+touched) *also* shifted, `51 -> 52`, in the same sync. That rules out a clean
+"`Type` is an independent per-field value" model without more evidence: either assigning one
+row has a real side effect on another (a shared counter/index, a display-wide recompute), or
+this pair of captures isn't as isolated as the `backlight`/`display`/`quicknav` ones were.
+Recorded as-is rather than picking one interpretation - the `Type` value dictionary stays an
+open question, not a guessed one.
+
 Sources for this section: `assets/ambit3 pcap/v2/` (~50 real USBPcap captures + reference
 screenshots, captured 2026-08-08), cross-checked against `assets/WIndows apps/
 suuntolink_roaming/app-4.1.15/resources/app/ambit/sport_mode.js` and `.../ambit/settings.js`.
