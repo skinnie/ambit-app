@@ -962,6 +962,37 @@ event markers, a smaller, different-shaped record than raw samples) - genuinely 
 neither one decoded here, real follow-up work. Orbital update (`GpsSGEE`) is unaffected by any
 of this and already confirmed working end-to-end with the existing `sgee.py`, address and all.
 
+**First real attempt at both, 2026-08-08 - built, tested against synthetic data, *not* yet run
+against a real Kailash.** Two new tools, one per region, both reusing existing real parsers
+wholesale rather than reimplementing anything:
+
+- `tools/kailash_tracklog.py` - reads `TrackLog` (`0x48a1c0`, 1,310,713 bytes) via the same
+  generic `0x0b17` flash-read every other region uses, then hands the raw bytes to
+  `exercise_log.py`'s own `parse_master_header()`/`walk_entries()`/`to_gpx()`/`to_fit()`
+  completely unmodified - the literal "try the Ambit3 ExerciseLog method" André asked for.
+  Verified the failure path is honest, not silent: fed it random bytes and an all-zero
+  buffer, both correctly reported "doesn't look like this format" / "empty" rather than
+  crashing or fabricating fake entries.
+- `tools/kailash_eventlog.py` - reads `EventLog` (`0x0c3500`, 400,000 bytes) the same way,
+  then walks it as a flat array of 52-byte `WaypointDescriptor` records (this project's own
+  real lat/lon/name/route_name/tail struct, already hardware-verified for Ambit3's own
+  Waypoints/POI region) - the closest real analogue to "same as POI," since EventLog has no
+  Ambit3 equivalent of its own to copy exactly. A plausibility filter (real lat/lon range,
+  mostly-printable decoded name, `decode_name()` never raises so this is load-bearing, not
+  decorative) keeps only slots that look like real records, and reports the hit rate plainly -
+  verified against both random bytes (0% hit rate, correctly flagged as "wrong hypothesis")
+  and a synthetic 100-record buffer of real Paris coordinates (100% hit rate, decoded
+  correctly, real GPX `<wpt>` output). Kailash's own real memory map places its *Waypoints*
+  region at the exact same address as Ambit3's (`0x005000`) - real evidence the two devices
+  share at least some struct layouts, not just a hopeful guess to reuse this one for EventLog
+  too.
+
+**Both are real hypotheses, not confirmed decodes** - neither has touched a single real byte
+of an actual Kailash `TrackLog`/`EventLog` yet, only synthetic test data built to prove the
+tools themselves work correctly. A low or zero plausibility rate against real bytes would be
+genuine, useful information (the format guess is wrong), not a tool failure - both scripts say
+so explicitly rather than failing silently. Needs a real connected Kailash to actually run.
+
 **Firmware dump - corrected, was wrong above.** An earlier draft of this section called this
 "genuinely unconfirmed" after checking only for a device-side flash mechanism (there's no
 "Firmware" region in the memory map above, and `firmware_check.py`'s own function names don't
