@@ -225,12 +225,20 @@ class AmbitBleModule(private val reactContext: ReactApplicationContext) :
                         }
 
                     // Confirmed on hardware 2026-08-06: this device's default system
-                    // Bluetooth pairing UI never appeared for the watch's PIN request
-                    // (BlissOS, likely missing/non-functional standard Settings
-                    // pairing-dialog component) — createBond() alone left the user
-                    // with a PIN shown on the watch and no way to enter it. Handling
-                    // ACTION_PAIRING_REQUEST directly and supplying our own UI works
-                    // regardless of whether the system one exists.
+                    // Bluetooth pairing UI never appeared for the watch's PIN request —
+                    // createBond() alone left the user with a PIN shown on the watch and no
+                    // way to enter it. Corrected 2026-08-08: the "BlissOS, likely missing/
+                    // non-functional Settings pairing-dialog component" explanation was
+                    // wrong — the real Suunto app pairs on this exact same device, passkey
+                    // prompt and all, so the system dialog is present and works fine. The
+                    // real cause was almost certainly AmbitBleModule's own explicit
+                    // createBond() call putting the Bluetooth stack on a different,
+                    // stricter code path than the system dialog's own implicit-bonding flow
+                    // relies on (see item 3 in this file's own real-hardware history,
+                    // HANDOFF.md Milestone 7 — createBond() was reverted for exactly this
+                    // reason). Handling ACTION_PAIRING_REQUEST directly and supplying our
+                    // own UI is kept regardless, since it no longer depends on knowing
+                    // whether the system dialog would have worked for this specific flow.
                     BluetoothDevice.ACTION_PAIRING_REQUEST -> {
                         val variant = intent.getIntExtra(BluetoothDevice.EXTRA_PAIRING_VARIANT, -1)
                         // PAIRING_VARIANT_PIN_16_DIGITS (7) and PAIRING_VARIANT_CONSENT (3) are
@@ -239,6 +247,28 @@ class AmbitBleModule(private val reactContext: ReactApplicationContext) :
                         // ints here, not a guess, just working around the missing symbol.
                         if (variant == BluetoothDevice.PAIRING_VARIANT_PIN || variant == 7) {
                             abortBroadcast() // take over from any (apparently absent) default handler
+                            promptForPin(device)
+                        } else if (variant == 1) {
+                            // PAIRING_VARIANT_PASSKEY — real value 1, same situation as PIN_16_DIGITS/
+                            // CONSENT above, not a public named constant in these stubs either. This
+                            // is the watch's actual real pairing method, confirmed two independent
+                            // ways on 2026-08-08 (not guessed): decoding the real SMP IO Capability
+                            // fields from a live iOS capture (watch = Display Only, phone = Keyboard,
+                            // Display, both request MITM — the standard SMP method-selection table
+                            // gives exactly one answer for that combination, LE Legacy Passkey Entry,
+                            // watch displays a 6-digit number, central types it back), and separately
+                            // reproducing a live passkey prompt against this same watch on Linux via
+                            // bluetoothctl's own KeyboardDisplay agent (see HANDOFF.md's dated entry,
+                            // same day, for the full derivation). There is no public Android API to
+                            // submit a passkey reply: BluetoothDevice.setPasskey(int) exists in AOSP
+                            // but is @UnsupportedAppUsage and BLUETOOTH_PRIVILEGED-gated on modern
+                            // Android, unreachable from a third-party app. setPin() is only documented
+                            // for the PIN variant, but AOSP's native btif_dm_pin_reply() answers
+                            // whichever request the stack actually has outstanding regardless of which
+                            // public entry point supplied the bytes — so routing the typed passkey
+                            // digits through setPin() is the realistic best-effort path, not a proper
+                            // fix, and isn't guaranteed on every OEM's Bluetooth stack.
+                            abortBroadcast()
                             promptForPin(device)
                         } else if (variant == BluetoothDevice.PAIRING_VARIANT_PASSKEY_CONFIRMATION || variant == 3) {
                             abortBroadcast()
@@ -266,20 +296,25 @@ class AmbitBleModule(private val reactContext: ReactApplicationContext) :
         ContextCompat.registerReceiver(reactContext, receiver, filter, ContextCompat.RECEIVER_EXPORTED)
     }
 
-    /** Native PIN-entry dialog — the watch displays a numeric PIN, the user
-     * types the same digits here. See ACTION_PAIRING_REQUEST handling above
-     * for why this exists instead of relying on the OS's own dialog. */
+    /** Native PIN/passkey-entry dialog — the watch displays a numeric code (a classic PIN
+     * for PAIRING_VARIANT_PIN/PIN_16_DIGITS, or a 6-digit LE Legacy passkey for
+     * PAIRING_VARIANT_PASSKEY — confirmed 2026-08-08 to be this watch's real method, see
+     * that variant's own comment above), the user types the same digits here. Both cases
+     * end up calling setPin() — the only public submission API either way, see the
+     * PASSKEY variant's comment for why that's correct-enough rather than a type error.
+     * See ACTION_PAIRING_REQUEST handling above for why this exists instead of relying on
+     * the OS's own dialog. */
     private fun promptForPin(device: BluetoothDevice) {
         val activity = reactContext.currentActivity ?: return // no cancel-bond equivalent in the
         // public API — not supplying a PIN just lets the request time out / get rejected naturally
         mainHandler.post {
             val input = android.widget.EditText(activity).apply {
                 inputType = android.text.InputType.TYPE_CLASS_NUMBER
-                hint = "PIN"
+                hint = "Code"
             }
             android.app.AlertDialog.Builder(activity)
                 .setTitle("Pair with watch")
-                .setMessage("Enter the PIN shown on the watch's screen")
+                .setMessage("Enter the code shown on the watch's screen")
                 .setView(input)
                 .setCancelable(false)
                 .setPositiveButton("OK") { _, _ ->

@@ -35,6 +35,15 @@ CMD_NAMES = {
     0x1100: "ambit3_settings",
     0x1200: "ambit3_log_headers",
     0x1201: "ambit3_log_synced",
+    0x0102: "fw_mode",  # bookends a firmware transfer, seen once before and once after
+    0x0103: "fw_mode_ack",
+    0x0E00: "fw_header",  # see firmware_flash.py
+    0x0E01: "fw_data",  # see firmware_flash.py
+    0x0E03: "fw_commit",  # see firmware_flash.py
+    0x0200: "fw_reboot",  # seen right after fw_commit, before device_info reports normal mode again
+    0x0002: "unknown_0002_hello",  # seen in iOS BLE capture 2026-08-08, first msg after encryption
+    0x1104: "unknown_1104_schema_push",  # seen in iOS BLE capture 2026-08-08, self-describing field-path tree
+    0x1202: "unknown_1202",  # seen in iOS BLE capture 2026-08-08, errFlags=0x02 anomaly, see HANDOFF.md
 }
 
 

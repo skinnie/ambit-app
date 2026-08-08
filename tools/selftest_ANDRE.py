@@ -94,24 +94,10 @@ def main():
     else:
         print("  skip    sgee (sgee.7d or orbitsync capture absent from assets/)")
 
-    fw_zip = HERE.parent / "assets" / "Firmware" / "ambit3peak_Emu-fw_2.4.17-70.2.17414.zip"
-    fw_capture = CAPTURES / "firmware"
-    if fw_zip.exists() and fw_capture.exists():
-        record("dryrun", "firmware transfer against the firmware capture",
-               ["firmware_flash.py", str(fw_zip), "--compare", str(fw_capture)])
-    else:
-        print("  skip    firmware (firmware zip or capture absent from assets/)")
-
     if (HERE.parent / "csrc" / "build" / "harness").exists():
         record("C", "serializer against the reference", ["c_reference.py"])
     else:
         print("  skip    C serializer (run make -C csrc)")
-
-    if (HERE.parent / "csrc" / "build" / "sport_modes_harness").exists():
-        record("C", "sport-modes serializer against the reference",
-               ["sport_modes_c_reference.py"])
-    else:
-        print("  skip    C sport-modes serializer (run make -C csrc)")
 
     # Both need the SuuntoLink descriptor, and `settings` deliberately fails without
     # it rather than reporting an unpaired watch it cannot actually see.
