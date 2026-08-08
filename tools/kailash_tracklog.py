@@ -47,6 +47,8 @@ ExerciseLog, not a bug.
 """
 
 import argparse
+import json
+import math
 import struct
 import sys
 
@@ -96,6 +98,42 @@ def walk_records(data):
                 return
 
 
+def haversine_meters(lat1, lon1, lat2, lon2):
+    """Great-circle distance - the same formula this project already uses elsewhere
+    (desktop/src/services/garminservice.cpp's own haversineMeters()), not re-derived."""
+    r = 6371000.0
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dp = math.radians(lat2 - lat1)
+    dl = math.radians(lon2 - lon1)
+    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return r * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+
+def to_activity(points):
+    """One activity-shaped dict, the same field names desktop/src/services/garminservice.cpp
+    (ActivityService.activities) already uses, so the existing ActivityCard/MapView QML
+    components can show this with no new UI code: name/startTime/distanceMeters/
+    durationSeconds/track/gpxText. No ascent/FIT here - TrackLog carries no altitude field
+    confirmed yet (see custom_modes_andre.md), and there's no FIT writer for this format."""
+    if not points:
+        return None
+    first, last = points[0], points[-1]
+    start = f"{first['year']:04d}-{first['month']:02d}-{first['day']:02d}T" \
+            f"{first['hour']:02d}:{first['minute']:02d}:00Z"
+    end_minutes = (last["day"] - first["day"]) * 1440 + \
+        (last["hour"] - first["hour"]) * 60 + (last["minute"] - first["minute"])
+    distance = sum(haversine_meters(a["lat"], a["lon"], b["lat"], b["lon"])
+                   for a, b in zip(points, points[1:]))
+    return {
+        "name": "Kailash TrackLog",
+        "startTime": start,
+        "distanceMeters": round(distance, 1),
+        "durationSeconds": max(0, end_minutes * 60),
+        "track": [{"lat": p["lat"], "lon": p["lon"]} for p in points],
+        "gpxText": to_gpx(points),
+    }
+
+
 def to_gpx(points):
     lines = ['<?xml version="1.0" encoding="UTF-8"?>',
              '<gpx version="1.1" creator="ambit-app kailash_tracklog.py">',
@@ -117,6 +155,9 @@ def main():
                      help="also save the raw region bytes here (live read only)")
     ap.add_argument("--gpx-out", metavar="FILE",
                      help="write every real-looking point as one GPX track file")
+    ap.add_argument("--json", action="store_true",
+                     help="print one JSON activity object instead of human-readable lines - "
+                          "for ambitapp-v2/backend/server.py, not meant for a person to read")
     args = ap.parse_args()
 
     if args.from_file:
@@ -124,16 +165,25 @@ def main():
             data = f.read()
     else:
         from write_nav import Link, read_flash
-        link = Link(dry_run=False, verbose=False)
-        print("read-only: 0x0b17 reads flash, nothing is written")
+        link = Link(dry_run=False, verbose=not args.json)
+        if not args.json:
+            print("read-only: 0x0b17 reads flash, nothing is written")
         link.open()
         data = read_flash(link, TRACKLOG_BASE, TRACKLOG_SIZE, label="TrackLog")
         if args.save:
             with open(args.save, "wb") as f:
                 f.write(data)
-            print(f"\nsaved raw dump to {args.save}")
+            if not args.json:
+                print(f"\nsaved raw dump to {args.save}")
 
     points = list(walk_records(data))
+
+    if args.json:
+        activity = to_activity(points)
+        print(json.dumps({"ok": True, "activity": activity} if activity
+                          else {"ok": False, "error": "no real-looking points found"}))
+        return 0 if activity else 1
+
     print(f"{len(points)} real-looking GPS record(s) found")
     for p in points[:20]:
         print(f"  [{p['index']:5}] {p['year']:04d}-{p['month']:02d}-{p['day']:02d} "

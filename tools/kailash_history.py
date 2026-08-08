@@ -27,8 +27,11 @@ Lille's real coordinates, confirming the unit even though the descriptor's own `
 these two specific fields is empty.
 
     ./tools/kailash_history.py
+    ./tools/kailash_history.py --json   # for ambitapp-v2/backend/server.py, not for a person
 """
 
+import argparse
+import json
 import math
 import struct
 import sys
@@ -53,23 +56,25 @@ KAILASH_DESCRIPTOR = (sbem_schema.ASSETS / "APK" / "kailash" / "Suunto 7R" / "Co
                        / "Documents" / "descr+79DC39510E000100+2.0.5")
 
 
-def main():
-    link = Link(dry_run=False, verbose=False)
-    print("read-only: the 0x1200 sml.DeviceHistory query, nothing is written")
-    link.open()
+def read_history(link, warn=print):
+    """Queries and decodes the real sml.DeviceHistory object. Returns a plain dict (JSON-
+    serializable as-is) with `ok`, and on success `name`/`serial`/`cities_visited`/
+    `countries_visited`/`last_known_location`/`last_known_country`/`last_known_time`/
+    `travelling_days`/`travelled_distance_m`/`cumulated_distance_m`/`furthest_from_home_m`/
+    `sessions` (the activity-mode logbook, see module docstring). `warn` receives non-fatal
+    per-entry decode problems - defaults to `print`, pass a no-op to silence them (e.g. from
+    a JSON caller that shouldn't mix prose into stdout)."""
     payload = link.command(CMD_LOG_HEADERS, HISTORY_REQUEST)
 
     head = payload.find(sbem_schema.MAGIC)
     if head < 0:
-        print("no SBEM0102 payload in the reply")
-        return 1
+        return {"ok": False, "error": "no SBEM0102 payload in the reply"}
 
     descriptor = KAILASH_DESCRIPTOR
     if not descriptor.exists():
-        print(f"CANNOT DECODE: the real Kailash descriptor is missing - expected it at "
-              f"{descriptor}\n(a real file from a real 7R app container extraction; see "
-              f"custom_modes_andre.md's Kailash section for where it came from).")
-        return 1
+        return {"ok": False, "error": f"the real Kailash descriptor is missing - expected it "
+                f"at {descriptor} (a real file from a real 7R app container extraction; see "
+                f"custom_modes_andre.md's Kailash section for where it came from)"}
     schema = sbem_schema.load(descriptor)
     entries = list(sbem_schema.entries(payload[head:]))
 
@@ -81,8 +86,8 @@ def main():
         try:
             records = schema.decode_entry(entry_id, data) or []
         except (ValueError, IndexError, UnicodeDecodeError, struct.error) as exc:
-            print(f"  (couldn't decode entry 0x{entry_id:02x}, {len(data)} bytes: {exc} - "
-                  f"skipped, not fatal)")
+            warn(f"  (couldn't decode entry 0x{entry_id:02x}, {len(data)} bytes: {exc} - "
+                 f"skipped, not fatal)")
             continue
         for record in records:
             fields = {schema.field_name(entry_id, f.fid): v for f, v in record}
@@ -102,26 +107,41 @@ def main():
             else:
                 summary.update(fields)
 
-    name = summary.get("sml.DeviceHistory.Device.Name")
-    serial = summary.get("sml.DeviceHistory.Device.SerialNumber")
-    print(f"\n{name} ({serial})")
-    print(f"  Cities visited:    "
-          f"{summary.get('sml.DeviceHistory.Histories.History.VisitedCities.NumberOfVisitedPlaces')}"
-          + (f"  (last known: {location[0]:.4f}, {location[1]:.4f})" if location else ""))
-    print(f"  Countries visited: "
-          f"{summary.get('sml.DeviceHistory.Histories.History.VisitedCountries.NumberOfVisitedCountries')}"
-          + (f"  ({country})" if country else ""))
-    print(f"  Last known time:   "
-          f"{summary.get('sml.DeviceHistory.Histories.History.LastKnownTime')}")
-    print(f"  Travelling days:   "
-          f"{summary.get('sml.DeviceHistory.Histories.History.TravellingDays')}")
-    print(f"  Travelled distance:"
-          f" {summary.get('sml.DeviceHistory.Histories.History.TravelledDistance')} m")
-    print(f"  Cumulated distance:"
-          f" {summary.get('sml.DeviceHistory.Histories.History.CumulatedDistance')} m")
-    print(f"  Furthest from home:"
-          f" {summary.get('sml.DeviceHistory.Histories.History.FurthestFromHome')} m")
+    p = "sml.DeviceHistory.Histories.History."
+    return {
+        "ok": True,
+        "name": summary.get("sml.DeviceHistory.Device.Name"),
+        "serial": summary.get("sml.DeviceHistory.Device.SerialNumber"),
+        "cities_visited": summary.get(p + "VisitedCities.NumberOfVisitedPlaces"),
+        "countries_visited": summary.get(p + "VisitedCountries.NumberOfVisitedCountries"),
+        "last_known_location": location,  # [lat, lon] degrees, or None
+        "last_known_country": country,
+        "last_known_time": summary.get(p + "LastKnownTime"),
+        "travelling_days": summary.get(p + "TravellingDays"),
+        "travelled_distance_m": summary.get(p + "TravelledDistance"),
+        "cumulated_distance_m": summary.get(p + "CumulatedDistance"),
+        "furthest_from_home_m": summary.get(p + "FurthestFromHome"),
+        "sessions": sessions,
+    }
 
+
+def show_history(h):
+    if not h["ok"]:
+        print(h["error"])
+        return
+    print(f"\n{h['name']} ({h['serial']})")
+    loc = h["last_known_location"]
+    print(f"  Cities visited:     {h['cities_visited']}"
+          + (f"  (last known: {loc[0]:.4f}, {loc[1]:.4f})" if loc else ""))
+    print(f"  Countries visited:  {h['countries_visited']}"
+          + (f"  ({h['last_known_country']})" if h["last_known_country"] else ""))
+    print(f"  Last known time:    {h['last_known_time']}")
+    print(f"  Travelling days:    {h['travelling_days']}")
+    print(f"  Travelled distance: {h['travelled_distance_m']} m")
+    print(f"  Cumulated distance: {h['cumulated_distance_m']} m")
+    print(f"  Furthest from home: {h['furthest_from_home_m']} m")
+
+    sessions = h["sessions"]
     if sessions:
         print(f"\n{len(sessions)} activity-mode logbook entry(ies) "
               "(a real, separate system from the passive TrackLog - see "
@@ -130,7 +150,25 @@ def main():
             print(f"  {s['when']}  duration={s['duration_s']:.1f}s  "
                   f"distance={s['distance_m']}m  max_speed={s['max_speed']:.2f} (raw/360 unit)")
 
-    return 0
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--json", action="store_true",
+                     help="print one JSON object instead of human-readable lines - for "
+                          "ambitapp-v2/backend/server.py, not meant for a person to read")
+    args = ap.parse_args()
+
+    link = Link(dry_run=False, verbose=not args.json)
+    if not args.json:
+        print("read-only: the 0x1200 sml.DeviceHistory query, nothing is written")
+    link.open()
+    h = read_history(link, warn=(lambda *a, **k: None) if args.json else print)
+
+    if args.json:
+        print(json.dumps(h))
+    else:
+        show_history(h)
+    return 0 if h["ok"] else 1
 
 
 if __name__ == "__main__":
