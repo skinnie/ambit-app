@@ -1136,6 +1136,54 @@ this pair of captures isn't as isolated as the `backlight`/`display`/`quicknav` 
 Recorded as-is rather than picking one interpretation - the `Type` value dictionary stays an
 open question, not a guessed one.
 
+**`sml.DeviceHistory` read live and working, `tools/kailash_history.py` - real, direct answer
+to "import the 7R button's own data into our app," and a real bug found and fixed along the
+way.** André's own real 7R-button description ("last city visit, 7 days Lille... 0km furthest
+from home... 1 city, 1 country... 0km travelled, 0 travel days") maps exactly onto
+`sml.DeviceHistory`, entry `0x67` - queryable live through `write_nav.py`'s existing `0x1200`
+object-by-identifier mechanism (already used there for `sml.DeviceLogBook`, entry `0x8d` -
+`DeviceHistory` answers the same way, just a different entry ID, found via this exact watch's
+own real schema descriptor). Confirmed byte-exact against both the watch's own screen (via
+André's description) and the `7R` app's local `device_history` table:
+`NumberOfVisitedPlaces`/`NumberOfVisitedCountries`=1/1, `TravellingDays`/`TravelledDistance`/
+`FurthestFromHome`=0/0/0, country code `FR`.
+
+**Real bug found live**: `sbem_schema.default_descriptor()` globs for
+`descr+*+{REFERENCE_FW}` where `REFERENCE_FW` is hardcoded to the *Ambit3's* own reference
+firmware (`"2.4.17"`) - silently wrong for Kailash, and it doesn't fail cleanly: since a real
+Ambit3 descriptor exists in `assets/`, it loads that one instead and applies *its* field-ID
+meanings to Kailash's real reply bytes. Most fields happened to still decode by coincidence;
+two (`0x55`, `0x56`/`0x5e` region) didn't, throwing real `struct.error`/`ValueError`
+exceptions from a byte-width mismatch between the two schemas' own differing definitions for
+those IDs - silent corruption, not an obvious crash, until the mismatched ones happened to hit
+a hard error. Fixed by pointing `kailash_history.py` at Kailash's own real descriptor
+explicitly (`assets/APK/kailash/Suunto 7R/Container/Documents/descr+79DC39510E000100+2.0.5`)
+rather than the generic Ambit3-reference lookup - any other Kailash-querying tool built later
+should do the same, not reuse `default_descriptor()` as-is.
+
+**A real, second discovery in the same reply**: entry `0x66`
+(`DeviceHistory.Histories.History.LogHeaders.Header`) is the "activity mode" logbook this
+document's own earlier section said "hasn't been located in flash yet" - it isn't in flash at
+all, or at least not *only* there; it comes back live in this same `DeviceHistory` query,
+bundled alongside the visited-cities summary. Four real sessions confirmed, `Duration` (raw/10
+seconds, matching the schema's own `<MOD>x/10,y*10`) and `Speed.Max` (raw/360, matching
+`<MOD>x/360,y*360`) applied since `sbem_schema.py`'s generic decoder deliberately doesn't
+evaluate `<MOD>` formulas itself: two very short (1.2s/3.2s, 0m - button-press tests, not real
+activities), one real ~28-minute session on 2026-08-03 (2249m, max speed ~4.07 - unit
+unconfirmed, plausibly m/s), and one 25-second session live during this same investigation
+(2026-08-08, 15m) - the watch was actively being used while this was being reverse-engineered,
+not a stale fixture.
+
+One more real, separate unit confirmed here: `VisitedCities...Location.Longitude/Latitude`
+are plain `float32`, genuinely different from every *other* lat/lon field in this schema (all
+`int32`, degrees*1e7) - decoding them as degrees directly gives implausible values (~0.05,
+~0.88); as radians (`value * 180 / pi`), they land almost exactly on Lille, matching
+`TrackLog`'s own already-confirmed coordinates.
+
 Sources for this section: `assets/ambit3 pcap/v2/` (~50 real USBPcap captures + reference
 screenshots, captured 2026-08-08), cross-checked against `assets/WIndows apps/
-suuntolink_roaming/app-4.1.15/resources/app/ambit/sport_mode.js` and `.../ambit/settings.js`.
+suuntolink_roaming/app-4.1.15/resources/app/ambit/sport_mode.js` and `.../ambit/settings.js`,
+`assets/APK/kailash/Suunto 7R/` (a real iOS app container extraction - its own real SBEM
+schema descriptor, `7r-trackLog.db` SQLite database, and `assets/manuals/
+Suunto_Kailash_UserGuide_EN.pdf`), and a live, working `sml.DeviceHistory` query against
+André's real connected Kailash, 2026-08-08.
