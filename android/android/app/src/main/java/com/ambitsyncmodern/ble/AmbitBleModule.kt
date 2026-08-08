@@ -67,6 +67,12 @@ private const val SCAN_TIMEOUT_MS = 15_000L
  * this project already maintains — see AmbitUsbModule.kt's SUUNTO_PID_NAMES. */
 private val COMPATIBLE_NAME_PREFIXES = listOf("Ambit3", "Traverse")
 private const val BLE_PERMISSION_REQUEST_CODE = 4243
+// How many extra discovery rounds to try, beyond the first, before giving up
+// on ever finding the custom NSP service — see rediscoveryAttempts's own
+// comment for why this became a bounded retry loop rather than exactly one
+// extra pass, 2026-08-08.
+private const val MAX_REDISCOVERY_ATTEMPTS = 4
+private const val REDISCOVERY_BASE_DELAY_MS = 1200L
 
 class AmbitBleModule(private val reactContext: ReactApplicationContext) :
     ReactContextBaseJavaModule(reactContext) {
@@ -82,7 +88,18 @@ class AmbitBleModule(private val reactContext: ReactApplicationContext) :
     private var writeChar: BluetoothGattCharacteristic? = null
     private var notifyChar: BluetoothGattCharacteristic? = null
     private var connectPromise: Promise? = null
-    private var didRediscoverAfterServiceChanged = false
+    // Was a single boolean + one fixed 1200ms retry until 2026-08-08: real
+    // testing (both this app and, independently, a Linux/BlueZ session against
+    // the same watch the same day — see HANDOFF.md's dated entry) showed the
+    // post-"Service Changed" re-discovery round is a genuine live race, not a
+    // deterministic single retry — sometimes it needs more than one extra pass,
+    // sometimes more than 1200ms. Now a bounded counter with a longer, slightly
+    // backed-off delay per attempt instead of exactly one shot.
+    private var rediscoveryAttempts = 0
+    // Guards against double-triggering the *same* round from both the Service
+    // Changed indication and the backoff timeout below, whichever fires first —
+    // not a "have we ever retried" flag any more, see rediscoveryAttempts for that.
+    private var rediscoveryPending = false
     private var pendingPermissionPromise: Promise? = null
 
     // Serializes GATT operations — Android's BluetoothGatt does not support
@@ -196,7 +213,8 @@ class AmbitBleModule(private val reactContext: ReactApplicationContext) :
     // raise the same PIN prompt — it's the explicit createBond() call that's
     // the problem, not PIN handling itself.
     private fun connectToDevice(device: BluetoothDevice) {
-        didRediscoverAfterServiceChanged = false
+        rediscoveryAttempts = 0
+        rediscoveryPending = false
         registerBondAndPairingReceiver(device)
         openGatt(device)
     }
@@ -364,7 +382,11 @@ class AmbitBleModule(private val reactContext: ReactApplicationContext) :
         // API 31+ only — the platform tells us directly. Pre-31 relies on the
         // manual Service Changed characteristic subscription below instead.
         override fun onServiceChanged(g: BluetoothGatt) {
-            didRediscoverAfterServiceChanged = false
+            // A genuine new Service Changed signal always gets a fresh full
+            // budget — it means the GATT table itself changed again, a
+            // different situation from "still waiting on the first change."
+            rediscoveryAttempts = 0
+            rediscoveryPending = false
             try { g.discoverServices() } catch (_: SecurityException) {}
         }
 
@@ -373,6 +395,7 @@ class AmbitBleModule(private val reactContext: ReactApplicationContext) :
                 failConnect("DISCOVERY_FAILED", "onServicesDiscovered status=$status")
                 return
             }
+            rediscoveryPending = false
 
             val nspService = g.getService(NSP_SERVICE_UUID)
             if (nspService != null) {
@@ -380,33 +403,58 @@ class AmbitBleModule(private val reactContext: ReactApplicationContext) :
                 return
             }
 
-            if (didRediscoverAfterServiceChanged) {
-                // Already gave it a second, deliberate pass and still nothing —
-                // genuinely not there this time, don't loop forever.
+            if (rediscoveryAttempts >= MAX_REDISCOVERY_ATTEMPTS) {
+                // Genuinely out of budget — don't loop forever.
                 failConnect("SERVICE_NOT_FOUND",
-                    "Custom NSP service not found even after re-discovery — not an Ambit3/Traverse, or " +
-                    "\"Sync now\"'s advertising window closed before discovery finished")
+                    "Custom NSP service not found after $rediscoveryAttempts re-discovery attempts — " +
+                    "not an Ambit3/Traverse, or \"Sync now\"'s advertising window closed before " +
+                    "discovery finished")
                 return
             }
 
-            // First pass came back without the custom service. Subscribe to the
-            // standard Service Changed characteristic (belt-and-suspenders for
-            // API < 31, and harmless if the CCCD was already enabled from a
-            // prior bond) — see file header comment. Either that indication or
-            // the plain timeout fallback below will trigger the re-discovery.
+            // Real hardware, 2026-08-08: the bounded-retry-loop fix above, on its
+            // own, still failed identically all 4/4 attempts — while nRF Connect
+            // and the real Suunto app both connect to this same watch on this
+            // same phone without any trouble. That's a real signal more retries
+            // alone can't explain: discoverServices() can silently return
+            // Android's *cached* GATT table instead of actually re-reading the
+            // device, so repeated calls just replay the same stale (incomplete)
+            // result forever, no matter how many times or how long we wait.
+            // refresh() (hidden API, no public equivalent, reached via
+            // reflection — a well-documented real Android BLE workaround for
+            // exactly this symptom) forces that cache to actually be discarded
+            // before the next discoverServices() call, so it goes over the air
+            // for real. Only needs doing once, on the first miss, to clear the
+            // stale entry for the rest of this connection's retries.
+            if (rediscoveryAttempts == 0) refreshGattCache(g)
+
+            // Subscribe to the standard Service Changed characteristic
+            // (belt-and-suspenders for API < 31, and harmless if the CCCD was
+            // already enabled from a prior bond) — see file header comment.
+            // Either that indication or the backoff timeout below triggers the
+            // next re-discovery round. Bounded retry loop rather than exactly
+            // one extra pass since 2026-08-08: real testing (this app, and
+            // independently a Linux/BlueZ session against the same watch the
+            // same day, see HANDOFF.md) showed this re-discovery is a genuine
+            // live race, sometimes needing more than one extra attempt or more
+            // than a fixed short delay.
             subscribeToServiceChanged(g)
+            rediscoveryPending = true
+            val delayMs = REDISCOVERY_BASE_DELAY_MS * (rediscoveryAttempts + 1)
             mainHandler.postDelayed({
-                if (!didRediscoverAfterServiceChanged) {
-                    didRediscoverAfterServiceChanged = true
+                if (rediscoveryPending) {
+                    rediscoveryPending = false
+                    rediscoveryAttempts++
                     try { g.discoverServices() } catch (_: SecurityException) {}
                 }
-            }, 1200L)
+            }, delayMs)
         }
 
         override fun onCharacteristicChanged(g: BluetoothGatt, characteristic: BluetoothGattCharacteristic, value: ByteArray) {
             if (characteristic.uuid == SERVICE_CHANGED_CHAR_UUID) {
-                if (!didRediscoverAfterServiceChanged) {
-                    didRediscoverAfterServiceChanged = true
+                if (rediscoveryPending) {
+                    rediscoveryPending = false
+                    rediscoveryAttempts++
                     try { g.discoverServices() } catch (_: SecurityException) {}
                 }
                 return
@@ -428,6 +476,25 @@ class AmbitBleModule(private val reactContext: ReactApplicationContext) :
         override fun onCharacteristicWrite(g: BluetoothGatt, characteristic: BluetoothGattCharacteristic, status: Int) {
             synchronized(chunkQueueLock) { chunkInFlight = false }
             drainPendingChunks()
+        }
+    }
+
+    /** Forces Android to discard its cached GATT attribute table for this
+     * device, so the next discoverServices() call actually re-reads it from
+     * the watch instead of silently replaying the same stale result. Hidden
+     * API (BluetoothGatt.refresh()), no public equivalent — reached via
+     * reflection, which is the standard, well-documented way real Android BLE
+     * apps work around this exact "Service Changed doesn't surface new
+     * services" symptom. See the SERVICE_NOT_FOUND retry path's own comment
+     * for the real-hardware evidence (2026-08-08) that motivated adding this:
+     * a bounded retry loop alone, without this, still failed identically
+     * every attempt. */
+    private fun refreshGattCache(g: BluetoothGatt): Boolean {
+        return try {
+            val method = g.javaClass.getMethod("refresh")
+            (method.invoke(g) as? Boolean) ?: false
+        } catch (e: Exception) {
+            false
         }
     }
 

@@ -50,12 +50,21 @@ const fr = {
     "Aucun appareil détecté. Vérifiez le câble et l'appareil, ou utilisez l'app sans appareil.",
   homeConnectingAmbit: 'Connexion à la montre…',
   homeConnectRetryBtn: 'Réessayer',
+  homeBleConnectBtn: 'Associer en Bluetooth (expérimental)',
+  homeBleReadyTitle: 'Prêt à associer',
+  homeBleReadyMsg:
+    "Sur la montre : menu « Pair Mobile App » (première association) ou « Sync now » " +
+    "(déjà associée), puis appuyez ci-dessous — la fenêtre Bluetooth de la montre ne reste " +
+    "active que quelques secondes. Ambit3/Traverse uniquement, expérimental.",
+  homeBleReadyBtn: 'Prêt',
+  homeConnectingBle: 'Connexion Bluetooth…',
   homeActivitiesBtn: 'ACTIVITÉS',
   homeRoutesBtn:     'ROUTES',
   homePoisBtn:       'POI',
   homeSyncActivitiesBtn: 'SYNC ACTIVITÉS',
   homeBatteryLabel: 'batterie',
   homeHwLabel:      'matériel',
+  homeDeviceConnectedStatus: 'Connecté',
 
   // Kailash travel history (2026-08-08)
   homeKailashTravelTitle:     'Historique de voyage',
@@ -115,6 +124,13 @@ const fr = {
   arrival:        'Arrivée',
   replayTime:     'Replay (temps)',
   replayDist:     'Replay (distance)',
+
+  // SettingsScreen — Apparence
+  appearanceSection:  'Apparence',
+  appearanceDesc:     'Choisissez le thème clair, sombre, ou suivez le réglage du système.',
+  themeLight:         'Clair',
+  themeDark:          'Sombre',
+  themeSystem:        'Système',
 
   // SettingsScreen — Strava
   stravaSection:         'Strava',
@@ -305,10 +321,16 @@ const fr = {
   aboutVersion: (v: string) => `AmbitApp v${v}`,
   aboutDisclaimer:
     "AmbitApp est un projet personnel, indépendant et open source. Il n'est ni affilié à, " +
-    "ni approuvé, ni sponsorisé par Suunto Oy. Suunto, Ambit et les autres marques Suunto " +
-    "sont des marques déposées ou non déposées de Suunto Oy ; elles ne sont utilisées ici " +
-    "que pour décrire la compatibilité avec des montres Suunto. Tous droits réservés à " +
-    "leurs propriétaires respectifs.",
+    "ni approuvé, ni sponsorisé par Suunto Oy ou Garmin Ltd. Suunto, Ambit, Traverse, " +
+    "Garmin, eTrex, ainsi que tout autre nom de produit ou marque mentionné dans " +
+    "l'application, sont des marques déposées ou non déposées de leurs détenteurs " +
+    "respectifs (Suunto Oy et Garmin Ltd.) ; elles ne sont utilisées ici que pour décrire " +
+    "la compatibilité avec ces appareils. Tous droits réservés à leurs propriétaires " +
+    "respectifs.",
+  aboutCreditsSection: 'Remerciements',
+  aboutCreditsIntro:
+    "Ce projet s'appuie sur le travail réel d'autres personnes, sans qui la " +
+    "rétro-ingénierie des protocoles utilisés ici aurait pris bien plus de temps :",
 
   // Garmin — shared (v2.3 beta, updated v2.3.2)
   garminButton:      'GARMIN',
@@ -408,12 +430,21 @@ const en: typeof fr = {
     'No device detected, please check your cable and device or use app without it.',
   homeConnectingAmbit: 'Connecting to watch…',
   homeConnectRetryBtn: 'Retry',
+  homeBleConnectBtn: 'Pair via Bluetooth (experimental)',
+  homeBleReadyTitle: 'Ready to pair',
+  homeBleReadyMsg:
+    "On the watch: menu \"Pair Mobile App\" (first pairing) or \"Sync now\" (already " +
+    "paired), then tap below — the watch's Bluetooth window only stays open for a few " +
+    "seconds. Ambit3/Traverse only, experimental.",
+  homeBleReadyBtn: 'Ready',
+  homeConnectingBle: 'Connecting via Bluetooth…',
   homeActivitiesBtn: 'ACTIVITIES',
   homeRoutesBtn:     'ROUTES',
   homePoisBtn:       'POIS',
   homeSyncActivitiesBtn: 'SYNC ACTIVITIES',
   homeBatteryLabel: 'battery',
   homeHwLabel:      'hardware',
+  homeDeviceConnectedStatus: 'Connected',
 
   // Kailash travel history (2026-08-08)
   homeKailashTravelTitle:     'Travel History',
@@ -517,6 +548,13 @@ const en: typeof fr = {
   settingsTitle: 'Settings',
   liveloxConnected: 'Connected! You can now export your activities.',
   oauthMissingCode: 'OAuth code missing in callback',
+
+  // SettingsScreen — Appearance
+  appearanceSection:  'Appearance',
+  appearanceDesc:     'Choose light or dark, or follow your system setting.',
+  themeLight:         'Light',
+  themeDark:          'Dark',
+  themeSystem:        'System',
 
   stravaSection:         'Strava',
   stravaSettingsDesc:    'Connect your Strava account to export your activities. The connection uses OAuth2.',
@@ -652,10 +690,15 @@ const en: typeof fr = {
   aboutVersion: (v: string) => `AmbitApp v${v}`,
   aboutDisclaimer:
     "AmbitApp is an independent, open-source personal project. It is not affiliated " +
-    "with, endorsed by, or sponsored by Suunto Oy. Suunto, Ambit, and other Suunto " +
-    "trademarks are registered or unregistered trademarks of Suunto Oy, used here only " +
-    "to describe compatibility with Suunto watches. All rights reserved to their " +
-    "respective owners.",
+    "with, endorsed by, or sponsored by Suunto Oy or Garmin Ltd. Suunto, Ambit, Traverse, " +
+    "Garmin, eTrex, and any other product name or trademark referenced in this app are " +
+    "registered or unregistered trademarks of their respective owners (Suunto Oy and " +
+    "Garmin Ltd.), used here only to describe compatibility with those devices. All " +
+    "rights reserved to their respective owners.",
+  aboutCreditsSection: 'Credits',
+  aboutCreditsIntro:
+    "This project stands on real prior work by other people, without which the protocol " +
+    "reverse-engineering behind it would have taken far longer:",
 
   // Garmin — shared (v2.3 beta, updated v2.3.2)
   garminButton:      'GARMIN',

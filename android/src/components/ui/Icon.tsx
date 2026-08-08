@@ -1,0 +1,242 @@
+import React from 'react';
+import Svg, { Path, Circle, Line, Rect } from 'react-native-svg';
+
+// Outlined, 24dp grid, 2px stroke — same set drawn for the black-and-white
+// UI mockup. Paths are 1:1 ports of that mockup's <symbol> defs.
+
+export type IconName =
+  | 'sync' | 'satellite' | 'route' | 'poi' | 'backup' | 'settings'
+  | 'list' | 'link' | 'map' | 'chart' | 'activity' | 'key' | 'person'
+  | 'delete' | 'check' | 'info' | 'battery' | 'warning' | 'mountain'
+  | 'watch' | 'etrex' | 'sun' | 'moon' | 'auto';
+
+interface Props {
+  name: IconName;
+  size?: number;
+  color?: string;
+}
+
+export default function Icon({ name, size = 20, color = '#000' }: Props) {
+  const s = { stroke: color, strokeWidth: 1.9, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const, fill: 'none' };
+
+  switch (name) {
+    case 'sync':
+      return (
+        <Svg width={size} height={size} viewBox="0 0 24 24">
+          <Path d="M4 12a8 8 0 0 1 8-8c2.5 0 4.7 1.2 6 3" {...s} />
+          <Path d="M20 3v5h-5" {...s} />
+          <Path d="M20 12a8 8 0 0 1-8 8c-2.5 0-4.7-1.2-6-3" {...s} />
+          <Path d="M4 21v-5h5" {...s} />
+        </Svg>
+      );
+    case 'satellite':
+      return (
+        <Svg width={size} height={size} viewBox="0 0 24 24">
+          <Circle cx={6} cy={18} r={2} stroke={color} strokeWidth={1.9} fill="none" />
+          <Path d="M9 15l6-6" {...s} />
+          <Path d="M13 7l4-4" {...s} />
+          <Path d="M15 5a6 6 0 0 1 4 4" {...s} />
+          <Path d="M17.5 2.5a9 9 0 0 1 4 4" {...s} />
+        </Svg>
+      );
+    case 'route':
+      return (
+        <Svg width={size} height={size} viewBox="0 0 24 24">
+          <Circle cx={5} cy={19} r={2} stroke={color} strokeWidth={1.9} fill="none" />
+          <Circle cx={19} cy={5} r={2} stroke={color} strokeWidth={1.9} fill="none" />
+          <Path d="M6.5 17.5C9 13 6 10 9 7c2-2 5 1 8-2" {...s} />
+        </Svg>
+      );
+    case 'poi':
+      return (
+        <Svg width={size} height={size} viewBox="0 0 24 24">
+          <Path d="M12 21s7-7.2 7-12a7 7 0 1 0-14 0c0 4.8 7 12 7 12z" {...s} />
+          <Circle cx={12} cy={9} r={2.4} stroke={color} strokeWidth={1.9} fill="none" />
+        </Svg>
+      );
+    case 'backup':
+      return (
+        <Svg width={size} height={size} viewBox="0 0 24 24">
+          <Path d="M7 18a4 4 0 0 1-.6-7.96A5.5 5.5 0 0 1 17 8.5a4.5 4.5 0 0 1 .5 8.98" {...s} />
+          <Path d="M12 21v-8" {...s} />
+          <Path d="M9 15l3-3 3 3" {...s} />
+        </Svg>
+      );
+    case 'settings':
+      return (
+        <Svg width={size} height={size} viewBox="0 0 24 24">
+          <Circle cx={12} cy={12} r={3.2} stroke={color} strokeWidth={1.9} fill="none" />
+          <Line x1={12} y1={2} x2={12} y2={5} {...s} />
+          <Line x1={12} y1={19} x2={12} y2={22} {...s} />
+          <Line x1={2} y1={12} x2={5} y2={12} {...s} />
+          <Line x1={19} y1={12} x2={22} y2={12} {...s} />
+          <Line x1={4.9} y1={4.9} x2={7} y2={7} {...s} />
+          <Line x1={17} y1={17} x2={19.1} y2={19.1} {...s} />
+          <Line x1={4.9} y1={19.1} x2={7} y2={17} {...s} />
+          <Line x1={17} y1={7} x2={19.1} y2={4.9} {...s} />
+        </Svg>
+      );
+    case 'list':
+      return (
+        <Svg width={size} height={size} viewBox="0 0 24 24">
+          <Line x1={8} y1={6} x2={20} y2={6} {...s} />
+          <Circle cx={4} cy={6} r={1.3} fill={color} stroke="none" />
+          <Line x1={8} y1={12} x2={20} y2={12} {...s} />
+          <Circle cx={4} cy={12} r={1.3} fill={color} stroke="none" />
+          <Line x1={8} y1={18} x2={20} y2={18} {...s} />
+          <Circle cx={4} cy={18} r={1.3} fill={color} stroke="none" />
+        </Svg>
+      );
+    case 'link':
+      return (
+        <Svg width={size} height={size} viewBox="0 0 24 24">
+          <Path d="M8 12l-2.5 2.5a3.5 3.5 0 0 0 5 5L13 17" {...s} />
+          <Path d="M16 12l2.5-2.5a3.5 3.5 0 0 0-5-5L11 7" {...s} />
+          <Path d="M9.5 14.5l5-5" {...s} />
+        </Svg>
+      );
+    case 'map':
+      return (
+        <Svg width={size} height={size} viewBox="0 0 24 24">
+          <Path d="M9 4L4 6v14l5-2 6 2 5-2V4l-5 2-6-2z" {...s} />
+          <Line x1={9} y1={4} x2={9} y2={18} {...s} />
+          <Line x1={15} y1={6} x2={15} y2={20} {...s} />
+        </Svg>
+      );
+    case 'chart':
+      return (
+        <Svg width={size} height={size} viewBox="0 0 24 24">
+          <Line x1={5} y1={20} x2={5} y2={12} {...s} />
+          <Line x1={12} y1={20} x2={12} y2={7} {...s} />
+          <Line x1={19} y1={20} x2={19} y2={15} {...s} />
+          <Line x1={3} y1={20} x2={21} y2={20} {...s} />
+        </Svg>
+      );
+    case 'activity':
+      return (
+        <Svg width={size} height={size} viewBox="0 0 24 24">
+          <Path d="M3 12h4l2-7 4 14 2-7h6" {...s} />
+        </Svg>
+      );
+    case 'key':
+      return (
+        <Svg width={size} height={size} viewBox="0 0 24 24">
+          <Circle cx={7} cy={15} r={4} stroke={color} strokeWidth={1.9} fill="none" />
+          <Path d="M10 12l9-9" {...s} />
+          <Path d="M15 6l3 3" {...s} />
+          <Path d="M18 3l3 3" {...s} />
+        </Svg>
+      );
+    case 'person':
+      return (
+        <Svg width={size} height={size} viewBox="0 0 24 24">
+          <Circle cx={12} cy={8} r={4} stroke={color} strokeWidth={1.9} fill="none" />
+          <Path d="M4 20c0-4 4-6 8-6s8 2 8 6" {...s} />
+        </Svg>
+      );
+    case 'delete':
+      return (
+        <Svg width={size} height={size} viewBox="0 0 24 24">
+          <Path d="M4 7h16" {...s} />
+          <Path d="M9 7V4h6v3" {...s} />
+          <Path d="M6 7l1 13h10l1-13" {...s} />
+          <Line x1={10} y1={11} x2={10} y2={17} {...s} />
+          <Line x1={14} y1={11} x2={14} y2={17} {...s} />
+        </Svg>
+      );
+    case 'check':
+      return (
+        <Svg width={size} height={size} viewBox="0 0 24 24">
+          <Circle cx={12} cy={12} r={9} stroke={color} strokeWidth={1.9} fill="none" />
+          <Path d="M8 12.5l2.5 2.5 5.5-6" {...s} />
+        </Svg>
+      );
+    case 'info':
+      return (
+        <Svg width={size} height={size} viewBox="0 0 24 24">
+          <Circle cx={12} cy={12} r={9} stroke={color} strokeWidth={1.9} fill="none" />
+          <Line x1={12} y1={11} x2={12} y2={16} {...s} />
+          <Circle cx={12} cy={7.6} r={0.9} fill={color} stroke="none" />
+        </Svg>
+      );
+    case 'battery':
+      return (
+        <Svg width={size} height={size} viewBox="0 0 24 24">
+          <Rect x={2.5} y={8} width={16} height={8} rx={2} stroke={color} strokeWidth={1.9} fill="none" />
+          <Line x1={21} y1={11} x2={21} y2={13} {...s} />
+          <Rect x={4.5} y={10} width={10} height={4} rx={0.5} fill={color} stroke="none" />
+        </Svg>
+      );
+    case 'warning':
+      return (
+        <Svg width={size} height={size} viewBox="0 0 24 24">
+          <Path d="M12 3.5L21.5 20h-19L12 3.5z" {...s} />
+          <Line x1={12} y1={10} x2={12} y2={14.5} {...s} />
+          <Circle cx={12} cy={17.3} r={0.9} fill={color} stroke="none" />
+        </Svg>
+      );
+    case 'mountain':
+      return (
+        <Svg width={size} height={size} viewBox="0 0 24 24">
+          <Path d="M2 18.5L6.5 9.5L9.5 13L13.5 5.5L17.5 12L20 9L22 18.5Z" {...s} />
+        </Svg>
+      );
+    case 'watch':
+      // Suunto Ambit3 Peak silhouette — round bezel, top/bottom strap
+      // lugs, four side buttons, and a small mountain on the dial to tie
+      // it back to the app mark (see Ambit3_Peak_Icon.png reference).
+      return (
+        <Svg width={size} height={size} viewBox="0 0 24 24">
+          <Rect x={9.3} y={0.8} width={5.4} height={5} rx={1.6} stroke={color} strokeWidth={1.9} fill="none" />
+          <Rect x={9.3} y={18.2} width={5.4} height={5} rx={1.6} stroke={color} strokeWidth={1.9} fill="none" />
+          <Circle cx={12} cy={12} r={6.6} stroke={color} strokeWidth={1.9} fill="none" />
+          <Circle cx={17.6} cy={8.6} r={1} fill={color} stroke="none" />
+          <Circle cx={17.6} cy={15.4} r={1} fill={color} stroke="none" />
+          <Circle cx={6.4} cy={8.6} r={1} fill={color} stroke="none" />
+          <Circle cx={6.4} cy={15.4} r={1} fill={color} stroke="none" />
+          <Path d="M8 15.2l2-4 1.6 2 2.4-5 2 4.7" stroke={color} strokeWidth={1.4} strokeLinecap="round" strokeLinejoin="round" fill="none" />
+        </Svg>
+      );
+    case 'etrex':
+      // Garmin eTrex 10 silhouette — tall rounded handheld body, screen,
+      // top-right round button, side D-pad/menu nubs (see etrex10.jpg).
+      return (
+        <Svg width={size} height={size} viewBox="0 0 24 24">
+          <Rect x={6} y={1} width={12} height={22} rx={4} stroke={color} strokeWidth={1.9} fill="none" />
+          <Rect x={8} y={6.6} width={8} height={8.6} rx={1} stroke={color} strokeWidth={1.9} fill="none" />
+          <Circle cx={14.6} cy={5.1} r={1.2} stroke={color} strokeWidth={1.5} fill="none" />
+          <Line x1={6} y1={9} x2={4.6} y2={9} {...s} />
+          <Line x1={18} y1={13} x2={19.4} y2={13} {...s} />
+        </Svg>
+      );
+    case 'sun':
+      return (
+        <Svg width={size} height={size} viewBox="0 0 24 24">
+          <Circle cx={12} cy={12} r={4.2} stroke={color} strokeWidth={1.9} fill="none" />
+          <Line x1={12} y1={1.5} x2={12} y2={4} {...s} />
+          <Line x1={12} y1={20} x2={12} y2={22.5} {...s} />
+          <Line x1={1.5} y1={12} x2={4} y2={12} {...s} />
+          <Line x1={20} y1={12} x2={22.5} y2={12} {...s} />
+          <Line x1={4.5} y1={4.5} x2={6.2} y2={6.2} {...s} />
+          <Line x1={17.8} y1={17.8} x2={19.5} y2={19.5} {...s} />
+          <Line x1={4.5} y1={19.5} x2={6.2} y2={17.8} {...s} />
+          <Line x1={17.8} y1={6.2} x2={19.5} y2={4.5} {...s} />
+        </Svg>
+      );
+    case 'moon':
+      return (
+        <Svg width={size} height={size} viewBox="0 0 24 24">
+          <Path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a6.8 6.8 0 0 0 10.5 10.5z" {...s} />
+        </Svg>
+      );
+    case 'auto':
+      return (
+        <Svg width={size} height={size} viewBox="0 0 24 24">
+          <Circle cx={12} cy={12} r={9} stroke={color} strokeWidth={1.9} fill="none" />
+          <Path d="M12 3a9 9 0 0 1 0 18z" fill={color} stroke="none" />
+        </Svg>
+      );
+    default:
+      return null;
+  }
+}

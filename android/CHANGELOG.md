@@ -3,6 +3,22 @@
 All notable changes to the AmbitApp Android app (fork of `guiguoz/opensportsync`) are
 recorded here, newest first.
 
+## 2.5.12 (2026-08-08)
+
+Merges two real, independent lines of work that developed in parallel on separate machines/
+terminals today, both starting from the same 2.3.4-beta base: the UI/theme redesign below
+(2.5.0 through 2.5.10, built in a separate `ambitapp-v2.5.0` working copy specifically so
+the other one stayed undisturbed) and the Kailash/CustomModes/Settings feature work (2.5.11,
+built directly in this repo). Reconciled via a real three-way merge (base = the shared
+2.3.4-beta ancestor, mirrored to Android's own git history at commit `a4d2680`) - most files
+merged with zero conflicts since the redesign was deliberately "visual layer only, no
+service/handler/state-machine logic changed"; the two real overlaps (HomeScreen.tsx,
+SettingsScreen.tsx) were both independent same-spot additions, not competing changes, and
+both sides were kept. One follow-up not done as part of the merge itself, on purpose rather
+than guessed: the Ambit3/Kailash Settings section and the Sport Modes screen still use their
+original hardcoded colors rather than the new `theme/tokens.ts` system - functionally
+identical, just not yet visually reworked onto the new palette.
+
 ## 2.5.11 (2026-08-08)
 
 Real feature work, sourced from this file's own git history rather than reconstructed from
@@ -30,6 +46,58 @@ subtree` import (internal repo housekeeping, not a user-facing change - see
   not yet hardware-confirmed on this platform specifically (every prior write re-reads to
   confirm; a broken composition would show up as a write that doesn't stick, not a silent
   false "done").
+
+## V2.5.10 - 2.5.10 (2026-08-08)
+
+- Follow-up polish pass on the v2.5.0 redesign, based on real-device screenshots.
+- Uniform `ActionTile` height regardless of whether a progress subtitle is showing.
+- New `Logo` mark (mountain + "AmbitApp" wordmark) on the searching/connecting/timeout/
+  error screens, with a version badge; text on those screens now scales up ~12.5%+,
+  further scaled by the device's own screen width (clamped) instead of a fixed size.
+- New outlined `watch` (Ambit3 Peak) and `etrex` (Garmin eTrex 10) icons, shown centered
+  under the header on their respective connected-device dashboards in place of the generic
+  mountain mark; eTrex screen glyph resized down to better match the real device's
+  proportions.
+- Device info cards (name, battery/sd-card status, "Connected" chip) are now centered
+  instead of left/right split, for both the Ambit and Garmin flows.
+- Connected dashboard now polls every ~4s to detect a device being unplugged or swapped
+  for the other type, instead of only re-checking on screen focus.
+- Launcher icon replaced: the old colorful skeuomorphic watch render is now a flat black-
+  background / white-mountain-glyph icon matching the in-app `Logo`, regenerated at every
+  density (legacy, round, adaptive foreground).
+- Theme is now user-selectable — Settings' new top section offers Light / Dark / Follow
+  system, persisted via AsyncStorage (`src/theme/ThemeModeContext.tsx`). Previously the
+  app only ever followed the OS scheme with no override, so a system-dark device could
+  never show the light palette.
+- Suunto model names now read "Ambit 2", "Ambit 3 Peak", etc. (space before the digit)
+  across the whole PID→name table in `AmbitUsbModule.kt`, not just "Ambit3 Peak".
+
+## V2.5.0 - 2.5.0 (2026-08-08)
+
+- Full UI redesign, built in a new sibling folder (`ambitapp-v2.5.0`, this one) so the
+  `opensportsync-main` working copy stays untouched. Visual layer only — no service,
+  handler, or state-machine logic changed.
+- Replaced the neon-cyan-on-navy look with a flat, grayscale black/white (light) and dark/
+  light-grey (dark) system — `src/theme/tokens.ts` + `src/theme/useTheme.ts`, driven by the
+  OS color scheme. No accent hue. One muted alert tone exists, reserved strictly for errors
+  and destructive actions (a failed operation, deleting a stored API key) — a normal
+  connected/done state stays neutral, never colored green.
+  Removed the old per-category hue coding (cyan/purple/amber per action type) — it wasn't
+  encoding anything real.
+- New outlined icon set (`src/components/ui/Icon.tsx`, `react-native-svg`) replacing the `⚙`
+  text glyph and bare colored dots throughout.
+- New shared presentational kit (`src/components/ui/primitives.tsx`): `Section`, `Button`
+  (filled/outline/text), `StatusLine`, `WarningNote`, `Chip`, `Badge`, `IconBadge`,
+  `FieldRow`, `ActionTile`, `ExportedFileRow` — every screen now styles itself from the same
+  theme tokens instead of ad hoc hex values.
+- Home: device card now shows a "Connected" chip (check icon) instead of a separate "Ready"
+  status line; the five action buttons are flat bordered tiles instead of neon circles.
+- Settings: each integration is a bordered card with an icon badge; "Disconnect" is neutral
+  grey (unlinking a service isn't destructive); "Delete" (removing a stored key) uses the
+  alert color, since that one actually is.
+- Map/Elevation chart: recolored the surrounding RN chrome (stat chips, export menu, replay
+  bar) to the new theme; left the Leaflet map's route line and start/end markers alone —
+  real cartographic markers, not UI chrome.
 
 ## V2.3.4 beta - 2.3.4-beta (2026-08-07)
 

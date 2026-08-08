@@ -14,6 +14,7 @@ import { readGpxFile } from '../services/GpxService';
 import { parseTrackPoints, computeElevationStats, TrackPoint } from '../services/GpxParser';
 import ElevationChart from '../components/ElevationChart';
 import { t } from '../i18n';
+import { useTheme } from '../theme/useTheme';
 
 type Route = RouteProp<RootStackParamList, 'Map'>;
 type Nav   = NativeStackNavigationProp<RootStackParamList, 'Map'>;
@@ -224,6 +225,8 @@ function buildLeafletHtml(): string {
 // ─── Composant ────────────────────────────────────────────────────────────────
 
 export default function MapScreen() {
+  const theme = useTheme();
+  const styles = createStyles(theme);
   const route      = useRoute<Route>();
   const navigation = useNavigation<Nav>();
   const { activity } = route.params;
@@ -559,7 +562,7 @@ export default function MapScreen() {
   if (loading) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#4caf50" />
+        <ActivityIndicator size="large" color={theme.text} />
         <Text style={styles.loadingText}>{t.loading}</Text>
       </View>
     );
@@ -591,14 +594,14 @@ export default function MapScreen() {
       {/* ── Infos overlay ── */}
       <View style={styles.overlay}>
         <View style={styles.statsRow}>
-          <StatChip label={t.distance} value={formatDist(stats.totalDistance)} />
-          <StatChip label={t.duration} value={formatDurationMinSec(activity.duration_s)} />
-          <StatChip label={t.pace} value={formatPace(activity.duration_s, stats.totalDistance)} />
+          <StatChip styles={styles} label={t.distance} value={formatDist(stats.totalDistance)} />
+          <StatChip styles={styles} label={t.duration} value={formatDurationMinSec(activity.duration_s)} />
+          <StatChip styles={styles} label={t.pace} value={formatPace(activity.duration_s, stats.totalDistance)} />
         </View>
         <View style={styles.statsRow}>
-          <StatChip label="D+" value={`${stats.dPlus} m`} color="#4caf50" />
-          <StatChip label="D-" value={`${stats.dMinus} m`} color="#f44336" />
-          <StatChip label={t.avgSpeed} value={formatSpeed(activity.duration_s, stats.totalDistance)} />
+          <StatChip styles={styles} label="D+" value={`${stats.dPlus} m`} />
+          <StatChip styles={styles} label="D-" value={`${stats.dMinus} m`} />
+          <StatChip styles={styles} label={t.avgSpeed} value={formatSpeed(activity.duration_s, stats.totalDistance)} />
         </View>
       </View>
 
@@ -614,14 +617,14 @@ export default function MapScreen() {
       {/* ── Menu d'export ── */}
       {showExportMenu && (
         <View style={styles.exportMenu}>
-          <ExportMenuItem label={t.shareGpx}       onPress={handleShareGpx} />
-          <ExportMenuItem label={t.saveDownloads}  onPress={handleSaveToDownloads} />
-          <ExportMenuItem label={t.shareFit}       onPress={handleShareFit} />
-          <ExportMenuItem label={t.saveFitDownloads} onPress={handleSaveFitToDownloads} />
-          <ExportMenuItem label={t.uploadRunalyze} onPress={handleUploadRunalyze} />
-          <ExportMenuItem label={t.uploadIntervals} onPress={handleUploadIntervals} />
-          <ExportMenuItem label={t.uploadLivelox}  onPress={handleExportLivelox} />
-          <ExportMenuItem label={t.uploadStrava}   onPress={handleUploadStrava} />
+          <ExportMenuItem styles={styles} label={t.shareGpx}       onPress={handleShareGpx} />
+          <ExportMenuItem styles={styles} label={t.saveDownloads}  onPress={handleSaveToDownloads} />
+          <ExportMenuItem styles={styles} label={t.shareFit}       onPress={handleShareFit} />
+          <ExportMenuItem styles={styles} label={t.saveFitDownloads} onPress={handleSaveFitToDownloads} />
+          <ExportMenuItem styles={styles} label={t.uploadRunalyze} onPress={handleUploadRunalyze} />
+          <ExportMenuItem styles={styles} label={t.uploadIntervals} onPress={handleUploadIntervals} />
+          <ExportMenuItem styles={styles} label={t.uploadLivelox}  onPress={handleExportLivelox} />
+          <ExportMenuItem styles={styles} label={t.uploadStrava}   onPress={handleUploadStrava} />
         </View>
       )}
 
@@ -669,7 +672,7 @@ export default function MapScreen() {
 
 // ─── Helpers Components ───────────────────────────────────────────────────────
 
-function ExportMenuItem({ label, onPress }: { label: string; onPress: () => void }) {
+function ExportMenuItem({ styles, label, onPress }: { styles: ReturnType<typeof createStyles>; label: string; onPress: () => void }) {
   return (
     <TouchableOpacity style={styles.exportItem} onPress={onPress}>
       <Text style={styles.exportItemText}>{label}</Text>
@@ -677,123 +680,129 @@ function ExportMenuItem({ label, onPress }: { label: string; onPress: () => void
   );
 }
 
-function StatChip({ label, value, color = '#fff' }: { label: string; value: string; color?: string }) {
+function StatChip({ styles, label, value }: { styles: ReturnType<typeof createStyles>; label: string; value: string }) {
   return (
     <View style={styles.chip}>
       <Text style={styles.chipLabel}>{label}</Text>
-      <Text style={[styles.chipValue, { color }]}>{value}</Text>
+      <Text style={styles.chipValue}>{value}</Text>
     </View>
   );
 }
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#16213e' },
-  map: { flex: 1 },
-  centered: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#16213e' },
-  loadingText: { color: '#aaa', marginTop: 12 },
-  errorText: { color: '#f44336', fontSize: 15 },
-  overlay: {
-    position: 'absolute',
-    top: 12,
-    left: 12,
-    right: 12,
-    backgroundColor: 'rgba(22,33,62,0.85)',
-    borderRadius: 10,
-    paddingVertical: 8,
-    paddingHorizontal: 8,
-    gap: 8,
-  },
-  statsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-  },
-  chip: { alignItems: 'center', flex: 1 },
-  chipLabel: { fontSize: 10, color: '#8899aa', marginBottom: 2 },
-  chipValue: { fontSize: 13, fontWeight: '700', color: '#fff' },
-  exportFab: {
-    position: 'absolute',
-    bottom: 188,
-    right: 16,
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#0f3460',
-    alignItems: 'center',
-    justifyContent: 'center',
-    elevation: 4,
-  },
-  btnDisabled: { opacity: 0.5 },
-  exportFabText: { fontSize: 20, color: '#fff' },
-  exportMenu: {
-    position: 'absolute',
-    bottom: 244,
-    right: 16,
-    backgroundColor: '#0f3460',
-    borderRadius: 10,
-    overflow: 'hidden',
-    elevation: 6,
-    minWidth: 200,
-  },
-  exportItem: {
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#1a4a7a',
-  },
-  exportItemText: { color: '#fff', fontSize: 14 },
-  
-  // Replay bar
-  replayBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#0f3460',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#1a4a7a',
-  },
-  replayModeText: {
-    fontSize: 10,
-    color: '#8899aa',
-    width: 50,
-  },
-  replayControls: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
-  },
-  replayBtn: {
-    padding: 8,
-  },
-  replayBtnMain: {
-    padding: 8,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    borderRadius: 20,
-  },
-  replayIcon: { fontSize: 16, color: '#fff' },
-  replayIconMain: { fontSize: 20, color: '#fff' },
-  replayRight: {
-    alignItems: 'flex-end',
-    width: 80,
-  },
-  replayTimeText: {
-    color: '#fff',
-    fontSize: 10,
-    fontWeight: '600',
-  },
-  speedBtn: {
-    marginTop: 4,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  speedText: {
-    color: '#fff',
-    fontSize: 10,
-    fontWeight: 'bold',
-  },
-});
+function createStyles(t: ReturnType<typeof useTheme>) {
+  return StyleSheet.create({
+    container: { flex: 1, backgroundColor: t.background },
+    map: { flex: 1 },
+    centered: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: t.background },
+    loadingText: { color: t.textMuted, marginTop: 12 },
+    errorText: { color: t.alert, fontSize: 15 },
+    overlay: {
+      position: 'absolute',
+      top: 12,
+      left: 12,
+      right: 12,
+      backgroundColor: t.surface,
+      borderColor: t.outline,
+      borderWidth: 1,
+      borderRadius: 14,
+      paddingVertical: 8,
+      paddingHorizontal: 8,
+      gap: 8,
+    },
+    statsRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-around',
+    },
+    chip: { alignItems: 'center', flex: 1 },
+    chipLabel: { fontSize: 10, color: t.textMuted, marginBottom: 2 },
+    chipValue: { fontSize: 13, fontWeight: '700', color: t.text },
+    exportFab: {
+      position: 'absolute',
+      bottom: 188,
+      right: 16,
+      width: 48,
+      height: 48,
+      borderRadius: 24,
+      backgroundColor: t.surfaceHigh,
+      borderColor: t.outline,
+      borderWidth: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    btnDisabled: { opacity: 0.5 },
+    exportFabText: { fontSize: 20, color: t.text },
+    exportMenu: {
+      position: 'absolute',
+      bottom: 244,
+      right: 16,
+      backgroundColor: t.surface,
+      borderColor: t.outline,
+      borderWidth: 1,
+      borderRadius: 14,
+      overflow: 'hidden',
+      minWidth: 200,
+    },
+    exportItem: {
+      paddingVertical: 12,
+      paddingHorizontal: 16,
+      borderBottomWidth: 1,
+      borderBottomColor: t.outline,
+    },
+    exportItemText: { color: t.text, fontSize: 14 },
+
+    // Replay bar
+    replayBar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      backgroundColor: t.surface,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      borderTopWidth: 1,
+      borderTopColor: t.outline,
+    },
+    replayModeText: {
+      fontSize: 10,
+      color: t.textMuted,
+      width: 50,
+    },
+    replayControls: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 16,
+    },
+    replayBtn: {
+      padding: 8,
+    },
+    replayBtnMain: {
+      padding: 8,
+      backgroundColor: t.surfaceHigh,
+      borderRadius: 20,
+    },
+    replayIcon: { fontSize: 16, color: t.text },
+    replayIconMain: { fontSize: 20, color: t.text },
+    replayRight: {
+      alignItems: 'flex-end',
+      width: 80,
+    },
+    replayTimeText: {
+      color: t.text,
+      fontSize: 10,
+      fontWeight: '600',
+    },
+    speedBtn: {
+      marginTop: 4,
+      backgroundColor: t.surfaceHigh,
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      borderRadius: 4,
+    },
+    speedText: {
+      color: t.text,
+      fontSize: 10,
+      fontWeight: 'bold',
+    },
+  });
+}

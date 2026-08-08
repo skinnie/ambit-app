@@ -82,8 +82,8 @@ android {
         applicationId "com.ambitsyncmodern"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 8
-        versionName "2.5.11"
+        versionCode 9
+        versionName "2.5.12"
         ndk {
             abiFilters 'arm64-v8a', 'armeabi-v7a', 'x86_64'
         }

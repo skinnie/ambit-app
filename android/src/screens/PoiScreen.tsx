@@ -1,14 +1,16 @@
 import React, { useState } from 'react';
-import {
-  View, Text, TextInput, TouchableOpacity,
-  StyleSheet, Alert, ScrollView, ActivityIndicator,
-} from 'react-native';
+import { View, StyleSheet, Alert, ScrollView } from 'react-native';
 import {
   addPoiToWatch, AddPoiState, importPoisFromGpx, ImportPoiState, exportPoisToGpx, ExportPoiState,
 } from '../services/PoiService';
 import { t } from '../i18n';
+import { useTheme } from '../theme/useTheme';
+import { Button, FieldRow, Section, StatusLine } from '../components/ui/primitives';
 
 export default function PoiScreen() {
+  const theme = useTheme();
+  const styles = createStyles(theme);
+
   const [poiName, setPoiName] = useState('');
   const [poiLat, setPoiLat]   = useState('');
   const [poiLon, setPoiLon]   = useState('');
@@ -94,118 +96,57 @@ export default function PoiScreen() {
     <ScrollView style={styles.root} contentContainerStyle={styles.content}>
 
       {/* ── Import from GPX ── */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>{t.poiImportSection}</Text>
-        <Text style={styles.sectionDesc}>{t.poiImportDesc}</Text>
-
+      <Section title={t.poiImportSection} description={t.poiImportDesc}>
         <View style={styles.row}>
-          <TouchableOpacity
-            style={[styles.btn, styles.btnOrange, anyBusy && styles.btnDisabled]}
-            onPress={handleImportPois}
-            disabled={anyBusy}
-          >
-            {importBusy
-              ? <ActivityIndicator size="small" color="#fff" />
-              : <Text style={styles.btnText}>{t.poiImportBtn}</Text>
-            }
-          </TouchableOpacity>
+          <Button label={t.poiImportBtn} variant="filled" loading={importBusy} disabled={anyBusy} onPress={handleImportPois} />
         </View>
-
-        {importBusy && (
-          <View style={styles.statusRow}>
-            <View style={styles.dot} />
-            <Text style={styles.statusText}>{importStatusMessage(importState)}</Text>
-          </View>
-        )}
-      </View>
+        {importBusy && <StatusLine text={importStatusMessage(importState)} />}
+      </Section>
 
       {/* ── Export to GPX (read from watch) ── */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>{t.poiExportSection}</Text>
-        <Text style={styles.sectionDesc}>{t.poiExportDesc}</Text>
-
+      <Section title={t.poiExportSection} description={t.poiExportDesc}>
         <View style={styles.row}>
-          <TouchableOpacity
-            style={[styles.btn, styles.btnPrimary, anyBusy && styles.btnDisabled]}
-            onPress={handleExportPois}
-            disabled={anyBusy}
-          >
-            {exportBusy
-              ? <ActivityIndicator size="small" color="#fff" />
-              : <Text style={styles.btnText}>{t.poiExportBtn}</Text>
-            }
-          </TouchableOpacity>
+          <Button label={t.poiExportBtn} variant="filled" loading={exportBusy} disabled={anyBusy} onPress={handleExportPois} />
         </View>
-
         {exportBusy && (
-          <View style={styles.statusRow}>
-            <View style={styles.dot} />
-            <Text style={styles.statusText}>
-              {exportState.phase === 'connecting' ? t.connecting : t.poiExportReading}
-            </Text>
-          </View>
+          <StatusLine text={exportState.phase === 'connecting' ? t.connecting : t.poiExportReading} />
         )}
-      </View>
+      </Section>
 
       {/* ── Manual entry ── */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>{t.poiSection}</Text>
-        <Text style={styles.sectionDesc}>{t.poiDesc}</Text>
-
-        <Text style={styles.label}>{t.poiName}</Text>
-        <TextInput
-          style={styles.input}
+      <Section title={t.poiSection} description={t.poiDesc}>
+        <FieldRow
+          icon="poi"
           value={poiName}
           onChangeText={setPoiName}
           placeholder={t.poiNamePlaceholder}
-          placeholderTextColor="#4a5a7a"
           editable={!anyBusy}
         />
-
-        <Text style={styles.label}>{t.poiLat}</Text>
-        <TextInput
-          style={styles.input}
+        <FieldRow
+          icon="map"
           value={poiLat}
           onChangeText={setPoiLat}
           placeholder="48.8566"
-          placeholderTextColor="#4a5a7a"
           keyboardType="numbers-and-punctuation"
           editable={!anyBusy}
         />
-
-        <Text style={styles.label}>{t.poiLon}</Text>
-        <TextInput
-          style={styles.input}
+        <FieldRow
+          icon="map"
           value={poiLon}
           onChangeText={setPoiLon}
           placeholder="2.3522"
-          placeholderTextColor="#4a5a7a"
           keyboardType="numbers-and-punctuation"
           editable={!anyBusy}
         />
 
         <View style={styles.row}>
-          <TouchableOpacity
-            style={[styles.btn, styles.btnPrimary, anyBusy && styles.btnDisabled]}
-            onPress={handleAddPoi}
-            disabled={anyBusy}
-          >
-            {poiBusy
-              ? <ActivityIndicator size="small" color="#fff" />
-              : <Text style={styles.btnText}>{t.poiAddBtn}</Text>
-            }
-          </TouchableOpacity>
+          <Button label={t.poiAddBtn} variant="filled" loading={poiBusy} disabled={anyBusy} onPress={handleAddPoi} />
         </View>
 
         {poiBusy && (
-          <View style={styles.statusRow}>
-            <View style={styles.dot} />
-            <Text style={styles.statusText}>
-              {poiState.phase === 'connecting' ? t.connecting : t.poiWriting}
-            </Text>
-          </View>
+          <StatusLine text={poiState.phase === 'connecting' ? t.connecting : t.poiWriting} />
         )}
-      </View>
+      </Section>
 
     </ScrollView>
   );
@@ -221,41 +162,8 @@ function importStatusMessage(s: ImportPoiState): string {
   }
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#16213e' },
+const createStyles = (t: ReturnType<typeof useTheme>) => StyleSheet.create({
+  root: { flex: 1, backgroundColor: t.background },
   content: { padding: 20 },
-  section: {
-    backgroundColor: '#0f3460',
-    borderRadius: 14,
-    padding: 16,
-    marginBottom: 20,
-  },
-  sectionTitle: { fontSize: 17, fontWeight: '700', color: '#00e5ff', marginBottom: 8 },
-  sectionDesc: { fontSize: 13, color: '#8899aa', marginBottom: 6, lineHeight: 19 },
-  label: { fontSize: 13, color: '#8899aa', marginTop: 12, marginBottom: 4 },
-  input: {
-    backgroundColor: '#16213e',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#1a4a7a',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    color: '#fff',
-    fontSize: 14,
-  },
-  row: { flexDirection: 'row', gap: 10, marginTop: 12 },
-  btn: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  btnPrimary: { backgroundColor: '#00e5ff22', borderWidth: 1, borderColor: '#00e5ff' },
-  btnOrange:  { backgroundColor: '#fc4c0222', borderWidth: 1, borderColor: '#fc4c02' },
-  btnDisabled: { opacity: 0.5 },
-  btnText: { color: '#fff', fontWeight: '600', fontSize: 14 },
-  statusRow: { flexDirection: 'row', alignItems: 'center', marginTop: 10 },
-  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#4caf50', marginRight: 6 },
-  statusText: { color: '#4caf50', fontSize: 12 },
+  row: { flexDirection: 'row', gap: 10, marginTop: 4 },
 });

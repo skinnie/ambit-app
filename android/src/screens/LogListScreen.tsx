@@ -15,12 +15,15 @@ import { readGpxFile, listGpxFiles } from '../services/GpxService';
 import { extractGpxMetadata } from '../services/GpxParser';
 import RNFS from 'react-native-fs';
 import { t, dateLocale } from '../i18n';
+import { useTheme } from '../theme/useTheme';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'LogList'>;
 
 const ALL = t.all;
 
 export default function LogListScreen() {
+  const theme = useTheme();
+  const styles = createStyles(theme);
   const navigation = useNavigation<Nav>();
   const [activities, setActivities] = useState<ActivityRecord[]>([]);
   const [refreshing, setRefreshing] = useState(false);
@@ -167,7 +170,7 @@ export default function LogListScreen() {
         ListFooterComponent={
           <Text style={styles.deleteHint}>{t.deleteHint}</Text>
         }
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#fff" />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={theme.text} />}
         renderItem={({ item }) => (
           <TouchableOpacity
             style={styles.card}
@@ -259,51 +262,53 @@ function formatDist(meters: number): string {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#16213e' },
+const createStyles = (t: ReturnType<typeof useTheme>) => StyleSheet.create({
+  root: { flex: 1, backgroundColor: t.background },
   list: { flex: 1, padding: 12 },
-  filterBar: { maxHeight: 52, backgroundColor: '#16213e' },
+  filterBar: { maxHeight: 52, backgroundColor: t.background },
   filterBarContent: { paddingHorizontal: 12, paddingVertical: 8, gap: 8 },
   chip: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#0f3460',
-    borderRadius: 20,
+    backgroundColor: t.surfaceHigh,
+    borderRadius: 999,
     paddingHorizontal: 14,
     paddingVertical: 6,
     borderWidth: 1,
-    borderColor: 'transparent',
+    borderColor: t.outline,
   },
   chipActive: {
-    backgroundColor: '#00e5ff22',
-    borderColor: '#00e5ff',
+    backgroundColor: t.surface,
+    borderColor: t.text,
   },
   chipIcon: { fontSize: 13 },
-  chipText: { fontSize: 13, color: '#8899aa', fontWeight: '500' },
-  chipTextActive: { color: '#00e5ff', fontWeight: '700' },
+  chipText: { fontSize: 13, color: t.textMuted, fontWeight: '500' },
+  chipTextActive: { color: t.text, fontWeight: '700' },
   empty: {
     flex: 1, alignItems: 'center', justifyContent: 'center',
-    backgroundColor: '#16213e', padding: 32,
+    backgroundColor: t.background, padding: 32,
   },
   emptyIcon: { fontSize: 48, marginBottom: 16 },
-  emptyText: { fontSize: 18, color: '#fff', fontWeight: '600', marginBottom: 8 },
-  emptyHint: { fontSize: 13, color: '#8899aa', textAlign: 'center' },
+  emptyText: { fontSize: 18, color: t.text, fontWeight: '600', marginBottom: 8 },
+  emptyHint: { fontSize: 13, color: t.textMuted, textAlign: 'center' },
   emptyFilter: { paddingVertical: 40, alignItems: 'center' },
-  emptyFilterText: { color: '#8899aa', fontSize: 14 },
-  deleteHint: { fontSize: 11, color: '#555', textAlign: 'center', marginTop: 8, marginBottom: 16 },
+  emptyFilterText: { color: t.textMuted, fontSize: 14 },
+  deleteHint: { fontSize: 11, color: t.textMuted, textAlign: 'center', marginTop: 8, marginBottom: 16 },
   card: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#0f3460',
-    borderRadius: 12,
+    backgroundColor: t.surface,
+    borderColor: t.outline,
+    borderWidth: 1,
+    borderRadius: 14,
     padding: 16,
     marginBottom: 10,
   },
   cardLeft: { flex: 1 },
-  cardDate: { fontSize: 15, color: '#fff', fontWeight: '600', marginBottom: 2 },
-  cardType: { fontSize: 12, color: '#7ec8e3', marginBottom: 3 },
-  cardSub: { fontSize: 13, color: '#8899aa' },
+  cardDate: { fontSize: 15, color: t.text, fontWeight: '600', marginBottom: 2 },
+  cardType: { fontSize: 12, color: t.textMuted, marginBottom: 3 },
+  cardSub: { fontSize: 13, color: t.textMuted },
   cardRight: { alignItems: 'flex-end' },
-  cardDPlus: { fontSize: 13, color: '#4caf50', marginBottom: 4 },
-  cardArrow: { fontSize: 22, color: '#8899aa' },
+  cardDPlus: { fontSize: 13, color: t.textMuted, marginBottom: 4 },
+  cardArrow: { fontSize: 22, color: t.textMuted },
 });

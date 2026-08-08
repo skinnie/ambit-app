@@ -4,6 +4,8 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { useTheme } from './src/theme/useTheme';
+import { ThemeModeProvider, useThemeMode } from './src/theme/ThemeModeContext';
 import HomeScreen from './src/screens/HomeScreen';
 import LogListScreen from './src/screens/LogListScreen';
 import MapScreen from './src/screens/MapScreen';
@@ -71,6 +73,17 @@ async function processOAuthUrl(url: string | null) {
 // ─── App ──────────────────────────────────────────────────────────────────────
 
 export default function App() {
+  return (
+    <ThemeModeProvider>
+      <AppShell />
+    </ThemeModeProvider>
+  );
+}
+
+function AppShell() {
+  const { isDark } = useThemeMode();
+  const theme = useTheme();
+
   useEffect(() => {
     // App ouverte depuis un deep link (app déjà lancée)
     const sub = Linking.addEventListener('url', ({ url }) => processOAuthUrl(url));
@@ -81,15 +94,19 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-      <StatusBar barStyle="light-content" backgroundColor="#1a1a2e" />
+      <StatusBar
+        barStyle={isDark ? 'light-content' : 'dark-content'}
+        backgroundColor={theme.background}
+      />
       <NavigationContainer>
         <Stack.Navigator
           initialRouteName="Home"
           screenOptions={{
-            headerStyle: { backgroundColor: '#1a1a2e' },
-            headerTintColor: '#ffffff',
-            headerTitleStyle: { fontWeight: 'bold' },
-            contentStyle: { backgroundColor: '#16213e' },
+            headerStyle: { backgroundColor: theme.surface },
+            headerTintColor: theme.text,
+            headerTitleStyle: { fontWeight: '700' },
+            headerShadowVisible: false,
+            contentStyle: { backgroundColor: theme.background },
           }}
         >
           <Stack.Screen

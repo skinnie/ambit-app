@@ -4,6 +4,9 @@ import {
   StyleSheet, Alert, ScrollView, ActivityIndicator, Linking,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import { useThemeMode, ThemeMode } from '../theme/ThemeModeContext';
+import Icon, { IconName } from '../components/ui/Icon';
+import { CREDITS } from '../legal/credits';
 import { DecodedSetting, SettingField } from '../services/AmbitSettingsReader';
 import { readAmbitSettings, writeAmbitSetting } from '../services/AmbitSettingsService';
 import {
@@ -20,8 +23,20 @@ import {
 } from '../services/ApiStrava';
 import { t } from '../i18n';
 import { APP_VERSION } from '../config/version';
+import { useTheme } from '../theme/useTheme';
+import { Button, Chip, FieldRow, IconBadge, StatusLine } from '../components/ui/primitives';
+
+const THEME_OPTIONS: { mode: ThemeMode; icon: IconName; label: () => string }[] = [
+  { mode: 'light',  icon: 'sun',  label: () => t.themeLight },
+  { mode: 'dark',   icon: 'moon', label: () => t.themeDark },
+  { mode: 'system', icon: 'auto', label: () => t.themeSystem },
+];
 
 export default function SettingsScreen() {
+  const theme = useTheme();
+  const styles = createStyles(theme);
+  const { mode, setMode } = useThemeMode();
+
   const [runalyzeKey, setRunalyzeKey]     = useState('');
   const [savedKey, setSavedKey]           = useState<string | null>(null);
   const [saving, setSaving]               = useState(false);
@@ -203,153 +218,145 @@ export default function SettingsScreen() {
   return (
     <ScrollView style={styles.root} contentContainerStyle={styles.content}>
 
+      {/* ── Apparence ── */}
+      <View style={styles.section}>
+        <View style={styles.cardHead}>
+          <IconBadge icon={mode === 'light' ? 'sun' : mode === 'dark' ? 'moon' : 'auto'} />
+          <Text style={styles.cardTitle}>{t.appearanceSection}</Text>
+        </View>
+        <Text style={styles.sectionDesc}>{t.appearanceDesc}</Text>
+        <View style={styles.themeRow}>
+          {THEME_OPTIONS.map(opt => {
+            const selected = mode === opt.mode;
+            return (
+              <TouchableOpacity
+                key={opt.mode}
+                onPress={() => setMode(opt.mode)}
+                activeOpacity={0.75}
+                style={[styles.themeOption, selected && styles.themeOptionSelected]}
+              >
+                <Icon name={opt.icon} size={17} color={selected ? theme.onPrimary : theme.text} />
+                <Text style={[styles.themeOptionLabel, selected && styles.themeOptionLabelSelected]}>
+                  {opt.label()}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </View>
+
       {/* ── Strava ── */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>{t.stravaSection}</Text>
+        <View style={styles.cardHead}>
+          <IconBadge icon="link" />
+          <Text style={styles.cardTitle}>{t.stravaSection}</Text>
+        </View>
         <Text style={styles.sectionDesc}>{t.stravaSettingsDesc}</Text>
         {stravaAuth ? (
-          <View>
-            <View style={styles.statusRow}>
-              <View style={styles.dot} />
-              <Text style={styles.statusText}>{t.stravaConnectedStatus}</Text>
+          <>
+            <Chip icon="check" label={t.stravaConnectedStatus} />
+            <View style={styles.row}>
+              <Button label={t.stravaDisconnectBtn} variant="text" grow={false} onPress={handleStravaDisconnect} />
             </View>
-            <TouchableOpacity style={[styles.btn, styles.btnDanger, { marginTop: 10 }]} onPress={handleStravaDisconnect}>
-              <Text style={styles.btnText}>{t.stravaDisconnectBtn}</Text>
-            </TouchableOpacity>
-          </View>
+          </>
         ) : (
-          <TouchableOpacity style={[styles.btn, styles.btnOrange, { marginTop: 10 }]} onPress={handleStravaConnect}>
-            <Text style={styles.btnText}>{t.connect}</Text>
-          </TouchableOpacity>
+          <View style={styles.row}>
+            <Button label={t.connect} variant="filled" onPress={handleStravaConnect} />
+          </View>
         )}
       </View>
 
       {/* ── Livelox ── */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Livelox</Text>
+        <View style={styles.cardHead}>
+          <IconBadge icon="map" />
+          <Text style={styles.cardTitle}>Livelox</Text>
+        </View>
         <Text style={styles.sectionDesc}>{t.liveloxSettingsDesc}</Text>
         {liveloxAuth ? (
-          <View>
-            <View style={styles.statusRow}>
-              <View style={styles.dot} />
-              <Text style={styles.statusText}>{t.liveloxConnectedStatus}</Text>
+          <>
+            <Chip icon="check" label={t.liveloxConnectedStatus} />
+            <View style={styles.row}>
+              <Button label={t.liveloxDisconnectBtn} variant="text" grow={false} onPress={handleLiveloxDisconnect} />
             </View>
-            <TouchableOpacity style={[styles.btn, styles.btnDanger, { marginTop: 10 }]} onPress={handleLiveloxDisconnect}>
-              <Text style={styles.btnText}>{t.liveloxDisconnectBtn}</Text>
-            </TouchableOpacity>
-          </View>
+          </>
         ) : (
-          <TouchableOpacity style={[styles.btn, styles.btnPrimary, { marginTop: 10 }]} onPress={handleLiveloxConnect}>
-            <Text style={styles.btnText}>{t.connect}</Text>
-          </TouchableOpacity>
+          <View style={styles.row}>
+            <Button label={t.connect} variant="filled" onPress={handleLiveloxConnect} />
+          </View>
         )}
       </View>
 
       {/* ── Runalyze ── */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>{t.runalyzeSection}</Text>
+        <View style={styles.cardHead}>
+          <IconBadge icon="chart" />
+          <Text style={styles.cardTitle}>{t.runalyzeSection}</Text>
+        </View>
         <Text style={styles.sectionDesc}>{t.runalyzeDesc}</Text>
         <Text style={styles.sectionDesc}>
           {t.runalyzeApiHint}
           <Text style={styles.link}>{t.runalyzeApiLink}</Text>
         </Text>
 
-        <Text style={styles.label}>{t.apiKey}</Text>
-        <TextInput
-          style={styles.input}
+        <FieldRow
+          icon="key"
           value={runalyzeKey}
           onChangeText={setRunalyzeKey}
           placeholder={t.apiKeyPlaceholder}
-          placeholderTextColor="#4a5a7a"
           autoCapitalize="none"
           autoCorrect={false}
           secureTextEntry
         />
 
         <View style={styles.row}>
-          <TouchableOpacity
-            style={[styles.btn, styles.btnPrimary, saving && styles.btnDisabled]}
-            onPress={handleSaveRunalyze}
-            disabled={saving}
-          >
-            {saving
-              ? <ActivityIndicator size="small" color="#fff" />
-              : <Text style={styles.btnText}>{t.saveBtn}</Text>
-            }
-          </TouchableOpacity>
-
-          {savedKey && (
-            <TouchableOpacity style={[styles.btn, styles.btnDanger]} onPress={handleRemoveRunalyze}>
-              <Text style={styles.btnText}>{t.deleteBtn}</Text>
-            </TouchableOpacity>
+          <Button label={t.saveBtn} variant="filled" loading={saving} onPress={handleSaveRunalyze} />
+          {!!savedKey && (
+            <Button label={t.deleteBtn} icon="delete" variant="outline" tone="alert" grow={false} onPress={handleRemoveRunalyze} />
           )}
         </View>
 
-        {savedKey && (
-          <View style={styles.statusRow}>
-            <View style={styles.dot} />
-            <Text style={styles.statusText}>{t.keyStored}</Text>
-          </View>
-        )}
+        {!!savedKey && <StatusLine text={t.keyStored} />}
       </View>
 
       {/* ── Intervals.icu ── */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>{t.intervalsSection}</Text>
+        <View style={styles.cardHead}>
+          <IconBadge icon="activity" />
+          <Text style={styles.cardTitle}>{t.intervalsSection}</Text>
+        </View>
         <Text style={styles.sectionDesc}>{t.intervalsDesc}</Text>
         <Text style={styles.sectionDesc}>
           {t.intervalsApiHint}
           <Text style={styles.link}>{t.intervalsApiLink}</Text>
         </Text>
 
-        <Text style={styles.label}>{t.athleteId}</Text>
-        <TextInput
-          style={styles.input}
+        <FieldRow
+          icon="person"
           value={intervalsAthleteId}
           onChangeText={setIntervalsAthleteId}
           placeholder={t.athleteIdPlaceholder}
-          placeholderTextColor="#4a5a7a"
           autoCapitalize="none"
           autoCorrect={false}
         />
-
-        <Text style={styles.label}>{t.apiKey}</Text>
-        <TextInput
-          style={styles.input}
+        <FieldRow
+          icon="key"
           value={intervalsApiKey}
           onChangeText={setIntervalsApiKey}
           placeholder={t.apiKeyPlaceholder}
-          placeholderTextColor="#4a5a7a"
           autoCapitalize="none"
           autoCorrect={false}
           secureTextEntry
         />
 
         <View style={styles.row}>
-          <TouchableOpacity
-            style={[styles.btn, styles.btnPrimary, savingIntervals && styles.btnDisabled]}
-            onPress={handleSaveIntervals}
-            disabled={savingIntervals}
-          >
-            {savingIntervals
-              ? <ActivityIndicator size="small" color="#fff" />
-              : <Text style={styles.btnText}>{t.saveBtn}</Text>
-            }
-          </TouchableOpacity>
-
+          <Button label={t.saveBtn} variant="filled" loading={savingIntervals} onPress={handleSaveIntervals} />
           {intervalsSaved && (
-            <TouchableOpacity style={[styles.btn, styles.btnDanger]} onPress={handleRemoveIntervals}>
-              <Text style={styles.btnText}>{t.deleteBtn}</Text>
-            </TouchableOpacity>
+            <Button label={t.deleteBtn} icon="delete" variant="outline" tone="alert" grow={false} onPress={handleRemoveIntervals} />
           )}
         </View>
 
-        {intervalsSaved && (
-          <View style={styles.statusRow}>
-            <View style={styles.dot} />
-            <Text style={styles.statusText}>{t.credsStored}</Text>
-          </View>
-        )}
+        {intervalsSaved && <StatusLine text={t.credsStored} />}
       </View>
 
       {/* ── Watch Settings - real, 2026-08-08. Cable settings-write is confirmed working
@@ -359,24 +366,22 @@ export default function SettingsScreen() {
           the matching curated table (AmbitSettingsService.ts's own header comment), so
           this section works unmodified for either. ── */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>
-          {ambitIsKailash ? t.kailashSettingsSection : t.ambitSettingsSection}
-        </Text>
+        <View style={styles.cardHead}>
+          <IconBadge icon="watch" />
+          <Text style={styles.cardTitle}>
+            {ambitIsKailash ? t.kailashSettingsSection : t.ambitSettingsSection}
+          </Text>
+        </View>
         <Text style={styles.sectionDesc}>{t.ambitSettingsDesc}</Text>
 
         {!ambitSettings && ambitSettingsPhase !== 'connecting' && ambitSettingsPhase !== 'reading' && (
-          <TouchableOpacity
-            style={[styles.btn, styles.btnPrimary, { marginTop: 10 }]}
-            onPress={handleReadAmbitSettings}
-          >
-            <Text style={styles.btnText}>{t.ambitSettingsReadBtn}</Text>
-          </TouchableOpacity>
+          <Button label={t.ambitSettingsReadBtn} icon="sync" onPress={handleReadAmbitSettings} style={{ marginTop: 10 }} />
         )}
 
         {(ambitSettingsPhase === 'connecting' || ambitSettingsPhase === 'reading') && (
           <View style={styles.statusRow}>
-            <ActivityIndicator size="small" color="#00e5ff" />
-            <Text style={[styles.statusText, { color: '#8899aa', marginLeft: 8 }]}>
+            <ActivityIndicator size="small" color={theme.text} />
+            <Text style={[styles.sectionDesc, { marginLeft: 8, marginBottom: 0 }]}>
               {ambitSettingsPhase === 'connecting' ? t.connecting : t.ambitSettingsReading}
             </Text>
           </View>
@@ -476,57 +481,85 @@ export default function SettingsScreen() {
         })}
 
         {ambitSettings && (
-          <TouchableOpacity
-            style={[styles.btn, styles.btnPrimary, { marginTop: 14 }]}
-            onPress={handleReadAmbitSettings}
-          >
-            <Text style={styles.btnText}>{t.ambitSettingsRefreshBtn}</Text>
-          </TouchableOpacity>
+          <Button label={t.ambitSettingsRefreshBtn} icon="sync" onPress={handleReadAmbitSettings} style={{ marginTop: 14 }} />
         )}
       </View>
 
       {/* ── About / disclaimer ── */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>{t.aboutSection}</Text>
+        <View style={styles.cardHead}>
+          <IconBadge icon="info" />
+          <Text style={styles.cardTitle}>{t.aboutSection}</Text>
+        </View>
         <Text style={styles.sectionDesc}>{t.aboutVersion(APP_VERSION)}</Text>
         <Text style={[styles.sectionDesc, { marginTop: 10 }]}>{t.aboutDisclaimer}</Text>
+
+        <Text style={styles.creditsHeading}>{t.aboutCreditsSection}</Text>
+        <Text style={styles.sectionDesc}>{t.aboutCreditsIntro}</Text>
+        {CREDITS.map(c => (
+          <TouchableOpacity
+            key={c.name}
+            style={styles.creditItem}
+            disabled={!c.url}
+            activeOpacity={0.6}
+            onPress={() => c.url && Linking.openURL(c.url)}
+          >
+            <Text style={[styles.creditName, !!c.url && styles.link]}>{c.name}</Text>
+            <Text style={styles.creditDesc}>{c.description}</Text>
+          </TouchableOpacity>
+        ))}
       </View>
 
     </ScrollView>
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#16213e' },
+const createStyles = (t: ReturnType<typeof useTheme>) => StyleSheet.create({
+  root: { flex: 1, backgroundColor: t.background },
   content: { padding: 20 },
   section: {
-    backgroundColor: '#0f3460',
-    borderRadius: 14,
-    padding: 16,
-    marginBottom: 20,
-  },
-  sectionTitle: { fontSize: 17, fontWeight: '700', color: '#00e5ff', marginBottom: 8 },
-  sectionDesc: { fontSize: 13, color: '#8899aa', marginBottom: 6, lineHeight: 19 },
-  link: { color: '#00e5ff' },
-  label: { fontSize: 13, color: '#8899aa', marginTop: 12, marginBottom: 4 },
-  input: {
-    backgroundColor: '#16213e',
-    borderRadius: 8,
+    backgroundColor: t.surface,
+    borderColor: t.outline,
     borderWidth: 1,
-    borderColor: '#1a4a7a',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    color: '#fff',
-    fontSize: 14,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
   },
+  cardHead: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 4 },
+  cardTitle: { fontSize: 16, fontWeight: '700', color: t.text },
+  sectionDesc: { fontSize: 13, color: t.textMuted, marginBottom: 6, lineHeight: 19 },
+  link: { color: t.text, fontWeight: '600' },
   row: { flexDirection: 'row', gap: 10, marginTop: 12 },
-  btn: {
+  creditsHeading: {
+    fontSize: 13, fontWeight: '700', color: t.text,
+    marginTop: 16, paddingTop: 12, borderTopWidth: 1, borderTopColor: t.outline,
+  },
+  creditItem: { marginTop: 10 },
+  creditName: { fontSize: 13, fontWeight: '700', color: t.text },
+  creditDesc: { fontSize: 12, color: t.textMuted, lineHeight: 17, marginTop: 2 },
+  themeRow: { flexDirection: 'row', gap: 8, marginTop: 12 },
+  themeOption: {
     flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1.4,
+    borderColor: t.outline,
+    backgroundColor: t.surfaceHigh,
   },
+  themeOptionSelected: {
+    backgroundColor: t.primary,
+    borderColor: t.primary,
+  },
+  themeOptionLabel: { fontSize: 13, fontWeight: '600', color: t.text },
+  themeOptionLabelSelected: { color: t.onPrimary },
+  // Real, 2026-08-08 - not yet re-themed onto the t.* token system the rest of this
+  // file uses (kept functionally identical to what was already tested rather than
+  // guessing token mappings during the theme-redesign merge); a real follow-up, not
+  // forgotten.
   btnPrimary: { backgroundColor: '#00e5ff22', borderWidth: 1, borderColor: '#00e5ff' },
   btnOrange:  { backgroundColor: '#fc4c0222', borderWidth: 1, borderColor: '#fc4c02' },
   btnDanger:  { backgroundColor: '#f4433622', borderWidth: 1, borderColor: '#f44336' },

@@ -2,6 +2,7 @@ import React, { useCallback, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, PanResponder, Dimensions } from 'react-native';
 import Svg, { Path, Line, Text as SvgText, Circle } from 'react-native-svg';
 import { TrackPoint, ElevationStats } from '../services/GpxParser';
+import { useTheme } from '../theme/useTheme';
 
 interface Props {
   points: TrackPoint[];
@@ -15,6 +16,8 @@ const CHART_HEIGHT = 120;
 const PADDING = { top: 8, bottom: 24, left: 36, right: 8 };
 
 export default function ElevationChart({ points, stats, externalProgress, onScrub, onScrubEnd }: Props) {
+  const theme = useTheme();
+  const styles = createStyles(theme);
   const screenWidth = Dimensions.get('window').width;
   const chartW = screenWidth - PADDING.left - PADDING.right;
   const chartH = CHART_HEIGHT - PADDING.top - PADDING.bottom;
@@ -105,9 +108,9 @@ export default function ElevationChart({ points, stats, externalProgress, onScru
       {/* Légende D+ / D- */}
       <View style={styles.legend}>
         <Text style={styles.legendItem}>
-          <Text style={styles.legendGreen}>▲{stats.dPlus} m</Text>
+          <Text style={styles.legendStat}>▲{stats.dPlus} m</Text>
           {'  '}
-          <Text style={styles.legendRed}>▼{stats.dMinus} m</Text>
+          <Text style={styles.legendStat}>▼{stats.dMinus} m</Text>
           {'  '}
           <Text style={styles.legendGray}>{stats.altMin}–{stats.altMax} m</Text>
         </Text>
@@ -123,7 +126,7 @@ export default function ElevationChart({ points, stats, externalProgress, onScru
         <SvgText
           x={PADDING.left - 4}
           y={PADDING.top + 6}
-          fill="#8899aa"
+          fill={theme.textMuted}
           fontSize={9}
           textAnchor="end"
         >
@@ -132,7 +135,7 @@ export default function ElevationChart({ points, stats, externalProgress, onScru
         <SvgText
           x={PADDING.left - 4}
           y={PADDING.top + chartH}
-          fill="#8899aa"
+          fill={theme.textMuted}
           fontSize={9}
           textAnchor="end"
         >
@@ -142,7 +145,7 @@ export default function ElevationChart({ points, stats, externalProgress, onScru
         {/* Zone remplie */}
         <Path
           d={fillD}
-          fill="rgba(231,76,60,0.15)"
+          fill="rgba(140,140,140,0.18)"
           translateX={PADDING.left}
           translateY={PADDING.top}
         />
@@ -150,7 +153,7 @@ export default function ElevationChart({ points, stats, externalProgress, onScru
         {/* Courbe */}
         <Path
           d={pathD}
-          stroke="#e74c3c"
+          stroke={theme.text}
           strokeWidth={2}
           fill="none"
           translateX={PADDING.left}
@@ -165,7 +168,7 @@ export default function ElevationChart({ points, stats, externalProgress, onScru
               y1={PADDING.top}
               x2={PADDING.left + activePoint.x}
               y2={PADDING.top + chartH}
-              stroke="rgba(255,255,255,0.5)"
+              stroke="rgba(140,140,140,0.5)"
               strokeWidth={1}
               strokeDasharray="3,3"
             />
@@ -173,14 +176,14 @@ export default function ElevationChart({ points, stats, externalProgress, onScru
               cx={PADDING.left + activePoint.x}
               cy={PADDING.top + activePoint.y}
               r={4}
-              fill="#fff"
-              stroke="#e74c3c"
+              fill={theme.background}
+              stroke={theme.text}
               strokeWidth={2}
             />
             <SvgText
               x={Math.min(PADDING.left + activePoint.x + 6, screenWidth - 50)}
               y={PADDING.top + activePoint.y - 6}
-              fill="#fff"
+              fill={theme.text}
               fontSize={10}
               fontWeight="bold"
             >
@@ -193,7 +196,7 @@ export default function ElevationChart({ points, stats, externalProgress, onScru
         <SvgText
           x={PADDING.left}
           y={CHART_HEIGHT - 4}
-          fill="#8899aa"
+          fill={theme.textMuted}
           fontSize={9}
         >
           0
@@ -201,7 +204,7 @@ export default function ElevationChart({ points, stats, externalProgress, onScru
         <SvgText
           x={PADDING.left + chartW - 4}
           y={CHART_HEIGHT - 4}
-          fill="#8899aa"
+          fill={theme.textMuted}
           fontSize={9}
           textAnchor="end"
         >
@@ -225,18 +228,19 @@ function haversineM(lat1: number, lon1: number, lat2: number, lon2: number): num
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
-  container: {
-    backgroundColor: 'rgba(22,33,62,0.95)',
-    paddingTop: 4,
-  },
-  legend: {
-    paddingHorizontal: PADDING.left,
-    paddingBottom: 2,
-  },
-  legendItem: { fontSize: 11 },
-  legendGreen: { color: '#4caf50', fontWeight: '600' },
-  legendRed: { color: '#f44336', fontWeight: '600' },
-  legendGray: { color: '#8899aa' },
-  svg: {},
-});
+function createStyles(t: ReturnType<typeof useTheme>) {
+  return StyleSheet.create({
+    container: {
+      backgroundColor: t.surface,
+      paddingTop: 4,
+    },
+    legend: {
+      paddingHorizontal: PADDING.left,
+      paddingBottom: 2,
+    },
+    legendItem: { fontSize: 11 },
+    legendStat: { color: t.text, fontWeight: '600' },
+    legendGray: { color: t.textMuted },
+    svg: {},
+  });
+}

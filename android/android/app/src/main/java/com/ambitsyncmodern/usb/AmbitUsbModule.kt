@@ -26,24 +26,25 @@ private const val SUUNTO_VID = 0x1493
 // Utilisé comme source de vérité pour l'affichage : plus fiable que UsbDevice.productName,
 // qui dépend de la chaîne iProduct renvoyée par le firmware de la montre (souvent générique).
 private val SUUNTO_PID_NAMES = mapOf(
-    0x0010 to "Suunto Ambit",          // codename Bluebird
-    0x0019 to "Suunto Ambit2",         // codename Duck
-    0x001a to "Suunto Ambit2 S",       // codename Colibri
-    0x001b to "Suunto Ambit3 Peak",    // codename Emu
-    0x001c to "Suunto Ambit3 Sport",   // codename Finch
-    0x001d to "Suunto Ambit2 R",       // codename Greentit
-    0x001e to "Suunto Ambit3 Run",     // codename Ibisbill
-    0x002a to "Suunto Kailash",        // codename Hoopoe
-    0x002b to "Suunto Traverse",       // codename Jabiru
-    0x002c to "Suunto Ambit3 Vertical",// codename Kaka
-    0x002d to "Suunto Traverse Alpha", // codename Loon
+    0x0010 to "Suunto Ambit",           // codename Bluebird
+    0x0019 to "Suunto Ambit 2",         // codename Duck
+    0x001a to "Suunto Ambit 2 S",       // codename Colibri
+    0x001b to "Suunto Ambit 3 Peak",    // codename Emu
+    0x001c to "Suunto Ambit 3 Sport",   // codename Finch
+    0x001d to "Suunto Ambit 2 R",       // codename Greentit
+    0x001e to "Suunto Ambit 3 Run",     // codename Ibisbill
     // Real, 2026-08-08: found missing here the same way it was found missing from
     // tools/write_nav.py's own PRODUCT_IDS dict this same session (confirmed via `lsusb`
     // against a real connected Kailash, "ID 1493:002a Suunto Kailash") - without this entry,
     // `it.productId in SUUNTO_PID_NAMES` below silently excludes a real, working Kailash from
     // both device detection and permission requests (both check membership in this same
     // map), the exact same failure mode ("no Ambit3 on the USB bus" despite the watch being
-    // genuinely connected) write_nav.py had.
+    // genuinely connected) write_nav.py had. Missing again from the parallel theme-redesign
+    // copy this file was merged with (2026-08-08) - re-added, not dropped a second time.
+    0x002a to "Suunto Kailash",         // codename Hoopoe
+    0x002b to "Suunto Traverse",        // codename Jabiru
+    0x002c to "Suunto Ambit 3 Vertical",// codename Kaka
+    0x002d to "Suunto Traverse Alpha",  // codename Loon
 )
 
 private const val ACTION_USB_PERMISSION = "com.ambitsyncmodern.USB_PERMISSION"

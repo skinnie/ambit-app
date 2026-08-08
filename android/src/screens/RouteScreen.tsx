@@ -1,15 +1,18 @@
 import React, { useState } from 'react';
-import {
-  View, Text, TouchableOpacity, StyleSheet, Alert, ScrollView, ActivityIndicator,
-} from 'react-native';
+import { View, Text, StyleSheet, Alert, ScrollView } from 'react-native';
 import {
   sendRouteToWatch, SendRouteState,
   exportNavigationToGpx, ExportNavState,
   Transport,
 } from '../services/NavigationService';
 import { t } from '../i18n';
+import { useTheme } from '../theme/useTheme';
+import { Badge, Button, Section, StatusLine } from '../components/ui/primitives';
 
 export default function RouteScreen() {
+  const theme = useTheme();
+  const styles = createStyles(theme);
+
   const [sendState, setSendState] = useState<SendRouteState>({ phase: 'idle' });
   const [sendTransport, setSendTransport] = useState<Transport>('usb');
   const sendBusy = sendState.phase !== 'idle' && sendState.phase !== 'done' && sendState.phase !== 'error';
@@ -82,88 +85,62 @@ export default function RouteScreen() {
     <ScrollView style={styles.root} contentContainerStyle={styles.content}>
 
       {/* ── Send route to watch ── */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>{t.routeSendSection}</Text>
-        <Text style={styles.sectionDesc}>{t.sendRouteConfirmMsg}</Text>
-
+      <Section title={t.routeSendSection} description={t.sendRouteConfirmMsg}>
         <View style={styles.row}>
-          <TouchableOpacity
-            style={[styles.btn, styles.btnPrimary, anyBusy && styles.btnDisabled]}
+          <Button
+            label={t.sendRoute}
+            variant="filled"
+            loading={sendBusy && sendTransport === 'usb'}
+            disabled={anyBusy}
             onPress={() => handleSendRoute('usb')}
+          />
+          <Button
+            label={t.sendRouteBleBtn}
+            variant="outline"
+            loading={sendBusy && sendTransport === 'ble'}
             disabled={anyBusy}
-          >
-            {sendBusy && sendTransport === 'usb'
-              ? <ActivityIndicator size="small" color="#fff" />
-              : <Text style={styles.btnText}>{t.sendRoute}</Text>
-            }
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.btn, styles.btnExperimental, anyBusy && styles.btnDisabled]}
             onPress={() => handleSendRoute('ble')}
-            disabled={anyBusy}
-          >
-            {sendBusy && sendTransport === 'ble'
-              ? <ActivityIndicator size="small" color="#fff" />
-              : <Text style={styles.btnText}>{t.sendRouteBleBtn}</Text>
-            }
-          </TouchableOpacity>
+          />
         </View>
         <View style={styles.experimentalRow}>
-          <Text style={styles.experimentalBadge}>{t.bleExperimentalBadge}</Text>
+          <Badge label={t.bleExperimentalBadge} />
           <Text style={styles.experimentalText}>{t.bleExperimentalDisclaimer}</Text>
         </View>
 
-        {sendBusy && (
-          <View style={styles.statusRow}>
-            <View style={styles.dot} />
-            <Text style={styles.statusText}>{sendStatusMessage(sendState, sendTransport)}</Text>
-          </View>
-        )}
-      </View>
+        {sendBusy && <StatusLine text={sendStatusMessage(sendState, sendTransport)} />}
+      </Section>
 
       {/* ── Read routes/waypoints from watch, export to GPX ── */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>{t.routeExportSection}</Text>
-        <Text style={styles.sectionDesc}>{t.routeExportDesc}</Text>
-
+      <Section title={t.routeExportSection} description={t.routeExportDesc}>
         <View style={styles.row}>
-          <TouchableOpacity
-            style={[styles.btn, styles.btnOrange, anyBusy && styles.btnDisabled]}
+          <Button
+            label={t.routeExportBtn}
+            variant="filled"
+            loading={exportBusy && exportTransport === 'usb'}
+            disabled={anyBusy}
             onPress={() => handleExportNav('usb')}
+          />
+          <Button
+            label={t.routeExportBleBtn}
+            variant="outline"
+            loading={exportBusy && exportTransport === 'ble'}
             disabled={anyBusy}
-          >
-            {exportBusy && exportTransport === 'usb'
-              ? <ActivityIndicator size="small" color="#fff" />
-              : <Text style={styles.btnText}>{t.routeExportBtn}</Text>
-            }
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.btn, styles.btnExperimental, anyBusy && styles.btnDisabled]}
             onPress={() => handleExportNav('ble')}
-            disabled={anyBusy}
-          >
-            {exportBusy && exportTransport === 'ble'
-              ? <ActivityIndicator size="small" color="#fff" />
-              : <Text style={styles.btnText}>{t.routeExportBleBtn}</Text>
-            }
-          </TouchableOpacity>
+          />
         </View>
         <View style={styles.experimentalRow}>
-          <Text style={styles.experimentalBadge}>{t.bleExperimentalBadge}</Text>
+          <Badge label={t.bleExperimentalBadge} />
           <Text style={styles.experimentalText}>{t.bleExperimentalDisclaimer}</Text>
         </View>
 
         {exportBusy && (
-          <View style={styles.statusRow}>
-            <View style={styles.dot} />
-            <Text style={styles.statusText}>
-              {exportState.phase === 'connecting'
-                ? (exportTransport === 'ble' ? t.bleConnecting : t.connecting)
-                : t.routeExportReading}
-            </Text>
-          </View>
+          <StatusLine
+            text={exportState.phase === 'connecting'
+              ? (exportTransport === 'ble' ? t.bleConnecting : t.connecting)
+              : t.routeExportReading}
+          />
         )}
-      </View>
+      </Section>
 
     </ScrollView>
   );
@@ -182,40 +159,10 @@ function sendStatusMessage(s: SendRouteState, transport: Transport): string {
   }
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#16213e' },
+const createStyles = (t: ReturnType<typeof useTheme>) => StyleSheet.create({
+  root: { flex: 1, backgroundColor: t.background },
   content: { padding: 20 },
-  section: {
-    backgroundColor: '#0f3460',
-    borderRadius: 14,
-    padding: 16,
-    marginBottom: 20,
-  },
-  sectionTitle: { fontSize: 17, fontWeight: '700', color: '#00e5ff', marginBottom: 8 },
-  sectionDesc: { fontSize: 13, color: '#8899aa', marginBottom: 6, lineHeight: 19 },
-  row: { flexDirection: 'row', gap: 10, marginTop: 12 },
-  btn: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  btnPrimary: { backgroundColor: '#00e5ff22', borderWidth: 1, borderColor: '#00e5ff' },
-  btnOrange:  { backgroundColor: '#fc4c0222', borderWidth: 1, borderColor: '#fc4c02' },
-  btnExperimental: { backgroundColor: '#ffb30022', borderWidth: 1, borderColor: '#ffb300' },
-  btnDisabled: { opacity: 0.5 },
-  btnText: { color: '#fff', fontWeight: '600', fontSize: 14 },
-  statusRow: { flexDirection: 'row', alignItems: 'center', marginTop: 10 },
-  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#4caf50', marginRight: 6 },
-  dotError: { backgroundColor: '#ff5252' },
-  statusText: { color: '#4caf50', fontSize: 12 },
-  statusTextError: { color: '#ff5252', flex: 1 },
-  experimentalRow: { flexDirection: 'row', alignItems: 'flex-start', marginTop: 10, gap: 6 },
-  experimentalBadge: {
-    color: '#ffb300', fontSize: 10, fontWeight: '700',
-    borderWidth: 1, borderColor: '#ffb300', borderRadius: 4,
-    paddingHorizontal: 4, paddingVertical: 1,
-  },
-  experimentalText: { flex: 1, color: '#8899aa', fontSize: 11, lineHeight: 15 },
+  row: { flexDirection: 'row', gap: 10, marginTop: 4 },
+  experimentalRow: { flexDirection: 'row', alignItems: 'flex-start', marginTop: 10, gap: 8 },
+  experimentalText: { flex: 1, color: t.textMuted, fontSize: 11, lineHeight: 15 },
 });

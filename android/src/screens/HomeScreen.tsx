@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  Animated, Easing, Alert, ActivityIndicator,
+  Alert, ActivityIndicator, useWindowDimensions,
 } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -13,6 +13,7 @@ import {
   wasLaunchedViaUsbAttach, onUsbAttached, detectAttachedDeviceType, AttachedDeviceType,
   readDeviceHistoryRaw,
 } from '../native/AmbitUsbModule';
+import { scanAndConnect as bleScanAndConnect } from '../native/AmbitBleModule';
 import * as Garmin from '../native/GarminModule';
 import type { GarminConnectResult } from '../native/GarminModule';
 import { syncGarminActivities, GarminActivitySyncState } from '../services/GarminActivityService';
@@ -20,6 +21,9 @@ import { kailashDeviceProvider } from '../services/devices/KailashDeviceProvider
 import { decodeDeviceHistory, KailashHistory } from '../services/KailashHistoryReader';
 import { APP_VERSION } from '../config/version';
 import { t } from '../i18n';
+import { useTheme } from '../theme/useTheme';
+import Icon from '../components/ui/Icon';
+import { ActionTile, Badge, Button, Chip, Logo, StatusLine } from '../components/ui/primitives';
 
 // Real, 2026-08-08: Kailash ("Hoopoe") answers the same USB init + 0x0000 device-info
 // commands every Ambit/Traverse does (AmbitUsbModule.kt's SUUNTO_PID_NAMES/
@@ -41,105 +45,20 @@ type ConnPhase = 'searching' | 'connecting' | 'connected' | 'timeout' | 'later' 
 
 const SEARCH_POLL_MS = 1200;
 const SEARCH_TIMEOUT_MS = 15000;
-
-// ─── Tracé GPS décoratif (SVG-like path via View) ────────────────────────────
-// Points normalisés 0-1 représentant un parcours d'orientation stylisé
-const TRACK_POINTS = [
-  [0.12, 0.78], [0.28, 0.55], [0.20, 0.35], [0.42, 0.18],
-  [0.65, 0.28], [0.55, 0.52], [0.78, 0.42], [0.85, 0.65],
-];
-
-function GpsTraceDecoration({ size = 120 }: { size?: number }) {
-  const pts = TRACK_POINTS.map(([x, y]) => ({ x: x * size, y: y * size }));
-  return (
-    <View style={{ width: size, height: size }}>
-      {pts.slice(0, -1).map((p, i) => {
-        const next = pts[i + 1];
-        const dx = next.x - p.x;
-        const dy = next.y - p.y;
-        const len = Math.sqrt(dx * dx + dy * dy);
-        const angle = Math.atan2(dy, dx) * (180 / Math.PI);
-        return (
-          <View
-            key={i}
-            style={{
-              position: 'absolute',
-              left: p.x,
-              top: p.y - 1,
-              width: len,
-              height: 2,
-              backgroundColor: 'rgba(0,229,255,0.5)',
-              transformOrigin: '0 50%',
-              transform: [{ rotate: `${angle}deg` }],
-            }}
-          />
-        );
-      })}
-      {/* Marqueur départ */}
-      <View style={[styles.dot, { left: pts[0].x - 4, top: pts[0].y - 4, backgroundColor: '#2ecc71' }]} />
-      {/* Marqueur arrivée */}
-      <View style={[styles.dot, { left: pts[pts.length - 1].x - 4, top: pts[pts.length - 1].y - 4, backgroundColor: '#e74c3c' }]} />
-    </View>
-  );
-}
-
-// ─── Anneau pulsant autour d'un bouton ────────────────────────────────────────
-function PulseRing({ active, color, size }: { active: boolean; color: string; size: number }) {
-  const anim = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    if (active) {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(anim, { toValue: 1, duration: 1000, easing: Easing.out(Easing.ease), useNativeDriver: true }),
-          Animated.timing(anim, { toValue: 0, duration: 400, useNativeDriver: true }),
-        ])
-      ).start();
-    } else {
-      anim.setValue(0);
-    }
-  }, [active]);
-
-  const scale = anim.interpolate({ inputRange: [0, 1], outputRange: [1, 1.35] });
-  const opacity = anim.interpolate({ inputRange: [0, 0.6, 1], outputRange: [0.6, 0.3, 0] });
-
-  return (
-    <Animated.View
-      style={[
-        styles.pulseRing,
-        { width: size + 16, height: size + 16, borderRadius: (size + 16) / 2,
-          borderColor: color, transform: [{ scale }], opacity },
-      ]}
-    />
-  );
-}
-
-// ─── Bouton d'action circulaire (SYNC / GPS / ROUTE / POI) ───────────────────
-function ActionButton({
-  label, progress, active, color, onPress, disabled,
-}: {
-  label: string; progress?: string; active: boolean; color: string;
-  onPress: () => void; disabled: boolean;
-}) {
-  return (
-    <View style={styles.actionWrapper}>
-      <PulseRing active={active} color={color} size={BTN_SIZE} />
-      <TouchableOpacity
-        style={[styles.actionBtn, { borderColor: color }, active && styles.actionBtnBusy]}
-        onPress={onPress}
-        disabled={disabled}
-        activeOpacity={0.8}
-      >
-        <Text style={[styles.actionBtnLabel, { color }]} numberOfLines={2}>{label}</Text>
-        {progress ? <Text style={styles.actionBtnProgress}>{progress}</Text> : null}
-      </TouchableOpacity>
-    </View>
-  );
-}
+const CONNECTED_POLL_MS = 4000;
 
 // ─── Composant principal ──────────────────────────────────────────────────────
 export default function HomeScreen() {
+  const theme = useTheme();
+  const styles = createStyles(theme);
   const navigation = useNavigation<Nav>();
+
+  // "No device connected" screens (searching/connecting/timeout/error) run
+  // ~12.5% larger text than the rest of the app, scaled further by the
+  // device's own width so it keeps that proportion on a tablet instead of
+  // just growing the phone-sized number — clamped so it can't run away.
+  const { width: winWidth } = useWindowDimensions();
+  const deviceFlowScale = Math.min(1.6, Math.max(1.125, (winWidth / 380) * 1.125));
   const [sync, setSync] = useState<SyncState>({ phase: 'idle', current: 0, total: 0, newCount: 0 });
   const [orbital, setOrbital] = useState<OrbitalUpdateState>({ phase: 'idle' });
   const [lastActive, setLastActive] = useState<ActiveAction>('sync');
@@ -164,6 +83,9 @@ export default function HomeScreen() {
   // Kailash only - visited cities/countries, travel stats, and the real activity-mode
   // logbook, all fetched once at connect time (see connectFlow's own 'ambit' branch below).
   const [kailashHistory, setKailashHistory] = useState<KailashHistory | null>(null);
+  // Distinguishes a BLE connect attempt from connectFlow('ambit')'s USB one for
+  // the "connecting…" message only — both land on the same deviceType==='ambit'.
+  const [bleAttempt, setBleAttempt] = useState(false);
 
   // Refs mirroring the state above — the search-poll interval and the
   // attach-event listener are both set up once and must always see the
@@ -183,6 +105,7 @@ export default function HomeScreen() {
 
   async function connectFlow(type: 'ambit' | 'garmin') {
     setDeviceType(type);
+    setBleAttempt(false);
     setConnectError(undefined);
     setPhase('connecting');
 
@@ -237,6 +160,53 @@ export default function HomeScreen() {
   const connectFlowRef = useRef(connectFlow);
   connectFlowRef.current = connectFlow;
 
+  // BLE connect (2026-08-08) — there was previously no way to reach a BLE
+  // pairing flow at all from Home: startSearching()/detectAttachedDeviceType()
+  // only ever look for a USB attach event, and the BLE send/export buttons
+  // already sitting in RouteScreen.tsx are unreachable until phase==='connected',
+  // which only USB/Garmin detection could ever produce. This mirrors
+  // connectFlow('ambit')'s post-connect half (same getDeviceInfo() call, same
+  // phase==='connected'/deviceType==='ambit' target state) so the existing
+  // action tiles — including Routes, which is where the real BLE send/export
+  // UI lives — become reachable the same way a cable connection already does.
+  // Ambit3/Traverse only; unlike Garmin/Ambit-over-USB this needs the user to
+  // trigger the watch's own menu action first, right before scanning, since
+  // its BLE advertising window is short (same reasoning as RouteScreen.tsx's
+  // waitForSyncNowTap).
+  async function handleBleConnect() {
+    const proceed = await new Promise<boolean>(resolve => {
+      Alert.alert(
+        t.homeBleReadyTitle,
+        t.homeBleReadyMsg,
+        [
+          { text: t.cancel, style: 'cancel', onPress: () => resolve(false) },
+          { text: t.homeBleReadyBtn, onPress: () => resolve(true) },
+        ],
+        { cancelable: true, onDismiss: () => resolve(false) }
+      );
+    });
+    if (!proceed) return;
+
+    stopSearchTimers();
+    setDeviceType('ambit');
+    setBleAttempt(true);
+    setConnectError(undefined);
+    setPhase('connecting');
+    try {
+      await bleScanAndConnect();
+      let devInfo: AmbitDeviceInfo | null = null;
+      try { devInfo = await getDeviceInfo(); } catch { /* non-fatal — hide the info block below */ }
+      setAmbitInfo(devInfo);
+      setPhase('connected');
+      handleSyncRef.current();
+    } catch (e: any) {
+      setConnectError(e?.message ?? t.unknownError);
+      setPhase('connect-error');
+    }
+  }
+  const handleBleConnectRef = useRef(handleBleConnect);
+  handleBleConnectRef.current = handleBleConnect;
+
   function startSearching() {
     stopSearchTimers();
     setPhase('searching');
@@ -279,6 +249,23 @@ export default function HomeScreen() {
     }
     return () => stopSearchTimers();
   }, []));
+
+  // Live refresh while sitting on the connected dashboard: rather than only
+  // re-checking on focus (which misses "watch unplugged while I was looking
+  // at this screen"), poll periodically. If nothing's attached any more,
+  // fall back to the no-device screen; if a *different* device answers
+  // (e.g. the Ambit was swapped for the eTrex), jump straight into that
+  // device's connect flow instead of bouncing through an extra search step.
+  useEffect(() => {
+    if (phase !== 'connected') return;
+    const iv = setInterval(async () => {
+      const type = await detectAttachedDeviceType().catch(() => 'none' as const);
+      if (type === deviceTypeRef.current) return;
+      if (type === 'none') startSearchingRef.current();
+      else connectFlowRef.current(type);
+    }, CONNECTED_POLL_MS);
+    return () => clearInterval(iv);
+  }, [phase]);
 
   async function handleSync() {
     if (isBusy) return;
@@ -343,13 +330,6 @@ export default function HomeScreen() {
   const handleGarminSyncRef = useRef(handleGarminSync);
   handleGarminSyncRef.current = handleGarminSync;
 
-  const activeColor = (busy: boolean, phase: 'error' | 'done' | string) =>
-    phase === 'error' ? '#f44336' : phase === 'done' ? '#2ecc71' : '#00e5ff';
-
-  const syncColor    = activeColor(syncBusy, sync.phase);
-  const orbitalColor = activeColor(orbitalBusy, orbital.phase);
-  const garminSyncColor = activeColor(garminSyncBusy, garminSync.phase);
-
   const syncLabel = syncBusy ? syncPhaseLabel(sync.phase)
     : sync.phase === 'done' ? t.synced
     : sync.phase === 'error' ? t.retry
@@ -366,36 +346,39 @@ export default function HomeScreen() {
     : garminSync.phase === 'error' ? t.retry
     : t.homeSyncActivitiesBtn;
 
-  const statusColor = lastActive === 'orbital' ? orbitalColor : syncColor;
+  // Which of the two Ambit-only operations last ran drives the status line
+  // below — same derivation as before, just expressed as a tone (muted vs.
+  // the one alert color) instead of a hardcoded hex per phase.
+  const statusPhase = lastActive === 'orbital' ? orbital.phase : sync.phase;
   const statusText = lastActive === 'orbital' ? orbitalStatusMessage(orbital) : syncStatusMessage(sync);
+  const statusTone: 'muted' | 'alert' = statusPhase === 'error' ? 'alert' : 'muted';
 
   // ── Device area render (searching/connecting/timeout/error states) ───────
   if (phase === 'searching' || phase === 'timeout') {
     return (
       <View style={styles.deviceFlowContainer}>
+        <View style={styles.deviceFlowLogo}>
+          <Logo size={Math.round(56 * deviceFlowScale)} />
+          <Badge label={`v${APP_VERSION}`} />
+        </View>
         {phase === 'searching' ? (
           <>
-            <ActivityIndicator size="large" color="#00e5ff" />
-            <Text style={styles.deviceFlowTitle}>{t.homeSearchingTitle}</Text>
+            <ActivityIndicator size="large" color={theme.text} />
+            <Text style={[styles.deviceFlowTitle, deviceFlowTitleScale(deviceFlowScale)]}>{t.homeSearchingTitle}</Text>
           </>
         ) : (
-          <Text style={styles.deviceFlowTitle}>{t.homeNoDeviceTitle}</Text>
+          <Text style={[styles.deviceFlowTitle, deviceFlowTitleScale(deviceFlowScale)]}>{t.homeNoDeviceTitle}</Text>
         )}
         <View style={styles.deviceFlowButtons}>
           {phase === 'timeout' && (
-            <TouchableOpacity style={styles.deviceFlowSecondaryBtn} onPress={startSearching} activeOpacity={0.8}>
-              <Text style={styles.deviceFlowSecondaryBtnText}>{t.homeConnectRetryBtn}</Text>
-            </TouchableOpacity>
+            <Button label={t.homeConnectRetryBtn} onPress={startSearching} variant="text" grow={false} />
           )}
-          <TouchableOpacity style={styles.deviceFlowPrimaryBtn} onPress={handleConnectLater} activeOpacity={0.8}>
-            <Text style={styles.deviceFlowPrimaryBtnText}>{t.homeConnectLaterBtn}</Text>
-          </TouchableOpacity>
+          <Button label={t.homeBleConnectBtn} onPress={handleBleConnectRef.current} variant="text" grow={false} />
+          <Button label={t.homeConnectLaterBtn} onPress={handleConnectLater} variant="outline" grow={false} />
           {/* Activities are stored locally and don't depend on a device being
               connected — don't trap the user behind the search/timeout screen
               if all they want is to look at what's already synced. */}
-          <TouchableOpacity style={styles.deviceFlowSecondaryBtn} onPress={() => navigation.navigate('LogList')} activeOpacity={0.8}>
-            <Text style={styles.deviceFlowSecondaryBtnText}>{t.viewActivities}</Text>
-          </TouchableOpacity>
+          <Button label={t.viewActivities} onPress={() => navigation.navigate('LogList')} variant="text" grow={false} />
         </View>
       </View>
     );
@@ -404,14 +387,16 @@ export default function HomeScreen() {
   if (phase === 'connecting') {
     const msg = deviceType === 'garmin' && waitingSeconds !== null
       ? t.garminWaitingForMount(waitingSeconds)
-      : deviceType === 'ambit' ? t.homeConnectingAmbit : t.connecting;
+      : deviceType === 'ambit' ? (bleAttempt ? t.homeConnectingBle : t.homeConnectingAmbit) : t.connecting;
     return (
       <View style={styles.deviceFlowContainer}>
-        <ActivityIndicator size="large" color="#00e5ff" />
-        <Text style={styles.deviceFlowTitle}>{msg}</Text>
-        <TouchableOpacity style={styles.deviceFlowSecondaryBtn} onPress={() => navigation.navigate('LogList')} activeOpacity={0.8}>
-          <Text style={styles.deviceFlowSecondaryBtnText}>{t.viewActivities}</Text>
-        </TouchableOpacity>
+        <View style={styles.deviceFlowLogo}>
+          <Logo size={Math.round(56 * deviceFlowScale)} />
+          <Badge label={`v${APP_VERSION}`} />
+        </View>
+        <ActivityIndicator size="large" color={theme.text} />
+        <Text style={[styles.deviceFlowTitle, deviceFlowTitleScale(deviceFlowScale)]}>{msg}</Text>
+        <Button label={t.viewActivities} onPress={() => navigation.navigate('LogList')} variant="text" grow={false} />
       </View>
     );
   }
@@ -419,21 +404,23 @@ export default function HomeScreen() {
   if (phase === 'connect-error') {
     return (
       <View style={styles.deviceFlowContainer}>
-        <Text style={[styles.deviceFlowTitle, styles.deviceFlowError]}>{connectError}</Text>
+        <View style={styles.deviceFlowLogo}>
+          <Logo size={Math.round(56 * deviceFlowScale)} />
+          <Badge label={`v${APP_VERSION}`} />
+        </View>
+        <Text style={[styles.deviceFlowTitle, deviceFlowTitleScale(deviceFlowScale)]}>{connectError}</Text>
         <View style={styles.deviceFlowButtons}>
-          <TouchableOpacity
-            style={styles.deviceFlowSecondaryBtn}
-            onPress={() => connectFlowRef.current(deviceType as 'ambit' | 'garmin')}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.deviceFlowSecondaryBtnText}>{t.homeConnectRetryBtn}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.deviceFlowPrimaryBtn} onPress={handleConnectLater} activeOpacity={0.8}>
-            <Text style={styles.deviceFlowPrimaryBtnText}>{t.homeConnectLaterBtn}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.deviceFlowSecondaryBtn} onPress={() => navigation.navigate('LogList')} activeOpacity={0.8}>
-            <Text style={styles.deviceFlowSecondaryBtnText}>{t.viewActivities}</Text>
-          </TouchableOpacity>
+          <Button
+            label={t.homeConnectRetryBtn}
+            onPress={() => bleAttempt ? handleBleConnectRef.current() : connectFlowRef.current(deviceType as 'ambit' | 'garmin')}
+            variant="text"
+            grow={false}
+          />
+          {!bleAttempt && (
+            <Button label={t.homeBleConnectBtn} onPress={handleBleConnectRef.current} variant="text" grow={false} />
+          )}
+          <Button label={t.homeConnectLaterBtn} onPress={handleConnectLater} variant="outline" grow={false} />
+          <Button label={t.viewActivities} onPress={() => navigation.navigate('LogList')} variant="text" grow={false} />
         </View>
       </View>
     );
@@ -444,23 +431,19 @@ export default function HomeScreen() {
       <View style={styles.container}>
         <View style={styles.header}>
           <Text style={styles.appName}>AmbitApp</Text>
-          <Text style={styles.versionText}>v{APP_VERSION}</Text>
+          <Badge label={`v${APP_VERSION}`} />
         </View>
-        <View />
+        <Icon name="mountain" size={48} color={theme.text} />
+        <Button label={t.homeBleConnectBtn} onPress={handleBleConnectRef.current} variant="text" grow={false} />
         <View style={styles.bottomRow}>
-          <TouchableOpacity
-            style={styles.activitiesBtn}
+          <Button
+            label={t.viewActivities}
+            icon="list"
             onPress={() => navigation.navigate('LogList')}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.activitiesBtnText}>{t.viewActivities}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.settingsBtn}
-            onPress={() => navigation.navigate('Settings')}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.settingsBtnText}>⚙</Text>
+            variant="outline"
+          />
+          <TouchableOpacity style={styles.settingsBtn} onPress={() => navigation.navigate('Settings')} activeOpacity={0.75}>
+            <Icon name="settings" size={19} color={theme.text} />
           </TouchableOpacity>
         </View>
       </View>
@@ -472,68 +455,77 @@ export default function HomeScreen() {
   return (
     <View style={styles.container}>
 
-      {/* ── Tracé GPS en filigrane ── */}
-      <View style={styles.traceWrapper} pointerEvents="none">
-        <GpsTraceDecoration size={260} />
-      </View>
-
       {/* ── Header ── */}
       <View style={styles.header}>
         <Text style={styles.appName}>AmbitApp</Text>
-        <Text style={styles.versionText}>v{APP_VERSION}</Text>
+        <Badge label={`v${APP_VERSION}`} />
       </View>
+      <Icon name={deviceType === 'garmin' ? 'etrex' : 'watch'} size={40} color={theme.text} />
 
       {/* ── Device info (both device types show name/battery/firmware/hardware) ── */}
       {deviceType === 'garmin' && garminInfo && (() => {
         const vol = garminInfo.volumes.find(v => v.hasGarminDeviceXml) ?? garminInfo.volumes[0];
         return (
-          <View style={styles.deviceInfoBox}>
-            <Text style={styles.deviceInfoPrimary}>{vol?.model ?? t.garminUnknownModel}</Text>
-            <Text style={styles.deviceInfoSecondary}>
-              {vol?.firmwareVersion ? `${t.garminFirmwareLabel} ${vol.firmwareVersion}` : ''}
-            </Text>
-            <Text style={styles.deviceInfoSecondary}>
-              {garminInfo.hasSdCard ? t.garminSdCardPresent : t.garminSdCardAbsent}
-            </Text>
+          <View style={styles.deviceCard}>
+            <Text style={styles.deviceName}>{vol?.model ?? t.garminUnknownModel}</Text>
+            {!!vol?.firmwareVersion && (
+              <Text style={styles.deviceSub}>{t.garminFirmwareLabel} {vol.firmwareVersion}</Text>
+            )}
+            <View style={styles.deviceMetaRow}>
+              <Text style={styles.deviceSub}>
+                {garminInfo.hasSdCard ? t.garminSdCardPresent : t.garminSdCardAbsent}
+              </Text>
+              <Chip icon="check" label={t.homeDeviceConnectedStatus} />
+            </View>
           </View>
         );
       })()}
       {deviceType === 'ambit' && ambitInfo && (
-        <View style={styles.deviceInfoBox}>
-          <Text style={styles.deviceInfoPrimary}>{ambitInfo.name}</Text>
-          <Text style={styles.deviceInfoSecondary}>
-            {ambitInfo.fwVersion ? `${t.garminFirmwareLabel} ${ambitInfo.fwVersion}` : ''}
-            {ambitInfo.hwVersion ? `  ·  ${t.homeHwLabel} ${ambitInfo.hwVersion}` : ''}
-          </Text>
-          {ambitInfo.battery >= 0 && (
-            <Text style={styles.deviceInfoSecondary}>{t.homeBatteryLabel} {ambitInfo.battery}%</Text>
+        <View style={styles.deviceCard}>
+          <Text style={styles.deviceName}>{ambitInfo.name}</Text>
+          {!!(ambitInfo.fwVersion || ambitInfo.hwVersion) && (
+            <Text style={styles.deviceSub}>
+              {ambitInfo.fwVersion ? `${t.garminFirmwareLabel} ${ambitInfo.fwVersion}` : ''}
+              {ambitInfo.hwVersion ? `  ·  ${t.homeHwLabel} ${ambitInfo.hwVersion}` : ''}
+            </Text>
           )}
+          <View style={styles.deviceMetaRow}>
+            {ambitInfo.battery >= 0 && (
+              <View style={styles.deviceBattery}>
+                <Icon name="battery" size={15} color={theme.textMuted} />
+                <Text style={styles.deviceBatteryText}>{ambitInfo.battery}%</Text>
+              </View>
+            )}
+            <Chip icon="check" label={t.homeDeviceConnectedStatus} />
+          </View>
         </View>
       )}
 
       {/* ── Kailash travel history - real, 2026-08-08 ("if we could import this data
-          which is on the watch and read it to our app would be awesome"). Reuses the same
-          deviceInfoBox styling as the block above rather than introducing a new one - this
-          is presentationally the same kind of "facts about the connected watch" card. ── */}
+          which is on the watch and read it to our app would be awesome"). Restyled onto
+          the theme-redesign's own deviceCard pattern (2026-08-08 merge) - same as the
+          ambitInfo card just above: deviceName for the title, deviceSub (repeated) for
+          each muted detail line, rather than the pre-redesign deviceInfoBox styles this
+          screen no longer defines. ── */}
       {deviceType === 'ambit' && isKailash(ambitInfo) && kailashHistory && (
-        <View style={styles.deviceInfoBox}>
-          <Text style={styles.deviceInfoPrimary}>{t.homeKailashTravelTitle}</Text>
-          <Text style={styles.deviceInfoSecondary}>
+        <View style={styles.deviceCard}>
+          <Text style={styles.deviceName}>{t.homeKailashTravelTitle}</Text>
+          <Text style={styles.deviceSub}>
             {t.homeKailashCitiesLabel} {kailashHistory.citiesVisited}
             {'  ·  '}{t.homeKailashCountriesLabel} {kailashHistory.countriesVisited}
           </Text>
           {kailashHistory.hasLastKnownLocation && (
-            <Text style={styles.deviceInfoSecondary}>
+            <Text style={styles.deviceSub}>
               {kailashHistory.lastKnownLatitude.toFixed(4)}, {kailashHistory.lastKnownLongitude.toFixed(4)}
               {kailashHistory.lastKnownCountry ? ` (${kailashHistory.lastKnownCountry})` : ''}
             </Text>
           )}
-          <Text style={styles.deviceInfoSecondary}>
+          <Text style={styles.deviceSub}>
             {t.homeKailashTravelledLabel} {(kailashHistory.travelledDistanceMeters / 1000).toFixed(1)} km
             {'  ·  '}{t.homeKailashFurthestLabel} {(kailashHistory.furthestFromHomeMeters / 1000).toFixed(1)} km
           </Text>
           {kailashHistory.sessions.length > 0 && (
-            <Text style={styles.deviceInfoSecondary}>
+            <Text style={styles.deviceSub}>
               {t.homeKailashLogbookLabel} {kailashHistory.sessions.length}
             </Text>
           )}
@@ -543,75 +535,71 @@ export default function HomeScreen() {
       {/* ── Menu : dépend de l'appareil connecté (v2.3.2 beta) ── */}
       {deviceType === 'garmin' ? (
         <View style={styles.actionsRow}>
-          <ActionButton
+          <ActionTile
+            icon="sync"
             label={garminSyncLabel}
             progress={garminSync.phase === 'writing' && garminSync.total > 0 ? `${garminSync.current}/${garminSync.total}` : undefined}
-            active={garminSyncBusy}
-            color={garminSyncColor}
+            busy={garminSyncBusy}
             onPress={() => handleGarminSync()}
             disabled={isBusy}
           />
-          <ActionButton
+          <ActionTile
+            icon="route"
             label={t.homeRoutesBtn}
-            active={false}
-            color="#00a651"
             onPress={() => garminInfo && navigation.navigate('GarminRoute', { info: garminInfo })}
             disabled={isBusy}
           />
-          <ActionButton
+          <ActionTile
+            icon="poi"
             label={t.homePoisBtn}
-            active={false}
-            color="#00a651"
             onPress={() => garminInfo && navigation.navigate('GarminPoi', { info: garminInfo })}
             disabled={isBusy}
           />
         </View>
       ) : (
         <View style={styles.actionsRow}>
-          <ActionButton
+          <ActionTile
+            icon="sync"
             label={syncLabel}
             progress={sync.phase !== 'idle' && sync.total > 0 ? `${sync.current}/${sync.total}` : undefined}
-            active={syncBusy}
-            color={syncColor}
+            busy={syncBusy}
             onPress={handleSync}
             disabled={isBusy}
           />
-          <ActionButton
+          <ActionTile
+            icon="satellite"
             label={orbitalLabel}
-            active={orbitalBusy}
-            color={orbitalColor}
+            busy={orbitalBusy}
             onPress={handleOrbital}
             disabled={isBusy}
           />
-          <ActionButton
+          <ActionTile
+            icon="route"
             label={t.homeRoutesBtn}
-            active={false}
-            color="#8b5cf6"
             onPress={() => navigation.navigate('Route')}
             disabled={isBusy}
           />
-          <ActionButton
+          <ActionTile
+            icon="poi"
             label={t.homePoisBtn}
-            active={false}
-            color="#8b5cf6"
             onPress={() => navigation.navigate('Poi')}
             disabled={isBusy}
           />
-          <ActionButton
+          <ActionTile
+            icon="backup"
             label={t.backupButton}
-            active={false}
-            color="#ffb300"
             onPress={() => navigation.navigate('Backup')}
             disabled={isBusy}
           />
           {/* Real, 2026-08-08 - Ambit3-only: Kailash's own memory map has no CustomModes
               region at all (confirmed empty, see custom_modes_andre.md's Kailash section),
-              the same exclusion the desktop app's own NavRail.qml applies. */}
+              the same exclusion the desktop app's own NavRail.qml applies. Uses ActionTile
+              (2026-08-08 merge) - the theme redesign's own tile component, not the
+              pre-redesign ActionButton this screen no longer defines. */}
           {!isKailash(ambitInfo) && (
-            <ActionButton
+            <ActionTile
+              icon="watch"
               label={t.sportModesButton}
-              active={false}
-              color="#8b5cf6"
               onPress={() => navigation.navigate('SportModes')}
               disabled={isBusy}
             />
@@ -620,28 +608,18 @@ export default function HomeScreen() {
       )}
 
       {/* ── Statut ── */}
-      <View style={styles.statusRow}>
-        <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
-        <Text style={[styles.statusText, { color: statusColor }]}>
-          {statusText}
-        </Text>
-      </View>
+      <StatusLine text={statusText} tone={statusTone} />
 
       {/* ── Bas de page : activités + paramètres ── */}
       <View style={styles.bottomRow}>
-        <TouchableOpacity
-          style={styles.activitiesBtn}
+        <Button
+          label={t.viewActivities}
+          icon="list"
           onPress={() => navigation.navigate('LogList')}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.activitiesBtnText}>{t.viewActivities}</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.settingsBtn}
-          onPress={() => navigation.navigate('Settings')}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.settingsBtnText}>⚙</Text>
+          variant="outline"
+        />
+        <TouchableOpacity style={styles.settingsBtn} onPress={() => navigation.navigate('Settings')} activeOpacity={0.75}>
+          <Icon name="settings" size={19} color={theme.text} />
         </TouchableOpacity>
       </View>
 
@@ -650,6 +628,10 @@ export default function HomeScreen() {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function deviceFlowTitleScale(scale: number) {
+  return { fontSize: Math.round(16 * scale), lineHeight: Math.round(23 * scale) };
+}
 
 function syncPhaseLabel(phase: SyncState['phase']): string {
   switch (phase) {
@@ -695,193 +677,113 @@ function orbitalStatusMessage(s: OrbitalUpdateState): string {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const BTN_SIZE = 82;
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#16213e',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 56,
-    paddingHorizontal: 24,
-  },
-  deviceFlowContainer: {
-    flex: 1,
-    backgroundColor: '#0a0e1a',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 32,
-    gap: 24,
-  },
-  deviceFlowTitle: {
-    color: '#8ab4d8',
-    fontSize: 16,
-    textAlign: 'center',
-    lineHeight: 23,
-  },
-  deviceFlowError: {
-    color: '#ff5252',
-  },
-  deviceFlowButtons: {
-    gap: 12,
-    width: '100%',
-    alignItems: 'center',
-  },
-  deviceFlowPrimaryBtn: {
-    paddingVertical: 14,
-    paddingHorizontal: 28,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#1e3a5f',
-    backgroundColor: 'rgba(15,52,96,0.5)',
-  },
-  deviceFlowPrimaryBtnText: {
-    color: '#8ab4d8',
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  deviceFlowSecondaryBtn: {
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-  },
-  deviceFlowSecondaryBtnText: {
-    color: '#00e5ff',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  traceWrapper: {
-    position: 'absolute',
-    top: '20%',
-    left: '10%',
-    opacity: 0.25,
-  },
-  header: {
-    alignItems: 'center',
-  },
-  appName: {
-    fontSize: 26,
-    fontWeight: '800',
-    color: '#fff',
-    letterSpacing: 1.5,
-  },
-  versionText: {
-    fontSize: 10,
-    color: '#3a5a8a',
-    letterSpacing: 1,
-    marginTop: 2,
-  },
-  deviceInfoBox: {
-    alignItems: 'center',
-    marginTop: -20,
-  },
-  deviceInfoPrimary: {
-    color: '#fff',
-    fontSize: 15,
-    fontWeight: '600',
-    marginBottom: 2,
-  },
-  deviceInfoSecondary: {
-    color: '#8899aa',
-    fontSize: 12,
-    marginBottom: 2,
-  },
-  actionsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  actionWrapper: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: BTN_SIZE + 24,
-    height: BTN_SIZE + 24,
-  },
-  pulseRing: {
-    position: 'absolute',
-    borderWidth: 2,
-  },
-  actionBtn: {
-    width: BTN_SIZE,
-    height: BTN_SIZE,
-    borderRadius: BTN_SIZE / 2,
-    borderWidth: 2.5,
-    backgroundColor: 'rgba(0,229,255,0.06)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 6,
-  },
-  actionBtnBusy: {
-    backgroundColor: 'rgba(0,229,255,0.03)',
-  },
-  actionBtnLabel: {
-    fontSize: 13,
-    fontWeight: '800',
-    letterSpacing: 1,
-    textAlign: 'center',
-  },
-  actionBtnProgress: {
-    fontSize: 10,
-    color: '#8899aa',
-    marginTop: 3,
-    letterSpacing: 0.5,
-  },
-  statusRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  statusDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 3.5,
-  },
-  statusText: {
-    fontSize: 13,
-    fontWeight: '600',
-    letterSpacing: 0.5,
-  },
-  bottomRow: {
-    flexDirection: 'row',
-    width: '100%',
-    gap: 10,
-    alignItems: 'center',
-  },
-  activitiesBtn: {
-    flex: 1,
-    paddingVertical: 16,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#1e3a5f',
-    backgroundColor: 'rgba(15,52,96,0.5)',
-    alignItems: 'center',
-  },
-  activitiesBtnText: {
-    color: '#8ab4d8',
-    fontSize: 15,
-    fontWeight: '600',
-    letterSpacing: 0.5,
-  },
-  settingsBtn: {
-    width: 52,
-    height: 52,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#1e3a5f',
-    backgroundColor: 'rgba(15,52,96,0.5)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  settingsBtnText: {
-    fontSize: 22,
-    color: '#00e5ff',
-  },
-  dot: {
-    position: 'absolute',
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-});
+function createStyles(t: ReturnType<typeof useTheme>) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: t.background,
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingVertical: 56,
+      paddingHorizontal: 24,
+    },
+    deviceFlowContainer: {
+      flex: 1,
+      backgroundColor: t.background,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: 32,
+      gap: 24,
+    },
+    deviceFlowTitle: {
+      color: t.textMuted,
+      fontSize: 16,
+      textAlign: 'center',
+      lineHeight: 23,
+    },
+    deviceFlowError: {
+      color: t.alert,
+    },
+    deviceFlowButtons: {
+      gap: 10,
+      width: '100%',
+      alignItems: 'center',
+    },
+    deviceFlowLogo: {
+      alignItems: 'center',
+      gap: 10,
+    },
+    header: {
+      alignItems: 'center',
+      gap: 6,
+    },
+    appName: {
+      fontSize: 26,
+      fontWeight: '800',
+      color: t.text,
+      letterSpacing: 1.5,
+    },
+    deviceCard: {
+      width: '100%',
+      backgroundColor: t.surfaceHigh,
+      borderColor: t.outline,
+      borderWidth: 1,
+      borderRadius: 16,
+      padding: 16,
+      marginTop: -8,
+      alignItems: 'center',
+    },
+    deviceName: {
+      color: t.text,
+      fontSize: 15,
+      fontWeight: '700',
+      textAlign: 'center',
+    },
+    deviceBattery: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+    },
+    deviceBatteryText: {
+      color: t.textMuted,
+      fontSize: 11,
+      fontWeight: '600',
+    },
+    deviceSub: {
+      color: t.textMuted,
+      fontSize: 11.5,
+      textAlign: 'center',
+      marginTop: 2,
+    },
+    deviceMetaRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 14,
+      marginTop: 8,
+    },
+    actionsRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+    },
+    bottomRow: {
+      flexDirection: 'row',
+      width: '100%',
+      gap: 10,
+      alignItems: 'center',
+    },
+    settingsBtn: {
+      width: 52,
+      height: 52,
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: t.outline,
+      backgroundColor: t.surfaceHigh,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+  });
+}

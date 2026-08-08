@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
-import {
-  View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator,
-} from 'react-native';
+import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import {
   runFirmwareCheck, downloadFirmware, BackupState,
 } from '../services/FirmwareBackupService';
 import { t } from '../i18n';
+import { useTheme } from '../theme/useTheme';
+import { Button, Section, StatusLine, WarningNote } from '../components/ui/primitives';
 
 /*
  * v2.3.2 beta — Ambit firmware backup screen.
@@ -21,6 +21,9 @@ import { t } from '../i18n';
  */
 
 export default function BackupScreen() {
+  const theme = useTheme();
+  const styles = createStyles(theme);
+
   const [state, setState] = useState<BackupState>({ phase: 'idle' });
   const [downloadPct, setDownloadPct] = useState(0);
   const [downloadedTo, setDownloadedTo] = useState<string | undefined>();
@@ -61,46 +64,23 @@ export default function BackupScreen() {
   return (
     <ScrollView style={styles.root} contentContainerStyle={styles.content}>
 
-      <View style={styles.warningBox}>
-        <Text style={styles.warningText}>{t.backupWarning}</Text>
-      </View>
+      <WarningNote>{t.backupWarning}</WarningNote>
 
       {/* ── Check available firmware ── */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>{t.backupCheckSection}</Text>
-        <Text style={styles.sectionDesc}>{t.backupCheckDesc}</Text>
-
+      <Section title={t.backupCheckSection} description={t.backupCheckDesc} style={{ marginTop: 16 }}>
         <View style={styles.row}>
-          <TouchableOpacity
-            style={[styles.btn, styles.btnPrimary, busy && styles.btnDisabled]}
-            onPress={handleCheck}
+          <Button
+            label={t.backupCheckBtn}
+            variant="filled"
+            loading={state.phase === 'connecting' || state.phase === 'reading' || state.phase === 'checking'}
             disabled={busy}
-          >
-            {(state.phase === 'connecting' || state.phase === 'reading' || state.phase === 'checking')
-              ? <ActivityIndicator size="small" color="#fff" />
-              : <Text style={styles.btnText}>{t.backupCheckBtn}</Text>
-            }
-          </TouchableOpacity>
+            onPress={handleCheck}
+          />
         </View>
 
-        {state.phase === 'reading' && (
-          <View style={styles.statusRow}>
-            <View style={styles.dot} />
-            <Text style={styles.statusText}>{t.backupReading}</Text>
-          </View>
-        )}
-        {state.phase === 'checking' && (
-          <View style={styles.statusRow}>
-            <View style={styles.dot} />
-            <Text style={styles.statusText}>{t.backupChecking}</Text>
-          </View>
-        )}
-        {state.phase === 'error' && (
-          <View style={styles.statusRow}>
-            <View style={[styles.dot, styles.dotError]} />
-            <Text style={[styles.statusText, styles.statusTextError]}>{state.error}</Text>
-          </View>
-        )}
+        {state.phase === 'reading' && <StatusLine text={t.backupReading} />}
+        {state.phase === 'checking' && <StatusLine text={t.backupChecking} />}
+        {state.phase === 'error' && <StatusLine text={state.error ?? t.error} tone="alert" />}
 
         {state.phase === 'done' && state.deviceInfo && (
           <View style={styles.deviceInfoBox}>
@@ -120,91 +100,33 @@ export default function BackupScreen() {
               )}
             </View>
           ) : (
-            <View style={styles.statusRow}>
-              <View style={[styles.dot, styles.dotError]} />
-              <Text style={[styles.statusText, styles.statusTextError]}>{t.backupNoUpdateInfo}</Text>
-            </View>
+            <StatusLine text={t.backupNoUpdateInfo} tone="alert" />
           )
         )}
-      </View>
+      </Section>
 
       {/* ── Download backup ── */}
       {state.phase === 'done' && state.firmwareInfo?.downloadUri && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>{t.backupDownloadSection}</Text>
-          <Text style={styles.sectionDesc}>{t.backupDownloadDesc}</Text>
-
+        <Section title={t.backupDownloadSection} description={t.backupDownloadDesc}>
           <View style={styles.row}>
-            <TouchableOpacity
-              style={[styles.btn, styles.btnPrimary, busy && styles.btnDisabled]}
-              onPress={handleDownload}
-              disabled={busy}
-            >
-              {downloading
-                ? <ActivityIndicator size="small" color="#fff" />
-                : <Text style={styles.btnText}>{t.backupDownloadBtn}</Text>
-              }
-            </TouchableOpacity>
+            <Button label={t.backupDownloadBtn} variant="filled" loading={downloading} disabled={busy} onPress={handleDownload} />
           </View>
 
-          {downloading && (
-            <View style={styles.statusRow}>
-              <View style={styles.dot} />
-              <Text style={styles.statusText}>{t.backupDownloading(downloadPct)}</Text>
-            </View>
-          )}
-          {!!downloadedTo && (
-            <View style={styles.statusRow}>
-              <View style={styles.dot} />
-              <Text style={styles.statusText}>{t.backupDownloadDone}</Text>
-            </View>
-          )}
-          {!!downloadError && (
-            <View style={styles.statusRow}>
-              <View style={[styles.dot, styles.dotError]} />
-              <Text style={[styles.statusText, styles.statusTextError]}>{downloadError}</Text>
-            </View>
-          )}
-        </View>
+          {downloading && <StatusLine text={t.backupDownloading(downloadPct)} />}
+          {!!downloadedTo && <StatusLine text={t.backupDownloadDone} />}
+          {!!downloadError && <StatusLine text={downloadError} tone="alert" />}
+        </Section>
       )}
 
     </ScrollView>
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#16213e' },
+const createStyles = (t: ReturnType<typeof useTheme>) => StyleSheet.create({
+  root: { flex: 1, backgroundColor: t.background },
   content: { padding: 20 },
-  section: {
-    backgroundColor: '#0f3460',
-    borderRadius: 14,
-    padding: 16,
-    marginBottom: 20,
-  },
-  sectionTitle: { fontSize: 17, fontWeight: '700', color: '#00e5ff', marginBottom: 8 },
-  sectionDesc: { fontSize: 13, color: '#8899aa', marginBottom: 6, lineHeight: 19 },
-  row: { flexDirection: 'row', gap: 10, marginTop: 12 },
-  btn: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  btnPrimary: { backgroundColor: '#00e5ff22', borderWidth: 1, borderColor: '#00e5ff' },
-  btnDisabled: { opacity: 0.5 },
-  btnText: { color: '#fff', fontWeight: '600', fontSize: 14 },
-  statusRow: { flexDirection: 'row', alignItems: 'center', marginTop: 10 },
-  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#4caf50', marginRight: 6 },
-  dotError: { backgroundColor: '#ff5252' },
-  statusText: { color: '#4caf50', fontSize: 12, flex: 1 },
-  statusTextError: { color: '#ff5252', flex: 1 },
-  deviceInfoBox: { marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: '#1a1a2e' },
-  deviceInfoPrimary: { color: '#fff', fontSize: 15, fontWeight: '600', marginBottom: 4 },
-  deviceInfoSecondary: { color: '#8899aa', fontSize: 12, marginBottom: 2 },
-  warningBox: {
-    backgroundColor: '#ffb30022', borderWidth: 1, borderColor: '#ffb300',
-    borderRadius: 8, padding: 14, marginBottom: 20,
-  },
-  warningText: { color: '#ffb300', fontSize: 13, lineHeight: 18 },
+  row: { flexDirection: 'row', gap: 10, marginTop: 4 },
+  deviceInfoBox: { marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: t.outline },
+  deviceInfoPrimary: { color: t.text, fontSize: 15, fontWeight: '600', marginBottom: 4 },
+  deviceInfoSecondary: { color: t.textMuted, fontSize: 12, marginBottom: 2 },
 });
