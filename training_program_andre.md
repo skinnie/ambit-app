@@ -1965,3 +1965,30 @@ Realistic, achievable interval-guidance revival (no dead compiler), in order of 
 
 Net: the browsable native-graph WORKOUT is not reproducible without the dead server compiler;
 the interval-guidance CAPABILITY is revivable today via paths 1-3.
+
+## Finding 37: Wayback Machine (web.archive.org) checked - App-Zone source corpus found; native workout/plan data confirmed unarchivable (2026-08-09)
+
+André's idea: try the Internet Archive for Movescount. Results (via the CDX API; web.archive.org
+is only reachable by curl here, not WebFetch):
+
+- **uiservices.movescount.com (REST API host)**: only static/heatmap/robots endpoints archived.
+  The authenticated endpoints (rules/, userdevices/, apps/) were never crawlable, so no real
+  guidance-rule `.Binary`, no `userdevices` plan data.
+- **Planned moves / training-program planner / workout planner**: every archived URL is a
+  `?signin&redirect_uri=%2F..%2Fplannedmoves` / `..%2Ftools%2Ftrainingprogramplanner` login
+  redirect - authenticated, so NO actual data was archived. The archive cannot provide
+  planned-move or workout-planner ground truth. (Confirms Feature B / native Feature A remain
+  gated exactly where we said.)
+- **App Zone**: ~2,468 archived public app pages (`www.movescount.com/apps/app{ruleId}-{name}`),
+  each embedding the full app model JSON: `Source` (the App-Zone script), own-variables
+  (Name/Value), `ActivityID`, `CategoryID`. NO compiled `Binary` (generated server-side). Even
+  interval/HR-alert apps are `CategoryID:0` (generic App Zone), confirming public apps were never
+  `Category:"guidance"` native workouts.
+
+Net: the archive does NOT crack the native browsable guided workout or planned moves (both were
+authenticated) - but it IS a large, real corpus of interval/HR-training App-Zone SOURCE
+(e.g. "HR Interval training (with alert)" ActivityID 82, CategoryID 0, real Source with
+Suunto.alarmBeep and HR-zone own-variables). Since the live community compiler recompiles
+source, this corpus is directly usable for path 3 (App-Zone interval workouts installed as
+pinned apps via the corrected workout.py -> compiler -> workout_install.py pipeline). ~2,468
+apps are harvestable if we want a built-in workout library.
