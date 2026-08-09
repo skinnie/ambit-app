@@ -1992,3 +1992,14 @@ Suunto.alarmBeep and HR-zone own-variables). Since the live community compiler r
 source, this corpus is directly usable for path 3 (App-Zone interval workouts installed as
 pinned apps via the corrected workout.py -> compiler -> workout_install.py pipeline). ~2,468
 apps are harvestable if we want a built-in workout library.
+
+### Finding 37 addendum: corpus harvested (2026-08-09)
+
+Built the harvester (`tools/harvest_appzone.py`, resumable, retry/backoff) and query tool
+(`tools/appzone_corpus.py`). Captured ~1,301 of ~2,086 archived App Zone apps into
+`appzone_corpus/appzone_corpus.jsonl`: 848 with usable advanced-mode text source, 99 in
+simple-mode AST form, 354 official/hidden-source. Rich real interval corpus (Pyramid-Interval,
+10-20-30, Tabata Beep, IntervalRecovery, Interval 200m-30s, CARDIO TRAINER PRO, ...). The
+remaining ~785 hit archive.org rate-limiting; harvester is resumable to fill them after a
+cooldown. Confirms no guidance/planned-move data exists publicly (authenticated-only). Corpus is
+directly usable for path 3 (compile via community compiler -> install via workout_install.py).
