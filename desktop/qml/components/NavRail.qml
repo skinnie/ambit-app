@@ -2,8 +2,10 @@ import QtQuick
 import AmbitApp
 
 // AMBITAPP_SPEC.md, "Navigation": Home / Activities / Routes / POIs / Backup / Settings,
-// Sport Modes hidden. Selection is by string id, not index - so Sport Modes appearing later
-// (FeatureFlags.sportModes flips to true) never shifts anything else's identity.
+// Sport Modes hidden by default. Order updated 2026-08-09 (Settings moved to the very
+// bottom, below Sport Modes) - selection is by string id, not index, so this reordering
+// (and Sport Modes appearing/disappearing as FeatureFlags.sportModes flips) never shifts
+// any other item's own identity.
 Rectangle {
     id: root
 
@@ -77,13 +79,6 @@ Rectangle {
         }
         NavItem {
             width: parent.width
-            glyph: Icons.settings
-            label: qsTr("Settings")
-            selected: root.currentPage === "settings"
-            onClicked: root.pageSelected("settings")
-        }
-        NavItem {
-            width: parent.width
             // Kailash excluded, real 2026-08-08: its own memory map reports no CustomModes
             // region at all (confirmed empty - see custom_modes_andre.md's Kailash
             // section), so this page has nothing to show for it.
@@ -92,6 +87,15 @@ Rectangle {
             label: qsTr("Sport Modes")
             selected: root.currentPage === "sportModes"
             onClicked: root.pageSelected("sportModes")
+        }
+        // Real, 2026-08-09 ("switch the place of settings and sport modes, being
+        // settings at the bottom") - last item in the rail now, on purpose.
+        NavItem {
+            width: parent.width
+            glyph: Icons.settings
+            label: qsTr("Settings")
+            selected: root.currentPage === "settings"
+            onClicked: root.pageSelected("settings")
         }
     }
 }
