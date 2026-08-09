@@ -1829,3 +1829,34 @@ trigger has one unresolved structural unknown that needs ground truth we cannot 
 restored to pre-trial state after testing. Recommended next direction: feature A (guided
 workouts / declarative guidance-interval Trigger rules) - which feature B likely depends on
 anyway.
+
+## Finding 33: guided workouts are DECLARATIVE CustomModes Trigger rules - buildable without the dead compiler (2026-08-09)
+
+Pivoted to feature A (guided workouts / browsable WORKOUT menu) per André. Key architectural
+finding from the decompiled backend:
+
+The guided/interval-workout logic - `Triggers` (each with `LimitMetric` = which sensor,
+`Enabled`, upper/lower limits, `ActionsOnRise`/`ActionsOnFall` = alert on crossing, and
+`FilterWithBufferedInput`) - is handled by `CustomModesAreaConverter::convertBXmlGroups`
+(decompile ~832000-832850, nearest owner confirmed). i.e. **it is stored declaratively inside
+the CustomModes flash region** and converted to/from JSON by that converter - NOT compiled
+bytecode in the Apps region. This means a guided workout can be constructed and written by this
+project directly into CustomModes, with NO dependency on Movescount's dead server-side compiler.
+
+Rule types are `generic`/`display`/`guidance`/`interval` (convertRule). A guidance/interval rule
+carries the Triggers structure above; a generic/display rule is just the RULEIDX->app-slot
+pointer this project already writes. The on-watch native graph display is
+`PID_RUNNER_GPS_TEMPLATE_GUIDANCE`.
+
+Scope confirmed by two period reviews (endomorfun.fr, trailandrunning.com): the Ambit planner
+only ever did SIMPLE time/distance/HR-limit workouts ("10x100m at 85% FCM impossible") - exactly
+what a declarative Trigger rule (one metric limit + alert actions per segment) expresses. So the
+achievable target and the mechanism match.
+
+Remaining RE to build it: the numeric BXml tag IDs for the Trigger/Limit/Action sub-structure
+inside a CustomModes rule (the string keys Triggers/LimitMetric/etc. are the JSON view; the
+binary uses numeric BXml tags not yet in custom_modes.py's BXML_TAGS). Next step: read
+convertBXmlGroups' Trigger section for those tag IDs, then extend custom_modes.py to
+decode/encode them, verify by round-tripping any real capture that contains a rule, and build a
+minimal guided-workout writer. No compiler needed - this is pure declarative CustomModes work,
+the same region/write-path already proven this session.
