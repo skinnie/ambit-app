@@ -14,7 +14,7 @@ import { readGpxFile } from '../services/GpxService';
 import { parseTrackPoints, computeElevationStats, TrackPoint } from '../services/GpxParser';
 import ElevationChart from '../components/ElevationChart';
 import { t } from '../i18n';
-import { useTheme } from '../theme/useTheme';
+import { useV3Theme } from '../theme/v3';
 
 type Route = RouteProp<RootStackParamList, 'Map'>;
 type Nav   = NativeStackNavigationProp<RootStackParamList, 'Map'>;
@@ -66,12 +66,32 @@ function buildLeafletHtml(): string {
 <div id="map"></div>
 <script>
   var map = L.map('map', { zoomControl: false });
-  L.tileLayer(
+
+  // Real, 2026-08-09 ("can we have the same map providers as desktop") - IGN stays the
+  // default (accurate, France-only, already proven here) and OSM/CyclOSM are added as real
+  // switchable alternatives, same tile hosts and same attribution text as desktop's own
+  // qml/MapService.qml. Desktop couldn't offer IGN itself (its own MapService.qml explains
+  // why: a plain native XYZ tile renderer, and IGN's WMTS addressing doesn't fit that
+  // mechanism) - Leaflet has no such limit, so Android can offer all three.
+  var ign = L.tileLayer(
     'https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0' +
     '&LAYER=GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2&STYLE=normal&FORMAT=image/png' +
     '&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}',
     { maxZoom: 18, attribution: '© IGN Géoplateforme' }
   ).addTo(map);
+  var osm = L.tileLayer(
+    'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+    { maxZoom: 19, attribution: '© OpenStreetMap contributors' }
+  );
+  var cyclosm = L.tileLayer(
+    'https://a.tile-cyclosm.openstreetmap.fr/cyclosm/{z}/{x}/{y}.png',
+    { maxZoom: 20, attribution: '© OpenStreetMap contributors, CyclOSM' }
+  );
+  L.control.layers({
+    'IGN (France)': ign,
+    'OpenStreetMap': osm,
+    'CyclOSM': cyclosm,
+  }, null, { position: 'topright', collapsed: true }).addTo(map);
 
   var line = null;
   var startMarker = null;
@@ -225,7 +245,7 @@ function buildLeafletHtml(): string {
 // ─── Composant ────────────────────────────────────────────────────────────────
 
 export default function MapScreen() {
-  const theme = useTheme();
+  const theme = useV3Theme();
   const styles = createStyles(theme);
   const route      = useRoute<Route>();
   const navigation = useNavigation<Nav>();
@@ -587,6 +607,12 @@ export default function MapScreen() {
         javaScriptEnabled
         domStorageEnabled={false}
         mixedContentMode="never"
+        // Real, 2026-08-09 - same real requirement desktop's own main.cpp comment documents:
+        // tile.openstreetmap.org's usage policy (operations.osmfoundation.org/policies/tiles/)
+        // requires a real, identifying User-Agent on every tile request, or it gets treated as
+        // bulk/anonymous traffic. WebView's default sends a generic Android/Chrome UA with no
+        // way to single out just the tile requests, so this sets it for the whole page load.
+        userAgent="AmbitApp/2.0"
         onLoad={onWebViewLoad}
         onMessage={onMessage}
       />
@@ -691,20 +717,20 @@ function StatChip({ styles, label, value }: { styles: ReturnType<typeof createSt
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-function createStyles(t: ReturnType<typeof useTheme>) {
+function createStyles(t: ReturnType<typeof useV3Theme>) {
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: t.background },
     map: { flex: 1 },
     centered: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: t.background },
-    loadingText: { color: t.textMuted, marginTop: 12 },
-    errorText: { color: t.alert, fontSize: 15 },
+    loadingText: { color: t.mutedText, marginTop: 12 },
+    errorText: { color: t.error, fontSize: 15 },
     overlay: {
       position: 'absolute',
       top: 12,
       left: 12,
       right: 12,
-      backgroundColor: t.surface,
-      borderColor: t.outline,
+      backgroundColor: t.card,
+      borderColor: t.mutedText + '33',
       borderWidth: 1,
       borderRadius: 14,
       paddingVertical: 8,
@@ -716,7 +742,7 @@ function createStyles(t: ReturnType<typeof useTheme>) {
       justifyContent: 'space-around',
     },
     chip: { alignItems: 'center', flex: 1 },
-    chipLabel: { fontSize: 10, color: t.textMuted, marginBottom: 2 },
+    chipLabel: { fontSize: 10, color: t.mutedText, marginBottom: 2 },
     chipValue: { fontSize: 13, fontWeight: '700', color: t.text },
     exportFab: {
       position: 'absolute',
@@ -725,8 +751,8 @@ function createStyles(t: ReturnType<typeof useTheme>) {
       width: 48,
       height: 48,
       borderRadius: 24,
-      backgroundColor: t.surfaceHigh,
-      borderColor: t.outline,
+      backgroundColor: t.card,
+      borderColor: t.mutedText + '33',
       borderWidth: 1,
       alignItems: 'center',
       justifyContent: 'center',
@@ -737,8 +763,8 @@ function createStyles(t: ReturnType<typeof useTheme>) {
       position: 'absolute',
       bottom: 244,
       right: 16,
-      backgroundColor: t.surface,
-      borderColor: t.outline,
+      backgroundColor: t.card,
+      borderColor: t.mutedText + '33',
       borderWidth: 1,
       borderRadius: 14,
       overflow: 'hidden',
@@ -748,7 +774,7 @@ function createStyles(t: ReturnType<typeof useTheme>) {
       paddingVertical: 12,
       paddingHorizontal: 16,
       borderBottomWidth: 1,
-      borderBottomColor: t.outline,
+      borderBottomColor: t.mutedText + '33',
     },
     exportItemText: { color: t.text, fontSize: 14 },
 
@@ -757,15 +783,15 @@ function createStyles(t: ReturnType<typeof useTheme>) {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
-      backgroundColor: t.surface,
+      backgroundColor: t.card,
       paddingHorizontal: 12,
       paddingVertical: 8,
       borderTopWidth: 1,
-      borderTopColor: t.outline,
+      borderTopColor: t.mutedText + '33',
     },
     replayModeText: {
       fontSize: 10,
-      color: t.textMuted,
+      color: t.mutedText,
       width: 50,
     },
     replayControls: {
@@ -778,7 +804,7 @@ function createStyles(t: ReturnType<typeof useTheme>) {
     },
     replayBtnMain: {
       padding: 8,
-      backgroundColor: t.surfaceHigh,
+      backgroundColor: t.card,
       borderRadius: 20,
     },
     replayIcon: { fontSize: 16, color: t.text },
@@ -794,7 +820,7 @@ function createStyles(t: ReturnType<typeof useTheme>) {
     },
     speedBtn: {
       marginTop: 4,
-      backgroundColor: t.surfaceHigh,
+      backgroundColor: t.card,
       paddingHorizontal: 6,
       paddingVertical: 2,
       borderRadius: 4,
