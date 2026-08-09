@@ -69,6 +69,7 @@ qt_add_qml_module(ambitapp
         qml/Icons.qml
         qml/components/Card.qml
         qml/components/Icon.qml
+        qml/components/RoundedComboBox.qml
         qml/components/NavItem.qml
         qml/components/NavRail.qml
         qml/components/PagePlaceholder.qml

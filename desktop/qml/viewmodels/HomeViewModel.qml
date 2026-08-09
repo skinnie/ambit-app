@@ -48,10 +48,16 @@ QtObject {
     // ("Ambit3 Peak" -> "Ambit 3 Peak") - applied to every Ambit2/Ambit3 entry, not just
     // Emu, for consistency. "Ambit" (Bluebird, the original) has no number, so it's
     // unaffected.
+    // Real, 2026-08-09 ("check if the namings already have the correct spacing as we
+    // decided elsewhere... not 'Ambit3 Peak' but 'Suunto Ambit 3 Peak'") - this table was
+    // missing the "Suunto" brand prefix the Android app's own PID->name table
+    // (AmbitUsbModule.kt's SUUNTO_PID_NAMES) already uses for every single entry. Aligned to
+    // match it exactly rather than re-deciding the convention here a second time.
     readonly property var _modelNames: ({
-        Bluebird: "Ambit", Duck: "Ambit 2", Colibri: "Ambit 2 S", Greentit: "Ambit 2 R",
-        Emu: "Ambit 3 Peak", Finch: "Ambit 3 Sport", Ibisbill: "Ambit 3 Run", Kaka: "Ambit 3 Vertical",
-        Jabiru: "Traverse", Loon: "Traverse Alpha", Hoopoe: "Kailash",
+        Bluebird: "Suunto Ambit", Duck: "Suunto Ambit 2", Colibri: "Suunto Ambit 2 S",
+        Greentit: "Suunto Ambit 2 R", Emu: "Suunto Ambit 3 Peak", Finch: "Suunto Ambit 3 Sport",
+        Ibisbill: "Suunto Ambit 3 Run", Kaka: "Suunto Ambit 3 Vertical",
+        Jabiru: "Suunto Traverse", Loon: "Suunto Traverse Alpha", Hoopoe: "Suunto Kailash",
     })
     readonly property string deviceDisplayName:
         DeviceService.deviceInfoOk

@@ -135,7 +135,13 @@ Flickable {
                 spacing: Theme.spacingMedium
 
                 Text {
-                    text: HomeViewModel.isKailash ? qsTr("Kailash Settings") : qsTr("Ambit3 Settings")
+                    // Real, 2026-08-09 ("it says Ambit3 settings, please link this to the
+                    // name of the device, since tomorrow we will support more devices") -
+                    // was hardcoded to one of two fixed strings; now reads the real
+                    // connected device's own name (HomeViewModel.deviceDisplayName, the same
+                    // one Home's own device card already shows) so a future third/fourth
+                    // supported device needs no new branch here at all.
+                    text: qsTr("%1 Settings").arg(HomeViewModel.deviceDisplayName)
                     font.bold: true
                     color: Theme.text
                 }
@@ -198,7 +204,7 @@ Flickable {
                             onToggled: SettingsWriteService.writeSetting(modelData.key, checked ? 1 : 0)
                         }
 
-                        ComboBox {
+                        RoundedComboBox {
                             visible: modelData.kind === "enum"
                             width: 220
                             model: modelData.choices

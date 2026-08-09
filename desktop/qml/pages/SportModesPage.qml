@@ -311,7 +311,7 @@ Flickable {
                                                 color: Theme.text
                                                 font.pixelSize: 12
                                             }
-                                            ComboBox {
+                                            RoundedComboBox {
                                                 id: typeCombo
                                                 width: 260
                                                 model: CustomModesService.fieldTypes
