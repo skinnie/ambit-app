@@ -166,6 +166,7 @@ export async function addPoiToWatch(
   onState({ phase: 'writing' });
   try {
     await addPoi(name, lat, lon);
+    onWatchPoiCache = null; // real watch state just changed - see readOnWatchPois()
     onState({ phase: 'done' });
   } catch (e: any) {
     onState({ phase: 'error', error: e?.message ?? 'Failed to add the POI' });
@@ -178,12 +179,26 @@ export async function addPoiToWatch(
 // watch" list (PoisPage.qml parity) and a real per-item-preview Import flow
 // (PoiService.importedPois + per-item Add, not one opaque write-everything button), plus
 // per-item Export - none of this existed before; the screen was action-buttons-only.
+//
+// Real, same day ("cache activities/POIs and only import the differences from the watch,
+// making it faster") - same real reasoning as NavigationService.ts's own
+// ON_WATCH_CACHE_TTL_MS (see its header comment): desktop has no actual diff/incremental
+// importer to port (checked directly, PoiService::refresh() always does a full read too),
+// but re-reading the Waypoints region on every screen focus when nothing's changed is a
+// real, fixable waste. Same short in-memory TTL, cleared on any real write (addPoiToWatch).
+const ON_WATCH_POI_CACHE_TTL_MS = 30_000;
+let onWatchPoiCache: { data: WatchPoi[]; at: number } | null = null;
 
 /** Read-only: the watch's own current POIs, for a real "On the watch" list. */
-export async function readOnWatchPois(): Promise<WatchPoi[]> {
+export async function readOnWatchPois(force = false): Promise<WatchPoi[]> {
+  if (!force && onWatchPoiCache && Date.now() - onWatchPoiCache.at < ON_WATCH_POI_CACHE_TTL_MS) {
+    return onWatchPoiCache.data;
+  }
   await connect();
   try {
-    return await readPoisFromWatch();
+    const data = await readPoisFromWatch();
+    onWatchPoiCache = { data, at: Date.now() };
+    return data;
   } finally {
     await disconnect().catch(() => {});
   }

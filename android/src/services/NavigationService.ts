@@ -170,6 +170,7 @@ export async function uploadRoute(route: PendingRoute, onState: Listener): Promi
   emit({ phase: 'writing', ...meta });
   try {
     await writeRoute(route);
+    onWatchCache = null; // real watch state just changed - see readOnWatchNavigation()
     emit({ phase: 'done', ...meta });
   } catch (e: any) {
     emit({ phase: 'error', error: e?.message ?? 'Failed to write the route' });
@@ -178,18 +179,41 @@ export async function uploadRoute(route: PendingRoute, onState: Listener): Promi
   }
 }
 
+// Real, 2026-08-09 ("cache activities/POIs and only import the differences from the watch,
+// making it faster") - desktop was checked for the exact mechanism this referenced (see
+// ambit_app memory): it does NOT have a byte-diff/incremental importer for routes or POIs.
+// RouteService::refresh()/PoiService::refresh() (desktop/src/services/routeservice.cpp,
+// poiservice.cpp) always do a full read, every call, no cache at all - there's nothing to
+// port faithfully. What IS real and worth doing: this read is a fixed ~146KB raw region
+// transfer (16KB waypoints + 130KB routes) regardless of how much actually changed - the
+// protocol has no "give me only the changed bytes" capability to diff against - and
+// RouteScreen's useFocusEffect was re-running it on every single screen focus, even
+// Home->Routes->Home->Routes seconds apart with nothing changed. A short in-memory TTL
+// cache (not persisted - the watch's own on-disk state can't be trusted across reconnects/
+// a SuuntoLink sync in between anyway) skips that redundant round trip; any real write
+// (uploadRoute, just above) still clears it immediately so the very next read is fresh.
+const ON_WATCH_CACHE_TTL_MS = 30_000;
+let onWatchCache: { data: WatchNavigation; at: number } | null = null;
+
 /** Read-only: the watch's own current Routes/Waypoints, for a real "On the watch" list -
  * matches desktop's own RouteService.onWatchRoutes/GarminService.onDeviceRoutes shape
  * (RoutesPage.qml). Reuses exportNavigationToGpx()'s own read half, just returns the rich
- * per-route/per-waypoint data instead of only a count + a combined GPX file. */
-export async function readOnWatchNavigation(): Promise<WatchNavigation> {
+ * per-route/per-waypoint data instead of only a count + a combined GPX file.
+ * `force` bypasses the TTL cache above - used nowhere yet, kept for a future explicit
+ * "refresh" affordance rather than only ever trusting the 30s window. */
+export async function readOnWatchNavigation(force = false): Promise<WatchNavigation> {
+  if (!force && onWatchCache && Date.now() - onWatchCache.at < ON_WATCH_CACHE_TTL_MS) {
+    return onWatchCache.data;
+  }
   await connect();
   try {
     const [waypointsB64, routesB64] = await Promise.all([
       readRegion(AMBIT3_WAYPOINT_BASE, AMBIT3_WAYPOINT_REGION_SIZE),
       readRegion(AMBIT3_ROUTE_BASE, AMBIT3_ROUTE_REGION_SIZE),
     ]);
-    return decodeNavigation(waypointsB64, routesB64);
+    const data = decodeNavigation(waypointsB64, routesB64);
+    onWatchCache = { data, at: Date.now() };
+    return data;
   } finally {
     await disconnect().catch(() => {});
   }
