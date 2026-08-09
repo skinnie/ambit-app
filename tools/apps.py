@@ -59,6 +59,24 @@ NAME_LEN = 29  # null-padded (or truncated if the real name doesn't fit - see mo
 ENTRY_BLOCK_LEN = ENTRY_HEADER_LEN + NAME_LEN  # 32: entry_offset -> magic, fixed, confirmed
 
 
+def entry_checksum(binary):
+    """The per-entry 'marker' byte (SOLVED 2026-08-09, Finding 29): a 1-byte XOR checksum of
+    the entry's payload = the 8-byte IAMRULE magic followed by the compiled binary, XORed with
+    the low byte of that payload's length. This is exactly openambit's own
+    `calculate_app_rule_checksum` (src/libambit/sport_mode_serialize.c) - independent community
+    prior art for the Ambit app-rule format - applied to MAGIC+binary. Verified byte-exact
+    against all 26 real entries this project has (the live 11-entry region plus all 4
+    assets/ambit3 pcap/v2/ install captures), zero exceptions. openambit places this checksum
+    as a trailing byte after each app and keeps a separate checksum-position table; the real
+    Ambit3 layout instead carries it here in the fixed entry header, but the formula is
+    identical - strong cross-validation of both."""
+    payload = MAGIC + bytes(binary)
+    c = 0
+    for x in payload:
+        c ^= x
+    return c ^ (len(payload) & 0xFF)
+
+
 def decode(data):
     """Finds every real app entry via the region's own directory table (see module
     docstring) - not by scanning for the IAMRULE magic and guessing backwards, which is what
@@ -68,6 +86,9 @@ def decode(data):
     if len(data) < 4:
         return []
     num_entries, unknown2 = struct.unpack_from("<HH", data, 0)
+    # unknown2 SOLVED 2026-08-09 (Finding 29) via openambit's serialize_app_data: it's
+    # num_entries ^ 0x02 (verified: 11^2=9, 3^2=1, 5^2=7, 4^2=6 across real samples). Kept as a
+    # sanity signal, not required for decoding.
     table_len = 4 + 4 * (num_entries + 1)
     if num_entries == 0 or num_entries > 1000 or table_len > len(data):
         return []  # doesn't look like a real directory - don't guess further
@@ -95,6 +116,35 @@ def decode(data):
             "binary": data[bin_start:bin_end],
         })
     return entries
+
+
+def read_apps_region(link, label="Apps"):
+    """Reads only as much of the real Apps region as its own directory says is actually
+    used (`total_length`, the last entry of its own offset table) instead of the full
+    200,000-byte declared region size. Real, 2026-08-09 ("check if we can implement the
+    same speed hack for routes and POis that we did for activities... apply the same to
+    apps"). Live-verified: a full read of this region took 8.4s; real total_length values
+    seen so far are a few KB. Unlike TrackLog's own version of this fix (a heuristic bad-
+    streak cutoff, no exact boundary available), this region has a real, exact boundary -
+    a small probe of the directory table alone is enough to know precisely how much more
+    to read. Mirrors decode()'s own validation (not calling decode() on the possibly-
+    truncated probe directly - byte-slicing past a short buffer doesn't raise, so a
+    truncated decode could silently return wrong, truncated binaries instead of erroring)
+    - same safety net every other version of this fix uses: falls back to the full,
+    always-correct read if the probe doesn't look like a real directory."""
+    from write_nav import read_flash
+    probe = read_flash(link, APPS_BASE, 4096, label=f"{label} (probe)")
+    if len(probe) >= 4:
+        num_entries, _unknown2 = struct.unpack_from("<HH", probe, 0)
+        table_len = 4 + 4 * (num_entries + 1)
+        if 0 < num_entries <= 1000 and table_len <= len(probe):
+            table = struct.unpack_from(f"<{num_entries + 1}I", probe, 4)
+            if table[0] == table_len:
+                total_length = table[-1]
+                if total_length <= len(probe):
+                    return probe[:total_length]
+                return read_flash(link, APPS_BASE, total_length, label=label)
+    return read_flash(link, APPS_BASE, APPS_SIZE, label=label)
 
 
 def match_catalog(binary, catalog):
@@ -142,11 +192,11 @@ def main():
         with open(args.from_file, "rb") as f:
             data = f.read()
     else:
-        from write_nav import Link, read_flash
+        from write_nav import Link
         link = Link(dry_run=False, verbose=False)
         print("read-only: 0x0b17 reads flash, nothing is written")
         link.open()
-        data = read_flash(link, APPS_BASE, APPS_SIZE, label="Apps")
+        data = read_apps_region(link)
 
     catalog = None
     if args.catalog:
