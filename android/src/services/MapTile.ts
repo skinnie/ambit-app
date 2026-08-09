@@ -70,6 +70,11 @@ interface FitOpts {
   padding?: number;
   maxZoom?: number;
   maxTiles?: number;
+  // Real bug, found live ("routes on the map seem very big" - Garmin) - only applies when
+  // targetHeight is omitted: the auto-computed height has no natural upper bound, so a
+  // route with a real elongated (much taller than wide) bounding box demanded an equally
+  // huge card. See fitBoundsMosaic's own use of this below.
+  maxAutoHeight?: number;
 }
 
 function buildMosaic(
@@ -135,7 +140,8 @@ export function fitBoundsMosaic(
   const padding = opts.padding ?? 20;
   const maxZoom = opts.maxZoom ?? 18;
   const maxTiles = opts.maxTiles ?? 12;
-  const targetHeight = opts.targetHeight;
+  const maxAutoHeight = opts.maxAutoHeight ?? 420;
+  let targetHeight = opts.targetHeight;
 
   const lats = points.map(p => p.lat);
   const lons = points.map(p => p.lon);
@@ -162,6 +168,17 @@ export function fitBoundsMosaic(
   const bboxW = Math.max(p1.x - p0.x, 1);
   const bboxH = Math.max(p0.y - p1.y, 1);
   const center = worldPixel((minLat + maxLat) / 2, (minLon + maxLon) / 2, z);
+
+  // The clamp itself: if nothing constrained the height (routes - see maxAutoHeight's own
+  // comment above) and the real bbox aspect ratio would need more than maxAutoHeight at the
+  // width-driven scale, fall back to the same letterboxed/centered fit buildMosaic already
+  // does for a real targetHeight (activities/POIs) - just with maxAutoHeight as that height,
+  // instead of letting the card grow without bound.
+  if (targetHeight === undefined) {
+    const scaleW = targetWidth / (bboxW + padding * 2);
+    const naturalHeight = (bboxH + padding * 2) * scaleW;
+    if (naturalHeight > maxAutoHeight) targetHeight = maxAutoHeight;
+  }
 
   return buildMosaic(center, bboxW, bboxH, z, targetWidth, targetHeight, padding);
 }
