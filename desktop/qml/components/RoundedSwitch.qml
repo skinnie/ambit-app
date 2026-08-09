@@ -12,9 +12,13 @@ import AmbitApp
 Switch {
     id: root
 
+    // Real, 2026-08-09 ("they seem big" - compared side by side with the brightness/
+    // contrast RoundedSlider's own ~18px handle) - shrunk from 44x24/18px-handle down
+    // closer to that same visual scale, rather than Basic style's own default touch-target
+    // sizing.
     indicator: Rectangle {
-        implicitWidth: 44
-        implicitHeight: 24
+        implicitWidth: 36
+        implicitHeight: 20
         x: root.leftPadding
         y: root.topPadding + (root.availableHeight - height) / 2
         radius: height / 2  // a true pill, not Basic style's own modest corner-round
@@ -22,11 +26,11 @@ Switch {
         Behavior on color { ColorAnimation { duration: 120; easing.type: Easing.OutCubic } }
 
         Rectangle {
-            x: root.checked ? parent.width - width - 3 : 3
+            x: root.checked ? parent.width - width - 2 : 2
             y: (parent.height - height) / 2
-            width: 18
-            height: 18
-            radius: 9  // circular handle
+            width: 16
+            height: 16
+            radius: 8  // circular handle
             color: Theme.card
             Behavior on x { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
         }

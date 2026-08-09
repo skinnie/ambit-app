@@ -34,7 +34,12 @@ Flickable {
         anchors.top: parent.top
         anchors.topMargin: Theme.spacingLarge
         width: 480
-        spacing: Theme.spacingMedium
+        // Real, 2026-08-09 ("more coherence and simplicity") - was spacingMedium, the same
+        // gap used *inside* every card between its own rows - so the whole page read as one
+        // undifferentiated stack rather than distinct sections. Larger gap between cards
+        // than within them is a real, deliberate hierarchy cue, not a bigger version of the
+        // same thing.
+        spacing: Theme.spacingLarge
 
         // --- General - Suunto-specific (it's reporting the Python backend bridge's own
         // status, which Garmin support has nothing to do with - GarminService talks
@@ -47,7 +52,17 @@ Flickable {
             Column {
                 width: parent.width
                 spacing: Theme.spacingSmall
-                Text { text: qsTr("General"); font.bold: true; color: Theme.text }
+                // Real, 2026-08-09 ("This settings page merits supervision by a designer,
+                // to have more coherence and simplicity") - every section header on this
+                // page used to be a bare bold Text with no explicit size (relying on
+                // whatever the platform default happens to be) and no icon, unlike every
+                // other headed card in the app (Home's device card, Sport Modes' rows).
+                // Standardized to icon + Theme.fontSizeBodyLarge everywhere on this page.
+                Row {
+                    spacing: Theme.spacingSmall
+                    Icon { glyph: Icons.settings; size: 20; color: Theme.text; anchors.verticalCenter: parent.verticalCenter }
+                    Text { text: qsTr("General"); font.bold: true; font.pixelSize: Theme.fontSizeBodyLarge; color: Theme.text; anchors.verticalCenter: parent.verticalCenter }
+                }
                 Text {
                     text: qsTr("AmbitApp V2 — see AMBITAPP_SPEC.md")
                     color: Theme.mutedText
@@ -83,7 +98,11 @@ Flickable {
             Column {
                 width: parent.width
                 spacing: Theme.spacingSmall
-                Text { text: qsTr("Supported devices"); font.bold: true; color: Theme.text }
+                Row {
+                    spacing: Theme.spacingSmall
+                    Icon { glyph: Icons.settings; size: 20; color: Theme.text; anchors.verticalCenter: parent.verticalCenter }
+                    Text { text: qsTr("Supported devices"); font.bold: true; font.pixelSize: Theme.fontSizeBodyLarge; color: Theme.text; anchors.verticalCenter: parent.verticalCenter }
+                }
                 Row {
                     spacing: 6
                     Rectangle {
@@ -134,16 +153,23 @@ Flickable {
                 width: parent.width
                 spacing: Theme.spacingMedium
 
-                Text {
-                    // Real, 2026-08-09 ("it says Ambit3 settings, please link this to the
-                    // name of the device, since tomorrow we will support more devices") -
-                    // was hardcoded to one of two fixed strings; now reads the real
-                    // connected device's own name (HomeViewModel.deviceDisplayName, the same
-                    // one Home's own device card already shows) so a future third/fourth
-                    // supported device needs no new branch here at all.
-                    text: qsTr("%1 Settings").arg(HomeViewModel.deviceDisplayName)
-                    font.bold: true
-                    color: Theme.text
+                Row {
+                    spacing: Theme.spacingSmall
+                    Icon { glyph: Icons.watch; size: 20; color: Theme.text; anchors.verticalCenter: parent.verticalCenter }
+                    Text {
+                        // Real, 2026-08-09 ("it says Ambit3 settings, please link this to
+                        // the name of the device, since tomorrow we will support more
+                        // devices") - was hardcoded to one of two fixed strings; now reads
+                        // the real connected device's own name (HomeViewModel.
+                        // deviceDisplayName, the same one Home's own device card already
+                        // shows) so a future third/fourth supported device needs no new
+                        // branch here at all.
+                        text: qsTr("%1 Settings").arg(HomeViewModel.deviceDisplayName)
+                        font.bold: true
+                        font.pixelSize: Theme.fontSizeBodyLarge
+                        color: Theme.text
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
                 }
 
                 Text {
@@ -307,10 +333,17 @@ Flickable {
             Column {
                 width: parent.width
                 spacing: Theme.spacingSmall
-                Text { text: qsTr("Connections"); font.bold: true; color: Theme.text }
-
                 Row {
-                    spacing: 8
+                    spacing: Theme.spacingSmall
+                    Icon { glyph: Icons.sync; size: 20; color: Theme.text; anchors.verticalCenter: parent.verticalCenter }
+                    Text { text: qsTr("Connections"); font.bold: true; font.pixelSize: Theme.fontSizeBodyLarge; color: Theme.text; anchors.verticalCenter: parent.verticalCenter }
+                }
+
+                // Real, 2026-08-09: these three rows used spacing:8 while every other
+                // status-dot row on this page (General/Supported devices above) used 6 -
+                // unified to 6.
+                Row {
+                    spacing: 6
                     TapHandler { onTapped: intervalsIcuDialog.open() }
                     Rectangle {
                         width: 8; height: 8; radius: 4
@@ -327,7 +360,7 @@ Flickable {
                     }
                 }
                 Row {
-                    spacing: 8
+                    spacing: 6
                     TapHandler { onTapped: runalyzeDialog.open() }
                     Rectangle {
                         width: 8; height: 8; radius: 4
@@ -343,7 +376,7 @@ Flickable {
                     }
                 }
                 Row {
-                    spacing: 8
+                    spacing: 6
                     TapHandler { onTapped: stravaDialog.open() }
                     Rectangle {
                         width: 8; height: 8; radius: 4
@@ -557,7 +590,11 @@ Flickable {
             Column {
                 width: parent.width
                 spacing: Theme.spacingSmall
-                Text { text: qsTr("Maps"); font.bold: true; color: Theme.text }
+                Row {
+                    spacing: Theme.spacingSmall
+                    Icon { glyph: Icons.routes; size: 20; color: Theme.text; anchors.verticalCenter: parent.verticalCenter }
+                    Text { text: qsTr("Maps"); font.bold: true; font.pixelSize: Theme.fontSizeBodyLarge; color: Theme.text; anchors.verticalCenter: parent.verticalCenter }
+                }
                 Text {
                     text: qsTr("Provider: tiles from %1")
                         .arg(MapService.provider === "osm" ? "OpenStreetMap" : "CyclOSM")
@@ -599,7 +636,11 @@ Flickable {
                 width: parent.width
                 spacing: Theme.spacingSmall
 
-                Text { text: qsTr("Weather"); font.bold: true; color: Theme.text }
+                Row {
+                    spacing: Theme.spacingSmall
+                    Icon { glyph: Icons.weatherSunny; size: 20; color: Theme.text; anchors.verticalCenter: parent.verticalCenter }
+                    Text { text: qsTr("Weather"); font.bold: true; font.pixelSize: Theme.fontSizeBodyLarge; color: Theme.text; anchors.verticalCenter: parent.verticalCenter }
+                }
                 Text {
                     text: qsTr("Provider: Open-Meteo")
                     color: Theme.mutedText
@@ -656,7 +697,11 @@ Flickable {
             Column {
                 width: parent.width
                 spacing: Theme.spacingSmall
-                Text { text: qsTr("Backup"); font.bold: true; color: Theme.text }
+                Row {
+                    spacing: Theme.spacingSmall
+                    Icon { glyph: Icons.backup; size: 20; color: Theme.text; anchors.verticalCenter: parent.verticalCenter }
+                    Text { text: qsTr("Backup"); font.bold: true; font.pixelSize: Theme.fontSizeBodyLarge; color: Theme.text; anchors.verticalCenter: parent.verticalCenter }
+                }
                 Text {
                     width: parent.width
                     wrapMode: Text.WordWrap
@@ -674,7 +719,11 @@ Flickable {
             Column {
                 width: parent.width
                 spacing: Theme.spacingSmall
-                Text { text: qsTr("About"); font.bold: true; color: Theme.text }
+                // No icon here - unlike the other section headers, this app's own subset
+                // icon font (assets/fonts/NOTICE.md) has no real "info" glyph to reuse
+                // honestly, and guessing one isn't worth it for a header that's otherwise
+                // just a label. Still gets the same size fix as every other header.
+                Text { text: qsTr("About"); font.bold: true; font.pixelSize: Theme.fontSizeBodyLarge; color: Theme.text }
                 Text {
                     text: qsTr("AmbitApp V2.5.11")
                     color: Theme.text
