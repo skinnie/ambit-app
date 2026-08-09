@@ -1,8 +1,6 @@
 import React, { useCallback, useState } from 'react';
 import { View, Text, StyleSheet, Alert, ScrollView, TouchableOpacity } from 'react-native';
-import { useFocusEffect, useNavigation } from '@react-navigation/native';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { RootStackParamList } from '../../App';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   addPoiToWatch, AddPoiState, readOnWatchPois, exportSinglePoiToGpx, pickAndParseWaypoints,
   WatchPoi,
@@ -13,17 +11,20 @@ import { Card } from '../components/ui/Card';
 import { Button, FieldRow } from '../components/ui/primitives';
 import { TrackPreview } from '../components/TrackPreview';
 
-type Nav = NativeStackNavigationProp<RootStackParamList, 'Poi'>;
-
 // v3.0 UI port (2026-08-09, "re do... pois to match entirely desktop") - real structural
 // rebuild matching desktop's own PoisPage.qml: "Add a POI" gets a live pin preview, "Import
 // from GPX" now shows each parsed waypoint with its own real Add button (not one opaque
 // write-everything action), and a real "On the watch" list with a per-POI preview + Export -
 // this screen used to be pure action buttons with no browsing at all.
+//
+// Real, same day ("I would prefer an immediate map view on this side") - TrackPreview
+// itself now renders a real tile-map background (see its own header comment), so the
+// separate tap-through "Map" button/TrackMapScreen this screen briefly had was removed -
+// the preview already IS the map, immediately, matching desktop's own PoisPage.qml (a live
+// MapView per item, no tap-through screen at all).
 export default function PoiScreen() {
   const theme = useV3Theme();
   const styles = createStyles(theme);
-  const navigation = useNavigation<Nav>();
 
   const [poiName, setPoiName] = useState('');
   const [poiLat, setPoiLat]   = useState('');
@@ -154,18 +155,6 @@ export default function PoiScreen() {
           />
         </View>
         <Button label={t.poiAddBtn} variant="filled" loading={poiBusy} disabled={poiBusy} onPress={handleAddPoi} style={{ marginTop: v3Spacing.small }} />
-        {hasValidCoords && (
-          <Button
-            label={t.poiItemMapBtn}
-            variant="outline"
-            grow={false}
-            style={{ marginTop: v3Spacing.small }}
-            onPress={() => navigation.navigate('TrackMap', {
-              title: poiName.trim() || t.poiSection,
-              points: [{ lat: parsedLat, lon: parsedLon }],
-            })}
-          />
-        )}
       </Card>
 
       {/* ── Import from GPX ── */}
@@ -207,20 +196,9 @@ export default function PoiScreen() {
                 <Text style={styles.itemName} numberOfLines={1}>{poi.name}</Text>
                 <Text style={styles.itemStats}>{t.poiCoords(poi.latitude, poi.longitude)}</Text>
               </View>
-              <View style={styles.itemBtnCol}>
-                <TouchableOpacity
-                  style={styles.exportBtn}
-                  onPress={() => navigation.navigate('TrackMap', {
-                    title: poi.name,
-                    points: [{ lat: poi.latitude, lon: poi.longitude }],
-                  })}
-                >
-                  <Text style={styles.exportBtnText}>{t.poiItemMapBtn}</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.exportBtn} disabled={exportingIndex !== null} onPress={() => handleExportItem(poi, i)}>
-                  <Text style={styles.exportBtnText}>{exportingIndex === i ? '…' : t.poiItemExportBtn}</Text>
-                </TouchableOpacity>
-              </View>
+              <TouchableOpacity style={styles.exportBtn} disabled={exportingIndex !== null} onPress={() => handleExportItem(poi, i)}>
+                <Text style={styles.exportBtnText}>{exportingIndex === i ? '…' : t.poiItemExportBtn}</Text>
+              </TouchableOpacity>
             </View>
           </View>
         ))}
@@ -238,7 +216,6 @@ const createStyles = (t: ReturnType<typeof useV3Theme>) => StyleSheet.create({
   itemName: { fontSize: v3Type.bodyLarge, fontWeight: '700', color: t.text },
   itemStats: { fontSize: v3Type.label, color: t.mutedText, marginTop: 2 },
   onWatchItem: { marginTop: v3Spacing.large, paddingTop: v3Spacing.medium, borderTopWidth: 1, borderTopColor: t.mutedText + '22', gap: v3Spacing.small },
-  itemBtnCol: { flexDirection: 'row', gap: v3Spacing.small },
   exportBtn: {
     paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8,
     backgroundColor: t.primary + '1F', borderWidth: 1, borderColor: t.primary,

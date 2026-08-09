@@ -707,8 +707,19 @@ export default function HomeScreen() {
           feature wise"). Same real placement as HomePage.qml: right after the device hero
           card(s), before the actions row. Collapses to nothing on its own (renders null)
           until the first fetch attempt finishes, same as WeatherCard.qml's own
-          hasFetchedOnce gate. ── */}
-      <WeatherCard />
+          hasFetchedOnce gate.
+          Real bug, found live ("something looks bizarre, sizing wise they are not the
+          same, and we have all this space on the borders") - WeatherCard's own Card had no
+          width cap of its own, so on a wide tablet it stretched to the ScrollView's full
+          width while every card above it (deviceCardCol/cardStackRoomy) is capped -
+          differently-sized cards stacked directly on top of each other. Follow-up ("on
+          horizontal, the device info and weather are not the same width") - a flat
+          CONTENT_MAX_WIDTH cap alone only matched portrait: roomy mode's device card(s) sit
+          in cardStackRoomy, capped at 960 not CONTENT_MAX_WIDTH, so weatherWrap now follows
+          the exact same roomy switch cardStack itself uses, instead of a single fixed cap. ── */}
+      <View style={[styles.weatherWrap, roomy && styles.weatherWrapRoomy]}>
+        <WeatherCard />
+      </View>
 
       {/* ── Actions : uniquement les actions réelles (sync/GPS) - Routes/POIs/Backup/
           Sport Modes/Settings sont maintenant des destinations du NavShell ci-dessus,
@@ -722,6 +733,7 @@ export default function HomeScreen() {
             busy={garminSyncBusy}
             onPress={() => handleGarminSync()}
             disabled={isBusy}
+            grow
           />
         </View>
       ) : (
@@ -733,10 +745,12 @@ export default function HomeScreen() {
             busy={syncBusy}
             onPress={handleSync}
             disabled={isBusy}
+            grow
           />
           <ActionTile
             icon="satellite"
             label={orbitalLabel}
+            grow
             busy={orbitalBusy}
             onPress={handleOrbital}
             disabled={isBusy}
@@ -818,16 +832,24 @@ function createStyles(t: ReturnType<typeof useV3Theme>) {
       paddingHorizontal: 24,
     },
     // The connected screen scrolls (a lot of content: device cards + a 2-column tile
-    // grid + footer), so on short/landscape screens nothing clips; on tall/portrait
-    // ones flexGrow + space-between still fills the screen the way `container` did.
+    // grid + footer), so on short/landscape screens nothing clips.
     scroll: {
       flex: 1,
       backgroundColor: t.background,
     },
+    // Real bug, found live ("on vertical there is a lot of space between the
+    // cards...guess it may be 'replicating' something from horizontal") - this was
+    // copy-pasted from `container` (used by the sparse pre-connect device-flow screens,
+    // where space-between + flexGrow really is the layout: a handful of items centered
+    // and spread across a mostly-empty screen). The connected dashboard has real,
+    // differently-sized content (device cards, weather, a tile grid, a status line) -
+    // space-between distributed ALL leftover portrait screen height between those few
+    // children, stretching the gaps between them far past what any of them needed. A
+    // fixed gap between sections, no artificial full-height spreading, fixes it.
     scrollContent: {
       flexGrow: 1,
       alignItems: 'center',
-      justifyContent: 'space-between',
+      gap: 24,
       paddingVertical: 56,
       paddingHorizontal: 24,
     },
@@ -899,6 +921,16 @@ function createStyles(t: ReturnType<typeof useV3Theme>) {
       flexBasis: '31%',
       flexGrow: 1,
       minWidth: 250,
+    },
+    // Same cap as deviceCardCol - see the JSX comment above on why WeatherCard needed this
+    // (it's the only card on this screen that wasn't already capped to CONTENT_MAX_WIDTH).
+    weatherWrap: {
+      width: '100%',
+      maxWidth: CONTENT_MAX_WIDTH,
+    },
+    // roomy: matches cardStackRoomy's own 960 cap, same reasoning as deviceCardRoomy above.
+    weatherWrapRoomy: {
+      maxWidth: 960,
     },
     deviceName: {
       color: t.text,

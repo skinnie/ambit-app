@@ -377,11 +377,6 @@ const fr = {
   sportModesCloseBtn: 'Fermer',
   sportModesWriteSentNotConfirmed: 'Écriture envoyée mais non confirmée par relecture.',
 
-  // RouteScreen/PoiScreen — bouton "voir sur la carte" (2026-08-09, "the visualization of
-  // routes don't have map... replicate what's inside" - ouvre TrackMapScreen.tsx)
-  routeItemMapBtn: 'Carte',
-  poiItemMapBtn: 'Carte',
-
   // SettingsScreen — Cartes (2026-08-09, "no button to change provider, nor in the
   // settings like the desktop version") - même carte que desktop/qml/pages/SettingsPage.qml,
   // avec IGN en option Android supplémentaire (voir MapProviderService.ts)
@@ -832,11 +827,6 @@ const en: typeof fr = {
   sportModesPickerTitle: 'Choose field type',
   sportModesCloseBtn: 'Close',
   sportModesWriteSentNotConfirmed: 'Write sent but not confirmed by re-read.',
-
-  // RouteScreen/PoiScreen — "view on map" button (2026-08-09, "the visualization of routes
-  // don't have map... replicate what's inside" - opens TrackMapScreen.tsx)
-  routeItemMapBtn: 'Map',
-  poiItemMapBtn: 'Map',
 
   // SettingsScreen — Maps (2026-08-09, "no button to change provider, nor in the settings
   // like the desktop version") - same real card as desktop/qml/pages/SettingsPage.qml, plus

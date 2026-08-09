@@ -187,7 +187,7 @@ export function FieldRow({ icon, style, ...inputProps }: { icon: IconName } & Te
 
 // ── ActionTile — Card-surfaced square used on Home's action grid ───────────
 export function ActionTile({
-  icon, label, progress, onPress, disabled, busy, basis,
+  icon, label, progress, onPress, disabled, busy, basis, grow,
 }: {
   icon: IconName; label: string; progress?: string; onPress: () => void; disabled?: boolean; busy?: boolean;
   // Column width as a flex-basis. When omitted it adapts to the screen: two columns on
@@ -195,6 +195,12 @@ export function ActionTile({
   // at its column width (centered by the row) rather than stretching full-width. The row
   // is width-capped upstream, so this stays clean from phones to tablets.
   basis?: string | number;
+  // Real, 2026-08-09 ("enlarge the synced and gps buttons to match together the width of
+  // either [card]") - Home's own 2-tile sync/GPS row left a big gap on either side of a
+  // fixed-percentage-width pair inside the same width-capped row the weather/device cards
+  // fill completely. flexGrow:1 + flexBasis:0 (standard "share the row evenly" flex, not a
+  // fixed percentage) makes the pair always fill that row exactly, whatever its cap is.
+  grow?: boolean;
 }) {
   const t = useV3Theme();
   const { width, height } = useWindowDimensions();
@@ -211,7 +217,7 @@ export function ActionTile({
       disabled={disabled}
       activeOpacity={0.75}
       style={{
-        flexBasis: effectiveBasis, flexGrow: 0, minWidth: 84,
+        flexBasis: grow ? 0 : effectiveBasis, flexGrow: grow ? 1 : 0, minWidth: 84,
         backgroundColor: t.card, borderColor: busy ? t.primary : 'transparent', borderWidth: busy ? 1.4 : 0,
         borderRadius: v3Radius.card - 2, paddingVertical: 14, paddingHorizontal: 6,
         alignItems: 'center', justifyContent: 'center', gap: 6,

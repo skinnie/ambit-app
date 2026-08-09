@@ -1,8 +1,6 @@
 import React, { useCallback, useState } from 'react';
 import { View, Text, StyleSheet, Alert, ScrollView, TouchableOpacity } from 'react-native';
-import { useFocusEffect, useNavigation } from '@react-navigation/native';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { RootStackParamList } from '../../App';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   pickAndParseRoute, uploadRoute, readOnWatchNavigation, exportSingleRouteToGpx,
   PendingRoute, SendRouteState,
@@ -14,14 +12,18 @@ import { Card } from '../components/ui/Card';
 import { Button, StatusLine } from '../components/ui/primitives';
 import { TrackPreview } from '../components/TrackPreview';
 
-type Nav = NativeStackNavigationProp<RootStackParamList, 'Route'>;
-
 // v3.0 UI port (2026-08-09, "re do routes... to match entirely desktop") - real structural
 // rebuild matching desktop's own RoutesPage.qml: an "Import a route" card with a real
 // preview (name/points/track shape) before you commit to uploading, not one opaque
 // pick-and-immediately-write button, and a real "On the watch" card listing every route
 // already there with its own track preview and a per-route Export - this screen used to be
 // pure action buttons with no browsing at all.
+//
+// Real, same day ("I would prefer an immediate map view on this side") - TrackPreview
+// itself now renders a real tile-map background (see its own header comment), so the
+// separate tap-through "Map" button/TrackMapScreen this screen briefly had was removed -
+// the preview already IS the map, immediately, matching desktop's own RoutesPage.qml (a
+// live MapView per item, no tap-through screen at all).
 function formatDist(m: number): string {
   return m >= 1000 ? `${(m / 1000).toFixed(2)} km` : `${Math.round(m)} m`;
 }
@@ -29,7 +31,6 @@ function formatDist(m: number): string {
 export default function RouteScreen() {
   const theme = useV3Theme();
   const styles = createStyles(theme);
-  const navigation = useNavigation<Nav>();
 
   const [pending, setPending] = useState<PendingRoute | null>(null);
   const [picking, setPicking] = useState(false);
@@ -131,17 +132,6 @@ export default function RouteScreen() {
               <Button label={t.routeUploadBtn} variant="filled" loading={sendBusy} disabled={sendBusy} onPress={handleUpload} />
               <Button label={t.routeDiscardBtn} variant="text" grow={false} disabled={sendBusy} onPress={() => setPending(null)} />
             </View>
-            {pending.points.length > 1 && (
-              <Button
-                label={t.routeItemMapBtn}
-                variant="outline"
-                grow={false}
-                onPress={() => navigation.navigate('TrackMap', {
-                  title: pending.name,
-                  points: pending.points.map(p => ({ lat: p.lat, lon: p.lon })),
-                })}
-              />
-            )}
             {sendBusy && <StatusLine text={sendState.phase === 'connecting' ? t.connecting : t.routeWritingMsg} />}
           </View>
         )}
@@ -173,28 +163,15 @@ export default function RouteScreen() {
                   {t.routeStats(formatDist(route.distanceM), route.points.length, route.ascentM, route.descentM)}
                 </Text>
               </View>
-              <View style={styles.itemBtnCol}>
-                {route.points.length > 1 && (
-                  <TouchableOpacity
-                    style={styles.exportBtn}
-                    onPress={() => navigation.navigate('TrackMap', {
-                      title: route.name,
-                      points: route.points.map(p => ({ lat: p.latitude, lon: p.longitude })),
-                    })}
-                  >
-                    <Text style={styles.exportBtnText}>{t.routeItemMapBtn}</Text>
-                  </TouchableOpacity>
-                )}
-                <TouchableOpacity
-                  style={styles.exportBtn}
-                  disabled={exportingIndex !== null}
-                  onPress={() => handleExportItem(route, i)}
-                >
-                  <Text style={styles.exportBtnText}>
-                    {exportingIndex === i ? '…' : t.routeItemExportBtn}
-                  </Text>
-                </TouchableOpacity>
-              </View>
+              <TouchableOpacity
+                style={styles.exportBtn}
+                disabled={exportingIndex !== null}
+                onPress={() => handleExportItem(route, i)}
+              >
+                <Text style={styles.exportBtnText}>
+                  {exportingIndex === i ? '…' : t.routeItemExportBtn}
+                </Text>
+              </TouchableOpacity>
             </View>
           </View>
         ))}
@@ -212,7 +189,6 @@ const createStyles = (t: ReturnType<typeof useV3Theme>) => StyleSheet.create({
   itemName: { fontSize: v3Type.bodyLarge, fontWeight: '700', color: t.text },
   itemStats: { fontSize: v3Type.label, color: t.mutedText, marginTop: 2 },
   onWatchItem: { marginTop: v3Spacing.large, paddingTop: v3Spacing.medium, borderTopWidth: 1, borderTopColor: t.mutedText + '22', gap: v3Spacing.small },
-  itemBtnCol: { flexDirection: 'row', gap: v3Spacing.small },
   exportBtn: {
     paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8,
     backgroundColor: t.primary + '1F', borderWidth: 1, borderColor: t.primary,
