@@ -130,8 +130,17 @@ export default function PoiScreen() {
         <Text style={styles.cardTitle}>{t.poiSection}</Text>
         <FieldRow icon="poi" value={poiName} onChangeText={setPoiName} placeholder={t.poiNamePlaceholder} editable={!poiBusy} style={{ marginTop: v3Spacing.small }} />
         <View style={styles.row}>
-          <FieldRow icon="map" value={poiLat} onChangeText={setPoiLat} placeholder={t.poiLat} keyboardType="numbers-and-punctuation" editable={!poiBusy} style={{ flex: 1 }} />
-          <FieldRow icon="map" value={poiLon} onChangeText={setPoiLon} placeholder={t.poiLon} keyboardType="numbers-and-punctuation" editable={!poiBusy} style={{ flex: 1 }} />
+          {/* Real bug, found live on device (2026-08-09): FieldRow's own `style` prop only
+              reaches its inner TextInput, not the outer row container - passing flex:1
+              directly to FieldRow sized the text *inside* each field, not the field's own
+              box, so Longitude was pushed off the right edge of the screen instead of
+              sitting beside Latitude. Wrapping each in its own flex:1 View is the real fix. */}
+          <View style={{ flex: 1 }}>
+            <FieldRow icon="map" value={poiLat} onChangeText={setPoiLat} placeholder={t.poiLat} keyboardType="numbers-and-punctuation" editable={!poiBusy} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <FieldRow icon="map" value={poiLon} onChangeText={setPoiLon} placeholder={t.poiLon} keyboardType="numbers-and-punctuation" editable={!poiBusy} />
+          </View>
         </View>
         <View style={{ marginTop: v3Spacing.small }}>
           <TrackPreview
