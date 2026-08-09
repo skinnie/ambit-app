@@ -2090,3 +2090,37 @@ on-device form. Reproducing it needs the real capture / spec named in SUUNTO_DEV
 real Category:guidance sync, or the on-device workout structure). The ACHIEVABLE revival remains:
 author structured workouts (real Movescount schema == workout.py) -> live compiler -> install as
 a pinned sport-mode app with real per-segment target-range beep/light guidance (Finding 38).
+
+## Finding 41: DEFINITIVE - our install works; the COMMUNITY COMPILER's binaries don't execute on this Ambit3 Peak (hardware, 2026-08-09)
+
+Clean end-to-end validation on real hardware (André driving the watch). Sequence, all on Walk:
+- Community-compiled interval workout (TestWkt, time-based): installs with NO app error (format
+  fix Findings 25-28 holds), hash cold-boot-safe, wired to display field (Type 51). On watch:
+  shows "--" both idle AND while recording.
+- Community-compiled `RESULT = 100;` (Fixed100, a constant - must show 100 regardless of
+  GPS/recording): also "--". No error, just no output.
+- **Discriminator**: the watch's OWN official "Real Temerature" binary, extracted from its Apps
+  region and re-installed by THIS PROJECT's writer onto the same Walk field -> renders the
+  temperature correctly.
+
+Conclusion, cleanly isolated:
+- **This project's install mechanism is fully correct** - an official IAMRULE binary installed by
+  our tooling executes and renders. Findings 25-28 (Apps/CustomModes format, used-extent hash,
+  no 0x0b04) are validated end-to-end on hardware.
+- **The community App-Zone compiler (ambitappscompiler.azurewebsites.net) produces binaries this
+  Ambit3 Peak firmware ACCEPTS but does NOT execute** (even a constant RESULT=100 -> "--"). This
+  is the real, final blocker for AUTHORED workouts/apps - separate from, and downstream of, every
+  format bug fixed earlier. It explains every prior "--" (myworkout, TestWkt, Fixed100).
+  Structural tell: the community binary carries an embedded RuleID field of 0 (official binaries
+  carry a real ruleId) and its VM bytecode isn't run; the compiler likely targets Ambit(1/2) and
+  its output isn't executed by Ambit3 (Emu) firmware despite claiming Emu compatibility.
+
+Net effect on the whole feature:
+- Installing OFFICIAL catalog apps via this project's tooling: WORKS (proven).
+- Authoring our OWN workouts/apps: blocked NOT by our tools but by the lack of a compiler whose
+  output executes on Ambit3. The authoring front-end (workout.py == real Movescount schema) and
+  the installer are both correct; the missing piece is a working Ambit3 App-Zone compiler.
+- The Wayback App Zone corpus (Finding 37) has real SOURCE for ~2000 apps but the compiled
+  Binary was always server-side; those sources would need a working Ambit3 compiler too.
+
+Watch restored to clean pre-experiment state (byte-exact verified) after testing.
