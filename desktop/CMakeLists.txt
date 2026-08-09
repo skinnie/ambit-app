@@ -132,6 +132,7 @@ qt_add_qml_module(ambitapp
         src/services/appsservice.cpp
     RESOURCES
         assets/fonts/MaterialSymbolsRounded.ttf
+        packaging/icon.png
         # assets/map/osm-raster-style.json was MapLibre's own style file - unused since the
         # 2026-08-07 switch to Qt's built-in "osm" plugin, left on disk but out of the build
 )

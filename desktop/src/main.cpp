@@ -1,5 +1,6 @@
 #include <QFontDatabase>
 #include <QGuiApplication>
+#include <QIcon>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
@@ -54,6 +55,13 @@ int main(int argc, char *argv[])
     QGuiApplication app(argc, argv);
     app.setOrganizationName(QStringLiteral("AmbitApp"));
     app.setApplicationName(QStringLiteral("AmbitApp"));
+
+    // Real, 2026-08-09 ("use the android app icon for our desktop app") - same mark as
+    // android/src/components/ui/Icon.tsx's "mountain" case, regenerated as a filled
+    // silhouette for desktop sizes by tools/packaging/make_desktop_app_icon.py. Set on the
+    // QGuiApplication (not a per-window property) so it applies to the taskbar/dock entry
+    // too, not just the QML window's own icon.
+    app.setWindowIcon(QIcon(QStringLiteral(":/qt/qml/AmbitApp/packaging/icon.png")));
 
     // Registered once, here, rather than via a QML FontLoader per Icon instance - qml/Icons.qml
     // just references the family name. See assets/fonts/NOTICE.md for what this font actually
