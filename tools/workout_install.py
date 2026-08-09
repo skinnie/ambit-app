@@ -7,15 +7,18 @@ it into one exercise mode's display so it actually shows up - the writer half of
 DRY-RUN BY DEFAULT, same convention as every other writer in this project: without --write
 nothing is emitted, only the exact bytes are logged.
 
-**What's verified and what isn't.** The tag-level encoding is verified byte-exact against two
-clean, isolated, real before/after captures (custom_modes.py --save, 2026-08-05 - see
-`training_program_andre.md`'s writeup): the real tag order inside an exercise mode is
-`SETTINGS, APP_META, DISPLAYS, RULES` (not append-everything-at-the-end, which was tried first
-and failed); a `DISP_FIELD_SETTING`'s `Type` field set to 51 is the real sentinel for "this
-field shows an app's result"; `RuleIdx` is a global, monotonically increasing counter across
-the whole watch, not per-mode or per-field; and assigning an app also resets `HrHigh`/`HrLow`
-to 0 and sets `IntTimerCount` to 99 as a real, reproducible side effect (confirmed identical
-twice with openambit verified closed, so it isn't contamination).
+**What's verified and what isn't.** The tag-level encoding is verified byte-exact against a real
+SuuntoLink install: the tag order inside an exercise mode is `SETTINGS, APP_META, DISPLAYS,
+RULES`. The app-placement mechanism was CORRECTED 2026-08-09 (training_program_andre.md Finding
+44) after diffing a real, rendering SuuntoLink Couch-to-5K install against the clean pre-state:
+SuuntoLink makes an app render by **appending the app's rule-engine slot (51/52/53 =
+FT_RULE_ENGINE_0/1/2) as a `DISP_FIELD_SHORTCUT` on a display field** - so that row cycles
+between its normal value(s) and the app - NOT by setting a field's `Type` to 51 (the old approach
+here, which only ever showed "--"). The slot number = the app's 0-based position in the mode's
+RULES list. `RuleIdx` is the app's own index in the Apps region. Installing an app does NOT touch
+`HrHigh`/`HrLow`/`IntTimerCount` (the old "reset them" behaviour was a misreading and is removed).
+`install_app_into_mode()` now reproduces a real SuuntoLink install byte-for-byte (only the
+time-based APP_META timestamps differ).
 
 **2026-08-08 (training_program_andre.md Finding 25): the Apps-region format is now SOLVED**,
 from 4 real USBPcap captures of SuuntoLink actually installing apps (`assets/ambit3 pcap/v2/`)
@@ -90,6 +93,14 @@ def build_apps_region(existing_entries, compiled):
     (found live, Finding 25): a name over apps.NAME_LEN (29) bytes wouldn't leave room for its
     own null terminator and would run into the next field - truncated here instead."""
     binary = bytes(compiled["binary"])
+    # The on-watch entry layout is [header][name][IAMRULE magic][bytecode]; `binary` here must be
+    # the bytecode WITHOUT the magic, since we prepend apps.MAGIC below. But some sources already
+    # carry the 8-byte magic inside their `binary` (notably SuuntoLink's own catalog index.json -
+    # training_program_andre.md Finding 45): passing that straight through produced a DOUBLE magic
+    # and an 8-byte-shifted, corrupt bytecode that installed cleanly but always rendered "--".
+    # Strip a leading magic defensively so every source lands byte-identical to a real install.
+    if binary[:len(apps.MAGIC)] == apps.MAGIC:
+        binary = binary[len(apps.MAGIC):]
     activity_id = compiled.get("activityId", 0) & 0xFF
     marker = apps.entry_checksum(binary)
     name = compiled.get("name", "App").encode("iso-8859-15", "replace")[:apps.NAME_LEN - 1]
@@ -156,31 +167,6 @@ def _find_mode(data, mode_index):
     raise ValueError(f"mode index {mode_index} not found")
 
 
-def _find_field_setting_offset(data, mode_content, mode_len, display_index, field_index):
-    mode_end = mode_content + mode_len
-    for tag_id, content, length, _ in _walk_children(data, mode_content, mode_end):
-        if tag_id != cm.EXERCISE_MODES_DISPLAYS:
-            continue
-        d_idx = 0
-        for d_id, d_content, d_len, _ in _walk_children(data, content, content + length):
-            if d_id != cm.EXERCISE_MODES_DISPLAY:
-                continue
-            if d_idx == display_index:
-                f_idx = 0
-                for f_id, f_content, f_len, _ in _walk_children(data, d_content, d_content + d_len):
-                    if f_id != cm.EXERCISE_MODES_DISP_FIELD:
-                        continue
-                    if f_idx == field_index:
-                        gg_id, gg_content, gg_len, _ = next(
-                            _walk_children(data, f_content, f_content + f_len))
-                        if gg_id != cm.EXERCISE_MODES_DISP_FIELD_SETTING:
-                            raise ValueError("expected DISP_FIELD_SETTING first in DISP_FIELD")
-                        return gg_content
-                    f_idx += 1
-            d_idx += 1
-    raise ValueError(f"display {display_index} field {field_index} not found in this mode")
-
-
 SPORT_MODE_APP_LIMIT = 5  # The real, manual-documented limit (3.35 Suunto Apps: "up to five
                           # Suunto Apps to each sport mode") - per MODE, not a whole-watch total.
                           # RULE_ENGINE_SLOTS (a small global slot-count model) is retired
@@ -212,115 +198,154 @@ def check_mode_app_limit(decoded, mode_index):
             f"documented limit is {SPORT_MODE_APP_LIMIT} apps per sport mode")
 
 
-# Real, distinct field Types - confirmed 2026-08-08 (training_program_andre.md Finding 26)
-# from a real bug: FT_RULE_ENGINE_0/1/2 (custom_modes.py's own FIELD_TYPE_LABELS: "Suunto App
-# Slot 1/2/3"), not one single "51 means app result" sentinel. A first live test hardcoded 51
-# for every field regardless of how many slots a mode already used, producing two duplicate
-# "Slot 1" fields on Walk instead of Slot 1 + Slot 2 - caught by checking the field labels
-# before asking for a second physical watch check. This is DISTINCT from
-# SPORT_MODE_APP_LIMIT/5: a mode can have up to 5 apps *assigned* (real Apps-region entries,
-# real RULES tags) but only up to 3 of them can ever be *visible* on a display field, because
-# only 3 slot Types exist at all - matches a real observation on hardware this session
-# (Trekking has 1 real assigned rule with zero fields of any of these 3 Types anywhere in its
-# 11 displays - installed-but-not-shown is a real, normal state, not a bug).
+# The three rule-engine slots an app can be placed onto: FT_RULE_ENGINE_0/1/2 (custom_modes.py's
+# FIELD_TYPE_LABELS "Suunto App Slot 1/2/3"). Corrected 2026-08-09 (Finding 44): these values are
+# added to a display field's SHORTCUT list, not written into a field's Type. A mode can have up to
+# SPORT_MODE_APP_LIMIT (5) apps *assigned* (RULES tags) but only 3 can be *placed* on a field,
+# because only 3 engine slots exist. The slot an app feeds = its 0-based position in the mode's
+# RULES list, so the Nth app placed uses APP_SLOT_TYPES[N].
 APP_SLOT_TYPES = (51, 52, 53)  # FT_RULE_ENGINE_0, _1, _2 in that fixed order
 
 
-def _used_app_slot_types(data, mode_content, mode_len):
-    """Which of APP_SLOT_TYPES are already wired to a display field somewhere in this mode."""
-    used = set()
-    mode_end = mode_content + mode_len
-    for tag_id, content, length, _ in _walk_children(data, mode_content, mode_end):
-        if tag_id != cm.EXERCISE_MODES_DISPLAYS:
+def _tag(tag_id, content):
+    return struct.pack("<HH", tag_id, len(content)) + content
+
+
+def _grow_region(data, insert_at, blob):
+    """Insert `blob` at insert_at, keeping the region's total size constant by consuming trailing
+    0xFF padding. CustomModes is a fixed-size flash buffer of which only the used extent is ever
+    written, so growth must come out of the pad, never off the end."""
+    original_size = len(data)
+    tail = bytes(data[original_size - len(blob):])
+    if tail.count(0xFF) != len(tail):
+        raise RuntimeError(
+            f"not enough 0xFF padding left in CustomModes to grow by {len(blob)} bytes - "
+            "refusing to silently discard real trailing data")
+    data[insert_at:insert_at] = blob
+    del data[original_size:]
+
+
+def _bump(data, len_offset, delta):
+    old = struct.unpack_from("<H", data, len_offset)[0]
+    struct.pack_into("<H", data, len_offset, old + delta)
+
+
+def add_rule_to_mode(data, mode_index, rule_idx):
+    """Append an EXERCISE_MODES_RULE {RuleIdx, UseRule=1, LogRule=0} to the mode - creating the
+    mode's EXERCISE_MODES_RULES container if it has none yet. RuleIdx is the app's 0-based
+    position in the Apps region (see next_rule_idx)."""
+    rule = _tag(cm.EXERCISE_MODES_RULE, struct.pack("<HHH", rule_idx, 1, 0))
+    loc = _find_mode(data, mode_index)
+    mc, ml = loc["mode_content"], loc["mode_len"]
+    existing = [c for c in _walk_children(data, mc, mc + ml) if c[0] == cm.EXERCISE_MODES_RULES]
+    if existing:
+        _, r_content, r_len, r_offset = existing[0]
+        _grow_region(data, r_content + r_len, rule)
+        delta = len(rule)
+        _bump(data, r_offset + 2, delta)          # RULES container grows
+    else:
+        rules = _tag(cm.EXERCISE_MODES_RULES, rule)
+        _grow_region(data, mc + ml, rules)         # RULES sits at the end of the mode
+        delta = len(rules)
+    _bump(data, loc["mode_offset"] + 2, delta)
+    _bump(data, loc["em_offset"] + 2, delta)
+    _bump(data, 2, delta)                          # DEVICE_CUSTOM root
+
+
+def set_app_meta(data, mode_index):
+    """Stamp the mode's EXERCISE_MODES_APP_META timestamps (SuuntoLink updates them on every app
+    change), creating the tag after SETTINGS only if the mode has none - matching how a real
+    SuuntoLink install touches an already-stamped mode in place rather than duplicating it."""
+    t1 = int(time.time())
+    loc = _find_mode(data, mode_index)
+    mc, ml = loc["mode_content"], loc["mode_len"]
+    existing = [c for c in _walk_children(data, mc, mc + ml) if c[0] == cm.EXERCISE_MODES_APP_META]
+    if existing:
+        struct.pack_into("<II", data, existing[0][1], t1, t1 + 2)  # update in place, no resize
+        return
+    settings = next(c for c in _walk_children(data, mc, mc + ml)
+                     if c[0] == cm.EXERCISE_MODES_SETTING_NAME_LEN64)
+    _, s_content, s_len, _ = settings
+    app_meta = _tag(cm.EXERCISE_MODES_APP_META, struct.pack("<II", t1, t1 + 2))
+    _grow_region(data, s_content + s_len, app_meta)
+    delta = len(app_meta)
+    _bump(data, loc["mode_offset"] + 2, delta)
+    _bump(data, loc["em_offset"] + 2, delta)
+    _bump(data, 2, delta)
+
+
+def add_app_shortcut_to_field(data, mode_index, display_index, field_index, shortcut_value):
+    """THE mechanism SuuntoLink uses to make an app render (training_program_andre.md Finding 44):
+    APPEND the app's rule-engine slot (51/52/53 = FT_RULE_ENGINE_0/1/2) as an
+    EXERCISE_MODES_DISP_FIELD_SHORTCUT to the chosen display field, so that row cycles between its
+    normal value(s) and the app on button presses. This does NOT change the field's Type - the
+    old "set the field Type to 51" approach never rendered (showed "--")."""
+    loc = _find_mode(data, mode_index)
+    mc, ml = loc["mode_content"], loc["mode_len"]
+    displays = next(c for c in _walk_children(data, mc, mc + ml)
+                     if c[0] == cm.EXERCISE_MODES_DISPLAYS)
+    _, disp_content, disp_len, displays_offset = displays
+    target = None
+    d_idx = 0
+    for d_id, d_content, d_len, d_offset in _walk_children(data, disp_content,
+                                                            disp_content + disp_len):
+        if d_id != cm.EXERCISE_MODES_DISPLAY:
             continue
-        for d_id, d_content, d_len, _ in _walk_children(data, content, content + length):
-            if d_id != cm.EXERCISE_MODES_DISPLAY:
-                continue
-            for f_id, f_content, f_len, _ in _walk_children(data, d_content, d_content + d_len):
+        if d_idx == display_index:
+            f_idx = 0
+            for f_id, f_content, f_len, f_offset in _walk_children(data, d_content,
+                                                                    d_content + d_len):
                 if f_id != cm.EXERCISE_MODES_DISP_FIELD:
                     continue
-                gg_id, gg_content, _, _ = next(_walk_children(data, f_content, f_content + f_len))
-                if gg_id == cm.EXERCISE_MODES_DISP_FIELD_SETTING:
-                    typ = struct.unpack_from("<H", data, gg_content + 2)[0]
-                    if typ in APP_SLOT_TYPES:
-                        used.add(typ)
-    return used
-
-
-def next_app_slot_type(data, mode_content, mode_len):
-    """The next free FT_RULE_ENGINE_N Type for this mode - Slot 1 (51) if none are used yet,
-    Slot 2 (52) if only Slot 1 is taken, etc. Raises once all 3 are used - there's no 4th slot
-    Type to fall back to, regardless of SPORT_MODE_APP_LIMIT."""
-    used = _used_app_slot_types(data, mode_content, mode_len)
-    for slot_type in APP_SLOT_TYPES:
-        if slot_type not in used:
-            return slot_type
-    raise RuntimeError(
-        f"this mode already has all {len(APP_SLOT_TYPES)} Suunto App display slots in use "
-        f"(Types {APP_SLOT_TYPES}) - no free slot Type to wire a new field to, even though "
-        "more apps could still be assigned (see SPORT_MODE_APP_LIMIT)")
+                if f_idx == field_index:
+                    target = (f_offset, f_content, f_len, d_offset)
+                    break
+                f_idx += 1
+            break
+        d_idx += 1
+    if target is None:
+        raise ValueError(f"display {display_index} field {field_index} not found in this mode")
+    f_offset, f_content, f_len, d_offset = target
+    sc_tag = _tag(cm.EXERCISE_MODES_DISP_FIELD_SHORTCUT, struct.pack("<H", shortcut_value))
+    _grow_region(data, f_content + f_len, sc_tag)   # append shortcut at end of this field
+    delta = len(sc_tag)
+    # every len-offset below sits before the insertion point, so none shifts.
+    _bump(data, f_offset + 2, delta)          # DISP_FIELD
+    _bump(data, d_offset + 2, delta)          # DISPLAY
+    _bump(data, displays_offset + 2, delta)   # DISPLAYS
+    _bump(data, loc["mode_offset"] + 2, delta)
+    _bump(data, loc["em_offset"] + 2, delta)
+    _bump(data, 2, delta)                      # DEVICE_CUSTOM root
 
 
 def install_app_into_mode(custom_modes_bytes, mode_index, display_index, field_index, rule_idx,
                           as_workout=False):
     """Returns new CustomModes region bytes with the app wired into
-    (mode_index, display_index, field_index). See module docstring for what's verified.
+    (mode_index, display_index, field_index) the way SuuntoLink really does it (Finding 44):
+    add the RULE, stamp APP_META, and APPEND the app's engine slot as a DISP_FIELD_SHORTCUT on
+    the target field. It does NOT overwrite any field's Type and does NOT touch
+    HrHigh/HrLow/IntTimerCount - those were bogus side effects of the old, non-rendering approach.
 
-    as_workout=True (Finding 39 experiment): add the rule to the mode's RULES list but do NOT
-    pin it to a display field (no slot Type, no HrHigh/HrLow/IntTimerCount side effects) - the
-    hypothesis being that a guidance rule present-but-unwired is what the firmware offers in the
-    browsable WORKOUT options menu (vs a pinned display app). display_index/field_index are
-    ignored in this mode."""
+    as_workout=True (Finding 39 experiment): add the RULE + APP_META but do NOT place a shortcut
+    on any field - testing whether a present-but-unplaced guidance rule shows in the browsable
+    WORKOUT options menu. display_index/field_index are ignored in this mode."""
     data = bytearray(custom_modes_bytes)
-    loc = _find_mode(data, mode_index)
-    mode_content, mode_len = loc["mode_content"], loc["mode_len"]
-    mode_content_end = mode_content + mode_len
 
-    # SETTINGS is always the first child in every real mode seen - located generically anyway.
-    settings = next(c for c in _walk_children(data, mode_content, mode_content_end)
-                     if c[0] == cm.EXERCISE_MODES_SETTING_NAME_LEN64)
-    _, settings_content, settings_len, _ = settings
-    app_meta_insert_at = settings_content + settings_len
+    # The engine slot this app feeds = its 0-based position in the mode's RULES list, i.e. how
+    # many rules the mode already has. SuuntoLink's Couch-to-5K (Walk's first app) -> slot 51.
+    decoded = cm.decode(bytes(data))
+    n_existing = len(decoded["exercise_modes"][mode_index]["Rules"])
+
+    add_rule_to_mode(data, mode_index, rule_idx)
+    set_app_meta(data, mode_index)
 
     if not as_workout:
-        slot_type = next_app_slot_type(data, mode_content, mode_len)
-        field_setting_offset = _find_field_setting_offset(
-            data, mode_content, mode_len, display_index, field_index)
-        struct.pack_into("<H", data, field_setting_offset + 2, slot_type)
-
-        for name in ("HrHigh", "HrLow"):
-            off = settings_content + 64 + 2 * [f for f, _ in cm.SETTING_FIELDS].index(name)
-            struct.pack_into("<H", data, off, 0)
-        it_off = settings_content + 64 + 2 * [f for f, _ in cm.SETTING_FIELDS].index("IntTimerCount")
-        struct.pack_into("<H", data, it_off, 99)
-
-    def tag(tag_id, content):
-        return struct.pack("<HH", tag_id, len(content)) + content
-
-    t1 = int(time.time())
-    app_meta = tag(cm.EXERCISE_MODES_APP_META, struct.pack("<II", t1, t1 + 2))
-    rule = tag(cm.EXERCISE_MODES_RULE, struct.pack("<HHH", rule_idx, 1, 0))
-    rules = tag(cm.EXERCISE_MODES_RULES, rule)
-    inserted = len(rules) + len(app_meta)
-
-    original_size = len(data)
-    tail = bytes(data[original_size - inserted:])
-    if tail.count(0xFF) != len(tail):
-        raise RuntimeError(
-            "not enough 0xFF padding left in CustomModes to grow by "
-            f"{inserted} bytes - refusing to silently discard real trailing data")
-
-    data[mode_content_end:mode_content_end] = rules       # higher offset first
-    data[app_meta_insert_at:app_meta_insert_at] = app_meta
-    data = data[:original_size]
-
-    def bump(len_offset, delta):
-        old = struct.unpack_from("<H", data, len_offset)[0]
-        struct.pack_into("<H", data, len_offset, old + delta)
-
-    bump(loc["mode_offset"] + 2, inserted)
-    bump(loc["em_offset"] + 2, inserted)
-    bump(2, inserted)  # DEVICE_CUSTOM
+        if n_existing >= len(APP_SLOT_TYPES):
+            raise RuntimeError(
+                f"mode already has {n_existing} apps placed on fields - only "
+                f"{len(APP_SLOT_TYPES)} engine slots ({APP_SLOT_TYPES}) exist to place onto")
+        shortcut_value = APP_SLOT_TYPES[n_existing]   # 51/52/53 = FT_RULE_ENGINE_0/1/2
+        add_app_shortcut_to_field(data, mode_index, display_index, field_index, shortcut_value)
     return bytes(data)
 
 

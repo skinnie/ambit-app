@@ -698,11 +698,13 @@ class Handler(BaseHTTPRequestHandler):
         """GET /api/apps - real apps currently installed on the watch (the Apps flash
         region's own directory, tools/apps.py's own already-reverse-engineered format -
         see that module's docstring). ruleIdx in the response is confirmed to be exactly
-        the RuleIdx a display field's own RULE record points at ("Suunto App Slot N"),
-        so a UI can label that field with the real app name instead of the generic
-        FIELD_TYPE_LABELS placeholder. Real, read-only 0x0b17 flash read, using
-        apps.read_apps_region()'s own fast path (probes the region's real directory
-        instead of a blind 200,000-byte read - see that function's own docstring)."""
+        the RuleIdx a sport mode's own RULE record references, and an app is shown by
+        appending that rule's engine slot (51/52/53) as a display-field SHORTCUT the row
+        cycles to (training_program_andre.md Finding 44, hardware-confirmed) - so a UI can
+        label that cycling value with the real app name by matching this ruleIdx. Real,
+        read-only 0x0b17 flash read, using apps.read_apps_region()'s own fast path (probes
+        the region's real directory instead of a blind 200,000-byte read - see that
+        function's own docstring)."""
         code, out, err = run_tool("apps.py", ["--json"], timeout=60)
         info = self._parse_last_json_line(out)
         if info is None:
@@ -737,12 +739,16 @@ class Handler(BaseHTTPRequestHandler):
 
     def _handle_apps_install(self, body):
         """POST /api/apps/install. Body: {"mode": int, "display": int, "field": int,
-        "ruleId": int, "confirm": bool}. Real, 2026-08-09 - wires one real catalog app
-        (by its real ruleId) into a sport mode's own display field, via
-        tools/workout_install.py's own already-verified write path (build_apps_region()/
-        install_app_into_mode()). `mode`/`display`/`field` are the same 0-based indices
-        the /api/customodes response's own arrays use - a UI already holding that data
-        knows a mode's own array position without a second lookup here.
+        "ruleId": int, "confirm": bool}. Real, 2026-08-09, hardware-confirmed - installs one
+        real catalog app (by its real ruleId) and makes it render on a sport mode's chosen
+        display field, via tools/workout_install.py's own write path (build_apps_region()/
+        install_app_into_mode()). That path appends the app's engine slot as a
+        DISP_FIELD_SHORTCUT the row cycles to (Finding 44) and strips the catalog binary's
+        leading IAMRULE magic so it isn't doubled (Finding 45) - the two fixes that took a
+        self-installed app from "--" to actually rendering; nothing here has to handle
+        either. `mode`/`display`/`field` are the same 0-based indices the /api/customodes
+        response's own arrays use - a UI already holding that data knows a mode's own array
+        position without a second lookup here.
 
         Real, deliberate difference from this project's usual rehearsal-first pattern:
         workout_install.py itself only opens a real connection when --write is given (see

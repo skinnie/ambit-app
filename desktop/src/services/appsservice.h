@@ -7,12 +7,19 @@
 #include <QVariantList>
 #include <QVariantMap>
 
-// Real, 2026-08-09 ("2 bigger. Let's ship the full catalog") - the Suunto App Slot chain
-// (tools/apps.py, tools/workout_install.py, custom_modes.py's own FT_RULE_ENGINE_0/1/2
-// "Suunto App Slot N" fields) is fully reverse-engineered and wired into backend/server.py's
-// own three endpoints. Kept as its own service rather than folded into CustomModesService -
-// this is genuinely a different data domain (a 13,104-entry app catalog and the watch's own
-// separate Apps flash region), not sport-mode structure itself.
+// Real, 2026-08-09 - the Suunto App install chain (tools/apps.py, tools/workout_install.py,
+// custom_modes.py) is fully reverse-engineered, hardware-confirmed, and wired into
+// backend/server.py's own three endpoints. Kept as its own service rather than folded into
+// CustomModesService - this is genuinely a different data domain (a 13,104-entry app catalog
+// and the watch's own separate Apps flash region), not sport-mode structure itself.
+//
+// How an installed app actually RENDERS (training_program_andre.md Findings 44-46,
+// hardware-confirmed): the app's rule-engine slot (51/52/53) is appended as a
+// DISP_FIELD_SHORTCUT on a chosen display field, so that row CYCLES to the app on button
+// presses - it does NOT overwrite the field's Type. And catalog binaries already carry the
+// 8-byte IAMRULE magic, which workout_install.py strips before writing so it isn't doubled
+// into corrupt bytecode. Both were the reasons earlier installs showed "--"; both are fixed
+// in the shared tools this service calls, so no logic here needs to know either.
 class AppsService : public QObject
 {
     Q_OBJECT
@@ -24,8 +31,9 @@ class AppsService : public QObject
     // Real apps currently installed on the watch (tools/apps.py's own decode of the Apps
     // flash region). Each entry: {ruleIdx, name, activityId, binaryLength, catalogMatch?:
     // {ruleId, name, categoryId, description}}. ruleIdx is confirmed to be exactly the
-    // RuleIdx a display field's own RULE record points at - a UI can label a "Suunto App
-    // Slot N" field by matching its RuleIdx against this list's own ruleIdx.
+    // RuleIdx a sport mode's own RULE record references - a UI can label the app cycling on a
+    // display field's shortcut with the real app name by matching that RuleIdx against this
+    // list's own ruleIdx.
     Q_PROPERTY(QVariantList installedApps READ installedApps NOTIFY installedAppsChanged)
     Q_PROPERTY(bool searching READ searching NOTIFY searchingChanged)
     // Real catalog search results (data/suunto_apps/ - this app's own bundled copy of

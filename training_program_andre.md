@@ -2196,3 +2196,97 @@ we BUILD a fresh entry vs SuuntoLink, or an app/recording nuance. The clean disc
 André can run): install the SAME app (e.g. Couch-to-5K) via REAL SuuntoLink on the Mac and see if
 IT renders - if yes, diff our-install vs SuuntoLink-install watch state; if it ALSO shows "--",
 the app needs an interaction we're not doing. Not resolved this session.
+
+## Finding 44: SOLVED - apps are wired as a display-field SHORTCUT (51/52/53), not by setting a field's Type; our installer was wrong (2026-08-09)
+
+André's insight (SuuntoLink: choose placement, on a row that can hold >1 value, "select with a
+tick") cracked it. Ground truth: installed the SAME Couch-to-5K via REAL SuuntoLink on the Mac -
+it RENDERS - then read the watch and diffed against the clean pre-install state. SuuntoLink's app
+install makes EXACTLY three changes to the target mode (Walk):
+1. adds EXERCISE_MODES_RULE {RuleIdx=11 (=Apps position), UseRule=1, LogRule=0},
+2. bumps EXERCISE_MODES_APP_META timestamps,
+3. **appends the app's rule-engine slot as a SHORTCUT on a display field**: bottom field
+   FT_TIME_SEC Shortcuts [5] -> [5, 51] (51 = FT_RULE_ENGINE_0; "2nd click" cycles the bottom
+   row to the app). It changed NOTHING else - HrHigh/HrLow/HrLimitsUse/IntTimerFlags/
+   IntTimerCount all UNCHANGED.
+
+This project's `workout_install.install_app_into_mode()` was wrong two ways, both now explained:
+- it SET a display field's `Type` to 51 (meaning "replace this field with app-slot-0") instead
+  of APPENDING 51 to a field's DISP_FIELD_SHORTCUT list (the real mechanism). That is why our
+  installs showed "--" - the app was never actually placed on a shortcut the watch cycles/renders.
+- it also reset HrHigh/HrLow=0 and IntTimerCount=99 as a bogus side-effect (from the Finding 16
+  misreading); SuuntoLink touches none of those. Remove it.
+
+Fix: append EXERCISE_MODES_DISP_FIELD_SHORTCUT (tag 0x10A, u16 value = 51/52/53 for the mode's
+1st/2nd/3rd app) to the chosen display field, keep RULE + APP_META, and stop touching the
+settings. Validate byte-exact against the real SuuntoLink install before hardware retest. This is
+very likely the true root of the ENTIRE "app error"/"--" saga (Findings 16-19, 40, 41, 43) - the
+app was never really wired to a rendered field.
+
+## Finding 45: SOLVED (the OTHER half) - catalog binaries carry the IAMRULE magic; our installer double-magic'd them into corrupt "--" bytecode (2026-08-09)
+
+After the Finding 44 shortcut fix, a catalog "Temperature" app installed by our tooling STILL
+showed "--" even placed byte-identically to the rendering Couch-to-5K (single rule, engine 0,
+slot 51, recording). Isolation proved it was NOT the wiring: our CustomModes wiring and our Apps
+directory/entry framing both reproduce a real SuuntoLink install byte-exact. The difference was
+the BINARY CONTENT path.
+
+Root cause: SuuntoLink's own catalog `index.json` stores each app's `.binary` WITH the leading
+8-byte `IAMRULE\0` magic included. The real on-watch entry layout is
+[header][name][IAMRULE magic][bytecode] and our `build_apps_region()`/`apps.encode` PREPEND
+apps.MAGIC to `compiled["binary"]`. So a catalog binary went in as
+`IAMRULE\0 IAMRULE\0 <bytecode>` - a DOUBLE magic that shifted the bytecode 8 bytes. It installed
+cleanly (correct directory, correct XOR marker over the doubled payload, correct hash) so nothing
+flagged it, but the VM got garbage -> "--". Proof: on-watch rendering Couch-to-5K binary (782B)
+== catalog Couch-to-5K `.binary`[8:] byte-exact; catalog `.binary`[:8] == IAMRULE magic.
+
+Fix: `build_apps_region()` now strips a leading IAMRULE magic from `binary` before prepending
+apps.MAGIC (defensive, covers every source). Validated: rebuilding entry 11 from the *catalog*
+Couch-to-5K binary now reproduces the real on-watch (rendering) entry block BYTE-EXACT.
+
+Net: the whole "installed app shows --" saga had TWO independent bugs, both now fixed and each
+validated byte-exact vs a real rendering SuuntoLink install: (44) apps render via a
+DISP_FIELD_SHORTCUT slot, not a field Type; (45) catalog binaries already carry the IAMRULE magic
+and must not be double-magic'd. Awaiting the on-hardware render confirmation of a correctly-built
+catalog app.
+
+## Finding 46: HARDWARE-CONFIRMED - a self-installed catalog app now RENDERS on the Ambit3 (2026-08-09)
+
+André's watch: the "Temperature" catalog app, installed end-to-end by THIS project's own tooling
+(no SuuntoLink), now shows a live temperature value on Indoor training (middle row + bottom-row
+last cycled value). This closes the entire "app shows --" saga. Both root causes were required
+and both are fixed + validated byte-exact vs a real rendering SuuntoLink install:
+  - Finding 44: apps are placed as a DISP_FIELD_SHORTCUT (engine slot 51/52/53), not by setting
+    a field's Type.
+  - Finding 45: catalog `.binary` already carries the 8-byte IAMRULE magic; build_apps_region
+    must strip a leading magic so it isn't double-magic'd into 8-byte-shifted garbage.
+Note: the slot-52 vs slot-51 question was a RED HERRING - the slot-52 test had ALSO been
+double-magic'd. The engine-slot = rule-position model is consistent with all real data (Walk/Pool/
+Trekking place engine0/51 with one rule; Running places engine2/53 with five), so the installer's
+default (append the app -> next engine slot, placed as a shortcut) is correct; a correct binary at
+any placed engine slot renders. IMPLICATION: this project can now install any of the ~13,000
+official catalog apps (incl. ~3,000+ interval/HR/workout apps) and have them execute on-device,
+fully independent of SuuntoLink/Movescount. What is still NOT solved is only the *native browsable
+WORKOUT menu + segment graph* (Feature A) and planned-moves "Today" (Feature B).
+
+## Finding 47: CORRECTION - Type=51 IS a valid app-render mechanism; the dominant bug was always the binary (2026-08-09)
+
+While answering André's "did we add temperature to the middle row?": Indoor training's
+display[0] field[1] (FT_TIME) already had Type=51 in BOTH the clean and pre-session backups - a
+leftover from an earlier session's install experiment, not written this session. It now renders
+Temperature only because this session's rule reorder made Temperature engine slot 0 (that field
+pins engine slot 0). Two consequences:
+  1. Answer to André: the middle-row display pre-existed; our reorder changed WHAT it shows (rule
+     10 -> rule 12); we separately added the bottom-row shortcut. We did not create a middle-row
+     app field.
+  2. CORRECTION to Finding 44's framing: setting a field's Type to 51 is NOT wrong - it renders an
+     app as a permanently-pinned field (always visible, no cycling), as André now sees on the
+     middle row. SuuntoLink's method is the DISP_FIELD_SHORTCUT (cyclable, Finding 44), and that's
+     what our installer should emit to match SuuntoLink, but Type=51 also works. The real reason
+     every earlier Type=51 install showed "--" was the double-magic binary (Finding 45) and/or
+     community-compiler binaries that don't execute (Finding 41) - NOT the Type-vs-shortcut choice.
+     So the two render mechanisms are: Type=N = pinned field; shortcut N = cyclable value. Both
+     need a valid single-magic, executing binary.
+Cleanup note: Indoor training carries stale cruft from prior sessions (the field[1] Type=51). A
+true "restore Indoor" should target a pristine factory Indoor, not CustomModes_before_workout_exp
+(which already has this leftover). Need an older/pristine backup or rebuild the mode clean.
