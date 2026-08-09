@@ -122,11 +122,12 @@ Item {
         z: 1
         visible: root.selectedActivity === null && HomeViewModel.isKailash
                  && KailashService.trackLogLoading
-        // Real, 2026-08-09 ("align the box... to be centered compared to the cards") -
-        // centers on the grid's actually-occupied columns (activitiesGrid.contentWidthUsed),
-        // not the full page width - see that property's own comment for why those differ.
-        x: activitiesGrid.x + (activitiesGrid.width - activitiesGrid.contentWidthUsed) / 2
-                             + (activitiesGrid.contentWidthUsed - width) / 2
+        // Real, 2026-08-09 ("align the box... to be centered compared to the cards"),
+        // corrected the same day after a real screenshot showed it still off - GridView
+        // packs cards flush against its own left edge, it doesn't center an incomplete last
+        // column, so all of (width - contentWidthUsed) is unused space on the *right*, not
+        // split evenly on both sides as the first version of this assumed.
+        x: activitiesGrid.x + (activitiesGrid.contentWidthUsed - width) / 2
         y: Theme.spacingLarge
         width: Math.min(parent.width - Theme.spacingLarge * 2, bannerText.implicitWidth + Theme.spacingMedium * 2)
         height: bannerText.implicitHeight + Theme.spacingSmall * 2
