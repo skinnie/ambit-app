@@ -105,6 +105,16 @@ static ambit_object_t *g_device = nullptr;
 // Cache des logs lus (rempli lors de nativeAmbitGetLogCount, consommé par nativeAmbitGetLogAsGpx)
 static std::vector<std::string> g_log_cache;
 
+// Publishes the in-construction BLE object to g_device DURING libambit_new_from_ble,
+// so incoming notifications route to it while the server-side handshake (which runs
+// inside that call, before it returns) is waiting for the watch's frames. Without
+// this, nativeAmbitBleOnNotify's `if (!g_device) return` drops every handshake frame
+// because g_device isn't assigned until the call returns. Called from
+// libambit_android.c. (2026-08-09, HANDOFF.md Milestone 7 item 9.)
+extern "C" void jni_ble_set_active_object(ambit_object_t *obj) {
+    g_device = obj;
+}
+
 // IDs des activités déjà synchronisées — format "YYYYMMDDTHHMMSS"
 // Rempli par nativeAmbitGetLogCount avant chaque lecture
 static std::set<std::string> g_known_dates;

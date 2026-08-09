@@ -11,10 +11,15 @@ if (!NativeAmbitBle) {
 }
 
 /**
- * EXPERIMENTAL — BLE connect for AmbitApp, v0.3.0. Ambit3/Traverse series
- * only, unverified on real hardware (built from a real HCI capture of the
- * official Suunto app, not from a working test of this project's own code —
- * see HANDOFF.md Milestone 7).
+ * EXPERIMENTAL — BLE connect for AmbitApp, v0.3.0. Ambit3/Traverse series,
+ * plus the Kailash (added 2026-08-09 — driven internally as an Ambit3 Peak,
+ * see AmbitBleModule.kt's COMPATIBLE_NAME_PREFIXES and KAILASH-BLE-FINDINGS.md
+ * Finding 8; the Kailash has no Routes/POI feature at all though, see
+ * KAILASH-SCOPING-NOTE.md — only Sync/Backup make sense for it here).
+ * Real-hardware-tested as of 2026-08-09: pairing itself now works
+ * (see HANDOFF.md Milestone 7's dated entries that day for the two real bugs
+ * found and fixed — an unhandled PAIRING_VARIANT_PASSKEY, and a
+ * BLUETOOTH_PRIVILEGED permission wall on setPairingConfirmation()).
  *
  * Deliberately thin: once connected, every other watch operation
  * (writeRoute, readRegion, addPoi, ...) is imported from AmbitUsbModule.ts
@@ -23,7 +28,7 @@ if (!NativeAmbitBle) {
  * BLE-specific.
  */
 
-/** Scans for an advertising Ambit3/Traverse and connects. The watch's
+/** Scans for an advertising Ambit3/Traverse/Kailash and connects. The watch's
  * "Sync now" action must have just been triggered — its advertising window
  * is short, so call this right after, not any earlier (see RouteScreen.tsx's
  * waitForSyncNowTap). Resolves once the watch's device info has been read

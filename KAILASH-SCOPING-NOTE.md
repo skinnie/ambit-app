@@ -47,16 +47,27 @@ route work does **not** apply. This is an *activity-read / sync* project, not a 
   codename, same naming scheme as Bluebird/Emu/etc.
 - **The Kailash is NOT a Movescount device.** It synced only with the **7R app (iOS-only)**, never
   with Movescount. Confirmed by the library evidence below.
-- **`libkomposti-ng.so` (the Movescount native lib) does NOT contain a Kailash driver.** Its
-  device table lists Ambit / Ambit2 / Ambit3 (Emu/Finch) / GPS Track POD / EON Steel / dive
-  computers — **no `type="Hoopoe"` device, no Hoopoe driver class.** `Hoopoe` appears only as a
-  *name string* at three sites near `SyncServiceImplementation::firmwareUpdate` and TimelinePart
-  sync — i.e. the old lib knew the name for firmware/timeline bookkeeping, but never spoke the
-  Kailash's sync protocol.
-- **Implication:** the Kailash sits on the **newer Suunto sync architecture** (7R app + the
-  modern "TimelinePart" timeline model), architecturally closer to the **modern-watch generation
-  in the V2 handoff** than to the Ambit3. The real protocol driver is in the **7R app / modern
-  Suunto app libraries**, NOT in `libkomposti`.
+- **`libkomposti-ng.so` (the *old*, Movescount-bundled build of that library) does NOT contain a
+  Kailash driver.** Its device table lists Ambit / Ambit2 / Ambit3 (Emu/Finch) / GPS Track POD /
+  EON Steel / dive computers — **no `type="Hoopoe"` device, no Hoopoe driver class.** `Hoopoe`
+  appears only as a *name string* at three sites near `SyncServiceImplementation::firmwareUpdate`
+  and TimelinePart sync — i.e. that specific old binary knew the name for firmware/timeline
+  bookkeeping, but never spoke the Kailash's sync protocol.
+- **Corrected 2026-08-08, real BLE testing session (`KAILASH-BLE-FINDINGS.md` Finding 8) - the
+  "implication" originally drawn from the fact above was wrong.** The 7R app's own real
+  diagnostic log (`Container/Documents/suuntoapp.log`, part of the container extraction below)
+  identifies its sync engine as **`Komposti v2.6.8`** - the same name/lineage as
+  `libkomposti-ng.so`, just a newer build bundled inside 7R itself rather than Movescount. Its
+  own `DeviceMatcher::matchDevice()` line is explicit: `deviceClass: Emu, deviceName: Kailash,
+  deviceModel: Hoopoe` - **the Kailash is driven internally as an Ambit3 Peak**, not a
+  parallel/newer architecture. This is the real, mechanistic reason `KAILASH-BLE-FINDINGS.md`
+  found the exact same NSP transport, GATT UUIDs, command set, and struct layouts on both
+  watches: the same driver code runs both, just against a smaller/different curated schema.
+  The original bullet here read the missing driver in the *old* library as meaning the Kailash
+  sits on a modern/"TimelinePart" architecture instead, closer to the V2-handoff generation
+  than the Ambit3 - that reasoning was sound given what was known at the time, but the
+  conclusion was wrong; `libmds.so` and the modern-stack framing never ended up relevant to the
+  transport, for the same reason §4's own resolution note already gives.
 - **BUT: a working desktop cable path exists.** SuuntoLink *can* pull activities off the Kailash
   over the cable (that's how the user got activities into SuuntoLink at all). **Desktop cable
   traffic is far easier to capture than iOS BLE** — this is the tractable angle (§4).

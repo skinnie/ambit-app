@@ -1,6 +1,5 @@
 import RNFS from 'react-native-fs';
 import { connect, disconnect, pickGpxFile, writeRoute, readRegion, saveToDownloads } from '../native/AmbitUsbModule';
-import { scanAndConnect as bleConnect, disconnectBle } from '../native/AmbitBleModule';
 import { parseRouteGpx, nearestPointIndex, RoutePoint } from './RouteGpxParser';
 import { simplifyRoute } from './RouteSimplify';
 import {
@@ -15,21 +14,13 @@ import {
 const MAX_ROUTE_POINTS = 1000;
 const MAX_NAME_BYTES = 15;
 
-/** 'ble' is EXPERIMENTAL and Ambit3/Traverse-only — see AmbitBleModule.ts
- * and HANDOFF.md Milestone 7. Built from a real protocol capture, not yet
- * verified against a real write/read on this project's own code. */
-export type Transport = 'usb' | 'ble';
-
-// Return value intentionally untyped here (DeviceInfo for USB, boolean for
-// BLE) — every caller just awaits this for its connect-or-throw behavior
-// and never reads the resolved value.
-function connectVia(transport: Transport) {
-  return transport === 'ble' ? bleConnect() : connect();
-}
-
-function disconnectVia(transport: Transport): Promise<void> {
-  return transport === 'ble' ? disconnectBle() : disconnect();
-}
+// Transport is auto-detected, not chosen per-call (2026-08-09). connect()/
+// disconnect() from AmbitUsbModule are transport-aware: over an active BLE link
+// they no-op (the watch is already connected, see setBleTransportActive), over
+// USB they open/close the cable. writeRoute()/readRegion() act on the same
+// shared native device either way. So route send/read need no BLE-specific path
+// or re-pairing — they just use connect()/disconnect() like every other op, and
+// work over whichever transport is currently connected.
 
 export interface SendRouteState {
   phase: 'idle' | 'picking' | 'parsing' | 'connecting' | 'writing' | 'done' | 'error';
@@ -78,18 +69,12 @@ function computeDistanceAscentDescent(points: RoutePoint[]): { distanceM: number
  * side; existing on-watch routes are not. This is a "load right before you
  * go" feature, not a save.
  *
- * @param transport 'usb' (default) or 'ble'. 'ble' is experimental — see the
- *   Transport type doc above.
- * @param onBleReady BLE only, ignored for 'usb'. Awaited right before the BLE
- *   scan starts, so the caller can prompt the user to trigger the watch's
- *   "Sync now" action at exactly the right moment — its advertising window
- *   is short (confirmed on hardware 2026-08-06), too short to trigger it any
- *   earlier (e.g. before the GPX file picker, whose duration is unpredictable).
+ * Transport (BLE vs USB) is auto-detected via the shared connect()/disconnect()
+ * — nothing to choose or pass. If a BLE link is already up it's used as-is (no
+ * re-scan/re-pair); otherwise the cable is opened.
  */
 export async function sendRouteToWatch(
   onState: Listener,
-  transport: Transport = 'usb',
-  onBleReady?: () => Promise<void>,
 ): Promise<void> {
   const emit = (s: SendRouteState) => onState(s);
 
@@ -152,13 +137,9 @@ export async function sendRouteToWatch(
     return;
   }
 
-  if (transport === 'ble' && onBleReady) {
-    await onBleReady();
-  }
-
   emit({ phase: 'connecting', routeName: route.name, pointCount: route.points.length, waypointCount: route.waypoints.length });
   try {
-    await connectVia(transport);
+    await connect();
   } catch (e: any) {
     emit({ phase: 'error', error: e?.message ?? 'Connection to the watch failed' });
     return;
@@ -171,7 +152,7 @@ export async function sendRouteToWatch(
   } catch (e: any) {
     emit({ phase: 'error', error: e?.message ?? 'Failed to write the route' });
   } finally {
-    await disconnectVia(transport).catch(() => {});
+    await disconnect().catch(() => {});
   }
 }
 
@@ -187,21 +168,14 @@ export interface ExportNavState {
  * as a GPX file in Downloads. Read-only, no risk to the watch — unlike
  * sendRouteToWatch(), this never writes anything.
  *
- * @param transport 'usb' (default) or 'ble'. 'ble' is experimental — see the
- *   Transport type doc above.
- * @param onBleReady BLE only — see sendRouteToWatch's doc for why this exists.
+ * Transport auto-detected (BLE if connected, else USB) — see sendRouteToWatch.
  */
 export async function exportNavigationToGpx(
   onState: (s: ExportNavState) => void,
-  transport: Transport = 'usb',
-  onBleReady?: () => Promise<void>,
 ): Promise<void> {
-  if (transport === 'ble' && onBleReady) {
-    await onBleReady();
-  }
   onState({ phase: 'connecting' });
   try {
-    await connectVia(transport);
+    await connect();
   } catch (e: any) {
     onState({ phase: 'error', error: e?.message ?? 'Connection to the watch failed' });
     return;
@@ -226,6 +200,6 @@ export async function exportNavigationToGpx(
   } catch (e: any) {
     onState({ phase: 'error', error: e?.message ?? 'Failed to export navigation data' });
   } finally {
-    await disconnectVia(transport).catch(() => {});
+    await disconnect().catch(() => {});
   }
 }

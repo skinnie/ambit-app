@@ -11,13 +11,14 @@ import { updateOrbitalData, OrbitalUpdateState } from '../services/SgeeService';
 import {
   connect as ambitConnect, disconnect as ambitDisconnect, getDeviceInfo, AmbitDeviceInfo,
   wasLaunchedViaUsbAttach, onUsbAttached, detectAttachedDeviceType, AttachedDeviceType,
-  readDeviceHistoryRaw,
+  readDeviceHistoryRaw, setBleTransportActive,
 } from '../native/AmbitUsbModule';
 import { scanAndConnect as bleScanAndConnect } from '../native/AmbitBleModule';
 import * as Garmin from '../native/GarminModule';
 import type { GarminConnectResult } from '../native/GarminModule';
 import { syncGarminActivities, GarminActivitySyncState } from '../services/GarminActivityService';
 import { kailashDeviceProvider } from '../services/devices/KailashDeviceProvider';
+import { ambitBleDeviceProvider } from '../services/devices/AmbitBleDeviceProvider';
 import { decodeDeviceHistory, KailashHistory } from '../services/KailashHistoryReader';
 import { APP_VERSION } from '../config/version';
 import { t } from '../i18n';
@@ -86,6 +87,12 @@ export default function HomeScreen() {
   // Distinguishes a BLE connect attempt from connectFlow('ambit')'s USB one for
   // the "connecting…" message only — both land on the same deviceType==='ambit'.
   const [bleAttempt, setBleAttempt] = useState(false);
+  // True once connected over BLE. Gates two things off the USB-only machinery:
+  // (1) the connected-state watchdog below must NOT poll detectAttachedDeviceType()
+  //     (USB-only — it returns 'none' for a BLE link and would evict us back to the
+  //     no-device screen, which is exactly what happened before this flag existed);
+  // (2) sync must use the BLE device provider (no USB connect()), see handleSync.
+  const [bleConnected, setBleConnected] = useState(false);
 
   // Refs mirroring the state above — the search-poll interval and the
   // attach-event listener are both set up once and must always see the
@@ -94,6 +101,8 @@ export default function HomeScreen() {
   phaseRef.current = phase;
   const deviceTypeRef = useRef(deviceType);
   deviceTypeRef.current = deviceType;
+  const bleConnectedRef = useRef(bleConnected);
+  bleConnectedRef.current = bleConnected;
 
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timeoutTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -106,6 +115,9 @@ export default function HomeScreen() {
   async function connectFlow(type: 'ambit' | 'garmin') {
     setDeviceType(type);
     setBleAttempt(false);
+    setBleConnected(false);          // this is a USB connect path
+    bleConnectedRef.current = false;
+    setBleTransportActive(false);    // USB path — connect()/disconnect() hit USB
     setConnectError(undefined);
     setPhase('connecting');
 
@@ -197,9 +209,17 @@ export default function HomeScreen() {
       let devInfo: AmbitDeviceInfo | null = null;
       try { devInfo = await getDeviceInfo(); } catch { /* non-fatal — hide the info block below */ }
       setAmbitInfo(devInfo);
+      setBleConnected(true);
+      bleConnectedRef.current = true;
+      setBleTransportActive(true);   // route all connect()/disconnect() through BLE
       setPhase('connected');
-      handleSyncRef.current();
+      // No auto-sync on BLE connect — let the user pick an action from the menu.
+      // (Auto-sync on connect is a USB-attach convenience; over BLE the connect
+      // is already an explicit user action and the sync path is experimental.)
     } catch (e: any) {
+      setBleConnected(false);
+      bleConnectedRef.current = false;
+      setBleTransportActive(false);
       setConnectError(e?.message ?? t.unknownError);
       setPhase('connect-error');
     }
@@ -240,6 +260,10 @@ export default function HomeScreen() {
   // another screen). Otherwise (first mount, or the user hadn't connected
   // yet), run the normal search.
   useFocusEffect(useCallback(() => {
+    // A BLE connection is invisible to detectAttachedDeviceType() (USB-only), so
+    // never run the USB re-check while BLE-connected — it would falsely see
+    // 'none' and bounce back to the search screen.
+    if (bleConnectedRef.current) return () => {};
     if (phaseRef.current === 'connected') {
       detectAttachedDeviceType().then(type => {
         if (type === 'none' || type !== deviceTypeRef.current) startSearchingRef.current();
@@ -259,6 +283,9 @@ export default function HomeScreen() {
   useEffect(() => {
     if (phase !== 'connected') return;
     const iv = setInterval(async () => {
+      // BLE links aren't visible to the USB attach check — skip the watchdog
+      // entirely while BLE-connected so it can't evict us to the no-device screen.
+      if (bleConnectedRef.current) return;
       const type = await detectAttachedDeviceType().catch(() => 'none' as const);
       if (type === deviceTypeRef.current) return;
       if (type === 'none') startSearchingRef.current();
@@ -276,7 +303,14 @@ export default function HomeScreen() {
       // activity source is the passive TrackLog region, decoded to GPX in TS and routed
       // through this exact same sync pipeline (writeGpxFile/markActivitySynced) so no new
       // "synced activities" list/UI is needed for it.
-      await runSync(setSync, isKailash(ambitInfo) ? kailashDeviceProvider : undefined);
+      // Over BLE the connection is already up (GATT server + handshake); use the
+      // BLE provider so sync doesn't try a USB connect() ("check cable" error).
+      // The native getLogs itself is transport-agnostic (operates on the shared
+      // device), so activity read works the same either way once connected.
+      const provider = bleConnectedRef.current
+        ? ambitBleDeviceProvider
+        : (isKailash(ambitInfo) ? kailashDeviceProvider : undefined);
+      await runSync(setSync, provider);
     } catch (e: any) {
       Alert.alert(t.error, e?.message ?? t.unknownError);
       setSync(s => ({ ...s, phase: 'error' }));

@@ -411,11 +411,31 @@ ambit_log_entry_t *libambit_pmem20_log_read_entry_address(libambit_pmem20_t *obj
     // OK, so we are at start of samples, get them all!
     uint16_t sample_len = 0;
     while (sample_count < log_entry->samples_count) {
+        /* Bounds guard, 2026-08-09: `buffer` is exactly `length` bytes
+         * (calloc above). The USB transport always delivers the full entry, so
+         * this loop historically trusted samples_count and the per-sample
+         * length blindly. Over BLE a single dropped data frame (e.g. the
+         * intermittent small-frame CRC drops seen on real hardware) leaves
+         * `buffer` shorter than samples_count claims, and without this check
+         * parse_sample walks past the buffer into an unmapped page -> SIGSEGV
+         * (a real crash observed reading logs over BLE). Stop cleanly at the
+         * real end of data and keep whatever samples were fully present. */
+        if (buffer_offset + 2 > length ||
+            (size_t)(buffer_offset + 2 + read16(buffer, buffer_offset)) > length) {
+            LOG_WARNING("Log entry sample data truncated at offset %zu of %u bytes "
+                        "(%zu of %d samples parsed) — stopping instead of over-reading",
+                        buffer_offset, length, sample_count, log_entry->samples_count);
+            break;
+        }
         sample_len = read16(buffer, buffer_offset);
 
         parse_sample(buffer, buffer_offset, &periodic_sample_spec, log_entry, &sample_count, time_compensators);
         buffer_offset += 2 + sample_len;
     }
+    /* Reflect the count actually parsed, so downstream (correct_samples, GPX
+     * export, log_entry_free) only ever touches real, populated samples even
+     * when the entry was truncated by the guard above. */
+    log_entry->samples_count = sample_count;
 
     LOG_INFO("Log entry finish reading  %d samples", log_entry->samples_count);
     correct_samples(log_entry, time_compensators);
