@@ -49,6 +49,15 @@ export function WeatherCard() {
         // fine on a phone-width card but left a huge, unbalanced gap on a wide tablet-rail
         // layout card. Capped to a real max content width and centered instead, so the
         // whole block stays visually grouped regardless of how wide the card itself gets.
+        //
+        // Follow-up, same day ("alignment of icons could be better, top two in the same
+        // line but align in the middle of the 3 down") - contentWrap is a Column, whose
+        // default cross-axis behavior (alignItems:'stretch') was forcing BOTH mainRow and
+        // forecastRow to the full 420px contentWrap width even though the two rows have
+        // very different natural content widths (mainRow: icon+temp+wind, tight; forecastRow:
+        // 3 columns spread via space-between, wide) - so the two rows had different visual
+        // centers and never lined up. mainRow/forecastRow now both use alignSelf:'center' to
+        // size to their own content instead of stretching, so their centers coincide.
         <View style={styles.contentWrap}>
           <View style={styles.mainRow}>
             <Text style={styles.mainEmoji} textBreakStrategy="simple">{weatherEmoji(weather.data.currentWeatherCode)}</Text>
@@ -100,8 +109,12 @@ const styles = StyleSheet.create({
   // Real cap, not a full-bleed stretch - on a wide tablet-rail card this content block
   // would otherwise spread thin across the whole width. 420 keeps the main row's own
   // three sections (icon/temp, wind+high-low) close enough to read as one group.
-  contentWrap: { width: '100%', maxWidth: 420, gap: v3Spacing.medium },
-  mainRow: { flexDirection: 'row', alignItems: 'center', gap: v3Spacing.medium },
+  contentWrap: { width: '100%', maxWidth: 420, gap: v3Spacing.medium, alignItems: 'center' },
+  // alignSelf:'center' - see the header comment above: without this, both rows stretched
+  // to contentWrap's full width by default (Column's alignItems:'stretch'), so mainRow's
+  // tight icon+temp+wind cluster and forecastRow's spread-out 3 columns had different
+  // visual centers. Sizing each row to its own content instead makes both centers coincide.
+  mainRow: { flexDirection: 'row', alignItems: 'center', gap: v3Spacing.medium, alignSelf: 'center' },
   // includeFontPadding/textAlignVertical: emoji glyphs render with extra vertical padding
   // baked into Android's own font metrics that plain text doesn't have, throwing off
   // alignItems:'center' against the numbers/labels beside them - real, found live on device.
@@ -110,9 +123,9 @@ const styles = StyleSheet.create({
   placeName: { fontSize: v3Type.label },
   temp: { fontSize: v3Type.display, fontWeight: '800' },
   condLabel: { fontSize: v3Type.bodyLarge },
-  sideInfo: { marginLeft: 'auto', gap: 2, alignItems: 'flex-end' },
+  sideInfo: { marginLeft: v3Spacing.large, gap: 2, alignItems: 'flex-end' },
   sideLine: { fontSize: v3Type.label },
-  forecastRow: { flexDirection: 'row', justifyContent: 'space-between' },
+  forecastRow: { flexDirection: 'row', gap: v3Spacing.large, alignSelf: 'center' },
   forecastCol: { alignItems: 'center', gap: 4 },
   forecastDay: { fontSize: v3Type.label },
   forecastEmoji: { fontSize: 22, includeFontPadding: false, textAlignVertical: 'center' },

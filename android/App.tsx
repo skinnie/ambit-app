@@ -12,6 +12,7 @@ import { ThemeModeProvider, useThemeMode } from './src/theme/ThemeModeContext';
 import HomeScreen from './src/screens/HomeScreen';
 import LogListScreen from './src/screens/LogListScreen';
 import MapScreen from './src/screens/MapScreen';
+import TrackMapScreen from './src/screens/TrackMapScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import PoiScreen from './src/screens/PoiScreen';
 import RouteScreen from './src/screens/RouteScreen';
@@ -31,6 +32,12 @@ export type RootStackParamList = {
   Home: undefined;
   LogList: undefined;
   Map: { activity: ActivityRecord };
+  // Real, 2026-08-09 ("the visualization of routes don't have map... replicate what's
+  // inside") - a route (2+ points, drawn as a polyline) or a POI (1 point, drawn as a
+  // marker) opened one at a time from RouteScreen/PoiScreen's own "View on map" button.
+  // See TrackMapScreen.tsx's own header comment on why this is separate from Map/MapScreen
+  // (that one replays a timed activity; this one has no time-series to replay).
+  TrackMap: { title: string; points: { lat: number; lon: number }[] };
   Settings: undefined;
   Poi: undefined;
   Route: undefined;
@@ -130,6 +137,11 @@ function AppShell() {
                 ? new Date(route.params.activity.date).toLocaleDateString(dateLocale)
                 : t.mapFallback,
             })}
+          />
+          <Stack.Screen
+            name="TrackMap"
+            component={TrackMapScreen}
+            options={({ route }) => ({ title: route.params.title })}
           />
           <Stack.Screen
             name="Settings"

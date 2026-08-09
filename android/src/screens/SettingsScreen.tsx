@@ -21,10 +21,24 @@ import {
 import {
   isAuthenticated as stravaIsAuth, getAuthorizationUrl as stravaAuthUrl, logout as stravaLogout,
 } from '../services/ApiStrava';
+import {
+  getMapProvider, setMapProvider, MapProvider, MAP_PROVIDER_LABELS,
+} from '../services/MapProviderService';
 import { t } from '../i18n';
 import { APP_VERSION } from '../config/version';
 import { useV3Theme } from '../theme/v3';
 import { Button, Chip, FieldRow, IconBadge, StatusLine } from '../components/ui/primitives';
+
+// Real, 2026-08-09 ("no button to change provider, nor in the settings like the desktop
+// version") - same 3 real choices MapScreen.tsx/TrackMapScreen.tsx's own in-map layer
+// control offers, same MAP_PROVIDER_LABELS names, with this screen's own localized
+// descriptive suffix (matching desktop SettingsPage.qml's "(standard)"/"(cycling-focused)"
+// RadioButton text).
+const MAP_PROVIDER_OPTIONS: { provider: MapProvider; label: () => string }[] = [
+  { provider: 'ign',     label: () => t.mapProviderIgnLabel },
+  { provider: 'osm',     label: () => t.mapProviderOsmLabel },
+  { provider: 'cyclosm', label: () => t.mapProviderCyclosmLabel },
+];
 
 const THEME_OPTIONS: { mode: ThemeMode; icon: IconName; label: () => string }[] = [
   { mode: 'light',  icon: 'sun',  label: () => t.themeLight },
@@ -62,6 +76,8 @@ export default function SettingsScreen() {
   // four separate always-expanded full-height sections like this screen had. Same real
   // handlers/state above, this only changes which one is visible at a time.
   const [openConnection, setOpenConnection] = useState<'strava' | 'livelox' | 'runalyze' | 'intervals' | null>(null);
+
+  const [mapProvider, setMapProviderState] = useState<MapProvider>('ign');
 
   // Real, 2026-08-08 ("Settings on ambit 3 - if they are already cracked to be changed by
   // cable, we will need to build a UI for it"). Not auto-loaded on focus like the API
@@ -160,7 +176,13 @@ export default function SettingsScreen() {
       setIntervalsAthleteId(creds?.athleteId ?? '');
       setIntervalsApiKey(creds?.apiKey ?? '');
     });
+    getMapProvider().then(setMapProviderState);
   }, []));
+
+  function handleSetMapProvider(p: MapProvider) {
+    setMapProviderState(p);
+    setMapProvider(p);
+  }
 
   async function handleSaveRunalyze() {
     if (!runalyzeKey.trim()) {
@@ -547,6 +569,31 @@ export default function SettingsScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* ── Maps - real, 2026-08-09 ("no button to change provider, nor in the settings
+          like the desktop version"). Ports SettingsPage.qml's real Maps card (icon + title
+          + "Provider: tiles from X" + exclusive toggle buttons), with IGN added as a
+          genuine Android-only third option (MapProviderService.ts's own header comment). ── */}
+      <View style={styles.section}>
+        <View style={styles.cardHead}>
+          <IconBadge icon="route" />
+          <Text style={styles.cardTitle}>{t.mapsSection}</Text>
+        </View>
+        <Text style={styles.sectionDesc}>{t.mapsProviderDesc(MAP_PROVIDER_LABELS[mapProvider])}</Text>
+        <View style={[styles.chipRow, { justifyContent: 'flex-start', marginTop: 6 }]}>
+          {MAP_PROVIDER_OPTIONS.map(opt => (
+            <TouchableOpacity
+              key={opt.provider}
+              style={[styles.chip, opt.provider === mapProvider && styles.chipActive]}
+              onPress={() => handleSetMapProvider(opt.provider)}
+            >
+              <Text style={[styles.chipText, opt.provider === mapProvider && styles.chipTextActive]}>
+                {opt.label()}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
 
       {/* ── About / disclaimer ── */}
       <View style={styles.section}>

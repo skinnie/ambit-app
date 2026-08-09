@@ -1,6 +1,8 @@
 import React, { useCallback, useState } from 'react';
 import { View, Text, StyleSheet, Alert, ScrollView, TouchableOpacity } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { RootStackParamList } from '../../App';
 import {
   pickAndParseRoute, uploadRoute, readOnWatchNavigation, exportSingleRouteToGpx,
   PendingRoute, SendRouteState,
@@ -11,6 +13,8 @@ import { useV3Theme, v3Spacing, v3Type } from '../theme/v3';
 import { Card } from '../components/ui/Card';
 import { Button, StatusLine } from '../components/ui/primitives';
 import { TrackPreview } from '../components/TrackPreview';
+
+type Nav = NativeStackNavigationProp<RootStackParamList, 'Route'>;
 
 // v3.0 UI port (2026-08-09, "re do routes... to match entirely desktop") - real structural
 // rebuild matching desktop's own RoutesPage.qml: an "Import a route" card with a real
@@ -25,6 +29,7 @@ function formatDist(m: number): string {
 export default function RouteScreen() {
   const theme = useV3Theme();
   const styles = createStyles(theme);
+  const navigation = useNavigation<Nav>();
 
   const [pending, setPending] = useState<PendingRoute | null>(null);
   const [picking, setPicking] = useState(false);
@@ -126,6 +131,17 @@ export default function RouteScreen() {
               <Button label={t.routeUploadBtn} variant="filled" loading={sendBusy} disabled={sendBusy} onPress={handleUpload} />
               <Button label={t.routeDiscardBtn} variant="text" grow={false} disabled={sendBusy} onPress={() => setPending(null)} />
             </View>
+            {pending.points.length > 1 && (
+              <Button
+                label={t.routeItemMapBtn}
+                variant="outline"
+                grow={false}
+                onPress={() => navigation.navigate('TrackMap', {
+                  title: pending.name,
+                  points: pending.points.map(p => ({ lat: p.lat, lon: p.lon })),
+                })}
+              />
+            )}
             {sendBusy && <StatusLine text={sendState.phase === 'connecting' ? t.connecting : t.routeWritingMsg} />}
           </View>
         )}
@@ -157,15 +173,28 @@ export default function RouteScreen() {
                   {t.routeStats(formatDist(route.distanceM), route.points.length, route.ascentM, route.descentM)}
                 </Text>
               </View>
-              <TouchableOpacity
-                style={styles.exportBtn}
-                disabled={exportingIndex !== null}
-                onPress={() => handleExportItem(route, i)}
-              >
-                <Text style={styles.exportBtnText}>
-                  {exportingIndex === i ? '…' : t.routeItemExportBtn}
-                </Text>
-              </TouchableOpacity>
+              <View style={styles.itemBtnCol}>
+                {route.points.length > 1 && (
+                  <TouchableOpacity
+                    style={styles.exportBtn}
+                    onPress={() => navigation.navigate('TrackMap', {
+                      title: route.name,
+                      points: route.points.map(p => ({ lat: p.latitude, lon: p.longitude })),
+                    })}
+                  >
+                    <Text style={styles.exportBtnText}>{t.routeItemMapBtn}</Text>
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity
+                  style={styles.exportBtn}
+                  disabled={exportingIndex !== null}
+                  onPress={() => handleExportItem(route, i)}
+                >
+                  <Text style={styles.exportBtnText}>
+                    {exportingIndex === i ? '…' : t.routeItemExportBtn}
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
         ))}
@@ -183,6 +212,7 @@ const createStyles = (t: ReturnType<typeof useV3Theme>) => StyleSheet.create({
   itemName: { fontSize: v3Type.bodyLarge, fontWeight: '700', color: t.text },
   itemStats: { fontSize: v3Type.label, color: t.mutedText, marginTop: 2 },
   onWatchItem: { marginTop: v3Spacing.large, paddingTop: v3Spacing.medium, borderTopWidth: 1, borderTopColor: t.mutedText + '22', gap: v3Spacing.small },
+  itemBtnCol: { flexDirection: 'row', gap: v3Spacing.small },
   exportBtn: {
     paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8,
     backgroundColor: t.primary + '1F', borderWidth: 1, borderColor: t.primary,

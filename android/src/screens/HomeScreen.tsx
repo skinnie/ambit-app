@@ -598,7 +598,15 @@ export default function HomeScreen() {
         <Text style={styles.appName}>AmbitApp</Text>
         <Badge label={`v${APP_VERSION}`} />
       </View>
-      <Icon name={deviceType === 'garmin' ? 'etrex' : 'watch'} size={40} color={theme.text} />
+      {/* Real, 2026-08-09 ("the icon of the watch could be like 20% bigger while in
+          vertical, on horizontal is ok") - portrait-only scale-up; roomy (landscape+wide)
+          keeps the original 40. Not tied to `roomy` itself since a narrow landscape phone
+          is neither roomy nor portrait and should also keep the unscaled size. */}
+      <Icon
+        name={deviceType === 'garmin' ? 'etrex' : 'watch'}
+        size={winWidth < winHeight ? 48 : 40}
+        color={theme.text}
+      />
 
       {/* ── Device info cards. Portrait: one centered column. Roomy/landscape: a
           side-by-side wrapping row (each card sized to share the width), so the space

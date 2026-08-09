@@ -15,6 +15,8 @@ import { parseTrackPoints, computeElevationStats, TrackPoint } from '../services
 import ElevationChart from '../components/ElevationChart';
 import { t } from '../i18n';
 import { useV3Theme } from '../theme/v3';
+import { getMapProvider, setMapProvider, MapProvider } from '../services/MapProviderService';
+import { mapTileLayersJs } from '../services/MapHtml';
 
 type Route = RouteProp<RootStackParamList, 'Map'>;
 type Nav   = NativeStackNavigationProp<RootStackParamList, 'Map'>;
@@ -54,7 +56,7 @@ function formatDist(m: number) {
 
 // ─── Carte Leaflet ────────────────────────────────────────────────────────────
 
-function buildLeafletHtml(): string {
+function buildLeafletHtml(provider: MapProvider): string {
   return `<!DOCTYPE html>
 <html><head>
   <meta charset="utf-8"/>
@@ -67,31 +69,7 @@ function buildLeafletHtml(): string {
 <script>
   var map = L.map('map', { zoomControl: false });
 
-  // Real, 2026-08-09 ("can we have the same map providers as desktop") - IGN stays the
-  // default (accurate, France-only, already proven here) and OSM/CyclOSM are added as real
-  // switchable alternatives, same tile hosts and same attribution text as desktop's own
-  // qml/MapService.qml. Desktop couldn't offer IGN itself (its own MapService.qml explains
-  // why: a plain native XYZ tile renderer, and IGN's WMTS addressing doesn't fit that
-  // mechanism) - Leaflet has no such limit, so Android can offer all three.
-  var ign = L.tileLayer(
-    'https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0' +
-    '&LAYER=GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2&STYLE=normal&FORMAT=image/png' +
-    '&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}',
-    { maxZoom: 18, attribution: '© IGN Géoplateforme' }
-  ).addTo(map);
-  var osm = L.tileLayer(
-    'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-    { maxZoom: 19, attribution: '© OpenStreetMap contributors' }
-  );
-  var cyclosm = L.tileLayer(
-    'https://a.tile-cyclosm.openstreetmap.fr/cyclosm/{z}/{x}/{y}.png',
-    { maxZoom: 20, attribution: '© OpenStreetMap contributors, CyclOSM' }
-  );
-  L.control.layers({
-    'IGN (France)': ign,
-    'OpenStreetMap': osm,
-    'CyclOSM': cyclosm,
-  }, null, { position: 'topright', collapsed: true }).addTo(map);
+  ${mapTileLayersJs(provider)}
 
   var line = null;
   var startMarker = null;
@@ -267,7 +245,13 @@ export default function MapScreen() {
   const [currentReplayDist, setCurrentReplayDist] = useState(0);
   const [isReady, setIsReady] = useState(false);
 
-  const leafletHtml = useMemo(() => buildLeafletHtml(), []);
+  // Real, 2026-08-09 ("no button to change provider, nor in the settings like the desktop
+  // version") - starts on the persisted default (getMapProvider()'s own 'ign' fallback) and
+  // rebuilds once the real stored value loads; picking a different layer inside the map
+  // itself (see onMessage's MAP_PROVIDER_CHANGE) writes back to the same storage.
+  const [mapProvider, setMapProviderState] = useState<MapProvider>('ign');
+  useEffect(() => { getMapProvider().then(setMapProviderState); }, []);
+  const leafletHtml = useMemo(() => buildLeafletHtml(mapProvider), [mapProvider]);
 
   useEffect(() => {
     readGpxFile(activity.gpx_path)
@@ -353,6 +337,9 @@ export default function MapScreen() {
         setIsPlaying(false);
         setCurrentReplayVal(maxReplayVal);
         setCurrentReplayDist(stats.totalDistance);
+      } else if (data.type === 'MAP_PROVIDER_CHANGE') {
+        setMapProviderState(data.provider);
+        setMapProvider(data.provider);
       }
     } catch (e) {}
   };
@@ -751,14 +738,14 @@ function createStyles(t: ReturnType<typeof useV3Theme>) {
       width: 48,
       height: 48,
       borderRadius: 24,
-      backgroundColor: t.card,
-      borderColor: t.mutedText + '33',
+      backgroundColor: t.primary + '1F',
+      borderColor: t.primary,
       borderWidth: 1,
       alignItems: 'center',
       justifyContent: 'center',
     },
     btnDisabled: { opacity: 0.5 },
-    exportFabText: { fontSize: 20, color: t.text },
+    exportFabText: { fontSize: 20, color: t.primary },
     exportMenu: {
       position: 'absolute',
       bottom: 244,
@@ -802,13 +789,17 @@ function createStyles(t: ReturnType<typeof useV3Theme>) {
     replayBtn: {
       padding: 8,
     },
+    // Real, 2026-08-09 ("change the buttons to match the colors... of our new theme") -
+    // the main play/pause button is the one real primary action on this bar, so it takes
+    // the same filled-primary treatment as primitives.tsx's own Button variant="filled"
+    // (bg t.primary, fg t.card) instead of blending into the bar with a plain t.card fill.
     replayBtnMain: {
       padding: 8,
-      backgroundColor: t.card,
+      backgroundColor: t.primary,
       borderRadius: 20,
     },
     replayIcon: { fontSize: 16, color: t.text },
-    replayIconMain: { fontSize: 20, color: t.text },
+    replayIconMain: { fontSize: 20, color: t.card },
     replayRight: {
       alignItems: 'flex-end',
       width: 80,
@@ -818,15 +809,19 @@ function createStyles(t: ReturnType<typeof useV3Theme>) {
       fontSize: 10,
       fontWeight: '600',
     },
+    // Tinted-primary pill, same convention as RouteScreen/PoiScreen's own exportBtn -
+    // a real secondary action (not the main play button, not neutral bar chrome either).
     speedBtn: {
       marginTop: 4,
-      backgroundColor: t.card,
+      backgroundColor: t.primary + '1F',
+      borderWidth: 1,
+      borderColor: t.primary,
       paddingHorizontal: 6,
       paddingVertical: 2,
       borderRadius: 4,
     },
     speedText: {
-      color: t.text,
+      color: t.primary,
       fontSize: 10,
       fontWeight: 'bold',
     },

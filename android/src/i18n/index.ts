@@ -377,6 +377,20 @@ const fr = {
   sportModesCloseBtn: 'Fermer',
   sportModesWriteSentNotConfirmed: 'Écriture envoyée mais non confirmée par relecture.',
 
+  // RouteScreen/PoiScreen — bouton "voir sur la carte" (2026-08-09, "the visualization of
+  // routes don't have map... replicate what's inside" - ouvre TrackMapScreen.tsx)
+  routeItemMapBtn: 'Carte',
+  poiItemMapBtn: 'Carte',
+
+  // SettingsScreen — Cartes (2026-08-09, "no button to change provider, nor in the
+  // settings like the desktop version") - même carte que desktop/qml/pages/SettingsPage.qml,
+  // avec IGN en option Android supplémentaire (voir MapProviderService.ts)
+  mapsSection: 'Cartes',
+  mapsProviderDesc: (name: string) => `Fournisseur : tuiles de ${name}`,
+  mapProviderIgnLabel: 'IGN (France)',
+  mapProviderOsmLabel: 'OpenStreetMap (standard)',
+  mapProviderCyclosmLabel: 'CyclOSM (axé cyclisme)',
+
   // SettingsScreen — À propos / mentions légales
   aboutSection: 'À propos',
   aboutVersion: (v: string) => `AmbitApp v${v}`,
@@ -818,6 +832,20 @@ const en: typeof fr = {
   sportModesPickerTitle: 'Choose field type',
   sportModesCloseBtn: 'Close',
   sportModesWriteSentNotConfirmed: 'Write sent but not confirmed by re-read.',
+
+  // RouteScreen/PoiScreen — "view on map" button (2026-08-09, "the visualization of routes
+  // don't have map... replicate what's inside" - opens TrackMapScreen.tsx)
+  routeItemMapBtn: 'Map',
+  poiItemMapBtn: 'Map',
+
+  // SettingsScreen — Maps (2026-08-09, "no button to change provider, nor in the settings
+  // like the desktop version") - same real card as desktop/qml/pages/SettingsPage.qml, plus
+  // IGN as a genuine Android-only extra option (see MapProviderService.ts)
+  mapsSection: 'Maps',
+  mapsProviderDesc: (name: string) => `Provider: tiles from ${name}`,
+  mapProviderIgnLabel: 'IGN (France)',
+  mapProviderOsmLabel: 'OpenStreetMap (standard)',
+  mapProviderCyclosmLabel: 'CyclOSM (cycling-focused)',
 
   // SettingsScreen — About / legal
   aboutSection: 'About',
