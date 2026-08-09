@@ -2064,3 +2064,29 @@ Concrete next experiment (declarative, no compiler, our existing tools): install
 IAMRULE (workout.py -> live compiler) as a rule in a mode's RULES WITHOUT assigning it to a
 display-field slot, and see whether it appears in the on-watch WORKOUT options menu. Safe/
 recoverable (CustomModes write, backups + restore in place).
+
+## Finding 40: DISPROVED - an unwired guidance rule is NOT a browsable WORKOUT (hardware test, 2026-08-09)
+
+Ran Finding 39's experiment on real hardware (André approved compile+install): compiled a small
+real workout (workout.py -> live community compiler -> IAMRULE "TestWkt", 1512 B), installed it
+into Running as a rule in RULES with `--as-workout` (NOT wired to a display-field slot). Verified
+byte-exact readback: Apps entry 11 = TestWkt, Running rules [2,3,4,5,6,11], display slots still
+[51,52] (the new rule genuinely unwired).
+
+Result on the watch: **no WORKOUT entry appeared in the options menu**, and the rule showed as a
+"--" in a display middle row anyway. So:
+- The "unwired rule = browsable workout" hypothesis is WRONG.
+- Adding a rule to RULES auto-surfaces it on a display slot even without explicit field wiring -
+  i.e. there is no "present-but-unwired app" state; every EXERCISE_MODES_RULE becomes a pinned
+  display app. So the native browsable WORKOUT is NOT the rule-engine/app mechanism at all - it
+  is a genuinely separate on-device concept we have no example of.
+
+Reverted cleanly (restore_apps_custommodes.py; byte-exact verified, one transient read-glitch
+false-mismatch on the first attempt, clean on re-run).
+
+Consolidated conclusion for the native browsable WORKOUT + graph: it is a distinct on-device
+mechanism, not the IAMRULE-app/rule wiring we fully control, and we have zero ground-truth of its
+on-device form. Reproducing it needs the real capture / spec named in SUUNTO_DEV_REQUESTS.md (a
+real Category:guidance sync, or the on-device workout structure). The ACHIEVABLE revival remains:
+author structured workouts (real Movescount schema == workout.py) -> live compiler -> install as
+a pinned sport-mode app with real per-segment target-range beep/light guidance (Finding 38).

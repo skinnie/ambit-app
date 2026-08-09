@@ -261,9 +261,16 @@ def next_app_slot_type(data, mode_content, mode_len):
         "more apps could still be assigned (see SPORT_MODE_APP_LIMIT)")
 
 
-def install_app_into_mode(custom_modes_bytes, mode_index, display_index, field_index, rule_idx):
+def install_app_into_mode(custom_modes_bytes, mode_index, display_index, field_index, rule_idx,
+                          as_workout=False):
     """Returns new CustomModes region bytes with the app wired into
-    (mode_index, display_index, field_index). See module docstring for what's verified."""
+    (mode_index, display_index, field_index). See module docstring for what's verified.
+
+    as_workout=True (Finding 39 experiment): add the rule to the mode's RULES list but do NOT
+    pin it to a display field (no slot Type, no HrHigh/HrLow/IntTimerCount side effects) - the
+    hypothesis being that a guidance rule present-but-unwired is what the firmware offers in the
+    browsable WORKOUT options menu (vs a pinned display app). display_index/field_index are
+    ignored in this mode."""
     data = bytearray(custom_modes_bytes)
     loc = _find_mode(data, mode_index)
     mode_content, mode_len = loc["mode_content"], loc["mode_len"]
@@ -275,16 +282,17 @@ def install_app_into_mode(custom_modes_bytes, mode_index, display_index, field_i
     _, settings_content, settings_len, _ = settings
     app_meta_insert_at = settings_content + settings_len
 
-    slot_type = next_app_slot_type(data, mode_content, mode_len)
-    field_setting_offset = _find_field_setting_offset(
-        data, mode_content, mode_len, display_index, field_index)
-    struct.pack_into("<H", data, field_setting_offset + 2, slot_type)
+    if not as_workout:
+        slot_type = next_app_slot_type(data, mode_content, mode_len)
+        field_setting_offset = _find_field_setting_offset(
+            data, mode_content, mode_len, display_index, field_index)
+        struct.pack_into("<H", data, field_setting_offset + 2, slot_type)
 
-    for name in ("HrHigh", "HrLow"):
-        off = settings_content + 64 + 2 * [f for f, _ in cm.SETTING_FIELDS].index(name)
-        struct.pack_into("<H", data, off, 0)
-    it_off = settings_content + 64 + 2 * [f for f, _ in cm.SETTING_FIELDS].index("IntTimerCount")
-    struct.pack_into("<H", data, it_off, 99)
+        for name in ("HrHigh", "HrLow"):
+            off = settings_content + 64 + 2 * [f for f, _ in cm.SETTING_FIELDS].index(name)
+            struct.pack_into("<H", data, off, 0)
+        it_off = settings_content + 64 + 2 * [f for f, _ in cm.SETTING_FIELDS].index("IntTimerCount")
+        struct.pack_into("<H", data, it_off, 99)
 
     def tag(tag_id, content):
         return struct.pack("<HH", tag_id, len(content)) + content
@@ -338,6 +346,11 @@ def main():
     ap.add_argument("--apps-only", action="store_true",
                      help="append to the Apps region only - skip CustomModes entirely (e.g."
                           " when it's already correctly wired from a previous run)")
+    ap.add_argument("--as-workout", action="store_true",
+                     help="EXPERIMENT (Finding 39): add the rule to the mode's RULES list but"
+                          " do NOT pin it to a display field - testing whether an unwired"
+                          " guidance rule appears in the browsable WORKOUT options menu."
+                          " --display/--field not required with this.")
     ap.add_argument("--verbose", action="store_true")
     ap.add_argument("--json", action="store_true",
                      help="print one final JSON line summarizing the result - for"
@@ -348,9 +361,11 @@ def main():
 
     if not args.restore and args.compiled is None:
         ap.error("either --restore FILE, or a compiled JSON")
-    if not args.restore and not args.apps_only and (
+    if not args.restore and not args.apps_only and not args.as_workout and (
             args.mode is None or args.display is None or args.field is None):
         ap.error("--mode/--display/--field are required unless --apps-only or --restore")
+    if args.as_workout and args.mode is None:
+        ap.error("--as-workout needs --mode (the sport mode to offer the workout in)")
 
     # Real, 2026-08-09: considered changing this to match settings_write.py's own pattern
     # (Link opened for real unconditionally, only the actual write call gated on --write) so
@@ -446,14 +461,17 @@ def main():
         send_plan(link, flash, apps_layout, commit=False)
     else:
         decoded_modes = cm.decode(current_custom_modes)
-        check_mode_app_limit(decoded_modes, args.mode)
+        if not args.as_workout:
+            check_mode_app_limit(decoded_modes, args.mode)
         rule_idx = next_rule_idx(current_apps)
         mode_name = decoded_modes["exercise_modes"][args.mode]["Settings"]["Name"]
-        print(f"CustomModes: mode[{args.mode}]={mode_name!r} display[{args.display}]"
-              f" field[{args.field}] -> RuleIdx={rule_idx}")
+        wiring = "UNWIRED (as-workout experiment)" if args.as_workout \
+            else f"display[{args.display}] field[{args.field}]"
+        print(f"CustomModes: mode[{args.mode}]={mode_name!r} {wiring} -> RuleIdx={rule_idx}")
 
         new_custom_modes = install_app_into_mode(
-            current_custom_modes, args.mode, args.display, args.field, rule_idx)
+            current_custom_modes, args.mode, args.display, args.field, rule_idx,
+            as_workout=args.as_workout)
 
         # Write ONLY the used BXML extent (Finding 28) - see custom_modes.used_extent(). The
         # full-region write was the confirmed cause of 'err:62' on every mode after a restart.
