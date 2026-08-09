@@ -587,10 +587,17 @@ int device_info_get(ambit_object_t *object, ambit_device_info_t *info)
 
     printf("Vendor: %x, Product: %x\n", info->vendor_id, info->product_id);
     komposti_version = (uint8_t*)libambit_device_komposti(info->vendor_id, info->product_id, 0);
-    printf("Komposit version: %x %x %x %x\n", komposti_version[0], komposti_version[1], komposti_version[2], komposti_version[3]);
 
-    if(komposti_version == NULL) {
+    // Real bug, found live crashing on a real connected Kailash (2026-08-09): this used to
+    // dereference komposti_version in the printf below BEFORE this NULL check - a NULL
+    // komposti_version (any vid/pid not in device_support.c's own table) crashed here
+    // immediately, before the check that exists for exactly that case ever ran. Latent, not
+    // what crashed on Kailash specifically (its own new device_support.c row does have a
+    // real komposti_version now), but a real landmine for the next device added there.
+    if (komposti_version == NULL) {
         LOG_WARNING("Failed to get komposti version");
+    } else {
+        printf("Komposit version: %x %x %x %x\n", komposti_version[0], komposti_version[1], komposti_version[2], komposti_version[3]);
     }
     
     LOG_INFO("Reading device info");
@@ -630,7 +637,20 @@ int device_info_get(ambit_object_t *object, ambit_device_info_t *info)
 
     memset(info->compact_serial, 0, sizeof(info->compact_serial));
 
-    if (info->fw_version[0] == 2 && info->fw_version[1] >= 4)
+    // Real bug, found live crashing on a real connected Kailash (2026-08-09, "tablet works
+    // ok with ambit 3 but not kailash"): ambit_command_ambit3_get_compact_serial is a real
+    // Ambit3-hardware-specific quirk command Kailash doesn't implement, but this fw_version
+    // heuristic (meant to mean "Ambit3-generation firmware") also matches Kailash's own real
+    // reported firmware version - so it got sent to Kailash anyway, got back a reply shaped
+    // differently than an Ambit3 would send, and the strcpy() below (which trusts the reply's
+    // own NUL termination, not replylen, once past its own `>=` size check) overflowed
+    // info->compact_serial - a heap corruption caught by Android's hardened allocator as a
+    // SIGABRT crash, not the real underlying watch/USB error it looked like at first.
+    // product_id 0x002a is Kailash's own real PID (see device_support.c's own table) -
+    // excluded here rather than fixing the heuristic itself, since this command is genuinely
+    // Ambit3-only and every other watch sharing this fw_version range (real Ambit3/Traverse
+    // family) does implement it correctly.
+    if (info->fw_version[0] == 2 && info->fw_version[1] >= 4 && info->product_id != 0x002a)
     {
         LOG_INFO("Ambit3 get compact serial");
 

@@ -67,7 +67,20 @@ static int_known_device_t known_devices[] = {
     // libambit_device_support_find_first() at all (only the separate, model-string-matching
     // libambit_device_support_find() reads them) - {0} here matches the Ambit3-family rows'
     // own "accept any version" style below, not a real Kailash-specific value.
-    { SUUNTO_USB_VENDOR_ID, 0x002a, "Hoopoe", {0x00,0x00,0x00,0x00}, { "Suunto Kailash", true, &ambit_device_driver_ambit3, 0x0400, {0x02,0x04,0x59,0x00} } },
+    //
+    // UPDATE, same day: registering this row got USB-Kailash PAST the "unsupported" error
+    // and into a real SIGABRT crash inside libambit_new_from_fd/device_info_get - confirmed
+    // via a genuinely rebuilt binary (different BuildId each time), not a stale-build
+    // artifact. Two real bugs were found and fixed in libambit.c along the way (a
+    // NULL-deref-before-check on komposti_version, and an Ambit3-only "compact serial" quirk
+    // command now excluded for this PID) but the crash persisted after both - the real
+    // trigger is still somewhere in the actual USB device-info exchange with Kailash's real
+    // firmware, not yet isolated. Disabled (supported: false) rather than removed, so this
+    // is a clean "unsupported" rejection again instead of a crash while that investigation
+    // continues - BLE-Kailash is unaffected (it never used this row; see AmbitBleModule.kt's
+    // own guessProductId(), which mislabels Kailash as 0x001c "Ambit3 Sport" - a different,
+    // already-registered PID - which is the real reason BLE "already worked").
+    { SUUNTO_USB_VENDOR_ID, 0x002a, "Hoopoe", {0x00,0x00,0x00,0x00}, { "Suunto Kailash", false, NULL, 0x0400, {0x02,0x04,0x59,0x00} } },
     { SUUNTO_USB_VENDOR_ID, 0x002d, "Loon", {0x01,0x00,0x04,0x0}, { "Suunto Traverse Alpha", true, &ambit_device_driver_ambit3, 0x0400, {0x02,0x04,0x59,0x00} } },
     { SUUNTO_USB_VENDOR_ID, 0x002c, "Kaka", {0x01,0x00,0x1b,0x00}, { "Suunto Ambit3 Vertical", true, &ambit_device_driver_ambit3, 0x0400, {0x02,0x04,0x59,0x00} } },
     { SUUNTO_USB_VENDOR_ID, 0x002b, "Jabiru", {0x01,0x00,0x04,0x00}, { "Suunto Traverse", true, &ambit_device_driver_ambit3, 0x0400, {0x02,0x04,0x59,0x00} } },
