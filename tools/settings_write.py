@@ -76,6 +76,13 @@ AMBIT3_SETTINGS = {
     "backlight_mode": "Display.Backlight.Mode",
     "backlight_brightness": "Display.Backlight.Brightness",
     "storm_alarm": "AltiBaro.StormAlarm",
+    # Real, 2026-08-09: entry 0x2c, uint8, schema path sml.DeviceSettings.Sports.Plans.Source -
+    # the planned-moves ("training programs", section 3.39) source/enable flag. Added to test
+    # whether re-writing it via 0x1101 is the app-triggered "refresh" that makes the watch
+    # re-parse the TrainingProgram pmem region and surface a "Today" target (André: the refresh
+    # is app-triggered; the watch has no restart). Not on the General Settings screen - same
+    # real 0x1100/0x1101 mechanism regardless. See training_program_andre.md Findings 29-30.
+    "plans_source": "Sports.Plans.Source",
 }
 
 # Kailash's own real, smaller schema (confirmed 41 entries total vs. the Ambit3's ~324) -

@@ -1769,3 +1769,63 @@ in-repo avenue not yet tried: a careful raw 0x1101 settings re-write of entry 0x
 `Plans.Source` as the app-triggered "refresh" - deliberately NOT attempted here because a
 hand-rolled raw settings write risks hitting the wrong entry ID (the exact bug settings_write.py
 was built to prevent), and it needs the curated-table approach extended to that entry first.
+
+## Finding 31: planned-moves - date encoding confirmed correct, problem isolated to item rejection; asset+online avenues exhausted (2026-08-09)
+
+Continued the planned-moves trials per André (rules: RE assets, then search online).
+
+- **Date encoding CONFIRMED** (not guessed): `DAT_00a010c8`'s initializer is
+  `FUN_00434470(_, 0x7b2=1970, 1, 1)` * 1000000 = the Unix epoch (1970-01-01) in microseconds.
+  With parse's `day_offset * 0x18`, the header base_date is hours since the Unix epoch - exactly
+  what trial 2 wrote. So the date is right.
+- **Plans.Source** is enum 0=Off/1=Manual, already =1; toggled 1->0->1 (each confirmed by
+  read-back) to force the app-style refresh André described. Checked both plugged and UNPLUGGED
+  (out of computer mode). Watch clock confirmed corrected by André. Still nothing.
+- **Decisive**: three moves at day_offset 0/1/2 were written; +1 and +2 should appear as future
+  weekday targets per manual 3.39 even if "today" were filtered. None appeared => the watch is
+  REJECTING THE ITEM, not mis-dating it. Remaining suspects are inside the 40-byte record: a
+  required non-zero `moveId` (by analogy with the confirmed `startTime`-must-be-valid rule), or
+  the activityName offset (decompile says 16; this project's own older write used 15).
+- **Assets exhausted**: training_lab.js is a 1.3KB obfuscated feature-flag stub (no plan logic);
+  the Movescount mobile APK confirms `SYNCING_PLANNED_MOVES` but is obfuscated and only ever held
+  the JSON model (the binary layout was always server/desktop-side = the C++ converter already
+  RE'd). **Online exhausted**: no one has published the TrainingProgram binary format or a real
+  region dump anywhere (openambit, forums) - no ground truth obtainable (Movescount dead, no
+  sniff possible, per André's constraint from the start).
+- Protocol path double-checked and correct: saveTrainingProgram = WritePmemRaw(0x0b16) +
+  WritePmemRawFinalize(0x0b18), no 0x0b04 - exactly what write_nav/send_plan(commit=False) does.
+
+Only remaining path to confirm feature B: a small BOUNDED empirical sweep of the item's
+uncertain fields (moveId non-zero; activityName at offset 15 vs 16) - the one place guessing is
+now warranted, since every non-guessing avenue is exhausted. Region was left with the 3-move
+test program; can be blanked/restored on request.
+
+## Finding 32: planned-moves content sweep exhausted; likely structurally coupled to workouts (2026-08-09)
+
+Per André, tested one-at-a-time on real hardware (watch unplugged for each check):
+Run-today-30min (duration only), Run-today-30min+4km (both), Run-today-4km (distance only) -
+all Running, today, moveId non-zero. Every one: nothing on TIME -> [Next].
+
+Combined with Finding 31, the full eliminated set is now: date encoding (confirmed via the
+1970-epoch/microsecond constant), activation flag (`Sports.Plans.Source`=Manual - and the schema
+confirms that is the ONLY training-plan DeviceSettings field on this 2.4.17 firmware; no separate
+`UseTrainingProgram` gate exists here), refresh (Plans.Source toggle), clock, computer-mode
+(plugged vs unplugged), moveId (0 and non-zero), activityName offset (15 and 16), and
+duration/distance/both. The pmem write is byte-exact every time. The watch never surfaces a move.
+
+`sml.DeviceLogBook...Header.PlannedMove.Id`/`.Completeness` confirm the firmware DOES track
+planned moves (recorded moves link back to a planned-move Id), so the feature exists in this
+firmware - it just isn't loading our region into the "Today" UI.
+
+Leading remaining hypothesis (André's, and the best fit): a planned move is not standalone - it
+**references a move/workout that must already exist on the watch** (matching Movescount's own
+"MY MOVES"/"PLAN & CREATE" UX and the logbook back-reference). If a planned move must bind to a
+real workout/move template and none exists, the watch has nothing to display. That would make
+feature B (planned moves) dependent on feature A (workouts). Cannot be confirmed without a real
+Movescount-era capture of a planned-move sync, which is unobtainable (Movescount dead, no sniff).
+
+Status: planned-moves storage format is fully decoded and written byte-exact; the load/display
+trigger has one unresolved structural unknown that needs ground truth we cannot obtain. Region
+restored to pre-trial state after testing. Recommended next direction: feature A (guided
+workouts / declarative guidance-interval Trigger rules) - which feature B likely depends on
+anyway.
