@@ -27,6 +27,34 @@ Flickable {
         { bit: 0x0800, label: qsTr("Bike pod") },
     ]
 
+    // Real, 2026-08-09 ("Implement the sport modes like suunto link") - SuuntoLink's own
+    // real Sport Modes list (assets/ambit3 pcap/v2/screens sports modes/sportsmodes.JPG)
+    // gives every mode a colored circular badge. This app's real CustomModes data has no
+    // sport-category/color field of its own to read (each mode is just a free-text name -
+    // custom_modes_andre.md) - this table is a presentational-only convenience keyed on
+    // this reference watch's own real mode names (confirmed identical to SuuntoLink's own
+    // defaults: Cycling/Indoor training/Pool swimming/Run a route/Running/Trekking/Walk),
+    // not a hardware-confirmed per-mode field. Deliberately reuses Theme's existing named
+    // colors rather than inventing new hex swatches (this app's own "never hardcode colors"
+    // rule), and Icons.sportModes for every badge rather than per-sport glyphs - Material
+    // Symbols Rounded is subset to only the codepoints this app actually uses (see
+    // assets/fonts/NOTICE.md), and adding real per-sport icons would mean fetching real
+    // codepoints from Google's own repo and regenerating that font, a real but separate
+    // undertaking not worth bundling into this pass. A renamed/custom mode not in this
+    // table falls back to Theme.primary rather than guessing.
+    readonly property var _sportBadgeColors: ({
+        "Cycling": Theme.warning,
+        "Indoor training": Theme.error,
+        "Pool swimming": Theme.primary,
+        "Run a route": Theme.accent,
+        "Running": Theme.accent,
+        "Trekking": Theme.success,
+        "Walk": Theme.success,
+    })
+    function sportBadgeColor(name) {
+        return _sportBadgeColors[name] || Theme.primary
+    }
+
     // Real, 2026-08-09 ("sport mode return bad gateway") - the connected watch had become
     // Kailash, which genuinely has no CustomModes region at all (confirmed empty - see
     // custom_modes_andre.md's Kailash section), so custom_modes.py's own real flash read
@@ -94,67 +122,123 @@ Flickable {
                     width: parent.width
                     spacing: Theme.spacingMedium
 
-                    // --- Header: name (editable), expand toggle ---
-                    Row {
+                    // --- Header: real SuuntoLink-list-row shape (colored circular badge +
+                    // name + screen count on the left, actions on the right) - see
+                    // root._sportBadgeColors' own comment for what the badge color is (and
+                    // isn't) based on. Renaming moved into the expanded Details section
+                    // below (was inline here before) so this collapsed row stays as close
+                    // to SuuntoLink's own minimal list look as this app's real edit
+                    // capabilities allow. ---
+                    Item {
                         width: parent.width
-                        spacing: Theme.spacingSmall
+                        height: 44
 
-                        TextField {
-                            id: nameField
-                            width: 200
-                            enabled: !modeCard.busy
-                            // Real bug, found 2026-08-09 from a live screenshot ("strange
-                            // characters" in a mode's name field, even though the real
-                            // watch data was confirmed clean by reading it directly): a
-                            // plain `text: modeCard.modelData.name` binding plus an
-                            // imperative `nameField.text = ...` inside a Connections
-                            // handler is a real QML footgun - the FIRST imperative
-                            // assignment permanently severs the declarative binding (QML
-                            // property bindings are one-shot-broken by direct assignment,
-                            // not re-established), so `text` becomes a dead, non-reactive
-                            // value from then on. If that assignment happened to run during
-                            // a moment the Repeater's model was mid-refresh (modelData
-                            // transiently stale/undefined), whatever it grabbed got frozen
-                            // in forever, with no further refresh ever able to fix it - the
-                            // real mechanism behind the garbled name. Fixed with a proper
-                            // `Binding` element instead, which re-evaluates/re-applies
-                            // correctly on every change rather than dying after one direct
-                            // assignment - same "don't type in this exact field right now"
-                            // guard, correctly reactive this time.
-                            Binding {
-                                target: nameField
-                                property: "text"
-                                value: modeCard.modelData.name
-                                when: !nameField.activeFocus
+                        Row {
+                            anchors.left: parent.left
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: Theme.spacingMedium
+
+                            Rectangle {
+                                width: 44; height: 44; radius: 22
+                                color: root.sportBadgeColor(modeCard.modelData.name)
+                                anchors.verticalCenter: parent.verticalCenter
+                                Icon { anchors.centerIn: parent; glyph: Icons.sportModes; size: 22; color: Theme.card }
+                            }
+
+                            Column {
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: 2
+                                Text {
+                                    text: modeCard.modelData.name
+                                    font.bold: true
+                                    font.pixelSize: Theme.fontSizeBodyLarge
+                                    color: Theme.text
+                                }
+                                Text {
+                                    text: qsTr("%1 screen(s)").arg(modeCard.modelData.displays.length)
+                                    color: Theme.mutedText
+                                    font.pixelSize: Theme.fontSizeCaption
+                                }
                             }
                         }
-                        Button {
-                            text: qsTr("Rename")
-                            enabled: !modeCard.busy && nameField.text.length > 0
-                                     && nameField.text !== modeCard.modelData.name
-                            onClicked: CustomModesService.renameMode(modeCard.modelData.name, nameField.text)
-                        }
-                        Item { width: 1; height: 1 }
-                        Button {
-                            id: expandBtn
-                            checkable: true
-                            text: checked ? qsTr("Hide details") : qsTr("Edit")
-                        }
-                        Text {
-                            visible: modeCard.busy
+
+                        Row {
+                            anchors.right: parent.right
                             anchors.verticalCenter: parent.verticalCenter
-                            text: qsTr("saving...")
-                            color: Theme.mutedText
-                            font.pixelSize: Theme.fontSizeCaption
-                            font.italic: true
+                            spacing: Theme.spacingSmall
+
+                            Text {
+                                visible: modeCard.busy
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: qsTr("saving...")
+                                color: Theme.mutedText
+                                font.pixelSize: Theme.fontSizeCaption
+                                font.italic: true
+                            }
+                            Button {
+                                id: expandBtn
+                                checkable: true
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: checked ? qsTr("Hide details") : qsTr("Edit")
+                            }
                         }
                     }
 
-                    // --- Details: Autolap / HR limits / pods / displays ---
+                    // --- Details: name / Autolap / HR limits / pods / displays ---
                     Column {
                         width: parent.width
                         spacing: Theme.spacingMedium
                         visible: modeCard.expanded
+
+                        // --- Name (moved here from the collapsed header row, real
+                        // 2026-08-09 - see the header Item's own comment) ---
+                        Column {
+                            width: parent.width
+                            spacing: 2
+                            Text { text: qsTr("Name"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
+                            Row {
+                                spacing: 6
+                                TextField {
+                                    id: nameField
+                                    width: 200
+                                    enabled: !modeCard.busy
+                                    // Real bug, found 2026-08-09 from a live screenshot
+                                    // ("strange characters" in a mode's name field, even
+                                    // though the real watch data was confirmed clean by
+                                    // reading it directly): a plain
+                                    // `text: modeCard.modelData.name` binding plus an
+                                    // imperative `nameField.text = ...` inside a
+                                    // Connections handler is a real QML footgun - the FIRST
+                                    // imperative assignment permanently severs the
+                                    // declarative binding (QML property bindings are
+                                    // one-shot-broken by direct assignment, not
+                                    // re-established), so `text` becomes a dead,
+                                    // non-reactive value from then on. If that assignment
+                                    // happened to run during a moment the Repeater's model
+                                    // was mid-refresh (modelData transiently stale/
+                                    // undefined), whatever it grabbed got frozen in
+                                    // forever, with no further refresh ever able to fix it -
+                                    // the real mechanism behind the garbled name. Fixed with
+                                    // a proper `Binding` element instead, which
+                                    // re-evaluates/re-applies correctly on every change
+                                    // rather than dying after one direct assignment - same
+                                    // "don't type in this exact field right now" guard,
+                                    // correctly reactive this time.
+                                    Binding {
+                                        target: nameField
+                                        property: "text"
+                                        value: modeCard.modelData.name
+                                        when: !nameField.activeFocus
+                                    }
+                                }
+                                Button {
+                                    text: qsTr("Rename")
+                                    enabled: !modeCard.busy && nameField.text.length > 0
+                                             && nameField.text !== modeCard.modelData.name
+                                    onClicked: CustomModesService.renameMode(modeCard.modelData.name, nameField.text)
+                                }
+                            }
+                        }
 
                         // --- Autolap ---
                         Column {
