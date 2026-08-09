@@ -174,59 +174,45 @@ export async function addPoiToWatch(
   }
 }
 
-export interface ImportPoiState {
-  phase: 'idle' | 'picking' | 'parsing' | 'connecting' | 'writing' | 'done' | 'error';
-  imported?: number;
-  total?: number;
-  error?: string;
+// v3.0 UI port (2026-08-09, "re do... pois to match entirely desktop") - real "On the
+// watch" list (PoisPage.qml parity) and a real per-item-preview Import flow
+// (PoiService.importedPois + per-item Add, not one opaque write-everything button), plus
+// per-item Export - none of this existed before; the screen was action-buttons-only.
+
+/** Read-only: the watch's own current POIs, for a real "On the watch" list. */
+export async function readOnWatchPois(): Promise<WatchPoi[]> {
+  await connect();
+  try {
+    return await readPoisFromWatch();
+  } finally {
+    await disconnect().catch(() => {});
+  }
 }
 
-/**
- * Picks a GPX, extracts every <wpt> in it, and adds each one to the watch
- * under a single connection (each add already preserves whatever the watch
- * had before it, including the ones just added earlier in this same loop).
- */
-export async function importPoisFromGpx(onState: (s: ImportPoiState) => void): Promise<void> {
-  onState({ phase: 'picking' });
+/** Exports one already-read on-watch (or imported) POI as its own GPX file in Downloads -
+ * matches desktop's own per-POI "Export" button (PoisPage.qml). */
+export async function exportSinglePoiToGpx(poi: WatchPoi): Promise<void> {
+  const gpx = poisToGpx([poi]);
+  const safeName = poi.name.replace(/[\\/:*?"<>|]/g, '_') || 'poi';
+  const fileName = `${safeName}.gpx`;
+  const path = `${RNFS.CachesDirectoryPath}/${fileName}`;
+  await RNFS.writeFile(path, gpx, 'utf8');
+  await saveToDownloads(path, fileName, 'application/gpx+xml');
+}
+
+/** Picks a GPX and parses its <wpt> entries, without writing anything - the real preview
+ * step desktop's own "Import from GPX" card has (PoiService.importedPois), each shown with
+ * its own "Add" button rather than one write-everything action. Returns null on cancel. */
+export async function pickAndParseWaypoints(): Promise<WatchPoi[] | null> {
   let gpxPath: string;
   try {
     gpxPath = await pickGpxFile();
   } catch (e: any) {
-    if (e?.code === 'GPX_PICK_CANCELLED') { onState({ phase: 'idle' }); return; }
-    onState({ phase: 'error', error: e?.message ?? 'File selection failed' });
-    return;
+    if (e?.code === 'GPX_PICK_CANCELLED') return null;
+    throw new Error(e?.message ?? 'File selection failed');
   }
-
-  onState({ phase: 'parsing' });
-  let waypoints;
-  try {
-    const xml = await RNFS.readFile(gpxPath, 'utf8');
-    waypoints = parseGpxWaypoints(xml);
-    if (waypoints.length === 0) throw new Error('No waypoints (<wpt>) found in this GPX');
-  } catch (e: any) {
-    onState({ phase: 'error', error: e?.message ?? 'Failed to read the GPX' });
-    return;
-  }
-
-  onState({ phase: 'connecting', total: waypoints.length, imported: 0 });
-  try {
-    await connect();
-  } catch (e: any) {
-    onState({ phase: 'error', error: e?.message ?? 'Connection to the watch failed' });
-    return;
-  }
-
-  let imported = 0;
-  try {
-    for (const w of waypoints) {
-      onState({ phase: 'writing', total: waypoints.length, imported });
-      await addPoi(w.name, w.latitude, w.longitude);
-      imported++;
-    }
-    onState({ phase: 'done', total: waypoints.length, imported });
-  } catch (e: any) {
-    onState({ phase: 'error', error: e?.message ?? 'Import failed partway through', imported, total: waypoints.length });
-  } finally {
-    await disconnect().catch(() => {});
-  }
+  const xml = await RNFS.readFile(gpxPath, 'utf8');
+  const waypoints = parseGpxWaypoints(xml);
+  if (waypoints.length === 0) throw new Error('No waypoints (<wpt>) found in this GPX');
+  return waypoints.map(w => ({ name: w.name, latitude: w.latitude, longitude: w.longitude }));
 }

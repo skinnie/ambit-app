@@ -1,12 +1,21 @@
-import React, { useState } from 'react';
-import { View, StyleSheet, Alert, ScrollView } from 'react-native';
+import React, { useCallback, useState } from 'react';
+import { View, Text, StyleSheet, Alert, ScrollView, TouchableOpacity } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import {
-  addPoiToWatch, AddPoiState, importPoisFromGpx, ImportPoiState, exportPoisToGpx, ExportPoiState,
+  addPoiToWatch, AddPoiState, readOnWatchPois, exportSinglePoiToGpx, pickAndParseWaypoints,
+  WatchPoi,
 } from '../services/PoiService';
 import { t } from '../i18n';
-import { useV3Theme } from '../theme/v3';
-import { Button, FieldRow, Section, StatusLine } from '../components/ui/primitives';
+import { useV3Theme, v3Spacing, v3Type } from '../theme/v3';
+import { Card } from '../components/ui/Card';
+import { Button, FieldRow } from '../components/ui/primitives';
+import { TrackPreview } from '../components/TrackPreview';
 
+// v3.0 UI port (2026-08-09, "re do... pois to match entirely desktop") - real structural
+// rebuild matching desktop's own PoisPage.qml: "Add a POI" gets a live pin preview, "Import
+// from GPX" now shows each parsed waypoint with its own real Add button (not one opaque
+// write-everything action), and a real "On the watch" list with a per-POI preview + Export -
+// this screen used to be pure action buttons with no browsing at all.
 export default function PoiScreen() {
   const theme = useV3Theme();
   const styles = createStyles(theme);
@@ -17,34 +26,52 @@ export default function PoiScreen() {
   const [poiState, setPoiState] = useState<AddPoiState>({ phase: 'idle' });
   const poiBusy = poiState.phase === 'connecting' || poiState.phase === 'writing';
 
-  const [importState, setImportState] = useState<ImportPoiState>({ phase: 'idle' });
-  const importBusy = importState.phase !== 'idle' && importState.phase !== 'done' && importState.phase !== 'error';
+  const [imported, setImported] = useState<WatchPoi[] | null>(null);
+  const [importPicking, setImportPicking] = useState(false);
+  const [addingIndex, setAddingIndex] = useState<number | null>(null);
 
-  const [exportState, setExportState] = useState<ExportPoiState>({ phase: 'idle' });
-  const exportBusy = exportState.phase !== 'idle' && exportState.phase !== 'done' && exportState.phase !== 'error';
+  const [onWatch, setOnWatch] = useState<WatchPoi[] | null>(null);
+  const [onWatchLoading, setOnWatchLoading] = useState(false);
+  const [onWatchError, setOnWatchError] = useState<string | undefined>();
+  const [exportingIndex, setExportingIndex] = useState<number | null>(null);
 
-  const anyBusy = poiBusy || importBusy || exportBusy;
+  const loadOnWatch = useCallback(async () => {
+    setOnWatchLoading(true);
+    setOnWatchError(undefined);
+    try {
+      setOnWatch(await readOnWatchPois());
+    } catch (e: any) {
+      setOnWatchError(e?.message ?? t.unknownError);
+    } finally {
+      setOnWatchLoading(false);
+    }
+  }, []);
+
+  useFocusEffect(useCallback(() => { loadOnWatch(); }, [loadOnWatch]));
+
+  const parsedLat = parseFloat(poiLat.replace(',', '.'));
+  const parsedLon = parseFloat(poiLon.replace(',', '.'));
+  const hasValidCoords = Number.isFinite(parsedLat) && parsedLat >= -90 && parsedLat <= 90
+    && Number.isFinite(parsedLon) && parsedLon >= -180 && parsedLon <= 180;
 
   async function handleAddPoi() {
-    if (anyBusy) return;
+    if (poiBusy) return;
     if (!poiName.trim()) {
       Alert.alert(t.poiInvalid, t.poiNameRequired);
       return;
     }
-    const lat = parseFloat(poiLat.replace(',', '.'));
-    const lon = parseFloat(poiLon.replace(',', '.'));
-    if (Number.isNaN(lat) || lat < -90 || lat > 90 || Number.isNaN(lon) || lon < -180 || lon > 180) {
+    if (!hasValidCoords) {
       Alert.alert(t.poiInvalid, t.poiCoordsInvalid);
       return;
     }
     try {
-      await addPoiToWatch(poiName.trim(), lat, lon, setPoiState);
+      await addPoiToWatch(poiName.trim(), parsedLat, parsedLon, setPoiState);
       setPoiState(s => {
         if (s.phase === 'done') {
-          Alert.alert(t.poiAddedTitle, t.poiAddedMsg(poiName.trim()));
           setPoiName('');
           setPoiLat('');
           setPoiLon('');
+          loadOnWatch();
         } else if (s.phase === 'error') {
           Alert.alert(t.error, s.error ?? t.unknownError);
         }
@@ -56,114 +83,127 @@ export default function PoiScreen() {
     }
   }
 
-  async function handleImportPois() {
-    if (anyBusy) return;
+  async function handleImportPick() {
+    if (importPicking) return;
+    setImportPicking(true);
     try {
-      await importPoisFromGpx(setImportState);
-      setImportState(s => {
-        if (s.phase === 'done') {
-          Alert.alert(t.poiImportedTitle, t.poiImportedMsg(s.imported ?? 0));
-        } else if (s.phase === 'error') {
-          Alert.alert(t.error, s.error ?? t.unknownError);
-        }
-        return s;
-      });
+      const wps = await pickAndParseWaypoints();
+      if (wps) setImported(wps);
     } catch (e: any) {
       Alert.alert(t.error, e?.message ?? t.unknownError);
-      setImportState({ phase: 'error', error: e?.message });
+    } finally {
+      setImportPicking(false);
     }
   }
 
-  async function handleExportPois() {
-    if (anyBusy) return;
+  async function handleAddImported(wp: WatchPoi, index: number) {
+    if (addingIndex !== null) return;
+    setAddingIndex(index);
     try {
-      await exportPoisToGpx(setExportState);
-      setExportState(s => {
-        if (s.phase === 'done') {
-          Alert.alert(t.poiExportedTitle, t.poiExportedMsg(s.count ?? 0));
-        } else if (s.phase === 'error') {
-          Alert.alert(t.error, s.error ?? t.unknownError);
-        }
-        return s;
-      });
+      await addPoiToWatch(wp.name, wp.latitude, wp.longitude, () => {});
+      setImported(prev => prev?.filter((_, i) => i !== index) ?? null);
+      loadOnWatch();
     } catch (e: any) {
       Alert.alert(t.error, e?.message ?? t.unknownError);
-      setExportState({ phase: 'error', error: e?.message });
+    } finally {
+      setAddingIndex(null);
+    }
+  }
+
+  async function handleExportItem(poi: WatchPoi, index: number) {
+    if (exportingIndex !== null) return;
+    setExportingIndex(index);
+    try {
+      await exportSinglePoiToGpx(poi);
+    } catch (e: any) {
+      Alert.alert(t.error, e?.message ?? t.unknownError);
+    } finally {
+      setExportingIndex(null);
     }
   }
 
   return (
     <ScrollView style={styles.root} contentContainerStyle={styles.content}>
 
+      {/* ── Add a POI ── */}
+      <Card style={{ width: '100%' }}>
+        <Text style={styles.cardTitle}>{t.poiSection}</Text>
+        <FieldRow icon="poi" value={poiName} onChangeText={setPoiName} placeholder={t.poiNamePlaceholder} editable={!poiBusy} style={{ marginTop: v3Spacing.small }} />
+        <View style={styles.row}>
+          <FieldRow icon="map" value={poiLat} onChangeText={setPoiLat} placeholder={t.poiLat} keyboardType="numbers-and-punctuation" editable={!poiBusy} style={{ flex: 1 }} />
+          <FieldRow icon="map" value={poiLon} onChangeText={setPoiLon} placeholder={t.poiLon} keyboardType="numbers-and-punctuation" editable={!poiBusy} style={{ flex: 1 }} />
+        </View>
+        <View style={{ marginTop: v3Spacing.small }}>
+          <TrackPreview
+            points={hasValidCoords ? [{ lat: parsedLat, lon: parsedLon }] : []}
+            markerOnly
+          />
+        </View>
+        <Button label={t.poiAddBtn} variant="filled" loading={poiBusy} disabled={poiBusy} onPress={handleAddPoi} style={{ marginTop: v3Spacing.small }} />
+      </Card>
+
       {/* ── Import from GPX ── */}
-      <Section title={t.poiImportSection} description={t.poiImportDesc}>
-        <View style={styles.row}>
-          <Button label={t.poiImportBtn} variant="filled" loading={importBusy} disabled={anyBusy} onPress={handleImportPois} />
-        </View>
-        {importBusy && <StatusLine text={importStatusMessage(importState)} />}
-      </Section>
+      <Card style={{ width: '100%' }}>
+        <Text style={styles.cardTitle}>{t.poiImportSection}</Text>
+        <Text style={styles.itemStats}>{t.poiImportDesc}</Text>
+        <Button label={t.poiImportBtn} variant="filled" loading={importPicking} disabled={importPicking} onPress={handleImportPick} style={{ marginTop: v3Spacing.small }} />
 
-      {/* ── Export to GPX (read from watch) ── */}
-      <Section title={t.poiExportSection} description={t.poiExportDesc}>
-        <View style={styles.row}>
-          <Button label={t.poiExportBtn} variant="filled" loading={exportBusy} disabled={anyBusy} onPress={handleExportPois} />
-        </View>
-        {exportBusy && (
-          <StatusLine text={exportState.phase === 'connecting' ? t.connecting : t.poiExportReading} />
+        {imported && imported.map((wp, i) => (
+          <View key={`${wp.name}-${i}`} style={styles.row}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.itemName} numberOfLines={1}>{wp.name}</Text>
+              <Text style={styles.itemStats}>{t.poiCoords(wp.latitude, wp.longitude)}</Text>
+            </View>
+            <TouchableOpacity style={styles.exportBtn} disabled={addingIndex !== null} onPress={() => handleAddImported(wp, i)}>
+              <Text style={styles.exportBtnText}>{addingIndex === i ? '…' : t.poiItemAddBtn}</Text>
+            </TouchableOpacity>
+          </View>
+        ))}
+      </Card>
+
+      {/* ── On the watch ── */}
+      <Card style={{ width: '100%' }}>
+        <Text style={styles.cardTitle}>{t.poiOnWatchSection}</Text>
+
+        {onWatchLoading && <Text style={styles.itemStats}>{t.poiOnWatchReading}</Text>}
+        {!onWatchLoading && onWatchError && (
+          <Text style={[styles.itemStats, { color: theme.error }]}>{t.poiOnWatchError(onWatchError)}</Text>
         )}
-      </Section>
-
-      {/* ── Manual entry ── */}
-      <Section title={t.poiSection} description={t.poiDesc}>
-        <FieldRow
-          icon="poi"
-          value={poiName}
-          onChangeText={setPoiName}
-          placeholder={t.poiNamePlaceholder}
-          editable={!anyBusy}
-        />
-        <FieldRow
-          icon="map"
-          value={poiLat}
-          onChangeText={setPoiLat}
-          placeholder="48.8566"
-          keyboardType="numbers-and-punctuation"
-          editable={!anyBusy}
-        />
-        <FieldRow
-          icon="map"
-          value={poiLon}
-          onChangeText={setPoiLon}
-          placeholder="2.3522"
-          keyboardType="numbers-and-punctuation"
-          editable={!anyBusy}
-        />
-
-        <View style={styles.row}>
-          <Button label={t.poiAddBtn} variant="filled" loading={poiBusy} disabled={anyBusy} onPress={handleAddPoi} />
-        </View>
-
-        {poiBusy && (
-          <StatusLine text={poiState.phase === 'connecting' ? t.connecting : t.poiWriting} />
+        {!onWatchLoading && !onWatchError && onWatch && onWatch.length === 0 && (
+          <Text style={styles.itemStats}>{t.poiOnWatchEmpty}</Text>
         )}
-      </Section>
+
+        {!onWatchLoading && onWatch && onWatch.map((poi, i) => (
+          <View key={`${poi.name}-${i}`} style={i > 0 ? styles.onWatchItem : { marginTop: v3Spacing.medium, gap: v3Spacing.small }}>
+            <TrackPreview points={[{ lat: poi.latitude, lon: poi.longitude }]} markerOnly height={90} />
+            <View style={styles.row}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.itemName} numberOfLines={1}>{poi.name}</Text>
+                <Text style={styles.itemStats}>{t.poiCoords(poi.latitude, poi.longitude)}</Text>
+              </View>
+              <TouchableOpacity style={styles.exportBtn} disabled={exportingIndex !== null} onPress={() => handleExportItem(poi, i)}>
+                <Text style={styles.exportBtnText}>{exportingIndex === i ? '…' : t.poiItemExportBtn}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ))}
+      </Card>
 
     </ScrollView>
   );
 }
 
-function importStatusMessage(s: ImportPoiState): string {
-  switch (s.phase) {
-    case 'picking':    return t.poiImportPicking;
-    case 'parsing':    return t.poiImportParsing;
-    case 'connecting': return t.connecting;
-    case 'writing':    return t.poiImportWriting(s.imported ?? 0, s.total ?? 0);
-    default:           return '';
-  }
-}
-
 const createStyles = (t: ReturnType<typeof useV3Theme>) => StyleSheet.create({
   root: { flex: 1, backgroundColor: t.background },
-  content: { padding: 20 },
-  row: { flexDirection: 'row', gap: 10, marginTop: 4 },
+  content: { padding: v3Spacing.medium, gap: v3Spacing.medium },
+  cardTitle: { fontSize: v3Type.heading, fontWeight: '700', color: t.text },
+  row: { flexDirection: 'row', alignItems: 'center', gap: v3Spacing.small, marginTop: v3Spacing.small },
+  itemName: { fontSize: v3Type.bodyLarge, fontWeight: '700', color: t.text },
+  itemStats: { fontSize: v3Type.label, color: t.mutedText, marginTop: 2 },
+  onWatchItem: { marginTop: v3Spacing.large, paddingTop: v3Spacing.medium, borderTopWidth: 1, borderTopColor: t.mutedText + '22', gap: v3Spacing.small },
+  exportBtn: {
+    paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8,
+    backgroundColor: t.primary + '1F', borderWidth: 1, borderColor: t.primary,
+  },
+  exportBtnText: { color: t.primary, fontWeight: '600', fontSize: v3Type.label },
 });
