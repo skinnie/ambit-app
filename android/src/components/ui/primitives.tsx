@@ -1,6 +1,7 @@
 import React from 'react';
 import {
   View, Text, TextInput, TextInputProps, TouchableOpacity, ActivityIndicator, ViewStyle,
+  useWindowDimensions,
 } from 'react-native';
 import { useTheme } from '../../theme/useTheme';
 import Icon, { IconName } from './Icon';
@@ -177,22 +178,31 @@ export function FieldRow({ icon, style, ...inputProps }: { icon: IconName } & Te
 
 // ── ActionTile — flat bordered square used on Home's action grid ───────────
 export function ActionTile({
-  icon, label, progress, onPress, disabled, busy,
+  icon, label, progress, onPress, disabled, busy, basis,
 }: {
   icon: IconName; label: string; progress?: string; onPress: () => void; disabled?: boolean; busy?: boolean;
+  // Column width as a flex-basis. When omitted it adapts to the screen: two columns on
+  // phones, three on roomy/landscape/tablet widths. flexGrow 0 keeps a lone trailing tile
+  // at its column width (centered by the row) rather than stretching full-width. The row
+  // is width-capped upstream, so this stays clean from phones to tablets.
+  basis?: string | number;
 }) {
   const t = useTheme();
+  const { width, height } = useWindowDimensions();
+  // Column count adapts to the screen (row is width-capped upstream: ~560 portrait,
+  // ~960 landscape), targeting ~170 px tiles:
+  //   landscape/roomy → ~5 across   ·   portrait tablet → 3 across   ·   phone → 2.
+  // Orientation-based (not width-only) so a portrait tablet — wide but tall — stays a
+  // 3-column column layout, matching the pre-landscape look.
+  const roomy = width > height && width >= 700;
+  const effectiveBasis = basis ?? (roomy ? '18%' : width < 480 ? '48%' : '30%');
   return (
     <TouchableOpacity
       onPress={onPress}
       disabled={disabled}
       activeOpacity={0.75}
       style={{
-        // Two-column grid: ~half width each (minus the row's gap), and flexGrow 0 so a
-        // lone trailing tile stays half-width and centers (via the row's justifyContent)
-        // instead of stretching full-width. Percentage-based, so it stays two clean
-        // columns across phones and tablets alike (the row is width-capped upstream).
-        flexBasis: '48%', flexGrow: 0, minWidth: 84,
+        flexBasis: effectiveBasis, flexGrow: 0, minWidth: 84,
         backgroundColor: t.surfaceHigh, borderColor: busy ? t.text : t.outline, borderWidth: busy ? 1.4 : 1,
         borderRadius: 14, paddingVertical: 14, paddingHorizontal: 6,
         alignItems: 'center', justifyContent: 'center', gap: 6,

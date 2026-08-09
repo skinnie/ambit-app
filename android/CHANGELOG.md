@@ -3,6 +3,32 @@
 All notable changes to the AmbitApp Android app (fork of `guiguoz/opensportsync`) are
 recorded here, newest first.
 
+## 2.5.13 (2026-08-09)
+
+Kailash activity export over Bluetooth, plus BLE device-info fixes and a responsive
+home screen.
+
+- **Kailash GPS activity → GPX over BLE.** A connected Kailash now shows its recorded
+  activity and exports the track to Downloads as GPX, read over the live Bluetooth
+  session. This uses the watch's ephemeral `sml.DeviceLog` (0x53) sample store, which
+  only returns real samples over an active BLE session (cable reads always came back
+  empty) — confirmed on hardware, decoded end to end (a real ~800 m walk, coordinates
+  matching the watch's own last-known location). New `KailashDeviceLogReader.ts` +
+  native `readDeviceLogRaw()`; the watch's persistent travel history (0x67) is also
+  shown. See `KAILASH-BLE-FINDINGS.md` Finding 7.
+- **Fix: Kailash not auto-detected over BLE.** `getDeviceInfo()` rejected on a BLE link
+  (it gated on the USB device), so the watch model came back empty and the Kailash
+  branch never ran. It now reads the native device info directly and names the watch
+  from its codename (Hoopoe → Suunto Kailash).
+- **Fix: hardware version showed 0.0.0 over BLE.** The `0x0002` hello carries it at
+  offset 36 (right after firmware); the handshake now reads it. Reports 72.1.0,
+  matching the real firmware image — needed to pick the right firmware for download.
+- **Responsive connected screen.** In landscape/on a tablet the device cards lay out
+  side by side with the action tiles in a single row, instead of one tall column;
+  portrait keeps the single-column layout. Adapts by orientation and width.
+- Removed the "Ready to pair" confirmation dialog before a BLE scan — one less tap; the
+  guidance moved onto the "Connecting via Bluetooth…" screen.
+
 ## 2.5.12 (2026-08-08)
 
 Merges two real, independent lines of work that developed in parallel on separate machines/

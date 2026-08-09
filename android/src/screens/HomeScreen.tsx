@@ -60,8 +60,14 @@ export default function HomeScreen() {
   // ~12.5% larger text than the rest of the app, scaled further by the
   // device's own width so it keeps that proportion on a tablet instead of
   // just growing the phone-sized number — clamped so it can't run away.
-  const { width: winWidth } = useWindowDimensions();
+  const { width: winWidth, height: winHeight } = useWindowDimensions();
   const deviceFlowScale = Math.min(1.6, Math.max(1.125, (winWidth / 380) * 1.125));
+  // "Roomy" = actually landscape AND wide enough (a landscape tablet / large window),
+  // where the connected screen lays its cards side by side and uses more tile columns.
+  // Must be orientation-based, not width-only: this tablet is 800 px wide in PORTRAIT,
+  // so a width-only test wrongly treated portrait as roomy. Portrait always keeps the
+  // single-column layout. Kept in sync with ActionTile's own copy of this check.
+  const roomy = winWidth > winHeight && winWidth >= 700;
   const [sync, setSync] = useState<SyncState>({ phase: 'idle', current: 0, total: 0, newCount: 0 });
   const [orbital, setOrbital] = useState<OrbitalUpdateState>({ phase: 'idle' });
   const [lastActive, setLastActive] = useState<ActiveAction>('sync');
@@ -544,11 +550,14 @@ export default function HomeScreen() {
       </View>
       <Icon name={deviceType === 'garmin' ? 'etrex' : 'watch'} size={40} color={theme.text} />
 
-      {/* ── Device info (both device types show name/battery/firmware/hardware) ── */}
+      {/* ── Device info cards. Portrait: one centered column. Roomy/landscape: a
+          side-by-side wrapping row (each card sized to share the width), so the space
+          is used instead of stretching one card per line. ── */}
+      <View style={[styles.cardStack, roomy && styles.cardStackRoomy]}>
       {deviceType === 'garmin' && garminInfo && (() => {
         const vol = garminInfo.volumes.find(v => v.hasGarminDeviceXml) ?? garminInfo.volumes[0];
         return (
-          <View style={styles.deviceCard}>
+          <View style={[styles.deviceCard, roomy ? styles.deviceCardRoomy : styles.deviceCardCol]}>
             <Text style={styles.deviceName}>{vol?.model ?? t.garminUnknownModel}</Text>
             {!!vol?.firmwareVersion && (
               <Text style={styles.deviceSub}>{t.garminFirmwareLabel} {vol.firmwareVersion}</Text>
@@ -563,7 +572,7 @@ export default function HomeScreen() {
         );
       })()}
       {deviceType === 'ambit' && ambitInfo && (
-        <View style={styles.deviceCard}>
+        <View style={[styles.deviceCard, roomy ? styles.deviceCardRoomy : styles.deviceCardCol]}>
           <Text style={styles.deviceName}>{ambitInfo.name}</Text>
           {!!(ambitInfo.fwVersion || ambitInfo.hwVersion) && (
             <Text style={styles.deviceSub}>
@@ -590,7 +599,7 @@ export default function HomeScreen() {
           each muted detail line, rather than the pre-redesign deviceInfoBox styles this
           screen no longer defines. ── */}
       {deviceType === 'ambit' && isKailash(ambitInfo) && kailashHistory && (
-        <View style={styles.deviceCard}>
+        <View style={[styles.deviceCard, roomy ? styles.deviceCardRoomy : styles.deviceCardCol]}>
           <Text style={styles.deviceName}>{t.homeKailashTravelTitle}</Text>
           <Text style={styles.deviceSub}>
             {t.homeKailashCitiesLabel} {kailashHistory.citiesVisited}
@@ -615,7 +624,7 @@ export default function HomeScreen() {
       )}
 
       {deviceType === 'ambit' && isKailash(ambitInfo) && kailashTrack && (
-        <View style={styles.deviceCard}>
+        <View style={[styles.deviceCard, roomy ? styles.deviceCardRoomy : styles.deviceCardCol]}>
           <Text style={styles.deviceName}>{t.homeKailashTrackTitle}</Text>
           <Text style={styles.deviceSub}>
             {realTrackPoints(kailashTrack).length} {t.homeKailashTrackPoints}
@@ -628,10 +637,11 @@ export default function HomeScreen() {
           />
         </View>
       )}
+      </View>
 
       {/* ── Menu : dépend de l'appareil connecté (v2.3.2 beta) ── */}
       {deviceType === 'garmin' ? (
-        <View style={styles.actionsRow}>
+        <View style={[styles.actionsRow, roomy && styles.actionsRowRoomy]}>
           <ActionTile
             icon="sync"
             label={garminSyncLabel}
@@ -654,7 +664,7 @@ export default function HomeScreen() {
           />
         </View>
       ) : (
-        <View style={styles.actionsRow}>
+        <View style={[styles.actionsRow, roomy && styles.actionsRowRoomy]}>
           <ActionTile
             icon="sync"
             label={syncLabel}
@@ -839,16 +849,40 @@ function createStyles(t: ReturnType<typeof useTheme>) {
       color: t.text,
       letterSpacing: 1.5,
     },
-    deviceCard: {
+    // Wrapper around the device-info cards. Portrait: a centered column. Roomy: a
+    // centered wrapping row so the cards sit side by side (see cardStackRoomy).
+    cardStack: {
       width: '100%',
-      maxWidth: CONTENT_MAX_WIDTH,
+      alignItems: 'center',
+      gap: 8,
+    },
+    cardStackRoomy: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      maxWidth: 960,
+      justifyContent: 'center',
+      alignItems: 'stretch',
+      gap: 10,
+    },
+    deviceCard: {
       backgroundColor: t.surfaceHigh,
       borderColor: t.outline,
       borderWidth: 1,
       borderRadius: 16,
       padding: 16,
-      marginTop: -8,
       alignItems: 'center',
+      justifyContent: 'center',
+    },
+    // Portrait: one full-width card per row, capped so it doesn't stretch on a tablet.
+    deviceCardCol: {
+      width: '100%',
+      maxWidth: CONTENT_MAX_WIDTH,
+    },
+    // Roomy: cards share the row, ~3 across (min 250 so they wrap to 2 when narrower).
+    deviceCardRoomy: {
+      flexBasis: '31%',
+      flexGrow: 1,
+      minWidth: 250,
     },
     deviceName: {
       color: t.text,
@@ -887,6 +921,11 @@ function createStyles(t: ReturnType<typeof useTheme>) {
       alignItems: 'center',
       justifyContent: 'center',
       gap: 8,
+    },
+    // Roomy: widen the tile grid to match the side-by-side cards (tiles go 3 columns,
+    // handled inside ActionTile's own width check).
+    actionsRowRoomy: {
+      maxWidth: 960,
     },
     bottomRow: {
       flexDirection: 'row',
