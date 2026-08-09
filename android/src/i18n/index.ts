@@ -54,7 +54,7 @@ const fr = {
   homeBleReadyTitle: 'Prêt à associer',
   homeBleReadyMsg:
     "Sur la montre : menu « Pair Mobile App » (première association) ou « Sync now » " +
-    "(déjà associée), puis appuyez ci-dessous — la fenêtre Bluetooth de la montre ne reste " +
+    "(déjà associée) maintenant — la fenêtre Bluetooth de la montre ne reste " +
     "active que quelques secondes. Ambit3, Traverse et Kailash, expérimental.",
   homeBleReadyBtn: 'Prêt',
   homeConnectingBle: 'Connexion Bluetooth…',
@@ -439,7 +439,7 @@ const en: typeof fr = {
   homeBleReadyTitle: 'Ready to pair',
   homeBleReadyMsg:
     "On the watch: menu \"Pair Mobile App\" (first pairing) or \"Sync now\" (already " +
-    "paired), then tap below — the watch's Bluetooth window only stays open for a few " +
+    "paired) now — the watch's Bluetooth window only stays open for a few " +
     "seconds. Ambit3, Traverse, and Kailash, experimental.",
   homeBleReadyBtn: 'Ready',
   homeConnectingBle: 'Connecting via Bluetooth…',

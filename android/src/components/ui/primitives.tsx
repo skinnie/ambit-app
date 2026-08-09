@@ -188,7 +188,11 @@ export function ActionTile({
       disabled={disabled}
       activeOpacity={0.75}
       style={{
-        flexBasis: '30%', flexGrow: 1, minWidth: 84,
+        // Two-column grid: ~half width each (minus the row's gap), and flexGrow 0 so a
+        // lone trailing tile stays half-width and centers (via the row's justifyContent)
+        // instead of stretching full-width. Percentage-based, so it stays two clean
+        // columns across phones and tablets alike (the row is width-capped upstream).
+        flexBasis: '48%', flexGrow: 0, minWidth: 84,
         backgroundColor: t.surfaceHigh, borderColor: busy ? t.text : t.outline, borderWidth: busy ? 1.4 : 1,
         borderRadius: 14, paddingVertical: 14, paddingHorizontal: 6,
         alignItems: 'center', justifyContent: 'center', gap: 6,

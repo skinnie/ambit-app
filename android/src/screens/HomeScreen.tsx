@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  Alert, ActivityIndicator, useWindowDimensions,
+  Alert, ActivityIndicator, useWindowDimensions, ScrollView,
 } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -193,19 +193,11 @@ export default function HomeScreen() {
   // its BLE advertising window is short (same reasoning as RouteScreen.tsx's
   // waitForSyncNowTap).
   async function handleBleConnect() {
-    const proceed = await new Promise<boolean>(resolve => {
-      Alert.alert(
-        t.homeBleReadyTitle,
-        t.homeBleReadyMsg,
-        [
-          { text: t.cancel, style: 'cancel', onPress: () => resolve(false) },
-          { text: t.homeBleReadyBtn, onPress: () => resolve(true) },
-        ],
-        { cancelable: true, onDismiss: () => resolve(false) }
-      );
-    });
-    if (!proceed) return;
-
+    // Straight to scanning — no confirmation dialog. The scan already waits ~15 s
+    // (SCAN_TIMEOUT_MS in AmbitBleModule.kt), which is the watch's advertising
+    // window, so the user just triggers "Pair Mobile App"/"Sync now" on the watch
+    // while "Connecting via Bluetooth…" is showing. Removing the extra tap loses
+    // no function (the old t.homeBleReadyMsg guidance now lives on that screen).
     stopSearchTimers();
     setDeviceType('ambit');
     setBleAttempt(true);
@@ -477,6 +469,11 @@ export default function HomeScreen() {
         </View>
         <ActivityIndicator size="large" color={theme.text} />
         <Text style={[styles.deviceFlowTitle, deviceFlowTitleScale(deviceFlowScale)]}>{msg}</Text>
+        {bleAttempt && (
+          <Text style={[styles.deviceSub, { textAlign: 'center', paddingHorizontal: 24 }]}>
+            {t.homeBleReadyMsg}
+          </Text>
+        )}
         <Button label={t.viewActivities} onPress={() => navigation.navigate('LogList')} variant="text" grow={false} />
       </View>
     );
@@ -534,7 +531,11 @@ export default function HomeScreen() {
   // phase === 'connected' from here on
 
   return (
-    <View style={styles.container}>
+    <ScrollView
+      style={styles.scroll}
+      contentContainerStyle={styles.scrollContent}
+      showsVerticalScrollIndicator={false}
+    >
 
       {/* ── Header ── */}
       <View style={styles.header}>
@@ -719,7 +720,7 @@ export default function HomeScreen() {
         </TouchableOpacity>
       </View>
 
-    </View>
+    </ScrollView>
   );
 }
 
@@ -773,11 +774,30 @@ function orbitalStatusMessage(s: OrbitalUpdateState): string {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
+// Cap the content column so cards/tiles form a tidy centered stack instead of
+// stretching edge-to-edge on a wide (landscape/tablet) screen. Portrait phones are
+// narrower than this, so they're unaffected — width:'100%' still wins there.
+const CONTENT_MAX_WIDTH = 560;
+
 function createStyles(t: ReturnType<typeof useTheme>) {
   return StyleSheet.create({
     container: {
       flex: 1,
       backgroundColor: t.background,
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingVertical: 56,
+      paddingHorizontal: 24,
+    },
+    // The connected screen scrolls (a lot of content: device cards + a 2-column tile
+    // grid + footer), so on short/landscape screens nothing clips; on tall/portrait
+    // ones flexGrow + space-between still fills the screen the way `container` did.
+    scroll: {
+      flex: 1,
+      backgroundColor: t.background,
+    },
+    scrollContent: {
+      flexGrow: 1,
       alignItems: 'center',
       justifyContent: 'space-between',
       paddingVertical: 56,
@@ -821,6 +841,7 @@ function createStyles(t: ReturnType<typeof useTheme>) {
     },
     deviceCard: {
       width: '100%',
+      maxWidth: CONTENT_MAX_WIDTH,
       backgroundColor: t.surfaceHigh,
       borderColor: t.outline,
       borderWidth: 1,
@@ -861,6 +882,8 @@ function createStyles(t: ReturnType<typeof useTheme>) {
     actionsRow: {
       flexDirection: 'row',
       flexWrap: 'wrap',
+      width: '100%',
+      maxWidth: CONTENT_MAX_WIDTH,
       alignItems: 'center',
       justifyContent: 'center',
       gap: 8,
@@ -868,6 +891,7 @@ function createStyles(t: ReturnType<typeof useTheme>) {
     bottomRow: {
       flexDirection: 'row',
       width: '100%',
+      maxWidth: CONTENT_MAX_WIDTH,
       gap: 10,
       alignItems: 'center',
     },
