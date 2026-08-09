@@ -16,6 +16,7 @@ import { extractGpxMetadata } from '../services/GpxParser';
 import RNFS from 'react-native-fs';
 import { t, dateLocale } from '../i18n';
 import { useV3Theme } from '../theme/v3';
+import { ActivityThumbnail } from '../components/ActivityThumbnail';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'LogList'>;
 
@@ -178,18 +179,25 @@ export default function LogListScreen() {
             onLongPress={() => confirmDelete(item)}
             activeOpacity={0.75}
           >
-            <View style={styles.cardLeft}>
-              <Text style={styles.cardDate}>{formatDate(item.date)}</Text>
-              {!!item.activity_type && (
-                <Text style={styles.cardType}>
-                  {activityIcon(item.activity_type)} {capitalize(item.activity_type)}
-                </Text>
-              )}
-              <Text style={styles.cardSub}>{formatDuration(item.duration_s)} · {formatDist(item.distance_m)}</Text>
-            </View>
-            <View style={styles.cardRight}>
-              <Text style={styles.cardDPlus}>▲ {item.d_plus} m</Text>
-              <Text style={styles.cardArrow}>›</Text>
+            {!!item.gpx_path && (
+              <View style={styles.cardThumb}>
+                <ActivityThumbnail gpxPath={item.gpx_path} height={72} />
+              </View>
+            )}
+            <View style={styles.cardRow}>
+              <View style={styles.cardLeft}>
+                <Text style={styles.cardDate}>{formatDate(item.date)}</Text>
+                {!!item.activity_type && (
+                  <Text style={styles.cardType}>
+                    {activityIcon(item.activity_type)} {capitalize(item.activity_type)}
+                  </Text>
+                )}
+                <Text style={styles.cardSub}>{formatDuration(item.duration_s)} · {formatDist(item.distance_m)}</Text>
+              </View>
+              <View style={styles.cardRight}>
+                <Text style={styles.cardDPlus}>▲ {item.d_plus} m</Text>
+                <Text style={styles.cardArrow}>›</Text>
+              </View>
             </View>
           </TouchableOpacity>
         )}
@@ -300,8 +308,6 @@ const createStyles = (t: ReturnType<typeof useV3Theme>) => StyleSheet.create({
   // since this is a TouchableOpacity row, not a plain surface) so the activity list matches
   // every other v3-themed surface in the app.
   card: {
-    flexDirection: 'row',
-    alignItems: 'center',
     backgroundColor: t.card,
     borderRadius: 16,
     padding: 16,
@@ -312,6 +318,10 @@ const createStyles = (t: ReturnType<typeof useV3Theme>) => StyleSheet.create({
     shadowOpacity: 0.14,
     shadowRadius: 6,
   },
+  // v3.0 UI port - real per-activity track preview (ActivitiesPage.qml parity), see
+  // ActivityThumbnail.tsx's own comment on why it's a lightweight SVG shape, not a live map.
+  cardThumb: { marginBottom: 10 },
+  cardRow: { flexDirection: 'row', alignItems: 'center' },
   cardLeft: { flex: 1 },
   cardDate: { fontSize: 15, color: t.text, fontWeight: '600', marginBottom: 2 },
   cardType: { fontSize: 12, color: t.mutedText, marginBottom: 3 },
