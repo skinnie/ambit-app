@@ -40,37 +40,51 @@ TRAINING_ITEM_SIZE = 40
 
 
 def build_training_item(activity_id, duration_minutes, intensity, name,
-                         start_time=1, completed=False, move_id=0, distance=0):
-    """One 40-byte TrainingProgram item. Field order/types: see the module docstring above
-    and training_program_andre.md - medium confidence, not byte-verified.
+                         day_offset=0, completed=False, move_id=0, distance=0):
+    """One 40-byte TrainingProgram item. Layout REFINED 2026-08-09 (training_program_andre.md
+    Finding 29) from a closer read of TrainingProgramAreaConverter::createBinary/parse in the
+    decompiled backend - medium-high confidence, still not byte-verified against a real capture
+    (none exists; Movescount is dead):
 
-    start_time default changed from 0 to 1, and 0 is now rejected outright: the real iOS
-    Suunto app binary (assets/mac/suunto app ios/mac/Suunto, checked 2026-08-08) contains the
-    literal validation string "TrainingProgramAreaConverter::createBinary: no valid start
-    time" - real, direct evidence 0 is treated as "unset"/invalid by the real client, not a
-    safe default the way it was assumed to be at first. The 2026-08-05 test-write that "landed
-    correctly" used start_time=0 and read back byte-exact, which only proves the *write* path
-    round-trips - it says nothing about whether real client/firmware logic would have accepted
-    that item, and this string suggests it would not have. The *correct* non-zero encoding
-    (day-of-month? days-from-today? something else - it's a single byte, max 255) is still
-    unknown - 1 is the simplest non-zero placeholder, not a verified date encoding. Don't trust
-    it further than that."""
-    if start_time == 0:
-        raise ValueError(
-            "start_time=0 is confirmed invalid (see docstring above: the real iOS Suunto app "
-            "binary rejects it with 'no valid start time') - pass a real non-zero value")
+        off 0  u8   day_offset from the header's base date (parse multiplies it by 24h). This
+                    is the real scheduling model - a move's date = base_date + day_offset days.
+                    0 is VALID (the earliest/only move IS the base date). This corrects the
+                    earlier "start_time byte, 0 is invalid" reading (Finding 24): what the real
+                    client rejects with "no valid start time" is the JSON startTime that feeds
+                    the HEADER base date, not this per-item byte.
+        off 1  u8   completed (0/1)
+        off 2  u16  activityId
+        off 4  u32  moveId
+        off 8  u32  distance (metres)
+        off 12 u16  duration (MINUTES - createBinary divides JSON seconds by 60)
+        off 14 u8   intensity (1-5)
+        off 15 u8   padding (0)
+        off 16 23B  activityName (ISO-8859, null-padded/truncated - strncpy 0x17). NOTE: starts
+                    at offset 16, not 15 as the earlier version had it.
+        off 39 u8   padding (0)
+    """
     name_field = name.encode("iso-8859-15", "replace")[:23]
-    name_field += b"\0" * (24 - len(name_field))
-    item = struct.pack("<BBHIIhB", start_time, int(completed), activity_id, move_id,
-                        distance, duration_minutes, intensity) + name_field
-    item += b"\0" * (TRAINING_ITEM_SIZE - len(item))
+    name_field += b"\0" * (23 - len(name_field))
+    item = struct.pack("<BBHIIHB", day_offset & 0xFF, int(completed), activity_id, move_id,
+                        distance, duration_minutes, intensity & 0xFF)  # 15 bytes, off 0..14
+    item += b"\0"          # off 15 padding
+    item += name_field     # off 16..38
+    item += b"\0" * (TRAINING_ITEM_SIZE - len(item))  # off 39 padding
     assert len(item) == TRAINING_ITEM_SIZE, len(item)
     return item
 
 
-def build_training_program(items):
-    """items: a list of build_training_item() results. See the EXPERIMENTAL notice above."""
-    header = struct.pack("<IIHH", 0, 0, len(items), 0)
+def build_training_program(items, base_date_u32=0):
+    """items: a list of build_training_item() results. See the EXPERIMENTAL notice above.
+
+    HEADER (12 bytes, Finding 29): [u32 base_date][u32 preserved][u16 count][u16 ?]. `base_date`
+    is the reference date every item's day_offset counts from (the earliest move's date). Its
+    exact packing is the ONE remaining unknown in this format - createBinary derives it from the
+    earliest JSON startTime via byte extraction, but which packing (days-since-epoch? packed
+    y/m/d?) isn't pinned from the decompile alone. Left as a caller-supplied u32 (default 0)
+    rather than guessed; a real write needs the right value, which a single hardware trial
+    (write one move dated today, see if the watch shows "Today") would reveal."""
+    header = struct.pack("<IIHH", base_date_u32, 0, len(items), 0)
     blob = header + b"".join(items)
     flash = FlashImage()
     flash.write(F.TRAINING_PROGRAM_BASE, blob)
@@ -86,9 +100,12 @@ def main():
     ap.add_argument("--intensity", type=int, default=3, help="planned intensity, 0-255")
     ap.add_argument("--activity-id", type=int, default=3,
                      help="ActivityID (default 3 = Running)")
-    ap.add_argument("--start-time", type=int, default=1,
-                     help="single byte, meaning unconfirmed - 0 is confirmed invalid and"
-                          " rejected, see build_training_item()'s docstring")
+    ap.add_argument("--day-offset", type=int, default=0,
+                     help="days from the header base date (0 = the base/earliest move itself);"
+                          " see build_training_item()'s docstring (Finding 29)")
+    ap.add_argument("--base-date", type=lambda x: int(x, 0), default=0,
+                     help="u32 header base date - packing still unknown (Finding 29), leave 0"
+                          " until a hardware trial reveals it")
     ap.add_argument("--write", action="store_true",
                      help="actually emits; without this option nothing is sent")
     ap.add_argument("--verbose", action="store_true", help="logs every 64-byte report")
@@ -106,8 +123,8 @@ def main():
     check_memory_map(read_memory_map(link))
 
     item = build_training_item(args.activity_id, args.duration, args.intensity, args.name,
-                                start_time=args.start_time)
-    flash, layout = build_training_program([item])
+                                day_offset=args.day_offset)
+    flash, layout = build_training_program([item], base_date_u32=args.base_date)
     print(f"  item: name={args.name!r} activityId={args.activity_id} "
           f"duration={args.duration}min intensity={args.intensity}")
     send_plan(link, flash, layout, commit=False)

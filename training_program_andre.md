@@ -1617,3 +1617,155 @@ restore_apps_custommodes.py the moment the Ambit3 reappears on the Linux bus, re
 pristine pre-session before_walk_install pair with the corrected write shape. If that recovery
 also fails a cold boot (it should not - it writes byte-identical to what SuuntoLink writes), the
 firmware reflash remains as the user's fallback.
+
+## Finding 29: deep investigation of the two lost Movescount features (guided workouts + planned moves/training plans), 2026-08-09
+
+André asked to genuinely try to revive the two features Movescount took away, using only the
+repo's assets (no USB/BLE sniff possible - the authoring server is dead). Full investigation
+below. Two related external sources checked (nothing new published): openambit (the only serious
+community RE, supports Ambit3 Vertical/Traverse; no training-program/guidance binary format in
+it) and the5krunner/forum articles (user-facing only). **Conclusion up front: this project's
+decompile-based work is the most advanced reverse-engineering of these specific Ambit3 formats
+that exists anywhere reachable.** One feature is now genuinely buildable; the other is promising
+but blocked on a format that can't be verified without a live Movescount.
+
+### Bonus, solved along the way: the last two unknowns in the Apps format (Finding 25/22)
+
+openambit's `src/libambit/sport_mode_serialize.c` (`calculate_app_rule_checksum`,
+`serialize_app_data`) is real community prior art for the Ambit app-rule format and closed both
+remaining gaps:
+- The header's second u16 = `num_entries ^ 0x02` (verified 11^2=9, 3^2=1, 5^2=7, 4^2=6).
+- The per-entry `marker` byte = `XOR(MAGIC+binary) ^ (len(MAGIC+binary) & 0xff)` - openambit's
+  exact checksum formula applied to MAGIC+binary. Verified byte-exact against all 26 real
+  entries this project has (live 11-entry region + all 4 v2 captures), zero exceptions.
+`apps.entry_checksum()` added; `build_apps_region()` now computes both. **Our writer now
+reproduces SuuntoLink's real Apps-region write BYTE-FOR-BYTE** (full region incl. directory
+header, every marker, offsets, total_length) on all captures - the Apps format is 100% solved.
+
+### Feature A - "Guided workouts" (the browsable WORKOUT menu, section 3.18)
+
+What it is (manual 3.18, confirmed): structured interval workouts authored in the Movescount
+*App*, synced to the watch, then **browsable and selectable from the sport-mode options menu
+(WORKOUT -> scroll -> select)** - explicitly NOT pinned to a display slot the way an App-Zone
+app is. On-watch it uses a native graph display: `PID_RUNNER_GPS_TEMPLATE_GUIDANCE` (found in the
+decompiled backend) - bounded upper/lower limit graph, segment counter (3/8), target row.
+
+How it's really stored (from the decompiled `CustomModesAreaConverter::convertRule`): a workout
+is a CustomModes **rule with a type** - the backend has rule types `"generic"`, `"display"`,
+`"guidance"`, `"interval"` (distinct from a plain app). A guidance/interval rule carries a
+declarative **Triggers** structure: `LimitMetric` (which sensor - speed/pace/HR/power/cadence),
+upper/lower limits, `ActionsOnRise`/`ActionsOnFall` (what to do when you cross a limit -
+beep/light), `Enabled`, `FilterWithBufferedInput`. **This is a declarative native rule-engine
+construct, NOT App-Zone bytecode.** That is the important discovery: guided workouts never
+needed the App-Zone `.Binary` compiler at all - they're structured trigger rules the firmware
+interprets natively. That's also why they get the rich native graph display that App-Zone
+scripts (Seb's, this project's workout.py output) can't reproduce.
+
+Why it's still hard to revive: the Trigger/guidance-rule **byte encoding inside the CustomModes
+BXML** exists only in the decompile - there is NO capturable real sync to verify it against
+(Movescount authoring is dead, and no v2 capture contains a guidance rule - the v2
+`intervaltimer*` captures are the watch's *built-in* interval timer, a different feature stored
+in the SETTING_FIELDS interval slots, not Trigger rules). So reconstructing it means
+decompile-only inference + hardware trial-and-error - and this session showed how unforgiving
+that is (err:62 from a single wrong hash). It's a real, bounded RE target now that we understand
+the write finalization, but it needs careful work and a watch with a guaranteed recovery path.
+
+Two concrete revival paths, honest trade-offs:
+1. **Reconstruct the declarative guidance/interval Trigger rule** from `convertRule` and write it
+   into a sport mode's CustomModes with a `PID_RUNNER_GPS_TEMPLATE_GUIDANCE` display. If the
+   firmware then lists it in the WORKOUT menu with the native graph, this fully revives the
+   feature - the real prize. High RE effort, needs hardware iteration.
+2. **Fallback already in hand**: App-Zone script workouts (workout.py) compiled via the live
+   community compiler and installed via the now-fully-working installer. This gives structured
+   guidance but pinned to a sport-mode field with a plain numeric display, not the browsable
+   menu or native graph. Lesser feature, but real and working today.
+
+### Feature B - "Planned moves / training programs" (section 3.39) - BUILDABLE NOW
+
+What it is: up to 60 planned moves, each a target (duration/distance) for a specific activity on
+a specific day, browsed from TIME mode ("Today 1/2" screens), with on-watch guidance and 50%/
+100% completion indication; future targets shown by weekday/date. This is the dedicated
+`TrainingProgram` flash region (0x001000, 3072 B), separate from everything else.
+
+Format, now decoded from `TrainingProgramAreaConverter::{createBinary,parse,getDataPosition}`
+(medium-high confidence - decompile-derived, still no real capture to verify):
+
+    HEADER (12 bytes):
+      off 0  u32   base date (encoded from the EARLIEST move's startTime; exact date packing
+                   still TBD, but it is the reference date the watch counts day-offsets from)
+      off 4  u32   preserved verbatim from whatever u32 is already at the region start
+      off 8  u16   item count
+      off 10 u16   (unconfirmed; 0)
+    ITEM (40 bytes each, back to back from offset 12; a 0xFFFFFFFF at an item start = end):
+      off 0  u8    DAY OFFSET from the header's base date (parse does day_offset * 24h) - this
+                   is the whole "Today / Friday / 13.10" scheduling model
+      off 1  u8    completed (0/1)
+      off 2  u16   activityId
+      off 4  u32   moveId
+      off 8  u32   distance (metres)
+      off 12 u16   duration (MINUTES; createBinary divides the JSON seconds by 60)
+      off 14 u8    intensity (1-5: Easy/Moderate/Hard/VeryHard/Maximal per ServiceAdapter Plan)
+      off 15 u8    (padding, 0)
+      off 16 23B   activityName (ISO-8859, null-padded/truncated - strncpy 0x17)
+      off 39 u8    (padding)
+
+This corrects the earlier training_program.py layout in two real ways: offset 0 is a
+day-offset-from-base, not a raw timestamp (which is why start_time=0 is rejected - Finding 24 -
+and why a base date lives in the header), and the name field starts at offset 16 (23 bytes),
+not offset 15. The `Plan` SBEM tree in ServiceAdapter.xml
+(ID/Date/DailyOrdinal/Duration/Distance/Intensity/Activity.ID/Notes) is the transport format
+that `TrainingProgramAreaConverter` compiles into this binary - it corroborates the field set.
+
+Why B is buildable now where it wasn't before: the write finalization is solved (Finding 28) -
+`TrainingProgram` is HASH_WRITTEN, and training_program.py already sends no 0x0b04. So a real,
+cold-boot-durable write is achievable. The one genuine unknown is the header's base-date
+packing; everything else is pinned. Next step (needs André + watch, with the recovery tool
+ready): write one planned move dated "today", read back, and visually check whether the watch's
+TIME-mode [Next] shows a "Today" target. That is the only way to confirm the firmware acts on
+the region and to nail the base-date encoding - and it's now a safe experiment (non-firmware,
+recoverable).
+
+### Net
+
+- Feature B (planned moves) is the realistic near-term win: format decoded, write path proven,
+  one hardware trial from confirmation.
+- Feature A (guided workouts) is a real but larger RE target: the mechanism is understood
+  (declarative guidance/interval Trigger rules + native graph template, no dead compiler
+  needed), but the byte encoding needs decompile reconstruction + hardware iteration.
+
+## Finding 30: planned-moves hardware trials, 2026-08-09 - format writes cleanly but the watch won't surface the moves; honest wall reached
+
+Ran real hardware trials of the decoded planned-moves format (Finding 29). All writes applied
+and read back byte-exact; none produced a visible target on the watch (TIME -> [Next]).
+
+- Trial 1: single move, day_offset 0, base_date = Unix seconds of today. Nothing shown.
+- Confirmed the watch clock was wrong (leftover from the err:62 episodes); André fixed it to
+  the correct date. Still nothing.
+- Trial 2: three moves (today/tomorrow/+2), base_date = HOURS since Unix epoch (the decompile's
+  `day_offset * 0x18` hinted an hours base). Nothing shown - not even the future moves as
+  weekday/date targets, which is the telling part: a merely-wrong date should still surface
+  future targets, so "nothing at all" points at either a malformed item or the watch not
+  re-parsing the region.
+- Checked the DeviceSettings tree live: `0x2c sml.DeviceSettings.Sports.Plans.Source = 1` is
+  ALREADY set, so the plans-enabled flag is not the blocker. `saveTrainingProgram` in the
+  decompile is just WritePmemRaw(0x0b16)+WritePmemRawFinalize(0x0b18) - no separate refresh/
+  commit command exists to replicate, and no 0x0b04.
+- Region restored to its pre-trial state afterward; watch left clean.
+
+New structural facts learned (real, from openambit + the live watch):
+- Planned moves are referenced in DeviceSettings as `sml.DeviceSettings.Sports.Plans.Source`
+  (entry 0x2c) and completed moves link back via `DeviceLogBook...Header.PlannedMove.Id/
+  Completeness` (schema). `UseTrainingProgram`/`TrainingProgram` is a personal-settings flag
+  (openambit logstore) - 0 in openambit's test capture.
+- openambit's test-settings show no embedded plan binary, so still no ground-truth example.
+
+Honest conclusion: the storage FORMAT is decoded and a durable write works, but making the
+firmware actually DISPLAY a planned move needs one or more of {the exact base-date encoding, the
+exact item layout offset-15-vs-16, a non-zero moveId, a settings-write refresh of
+`Plans.Source` via 0x1101}, and these can't be disambiguated by blind hardware guess-and-check
+in a reasonable number of tries with no ground-truth capture (Movescount is dead; no sniff
+possible). This is the genuine wall André flagged from the start. The one remaining
+in-repo avenue not yet tried: a careful raw 0x1101 settings re-write of entry 0x2c
+`Plans.Source` as the app-triggered "refresh" - deliberately NOT attempted here because a
+hand-rolled raw settings write risks hitting the wrong entry ID (the exact bug settings_write.py
+was built to prevent), and it needs the curated-table approach extended to that entry first.
