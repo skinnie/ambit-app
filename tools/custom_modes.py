@@ -510,6 +510,97 @@ def decode(data):
     return result
 
 
+# Real, 2026-08-09 ("I see screen XX, but afaik suunto ambit can only have a max number
+# of screens that is way lower than this, please identify the correct screen number that
+# the user would see"). Confirmed live against this reference watch's own real Displays
+# data (custom_modes.py --json), cross-checked against SuuntoLink's own real "Displays"
+# screenshot counts (assets/ambit3 pcap/v2/screens sports modes/sportsmodes.JPG - "Cycling
+# 8 screens", "Walk 1 screens", etc.): every one of the watch's 7 real sport modes has a
+# real, fixed run of *built-in* screens (Compass, Navigation, Map, an Interval Timer
+# summary, and one still-unconfirmed 0x0127) appended after the user's own configurable
+# ones - "Screen 9/10/11..." was these built-in screens, not real user screens, which is
+# why the numbering looked wrong. Two real shapes confirmed so far:
+#   - GPS-capable activities (Cycling/Running/Run a route/Trekking/Indoor training/Walk -
+#     6/6 tested): a byte-identical 7-entry tail (Compass, Compass-in-mils, Navigation, a
+#     2nd Graph, Map, Interval Timer, 0x0127). Excluding it and renumbering from 1 matches
+#     SuuntoLink's own reported count exactly for every one of the 6.
+#   - Pool swimming (the one non-GPS activity tested): a shorter, real 3-entry tail
+#     (Interval Timer, an unconfirmed swim-specific 0x0124, then the same 0x0127) - also
+#     matches its own real reported count (3) exactly once excluded.
+# The very last entry being the unconfirmed 0x0127 is the one invariant confirmed across
+# all 7 tested modes regardless of activity type - a real, if not yet fully explained,
+# anchor. A mode whose own tail doesn't match either known shape falls back to 0 excluded
+# (every entry shown, numbered from 1) rather than guessing at a boundary with no real
+# evidence for it.
+_GPS_SYSTEM_TAIL = (
+    "PID_RUNNER_GPS_TEMPLATE_11_COMPASS_NAVIGATE",
+    "PID_RUNNER_GPS_TEMPLATE_11_MILS_COMPASS_NAVIGATE",
+    "PID_RUNNER_GPS_TEMPLATE_22_NAVIGATION",
+    "PID_RUNNER_GPS_TEMPLATE_1G_GRAPH",
+    "PID_RUNNER_GPS_TEMPLATE_50_MAP_DRAW",
+    "PID_RUNNER_GPS_TEMPLATE_4",
+    "0x0127",
+)
+_NON_GPS_SYSTEM_TAIL = (
+    "PID_RUNNER_GPS_TEMPLATE_4",
+    "0x0124",
+    "0x0127",
+)
+
+# Real, confirmed from SuuntoLink's own real JS source (getMaxDisplays() in
+# suunto_apps.js/sport_mode.js - a real, live client-side product config, not guessed):
+# Traverse/Traverse Alpha cap at 4 real display screens per mode; every other real variant
+# in this watch family (Ambit/Ambit2/Ambit3, everything this project's own _modelNames
+# table - see android/.../AmbitUsbModule.kt and desktop/.../HomeViewModel.qml - knows
+# about) caps at 8. Keyed on the real engineering codename (DeviceService.model / the
+# 0x0000 identity reply's own value), not a commercial name.
+_MAX_DISPLAYS_BY_VARIANT = {"Jabiru": 4, "Loon": 4}
+_DEFAULT_MAX_DISPLAYS = 8
+
+
+def max_displays_for_variant(variant):
+    return _MAX_DISPLAYS_BY_VARIANT.get(variant, _DEFAULT_MAX_DISPLAYS)
+
+
+def system_tail_length(display_templates):
+    """How many trailing entries in a real mode's own Displays list are built-in/system
+    screens (not real user-configurable "Screen N" ones) - see this module's own
+    _GPS_SYSTEM_TAIL/_NON_GPS_SYSTEM_TAIL comment for exactly what's confirmed."""
+    if tuple(display_templates[-len(_GPS_SYSTEM_TAIL):]) == _GPS_SYSTEM_TAIL:
+        return len(_GPS_SYSTEM_TAIL)
+    if tuple(display_templates[-len(_NON_GPS_SYSTEM_TAIL):]) == _NON_GPS_SYSTEM_TAIL:
+        return len(_NON_GPS_SYSTEM_TAIL)
+    return 0
+
+
+def _displays_to_json(displays):
+    """One mode's own real Displays list, JSON-shaped - `index` stays the raw 0-based
+    position (writeDisplayField's own addressing needs this unchanged), `screenNumber` is
+    the real 1-based number the user would actually see on the watch (None for a built-in
+    screen - see system_tail_length()'s own module-level comment), `isBuiltIn` flags which
+    is which."""
+    templates = [d["TemplateName"] for d in displays]
+    tail_len = system_tail_length(templates)
+    real_count = len(displays) - tail_len
+    out = []
+    for i, disp in enumerate(displays):
+        is_built_in = i >= real_count
+        out.append({
+            "index": i,
+            "screenNumber": None if is_built_in else i + 1,
+            "isBuiltIn": is_built_in,
+            "template": disp["TemplateName"],
+            "templateLabel": field_type_label(disp["TemplateName"]),
+            "fields": [
+                {"indexName": f["IndexName"], "type": f["Type"],
+                 "typeLabel": field_type_label(
+                     FIELD_TYPES.get(f["Type"], f"0x{f['Type']:04x}"))}
+                for f in disp["Fields"]
+            ],
+        })
+    return out
+
+
 def to_json(result):
     """A JSON-friendly view of decode()'s own result dict, for backend/server.py - added
     2026-08-08 alongside the real CustomModes write tools (custom_modes_rename_test.py/
@@ -539,20 +630,7 @@ def to_json(result):
             "backlightMode": s.get("BacklightModeName"),
             "displayMode": s.get("DisplayModeName"),
             "quickNavigation": s.get("QuickNavigationName"),
-            "displays": [
-                {
-                    "index": i,
-                    "template": disp["TemplateName"],
-                    "templateLabel": field_type_label(disp["TemplateName"]),
-                    "fields": [
-                        {"indexName": f["IndexName"], "type": f["Type"],
-                         "typeLabel": field_type_label(
-                             FIELD_TYPES.get(f["Type"], f"0x{f['Type']:04x}"))}
-                        for f in disp["Fields"]
-                    ],
-                }
-                for i, disp in enumerate(mode["Displays"])
-            ],
+            "displays": _displays_to_json(mode["Displays"]),
             "rules": mode["Rules"],
         })
 
