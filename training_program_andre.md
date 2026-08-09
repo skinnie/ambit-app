@@ -2147,3 +2147,39 @@ training V1, Tabata, ...). No compiler, no network, no account. Validated offlin
 (Finding 41, Real Temerature). This is the concrete, working guided-workout revival for Ambit3:
 install real pre-compiled interval/workout apps; authoring our own remains blocked on an
 Ambit3-compatible compiler.
+
+## Finding 43: even an OFFICIAL pre-compiled workout ("Couch-to-5K") shows "--" - the real split is simple-continuous vs stateful apps (2026-08-09)
+
+Installed the official catalog "Couch-to-5K Week1" (ruleId 10020607, real executable binary) via
+our writer onto Walk field 0 (verified wired, hash cold-boot-safe). André tested properly: GPS
+fix, auto-pause off, recording running 20s. Still "--".
+
+This CORRECTS Finding 41's "official runs / community doesn't" framing:
+- Real Temerature (official, header f0=8 f1=10 real-RuleID) -> RENDERS.
+- Couch-to-5K (official, IDENTICAL header shape, real RuleID 10020607) -> "--" even recording.
+- Fixed100 (community, RuleID=0) -> "--".
+
+Couch-to-5K's binary strings: RESULT, ?prefix/?postfix/?title, SUUNTO_DURATION, WALK/WARMUP/JOG/
+DONE - a clean TIME-based app (no GPS/lap dependency) that should show a phase countdown while
+recording. It doesn't. So the real split is NOT official-vs-community and NOT the header - it's:
+apps that output a simple CONTINUOUS value (Real Temerature = live sensor) render via our install;
+apps that carry STATE / own-variables / a phase machine (Couch-to-5K, our workouts, Fixed100) do
+not produce a visible value.
+
+Leading hypothesis: SuuntoLink's install writes something our install does not - most likely the
+app's OWN-VARIABLE initial values (a stateful app whose vars are never initialized stays stuck ->
+RESULT never set -> "--"), and/or a per-app setup step (e.g. the 0x0b1b write_start bracket seen
+in real captures but never replicated, Finding 19). Real Temerature has no own-vars, so it works;
+stateful apps don't. This is unproven - the own-variable storage location on-device isn't
+identified (not obviously in the Apps entry we decode).
+
+Honest consolidated status of the whole app/workout-install effort:
+- Apps/CustomModes install FORMAT + finalization: correct, hardware-proven (Findings 25-28,
+  Real Temerature renders).
+- Working on-watch result: only simple continuous-output apps render via our install.
+- Interval/workout/stateful apps (official OR community): install cleanly but show "--" - NOT
+  yet working. Real remaining gaps: (a) community-compiler output non-execution (Finding 41),
+  and (b) stateful-app initialization (this finding) - the latter is the next RE lead (find where
+  own-variable values / per-app setup are written by SuuntoLink; a real capture of SuuntoLink
+  installing a stateful app would show it - the genuine-capture gap from Finding 19).
+Watch restored clean, byte-exact.
