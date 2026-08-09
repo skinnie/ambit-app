@@ -407,9 +407,20 @@ def run_nav(args):
     print("read-only: 0x0b17 reads flash, nothing is written")
     link.open()
     regions = {}
+    # Real, 2026-08-09 ("check if we can implement the same speed hack for routes and
+    # POis that we did for activities") - POIs are already fast (write_nav.py's own `pois`
+    # action, a single small SBEM query, no flash region read at all - nothing to optimize
+    # there). Routes had a real, confirmed-dead-weight read: show_navigation()/
+    # nav_summary_json() (grepped directly) never reference Apps or TrainingProgram at
+    # all - only Waypoints/Routes. Apps alone is 200,000 bytes, by far the single biggest
+    # region this function reads, for data a plain "show my routes/POIs" call never uses.
+    # --save is the one real exception - milestone 4's actual backup use of this same
+    # function genuinely does want every region, so it still gets the full read.
     for base, (name, size, _) in sorted(F.REGIONS.items()):
         if name == "GpsSGEE":
             continue  # 140000 bytes of ephemeris, nothing to do with navigation
+        if name in ("Apps", "TrainingProgram") and not args.save:
+            continue
         regions[name] = read_flash(link, base, size, label=name)
 
     flash = FlashImage()
