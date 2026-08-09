@@ -71,7 +71,7 @@ Flickable {
 
                 Text { text: qsTr("Add a POI"); font.bold: true; color: Theme.text }
 
-                TextField {
+                RoundedTextField {
                     width: parent.width
                     placeholderText: qsTr("Name")
                     onTextChanged: root.poiName = text
@@ -79,13 +79,13 @@ Flickable {
                 Row {
                     width: parent.width
                     spacing: Theme.spacingSmall
-                    TextField {
+                    RoundedTextField {
                         width: (parent.width - Theme.spacingSmall) / 2
                         placeholderText: qsTr("Latitude")
                         text: root.poiLat.toString()
                         onTextChanged: { const v = parseFloat(text); if (!isNaN(v)) root.poiLat = v; }
                     }
-                    TextField {
+                    RoundedTextField {
                         width: (parent.width - Theme.spacingSmall) / 2
                         placeholderText: qsTr("Longitude")
                         text: root.poiLon.toString()

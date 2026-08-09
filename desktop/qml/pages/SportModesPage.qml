@@ -175,7 +175,7 @@ Flickable {
                                 font.pixelSize: Theme.fontSizeCaption
                                 font.italic: true
                             }
-                            Button {
+                            RoundedButton {
                                 id: expandBtn
                                 checkable: true
                                 anchors.verticalCenter: parent.verticalCenter
@@ -198,7 +198,7 @@ Flickable {
                             Text { text: qsTr("Name"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
                             Row {
                                 spacing: 6
-                                TextField {
+                                RoundedTextField {
                                     id: nameField
                                     width: 200
                                     enabled: !modeCard.busy
@@ -231,7 +231,7 @@ Flickable {
                                         when: !nameField.activeFocus
                                     }
                                 }
-                                Button {
+                                RoundedButton {
                                     text: qsTr("Rename")
                                     enabled: !modeCard.busy && nameField.text.length > 0
                                              && nameField.text !== modeCard.modelData.name
@@ -246,14 +246,14 @@ Flickable {
                             Text { text: qsTr("Autolap (m, 0 = off)"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
                             Row {
                                 spacing: 6
-                                TextField {
+                                RoundedTextField {
                                     id: autolapField
                                     width: 80
                                     validator: IntValidator { bottom: 0; top: 100000 }
                                     text: modeCard.modelData.autolap
                                     enabled: !modeCard.busy
                                 }
-                                Button {
+                                RoundedButton {
                                     text: qsTr("Set")
                                     enabled: !modeCard.busy && autolapField.text !== String(modeCard.modelData.autolap)
                                     onClicked: CustomModesService.writeField(modeCard.modelData.name,
@@ -288,7 +288,7 @@ Flickable {
                             Column {
                                 spacing: 2
                                 Text { text: qsTr("Low (bpm)"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
-                                TextField {
+                                RoundedTextField {
                                     id: hrLowField
                                     width: 70
                                     validator: IntValidator { bottom: 0; top: 255 }
@@ -299,7 +299,7 @@ Flickable {
                             Column {
                                 spacing: 2
                                 Text { text: qsTr("High (bpm)"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
-                                TextField {
+                                RoundedTextField {
                                     id: hrHighField
                                     width: 70
                                     validator: IntValidator { bottom: 0; top: 255 }
@@ -310,7 +310,7 @@ Flickable {
                             Column {
                                 spacing: 2
                                 Text { text: " "; font.pixelSize: Theme.fontSizeLabel }  // vertical alignment spacer
-                                Button {
+                                RoundedButton {
                                     text: qsTr("Set")
                                     enabled: !modeCard.busy
                                     onClicked: CustomModesService.writeField(modeCard.modelData.name, {
@@ -335,7 +335,7 @@ Flickable {
                                         id: podRow
                                         required property var modelData
                                         spacing: 4
-                                        CheckBox {
+                                        RoundedCheckBox {
                                             checked: (modeCard.modelData.useHw & podRow.modelData.bit) !== 0
                                             enabled: !modeCard.busy
                                             onToggled: {

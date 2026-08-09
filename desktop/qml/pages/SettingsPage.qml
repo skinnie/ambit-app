@@ -223,7 +223,7 @@ Flickable {
                         Row {
                             visible: modelData.kind === "number" && parent.hasRange
                             spacing: 8
-                            Slider {
+                            RoundedSlider {
                                 anchors.verticalCenter: parent.verticalCenter
                                 width: 160
                                 from: modelData.min
@@ -261,14 +261,14 @@ Flickable {
                         Row {
                             visible: modelData.kind === "number" && !parent.hasRange && parent.isHomeCoord
                             spacing: 8
-                            TextField {
+                            RoundedTextField {
                                 id: coordField
                                 anchors.verticalCenter: parent.verticalCenter
                                 width: 110
                                 text: modelData.value.toFixed(6)
                                 enabled: SettingsWriteService.writingKey !== modelData.key
                             }
-                            Button {
+                            RoundedButton {
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: qsTr("Set")
                                 enabled: SettingsWriteService.writingKey !== modelData.key
@@ -387,12 +387,12 @@ Flickable {
                                 "Developer Settings. Stored locally on this computer, not " +
                                 "sent anywhere except intervals.icu itself.")
                 }
-                TextField {
+                RoundedTextField {
                     id: athleteIdField
                     width: parent.width
                     placeholderText: qsTr("Athlete ID (e.g. i12345)")
                 }
-                TextField {
+                RoundedTextField {
                     id: apiKeyField
                     width: parent.width
                     placeholderText: qsTr("API key")
@@ -400,7 +400,7 @@ Flickable {
                 }
                 Row {
                     spacing: Theme.spacingSmall
-                    Button {
+                    RoundedButton {
                         text: qsTr("Save")
                         enabled: athleteIdField.text.length > 0 && apiKeyField.text.length > 0
                         onClicked: {
@@ -408,7 +408,7 @@ Flickable {
                             intervalsIcuDialog.close()
                         }
                     }
-                    Button {
+                    RoundedButton {
                         text: qsTr("Disconnect")
                         visible: ConnectionsService.intervalsIcuConnected
                         onClicked: {
@@ -445,7 +445,7 @@ Flickable {
                                 "this computer, not sent anywhere except runalyze.com " +
                                 "itself.")
                 }
-                TextField {
+                RoundedTextField {
                     id: runalyzeApiKeyField
                     width: parent.width
                     placeholderText: qsTr("API key")
@@ -453,7 +453,7 @@ Flickable {
                 }
                 Row {
                     spacing: Theme.spacingSmall
-                    Button {
+                    RoundedButton {
                         text: qsTr("Save")
                         enabled: runalyzeApiKeyField.text.length > 0
                         onClicked: {
@@ -461,7 +461,7 @@ Flickable {
                             runalyzeDialog.close()
                         }
                     }
-                    Button {
+                    RoundedButton {
                         text: qsTr("Disconnect")
                         visible: ConnectionsService.runalyzeConnected
                         onClicked: {
@@ -502,12 +502,12 @@ Flickable {
                                 "your browser; approving there sends you back here " +
                                 "automatically.")
                 }
-                TextField {
+                RoundedTextField {
                     id: stravaClientIdField
                     width: parent.width
                     placeholderText: qsTr("Client ID")
                 }
-                TextField {
+                RoundedTextField {
                     id: stravaClientSecretField
                     width: parent.width
                     placeholderText: qsTr("Client Secret")
@@ -530,7 +530,7 @@ Flickable {
                 }
                 Row {
                     spacing: Theme.spacingSmall
-                    Button {
+                    RoundedButton {
                         text: ConnectionsService.stravaConnecting
                             ? qsTr("Connecting...") : qsTr("Connect")
                         enabled: !ConnectionsService.stravaConnecting
@@ -539,7 +539,7 @@ Flickable {
                         onClicked: ConnectionsService.connectStrava(
                             stravaClientIdField.text, stravaClientSecretField.text)
                     }
-                    Button {
+                    RoundedButton {
                         text: qsTr("Disconnect")
                         visible: ConnectionsService.stravaConnected
                         onClicked: {
@@ -624,20 +624,20 @@ Flickable {
                 Row {
                     width: parent.width
                     spacing: Theme.spacingSmall
-                    TextField {
+                    RoundedTextField {
                         id: latField
                         width: (parent.width - Theme.spacingSmall) / 2
                         placeholderText: qsTr("Latitude")
                         text: WeatherService.latitude.toString()
                     }
-                    TextField {
+                    RoundedTextField {
                         id: lonField
                         width: (parent.width - Theme.spacingSmall) / 2
                         placeholderText: qsTr("Longitude")
                         text: WeatherService.longitude.toString()
                     }
                 }
-                Button {
+                RoundedButton {
                     text: qsTr("Apply")
                     onClicked: {
                         const lat = parseFloat(latField.text);
