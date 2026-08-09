@@ -44,6 +44,10 @@
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO,  LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
+/* Defined in jni_bridge.cpp. Replays notification bytes that arrived before
+ * g_device was published (see the call site in the handshake below). */
+extern void jni_ble_flush_rx_stash(void);
+
 #define BLE_HEADER_LEN   12
 #define BLE_TRAILER_LEN  4   /* CRC32, little-endian */
 #define BLE_CHUNK_SIZE   20
@@ -439,6 +443,18 @@ int libambit_ble_handshake_device_info(ambit_object_t *object, ambit_device_info
     ctx->handshake_mode = 1;
     ctx->hs_head = ctx->hs_tail = 0;
     pthread_mutex_unlock(&ctx->lock);
+
+    /* Replay any notification bytes that arrived before g_device/handshake_mode
+     * were live and were parked in the pre-init stash (jni_bridge.cpp), then go
+     * live. The watch's 0x0002 hello can land on the binder thread the instant
+     * it subscribes — before nativeAmbitBleInit publishes g_device on the
+     * executor thread. The Ambit3 re-sends its 0x1201 opener every ~5s so a lost
+     * first one didn't matter; the Kailash (Hoopoe) sends its 0x0002 hello
+     * exactly once, so a dropped hello hung this handshake for the full timeout
+     * (zero "handshake: got frame" logs). Must run here — after handshake_mode=1
+     * so replayed frames land in hs_queue, and with ctx->lock released so
+     * ambit_ble_on_notify can take it. (2026-08-09.) */
+    jni_ble_flush_rx_stash();
 
     struct timespec deadline;
     clock_gettime(CLOCK_REALTIME, &deadline);

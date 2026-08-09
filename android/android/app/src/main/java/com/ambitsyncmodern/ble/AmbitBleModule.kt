@@ -96,6 +96,10 @@ class AmbitBleModule(private val reactContext: ReactApplicationContext) :
     // ─── Native (implemented in jni_bridge.cpp / protocol_ble.c) ─────────────
     private external fun nativeAmbitBleInit(vid: Int, pid: Int): Boolean
     private external fun nativeAmbitBleOnNotify(chunk: ByteArray)
+    // Arms the native pre-init RX stash before the watch can write, so its
+    // opening frame isn't dropped in the window before nativeAmbitBleInit
+    // publishes g_device. See jni_ble_reset_rx_stash / jni_ble_flush_rx_stash.
+    private external fun nativeAmbitBleResetRx()
 
     private val executor = Executors.newSingleThreadExecutor()
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -129,6 +133,12 @@ class AmbitBleModule(private val reactContext: ReactApplicationContext) :
     // on AmbitUsbModule work exactly as over USB — same shared native g_device.
     @ReactMethod
     fun scanAndConnect(promise: Promise) {
+        // Arm the native RX stash now — before we scan/connect, and therefore
+        // before the watch can write its opening frame. Any bytes that arrive
+        // before nativeAmbitBleInit publishes g_device get parked and replayed
+        // instead of dropped (the Kailash sends its 0x0002 hello only once).
+        nativeInitStarted = false
+        nativeAmbitBleResetRx()
         if (!hasBlePermissions()) {
             pendingPermissionPromise = promise
             requestBlePermissions()
@@ -152,9 +162,15 @@ class AmbitBleModule(private val reactContext: ReactApplicationContext) :
         }
 
         connectPromise = promise
-        val filters = listOf(
-            ScanFilter.Builder().setServiceUuid(ParcelUuid(NSP_SERVICE_UUID)).build()
-        )
+        // Scan UNFILTERED (2026-08-09) and match in the callback. The watch
+        // advertises the NSP service as a *solicitation* ("connect to me if you
+        // host this"), not as a normal advertised service class — and Android's
+        // ScanFilter.setServiceUuid() matches only the latter. The Ambit3 happens
+        // to advertise it both ways so a service-UUID filter caught it, but the
+        // Kailash only solicits, so that filter never matched it (real hardware:
+        // scan registered, zero results). Checking the solicitation UUID + name
+        // ourselves catches every device in the family regardless of how each one
+        // advertises. No filter list -> we see all devices and decide below.
         val settings = ScanSettings.Builder()
             .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
             .build()
@@ -170,12 +186,22 @@ class AmbitBleModule(private val reactContext: ReactApplicationContext) :
         mainHandler.postDelayed(timeoutRunnable, SCAN_TIMEOUT_MS)
 
         try {
-            scanner.startScan(filters, settings, object : ScanCallback() {
+            scanner.startScan(emptyList(), settings, object : ScanCallback() {
                 override fun onScanResult(callbackType: Int, result: ScanResult) {
-                    val name = result.device.name ?: result.scanRecord?.deviceName
-                    val looksCompatible = name == null || COMPATIBLE_NAME_PREFIXES.any { name.startsWith(it) }
-                    if (!looksCompatible) return // matched the service UUID but not the expected name — be conservative
+                    val record = result.scanRecord
+                    val nspTarget = ParcelUuid(NSP_SERVICE_UUID)
+                    // Match if the advertisement carries the NSP service UUID as a
+                    // normal service class OR as a solicitation (the Kailash case),
+                    // or by a known name prefix as a fallback.
+                    val advertisesNsp =
+                        (record?.serviceUuids?.contains(nspTarget) == true) ||
+                        (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+                            record?.serviceSolicitationUuids?.contains(nspTarget) == true)
+                    val name = result.device.name ?: record?.deviceName
+                    val nameMatches = name != null && COMPATIBLE_NAME_PREFIXES.any { name.startsWith(it) }
+                    if (!advertisesNsp && !nameMatches) return // not one of ours — ignore (unfiltered scan sees everything)
 
+                    Log.d("AmbitBleModule", "scan match: name=$name advertisesNsp=$advertisesNsp addr=${result.device.address}")
                     mainHandler.removeCallbacks(timeoutRunnable)
                     try { scanner.stopScan(this) } catch (_: SecurityException) {}
                     connectToDevice(result.device)
@@ -297,6 +323,8 @@ class AmbitBleModule(private val reactContext: ReactApplicationContext) :
         ) {
             // Watch -> phone NSP data lands here (writes to c6339440).
             if (characteristic.uuid == NSP_WRITE_CHAR_UUID) {
+                Log.d("AmbitBleModule", "rx write ${value.size}B: " +
+                    value.take(6).joinToString("") { "%02x".format(it) })
                 nativeAmbitBleOnNotify(value)
             }
             if (responseNeeded) {

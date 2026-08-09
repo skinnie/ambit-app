@@ -8,6 +8,7 @@
 #include <vector>
 #include <set>
 #include <cmath>
+#include <pthread.h>
 
 // ─── libambit ─────────────────────────────────────────────────────────────────
 #include "libambit/libambit.h"
@@ -113,6 +114,46 @@ static std::vector<std::string> g_log_cache;
 // libambit_android.c. (2026-08-09, HANDOFF.md Milestone 7 item 9.)
 extern "C" void jni_ble_set_active_object(ambit_object_t *obj) {
     g_device = obj;
+}
+
+// ─── Pre-init RX stash (2026-08-09) ────────────────────────────────────────────
+// The watch's opening frame reaches nativeAmbitBleOnNotify (binder thread) the
+// instant it subscribes to our notify CCCD — which is BEFORE nativeAmbitBleInit
+// (executor thread) has run far enough to publish g_device. The old
+// `if (!g_device) return` guard silently dropped those bytes. The Ambit3 masks
+// this by re-sending its 0x1201 opener every ~5s, but the Kailash (Hoopoe) sends
+// its 0x0002 hello exactly once, so the dropped hello hung the handshake for the
+// full 20s timeout with zero frames seen.
+//
+// Fix: until the handshake is armed (g_rx_ready), stash incoming bytes in order
+// instead of dropping them; the handshake calls jni_ble_flush_rx_stash() once
+// g_device + handshake_mode are live to replay them and switch to live feed. The
+// stash-vs-live decision, the replay, and the ready flip all happen under
+// g_rx_mtx, so a write racing the flip is serialized (stashed-then-replayed or
+// fed-live, never lost or reordered). Armed fresh at scanAndConnect() time via
+// jni_ble_reset_rx_stash() (before the watch can write), which also covers
+// reconnects without an app restart.
+static pthread_mutex_t g_rx_mtx = PTHREAD_MUTEX_INITIALIZER;
+static std::vector<uint8_t> g_rx_stash;
+static bool g_rx_ready = false;   // false: stash incoming bytes; true: feed live
+
+extern "C" void jni_ble_reset_rx_stash(void) {
+    pthread_mutex_lock(&g_rx_mtx);
+    g_rx_ready = false;
+    g_rx_stash.clear();
+    pthread_mutex_unlock(&g_rx_mtx);
+}
+
+extern "C" void jni_ble_flush_rx_stash(void) {
+    pthread_mutex_lock(&g_rx_mtx);
+    if (g_device && !g_rx_stash.empty()) {
+        LOGI("BLE rx stash: replaying %zu pre-init bytes into the handshake",
+             g_rx_stash.size());
+        ambit_ble_on_notify(g_device, g_rx_stash.data(), g_rx_stash.size());
+    }
+    g_rx_stash.clear();
+    g_rx_ready = true;
+    pthread_mutex_unlock(&g_rx_mtx);
 }
 
 // IDs des activités déjà synchronisées — format "YYYYMMDDTHHMMSS"
@@ -873,12 +914,38 @@ JNIEXPORT void JNICALL
 Java_com_ambitsyncmodern_ble_AmbitBleModule_nativeAmbitBleOnNotify(
         JNIEnv *env, jobject /* thiz */, jbyteArray chunk)
 {
-    if (!g_device) return; // late/stray notification after disconnect — ignore
-
     jsize len = env->GetArrayLength(chunk);
     jbyte *bytes = env->GetByteArrayElements(chunk, nullptr);
-    ambit_ble_on_notify(g_device, (const uint8_t *)bytes, (size_t)len);
+
+    pthread_mutex_lock(&g_rx_mtx);
+    if (!g_rx_ready) {
+        // Handshake not armed yet (g_device may still be null) — park the bytes
+        // in order rather than dropping them; jni_ble_flush_rx_stash() replays
+        // them once the handshake is live. See the stash comment above.
+        g_rx_stash.insert(g_rx_stash.end(),
+                          (const uint8_t *)bytes, (const uint8_t *)bytes + len);
+        pthread_mutex_unlock(&g_rx_mtx);
+    } else {
+        pthread_mutex_unlock(&g_rx_mtx);
+        if (g_device) // live: g_device null here means a stray post-disconnect notify
+            ambit_ble_on_notify(g_device, (const uint8_t *)bytes, (size_t)len);
+    }
     env->ReleaseByteArrayElements(chunk, bytes, JNI_ABORT);
+}
+
+/**
+ * nativeAmbitBleResetRx
+ *
+ * Called from AmbitBleModule.scanAndConnect() before any scan/connect — i.e.
+ * before the watch can write — to arm the pre-init RX stash for a fresh
+ * connection (also re-arms it for a reconnect without an app restart). See the
+ * stash comment on jni_ble_reset_rx_stash / jni_ble_flush_rx_stash above.
+ */
+JNIEXPORT void JNICALL
+Java_com_ambitsyncmodern_ble_AmbitBleModule_nativeAmbitBleResetRx(
+        JNIEnv * /* env */, jobject /* thiz */)
+{
+    jni_ble_reset_rx_stash();
 }
 
 } // extern "C"
