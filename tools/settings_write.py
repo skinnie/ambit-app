@@ -58,6 +58,14 @@ AMBIT3_SETTINGS = {
     "time_format": "Time.Format",
     "gps_time_keeping": "Time.GPSTimeKeeping",
     "units_mode": "Units.Mode",
+    # Real, 2026-08-09 ("check if meters or imperial or advanced, and how the watch deals
+    # with it") - Units.Mode (above) is the real master switch (0=Metric, 1=Imperial,
+    # 2=Advanced, schema-confirmed); this per-unit field only actually applies when
+    # units_mode is Advanced - Metric/Imperial force every individual unit (this one
+    # included) to follow the master choice. Added for Sport Modes' own real-unit Autolap
+    # display, not because it's on the General Settings screenshot this table's other
+    # entries were curated from - same real 0x1100/0x1101 mechanism regardless.
+    "distance_unit": "Units.Distance",
     "gps_position_format": "GpsPositionFormat",
     "compass_declination": "Compass.Declination",
     "button_lock_time_mode": "ButtonLock.TimeMode",

@@ -67,7 +67,36 @@ Flickable {
         if (HomeViewModel.isKailash) return
         CustomModesService.refreshFieldTypes()
         CustomModesService.refresh()
+        // Real, 2026-08-09 ("check if meters or imperial or advanced, and how the watch
+        // deals with it") - needed for the real-unit Autolap display below. Explicit ""
+        // (Ambit3) rather than trusting SettingsWriteService.device's already-set value -
+        // this is a shared singleton, and a prior visit to Settings while a Kailash was
+        // connected could otherwise leave it pointed at Kailash's own smaller table.
+        SettingsWriteService.device = ""
+        SettingsWriteService.refresh()
     }
+
+    // Real, 2026-08-09 ("Autolap...let's make mit more elegant with a toggle => off or
+    // when on value in the units of the watch (check if meters or imperial or advanced,
+    // and how the watch deals with it)"). Units.Mode is the real master switch
+    // (0=Metric, 1=Imperial, 2=Advanced, schema-confirmed) - Metric/Imperial force every
+    // individual unit to follow the master choice; only in Advanced does the watch's own
+    // separate Units.Distance (0=km, 1=mi) actually apply. Falls back to km (Metric) if
+    // settings haven't loaded yet rather than showing nothing.
+    function _settingValue(key, fallback) {
+        for (const s of SettingsWriteService.settings) {
+            if (s.key === key) return s.value
+        }
+        return fallback
+    }
+    readonly property bool autolapUsesMiles: {
+        const mode = _settingValue("units_mode", 0)
+        if (mode === 1) return true
+        if (mode === 2) return _settingValue("distance_unit", 0) === 1
+        return false
+    }
+    readonly property real autolapUnitDivisor: autolapUsesMiles ? 1609.344 : 1000
+    readonly property string autolapUnitSuffix: autolapUsesMiles ? qsTr("mi") : qsTr("km")
 
     Text {
         visible: HomeViewModel.isKailash
@@ -240,24 +269,83 @@ Flickable {
                             }
                         }
 
-                        // --- Autolap ---
+                        // --- Autolap - real, 2026-08-09 ("let's make mit more elegant
+                        // with a toggle => off or when on value in the units of the
+                        // watch"). The raw field is still real meters, 0=off (unchanged,
+                        // confirmed via SuuntoLink's own real Autolap screen - assets/
+                        // ambit3 pcap/v2/screens sports modes/autolap.JPG, a plain "Use
+                        // autolap" checkbox + a distance shown in the real unit, "1.0 km"
+                        // there) - this only changes how it's presented: a toggle instead
+                        // of a raw-meters text field, and the value converted to/from
+                        // whichever unit root.autolapUnitSuffix says the watch is
+                        // actually configured for (see that property's own comment). ---
                         Column {
                             spacing: 2
-                            Text { text: qsTr("Autolap (m, 0 = off)"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
+                            Text { text: qsTr("Autolap"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
                             Row {
                                 spacing: 6
+                                RoundedSwitch {
+                                    id: autolapSwitch
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    enabled: !modeCard.busy
+                                    // A plain `checked: ...` binding here would suffer the
+                                    // exact same footgun the Name field's own comment
+                                    // documents (AbstractButton's click-handling assigns
+                                    // `checked` itself, one-shot-breaking a declarative
+                                    // binding) - a real risk for any interactive
+                                    // checked/text property, not just TextField.text.
+                                    Binding {
+                                        target: autolapSwitch
+                                        property: "checked"
+                                        value: modeCard.modelData.autolap > 0
+                                    }
+                                    onToggled: {
+                                        if (checked) {
+                                            // SuuntoLink's own real Autolap screen shows
+                                            // "1.0" as its example value when enabling -
+                                            // used as the real default here too, in
+                                            // whichever unit the watch is actually in.
+                                            CustomModesService.writeField(modeCard.modelData.name,
+                                                { "Autolap": Math.round(1 * root.autolapUnitDivisor) })
+                                        } else {
+                                            CustomModesService.writeField(modeCard.modelData.name,
+                                                { "Autolap": 0 })
+                                        }
+                                    }
+                                }
                                 RoundedTextField {
                                     id: autolapField
-                                    width: 80
-                                    validator: IntValidator { bottom: 0; top: 100000 }
-                                    text: modeCard.modelData.autolap
+                                    visible: autolapSwitch.checked
+                                    width: 70
                                     enabled: !modeCard.busy
+                                    validator: DoubleValidator {
+                                        bottom: 0; decimals: 2
+                                        notation: DoubleValidator.StandardNotation
+                                    }
+                                    Binding {
+                                        target: autolapField
+                                        property: "text"
+                                        value: (modeCard.modelData.autolap / root.autolapUnitDivisor).toFixed(2)
+                                        when: !autolapField.activeFocus
+                                    }
+                                }
+                                Text {
+                                    visible: autolapSwitch.checked
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    text: root.autolapUnitSuffix
+                                    color: Theme.mutedText
+                                    font.pixelSize: Theme.fontSizeLabel
                                 }
                                 RoundedButton {
+                                    visible: autolapSwitch.checked
                                     text: qsTr("Set")
-                                    enabled: !modeCard.busy && autolapField.text !== String(modeCard.modelData.autolap)
-                                    onClicked: CustomModesService.writeField(modeCard.modelData.name,
-                                        { "Autolap": parseInt(autolapField.text || "0") })
+                                    enabled: !modeCard.busy
+                                    onClicked: {
+                                        const parsed = parseFloat(autolapField.text);
+                                        if (isNaN(parsed) || parsed <= 0) return;
+                                        CustomModesService.writeField(modeCard.modelData.name,
+                                            { "Autolap": Math.round(parsed * root.autolapUnitDivisor) })
+                                    }
                                 }
                             }
                         }
