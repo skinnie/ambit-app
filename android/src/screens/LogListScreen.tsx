@@ -15,14 +15,14 @@ import { readGpxFile, listGpxFiles } from '../services/GpxService';
 import { extractGpxMetadata } from '../services/GpxParser';
 import RNFS from 'react-native-fs';
 import { t, dateLocale } from '../i18n';
-import { useTheme } from '../theme/useTheme';
+import { useV3Theme } from '../theme/v3';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'LogList'>;
 
 const ALL = t.all;
 
 export default function LogListScreen() {
-  const theme = useTheme();
+  const theme = useV3Theme();
   const styles = createStyles(theme);
   const navigation = useNavigation<Nav>();
   const [activities, setActivities] = useState<ActivityRecord[]>([]);
@@ -262,7 +262,7 @@ function formatDist(meters: number): string {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const createStyles = (t: ReturnType<typeof useTheme>) => StyleSheet.create({
+const createStyles = (t: ReturnType<typeof useV3Theme>) => StyleSheet.create({
   root: { flex: 1, backgroundColor: t.background },
   list: { flex: 1, padding: 12 },
   filterBar: { maxHeight: 52, backgroundColor: t.background },
@@ -270,45 +270,53 @@ const createStyles = (t: ReturnType<typeof useTheme>) => StyleSheet.create({
   chip: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: t.surfaceHigh,
+    backgroundColor: t.card,
     borderRadius: 999,
     paddingHorizontal: 14,
     paddingVertical: 6,
     borderWidth: 1,
-    borderColor: t.outline,
+    borderColor: t.mutedText + '33',
   },
+  // v3.0 UI port - active filter chip picks up the same tinted-primary treatment as
+  // primitives.tsx's own Chip (a real selected/status state, not just a color swap).
   chipActive: {
-    backgroundColor: t.surface,
-    borderColor: t.text,
+    backgroundColor: t.primary + '1F',
+    borderColor: t.primary,
   },
   chipIcon: { fontSize: 13 },
-  chipText: { fontSize: 13, color: t.textMuted, fontWeight: '500' },
-  chipTextActive: { color: t.text, fontWeight: '700' },
+  chipText: { fontSize: 13, color: t.mutedText, fontWeight: '500' },
+  chipTextActive: { color: t.primary, fontWeight: '700' },
   empty: {
     flex: 1, alignItems: 'center', justifyContent: 'center',
     backgroundColor: t.background, padding: 32,
   },
   emptyIcon: { fontSize: 48, marginBottom: 16 },
   emptyText: { fontSize: 18, color: t.text, fontWeight: '600', marginBottom: 8 },
-  emptyHint: { fontSize: 13, color: t.textMuted, textAlign: 'center' },
+  emptyHint: { fontSize: 13, color: t.mutedText, textAlign: 'center' },
   emptyFilter: { paddingVertical: 40, alignItems: 'center' },
-  emptyFilterText: { color: t.textMuted, fontSize: 14 },
-  deleteHint: { fontSize: 11, color: t.textMuted, textAlign: 'center', marginTop: 8, marginBottom: 16 },
+  emptyFilterText: { color: t.mutedText, fontSize: 14 },
+  deleteHint: { fontSize: 11, color: t.mutedText, textAlign: 'center', marginTop: 8, marginBottom: 16 },
+  // Card.qml's own real shadow values, applied here directly (not via the <Card> component,
+  // since this is a TouchableOpacity row, not a plain surface) so the activity list matches
+  // every other v3-themed surface in the app.
   card: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: t.surface,
-    borderColor: t.outline,
-    borderWidth: 1,
-    borderRadius: 14,
+    backgroundColor: t.card,
+    borderRadius: 16,
     padding: 16,
     marginBottom: 10,
+    elevation: 3,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.14,
+    shadowRadius: 6,
   },
   cardLeft: { flex: 1 },
   cardDate: { fontSize: 15, color: t.text, fontWeight: '600', marginBottom: 2 },
-  cardType: { fontSize: 12, color: t.textMuted, marginBottom: 3 },
-  cardSub: { fontSize: 13, color: t.textMuted },
+  cardType: { fontSize: 12, color: t.mutedText, marginBottom: 3 },
+  cardSub: { fontSize: 13, color: t.mutedText },
   cardRight: { alignItems: 'flex-end' },
-  cardDPlus: { fontSize: 13, color: t.textMuted, marginBottom: 4 },
-  cardArrow: { fontSize: 22, color: t.textMuted },
+  cardDPlus: { fontSize: 13, color: t.mutedText, marginBottom: 4 },
+  cardArrow: { fontSize: 22, color: t.mutedText },
 });

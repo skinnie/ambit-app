@@ -2,7 +2,7 @@ import React, { useCallback, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, PanResponder, Dimensions } from 'react-native';
 import Svg, { Path, Line, Text as SvgText, Circle } from 'react-native-svg';
 import { TrackPoint, ElevationStats } from '../services/GpxParser';
-import { useTheme } from '../theme/useTheme';
+import { useV3Theme } from '../theme/v3';
 
 interface Props {
   points: TrackPoint[];
@@ -16,7 +16,7 @@ const CHART_HEIGHT = 120;
 const PADDING = { top: 8, bottom: 24, left: 36, right: 8 };
 
 export default function ElevationChart({ points, stats, externalProgress, onScrub, onScrubEnd }: Props) {
-  const theme = useTheme();
+  const theme = useV3Theme();
   const styles = createStyles(theme);
   const screenWidth = Dimensions.get('window').width;
   const chartW = screenWidth - PADDING.left - PADDING.right;
@@ -126,7 +126,7 @@ export default function ElevationChart({ points, stats, externalProgress, onScru
         <SvgText
           x={PADDING.left - 4}
           y={PADDING.top + 6}
-          fill={theme.textMuted}
+          fill={theme.mutedText}
           fontSize={9}
           textAnchor="end"
         >
@@ -135,7 +135,7 @@ export default function ElevationChart({ points, stats, externalProgress, onScru
         <SvgText
           x={PADDING.left - 4}
           y={PADDING.top + chartH}
-          fill={theme.textMuted}
+          fill={theme.mutedText}
           fontSize={9}
           textAnchor="end"
         >
@@ -196,7 +196,7 @@ export default function ElevationChart({ points, stats, externalProgress, onScru
         <SvgText
           x={PADDING.left}
           y={CHART_HEIGHT - 4}
-          fill={theme.textMuted}
+          fill={theme.mutedText}
           fontSize={9}
         >
           0
@@ -204,7 +204,7 @@ export default function ElevationChart({ points, stats, externalProgress, onScru
         <SvgText
           x={PADDING.left + chartW - 4}
           y={CHART_HEIGHT - 4}
-          fill={theme.textMuted}
+          fill={theme.mutedText}
           fontSize={9}
           textAnchor="end"
         >
@@ -228,10 +228,10 @@ function haversineM(lat1: number, lon1: number, lat2: number, lon2: number): num
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-function createStyles(t: ReturnType<typeof useTheme>) {
+function createStyles(t: ReturnType<typeof useV3Theme>) {
   return StyleSheet.create({
     container: {
-      backgroundColor: t.surface,
+      backgroundColor: t.card,
       paddingTop: 4,
     },
     legend: {
@@ -240,7 +240,7 @@ function createStyles(t: ReturnType<typeof useTheme>) {
     },
     legendItem: { fontSize: 11 },
     legendStat: { color: t.text, fontWeight: '600' },
-    legendGray: { color: t.textMuted },
+    legendGray: { color: t.mutedText },
     svg: {},
   });
 }

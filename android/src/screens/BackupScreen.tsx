@@ -4,7 +4,7 @@ import {
   runFirmwareCheck, downloadFirmware, BackupState,
 } from '../services/FirmwareBackupService';
 import { t } from '../i18n';
-import { useTheme } from '../theme/useTheme';
+import { useV3Theme } from '../theme/v3';
 import { Button, Section, StatusLine, WarningNote } from '../components/ui/primitives';
 
 /*
@@ -21,7 +21,7 @@ import { Button, Section, StatusLine, WarningNote } from '../components/ui/primi
  */
 
 export default function BackupScreen() {
-  const theme = useTheme();
+  const theme = useV3Theme();
   const styles = createStyles(theme);
 
   const [state, setState] = useState<BackupState>({ phase: 'idle' });
@@ -122,11 +122,11 @@ export default function BackupScreen() {
   );
 }
 
-const createStyles = (t: ReturnType<typeof useTheme>) => StyleSheet.create({
+const createStyles = (t: ReturnType<typeof useV3Theme>) => StyleSheet.create({
   root: { flex: 1, backgroundColor: t.background },
   content: { padding: 20 },
   row: { flexDirection: 'row', gap: 10, marginTop: 4 },
-  deviceInfoBox: { marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: t.outline },
+  deviceInfoBox: { marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: t.mutedText + '33' },
   deviceInfoPrimary: { color: t.text, fontSize: 15, fontWeight: '600', marginBottom: 4 },
-  deviceInfoSecondary: { color: t.textMuted, fontSize: 12, marginBottom: 2 },
+  deviceInfoSecondary: { color: t.mutedText, fontSize: 12, marginBottom: 2 },
 });

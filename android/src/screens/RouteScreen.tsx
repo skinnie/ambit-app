@@ -5,7 +5,7 @@ import {
   exportNavigationToGpx, ExportNavState,
 } from '../services/NavigationService';
 import { t } from '../i18n';
-import { useTheme } from '../theme/useTheme';
+import { useV3Theme } from '../theme/v3';
 import { Button, Section, StatusLine } from '../components/ui/primitives';
 
 // One button each for Send and Export (2026-08-09). Transport is auto-detected:
@@ -14,7 +14,7 @@ import { Button, Section, StatusLine } from '../components/ui/primitives';
 // over — an existing BLE link (no re-scan/re-pair) or the USB cable — with no
 // per-transport buttons or "trigger Sync now" prompts.
 export default function RouteScreen() {
-  const theme = useTheme();
+  const theme = useV3Theme();
   const styles = createStyles(theme);
 
   const [sendState, setSendState] = useState<SendRouteState>({ phase: 'idle' });
@@ -112,7 +112,7 @@ function sendStatusMessage(s: SendRouteState): string {
   }
 }
 
-const createStyles = (t: ReturnType<typeof useTheme>) => StyleSheet.create({
+const createStyles = (t: ReturnType<typeof useV3Theme>) => StyleSheet.create({
   root: { flex: 1, backgroundColor: t.background },
   content: { padding: 20 },
 });

@@ -4,11 +4,11 @@ import {
   addPoiToWatch, AddPoiState, importPoisFromGpx, ImportPoiState, exportPoisToGpx, ExportPoiState,
 } from '../services/PoiService';
 import { t } from '../i18n';
-import { useTheme } from '../theme/useTheme';
+import { useV3Theme } from '../theme/v3';
 import { Button, FieldRow, Section, StatusLine } from '../components/ui/primitives';
 
 export default function PoiScreen() {
-  const theme = useTheme();
+  const theme = useV3Theme();
   const styles = createStyles(theme);
 
   const [poiName, setPoiName] = useState('');
@@ -162,7 +162,7 @@ function importStatusMessage(s: ImportPoiState): string {
   }
 }
 
-const createStyles = (t: ReturnType<typeof useTheme>) => StyleSheet.create({
+const createStyles = (t: ReturnType<typeof useV3Theme>) => StyleSheet.create({
   root: { flex: 1, backgroundColor: t.background },
   content: { padding: 20 },
   row: { flexDirection: 'row', gap: 10, marginTop: 4 },

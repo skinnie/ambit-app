@@ -7,7 +7,7 @@ import { exportGarminGpxFiles, isGarminRouteFile, GarminGpxExportResult, GarminG
 import RNFS from 'react-native-fs';
 import { t } from '../i18n';
 import type { RootStackParamList } from '../../App';
-import { useTheme } from '../theme/useTheme';
+import { useV3Theme } from '../theme/v3';
 import { Button, ExportedFileRow, Section, StatusLine, WarningNote } from '../components/ui/primitives';
 
 /*
@@ -22,7 +22,7 @@ import { Button, ExportedFileRow, Section, StatusLine, WarningNote } from '../co
 type SendState = 'idle' | 'picking' | 'uploading' | 'done' | 'error';
 
 export default function GarminRouteScreen() {
-  const theme = useTheme();
+  const theme = useV3Theme();
   const styles = createStyles(theme);
   const route = useRoute<RouteProp<RootStackParamList, 'GarminRoute'>>();
   const info = route.params.info;
@@ -111,7 +111,7 @@ export default function GarminRouteScreen() {
   );
 }
 
-const createStyles = (t: ReturnType<typeof useTheme>) => StyleSheet.create({
+const createStyles = (t: ReturnType<typeof useV3Theme>) => StyleSheet.create({
   root: { flex: 1, backgroundColor: t.background },
   content: { padding: 20 },
   row: { flexDirection: 'row', gap: 10, marginTop: 10 },
