@@ -19,6 +19,10 @@ hid_device *hid_open_from_fd(int fd, int ep_in, int ep_out);
 
 /* Declared in protocol_ble.c */
 int libambit_ble_transport_new(ambit_object_t *object, JavaVM *jvm, jobject module_ref_local, JNIEnv *env);
+int libambit_ble_handshake_device_info(ambit_object_t *object, ambit_device_info_t *info);
+/* Declared in jni_bridge.cpp — publishes the in-construction object so incoming
+ * notifications route to it during the handshake (see its own comment). */
+void jni_ble_set_active_object(ambit_object_t *obj);
 
 /*
  * Shared by libambit_new_from_fd() and libambit_new_from_ble(): looks up the
@@ -145,7 +149,20 @@ ambit_object_t *libambit_new_from_ble(JavaVM *jvm, jobject module_ref_local, JNI
         return NULL;
     }
 
-    if (device_info_get(object, &object->device_info) != 0) {
+    /* Over BLE the watch DRIVES the conversation (it pushes requests, the phone
+     * responds), so the USB-style device_info_get() — which sends a request and
+     * waits for a reply — can never complete. Instead run the server-side
+     * bootstrap handshake: listen for the watch's 0x0002 hello, answer with
+     * 0x0000 device_info, and read model/serial/firmware from what the watch
+     * pushes. See protocol_ble.c and HANDOFF.md Milestone 7 items 8-9.
+     *
+     * Publish the object to the notify router FIRST — the handshake below waits
+     * for the watch's frames, which only reach it via nativeAmbitBleOnNotify ->
+     * g_device, and g_device isn't otherwise assigned until this whole function
+     * returns. Without this the handshake gets zero frames and times out. */
+    jni_ble_set_active_object(object);
+    if (libambit_ble_handshake_device_info(object, &object->device_info) != 0) {
+        jni_ble_set_active_object(NULL);
         libambit_ble_transport_close(object);
         free(object);
         return NULL;

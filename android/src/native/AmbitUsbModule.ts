@@ -48,8 +48,34 @@ export const ambitConnector: DeviceConnector = {
 
 // ─── API fonctionnelle (rétro-compatibilité) ──────────────────────────────────
 
-export const connect    = () => ambitConnector.connect();
-export const disconnect = () => ambitConnector.disconnect();
+// Transport-awareness (2026-08-09): every watch operation (sync, POI, orbital,
+// sport modes, route) calls connect()/disconnect() around its native call, and
+// the native operations themselves act on the shared g_device regardless of
+// transport. So the ONLY thing that made these USB-only was connect() opening a
+// USB device. When a BLE connection is already established (AmbitBleModule set
+// this flag), connect() must be a no-op that returns the info already learned
+// from the BLE handshake, and disconnect() must leave the BLE link up (the Home
+// screen owns its lifecycle). Making that switch HERE means every existing
+// service works over BLE with zero changes to it.
+let bleActive = false;
+export function setBleTransportActive(active: boolean) { bleActive = active; }
+export function isBleTransportActive() { return bleActive; }
+
+export const connect = async (): Promise<DeviceInfo> => {
+  if (bleActive) {
+    try {
+      const info = await NativeAmbit.getDeviceInfo();
+      return { name: info?.name || 'Suunto Ambit', vendorId: 0x1493, productId: 0 };
+    } catch {
+      return { name: 'Suunto Ambit', vendorId: 0x1493, productId: 0 };
+    }
+  }
+  return ambitConnector.connect();
+};
+export const disconnect = async (): Promise<void> => {
+  if (bleActive) return;           // leave the BLE link up; HomeScreen manages it
+  return ambitConnector.disconnect();
+};
 export const getLogs    = (knownIds?: string[]) => ambitConnector.getLogs(knownIds);
 export const updateSgee = (path: string) => ambitConnector.updateSgee!(path);
 export const onSyncProgress = (cb: (e: SyncProgressEvent) => void) =>

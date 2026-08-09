@@ -1368,20 +1368,33 @@ int ambit3_read_flash_region(ambit_object_t *object, uint32_t address, uint32_t 
         memcpy(send, &addr_le, 4);
         memcpy(send + 4, &want_le, 4);
 
-        uint8_t *reply = NULL;
-        size_t replylen = 0;
-        int ret = libambit_protocol_command(object, ambit_command_log_read, send, sizeof(send), &reply, &replylen, 0);
-        if (ret != 0 || replylen != (size_t)want + 8) {
-            LOG_WARNING("ambit3_read_flash_region: 0x0b17 at 0x%06x wanted %u, got %zu bytes (ret=%d)",
-                        address + offset, want, replylen, ret);
-            libambit_protocol_free(reply);
-            return -1;
+        /* Per-chunk retry (2026-08-09): over BLE a region read is many chunks
+         * (a 130000-byte routes region is ~127), and the transport very
+         * occasionally drops or corrupts a single frame (the intermittent
+         * small-frame CRC drops seen on real hardware). Without retry, one bad
+         * chunk out of ~127 fails the whole export (-1) — which is exactly why
+         * route export failed over BLE while activity read, being far fewer/
+         * smaller reads, happened to get through. Retrying the individual chunk
+         * a few times makes a large read robust against the occasional drop.
+         * Harmless over USB (never retries, since chunk 0 succeeds). */
+        int chunk_ok = 0;
+        for (int attempt = 0; attempt < 4 && !chunk_ok; attempt++) {
+            uint8_t *reply = NULL;
+            size_t replylen = 0;
+            int ret = libambit_protocol_command(object, ambit_command_log_read, send, sizeof(send), &reply, &replylen, 0);
+            if (ret == 0 && replylen == (size_t)want + 8) {
+                /* First 8 bytes echo [address][length]; a short/mismatched
+                 * replylen is already the practical "something went wrong" signal. */
+                memcpy(out_buffer + offset, reply + 8, want);
+                libambit_protocol_free(reply);
+                chunk_ok = 1;
+            } else {
+                LOG_WARNING("ambit3_read_flash_region: 0x0b17 at 0x%06x wanted %u, got %zu bytes (ret=%d), attempt %d",
+                            address + offset, want, replylen, ret, attempt + 1);
+                libambit_protocol_free(reply);
+            }
         }
-        /* First 8 bytes of the reply echo [address][length] -- not re-checked
-         * byte for byte here since a short/mismatched replylen (above) is
-         * already the practical signal something went wrong. */
-        memcpy(out_buffer + offset, reply + 8, want);
-        libambit_protocol_free(reply);
+        if (!chunk_ok) return -1;
         offset += want;
     }
     return 0;

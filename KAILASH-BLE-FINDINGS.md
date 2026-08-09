@@ -19,6 +19,7 @@ captures, reused here unmodified):
 | `ambit3pairand2activitiesnoorbit.pklg` | **Not Kailash** - a real Ambit3 + Suunto-app session, captured the same day as the reference the existing `ble_pklg.py`/HANDOFF.md Milestone-7 write-up was built from. Kept in the same folder as a convenient side-by-side comparison; see Finding 2 for why that comparison mattered. |
 | `kaylashactivity04km.pklg` | A real 0.4 km activity: long-pressed 7R to start recording (no sport choice - "likely walk or similar"), walked with the **watch only, phone not present**, pressed 7R again to stop, then synced. See Finding 5. |
 | `kaylashactivity1.8km.pklg` | Same method, a real 1.8 km walk (watch only, no phone) - a longer, second data point. See Finding 6. |
+| `Untitled 2 - (null).pklg` | A deliberately cold-started reconnect (Bluetooth off, then on, capture started before opening 7R) - testing whether starting fresh reveals anything a mid-session capture would miss. See Finding 8. |
 | `kailashsettingjson.json` | Unrelated: a bulk export from the app's own local storage, not a capture |
 
 ## Finding 1: the Kailash/7R protocol is the Ambit3's NSP, not a different stack
@@ -363,6 +364,93 @@ cable-side path to each activity's summary stats. Raw per-point export specifica
 "GPS Power Use" recording looks like it may only ever be achievable by catching a live BLE
 sync, not a design gap in this project's own tooling.
 
+## Finding 8: exhausted the wire protocol looking for how `sml.DeviceLog` really gets populated - real, useful side discoveries, question still genuinely open
+
+Pushed further on Finding 7's open question rather than dropping it, using three angles at
+once: a full audit of every ATT opcode/handle across all real captures, the 7R app's own
+container data (already sitting in `assets/APK/kailash/Suunto 7R/Container/`, obtained via an
+encrypted local iPhone backup per `KAILASH-SCOPING-NOTE.md` §3.2 - not a decrypted `.ipa`,
+that remains a real, separate, harder TODO needing a jailbreak, §3.5), and one more real
+capture. Net result: **the wire-level mystery is not solved, but three genuinely useful,
+independent findings came out of trying.**
+
+**The Kailash is internally driven as an Ambit3 Peak, not merely protocol-compatible with
+one.** `Container/Documents/suuntoapp.log` is a real diagnostic log from the 7R app's own sync
+engine, which the log identifies as `Komposti v2.6.8` - the same name as `libkomposti-ng.so`,
+the Movescount-era library `HANDOFF.md`'s Milestone 7 has been reverse-engineering for the
+Ambit3's own BLE login question. Its `DeviceMatcher::matchDevice()` line is explicit:
+`deviceClass: Emu, deviceName: Kailash, deviceModel: Hoopoe`. `KAILASH-SCOPING-NOTE.md` §2
+originally read the *old*, Movescount-bundled `libkomposti-ng.so`'s missing Hoopoe driver as
+evidence the Kailash sits outside that whole lineage - true for that specific old binary, but
+the 7R app bundles its own newer Komposti that plainly does drive it, through the Ambit3
+Peak's own device class. This is the real, mechanistic reason Findings 1-3 found the exact
+same NSP transport, command set, and even struct layouts (`WhitelistedBleDevices.Device`,
+etc.) on both watches: the same driver code runs both.
+
+**A real, previously-unknown NSP task exists and is confirmed unsupported on this firmware**:
+`Task 'NSP::PathDescriptorGet' failed with code: -6 (TASK_RESULT_NOT_SUPPORTED)`, immediately
+followed by the app falling back to `LogLibrary::getDeviceDescriptors: reading descriptors
+from library cache` - i.e. the schema file this whole project already depends on
+(`descr+79DC39510E000100+2.0.5`) is a **cached fallback**, not something live-queried from the
+watch on this firmware. Consistent with everything else found so far, just newly named.
+
+**The specific session this log covers had real, logged failures** - both SGEE (orbital/AGPS)
+downloads returned HTTP 502 from `uiservices.movescount.com/devices/{gpsorbit,glonassorbit}
+/binary` (a real, live, still-answering endpoint - relevant to `KAILASH-SCOPING-NOTE.md` §5,
+the still-open orbital item), two `NspEndDevice::encodeSmlQuery: Failed to find matching
+descriptor to [<sml.DeviceSettings/>]` errors, and a `SmlQueryRouter::setSml: Entity ID
+'SDSCLIENT' failed`, after which the app restarted and burned through three straight
+`BLE Central operation connectPeripheral timeout`s before the log (a rolling/truncated file)
+runs out. So whatever populated the phone's real cached GPS points (see next paragraph) almost
+certainly didn't happen in *this* particular session - it was a broken one.
+
+**Found where the phone actually keeps its own copy: `Container/Library/Application Support/
+7r-trackLog.db`**, a real SQLite database, table `track_logs (id, unix_date, latitude,
+longitude, altitude, speed)`. Real content, not synthetic-looking: 58 rows, the bulk of them
+(rows 7-58) at a steady ~31-second cadence spanning 2026-08-03 06:26:45-06:53:18 UTC - matching
+(allowing for the UTC/local offset) the `LogHeaders.Header` entry already seen everywhere in
+this project's captures (`2026-08-03T08:25:27, duration=1685.7s, distance=2249m`). Two earlier
+rows (ids 1-2) are a different shape entirely - **fractional-second** timestamps from March
+2026, plausibly genuine phone-side CoreLocation fixes rather than anything watch-reported
+(the SBEM `UTC` field type this whole schema uses is whole-second only, so a fractional
+timestamp implies a different origin). This file's own mtime (Aug 3) predates every capture in
+this project, so it's a stale snapshot from whenever the container was first extracted, not
+something reflecting tonight's own new activities.
+
+**A full ATT-layer audit, across every real capture in this table, turned up nothing else
+carrying data**: every opcode class present was enumerated (no plain GATT Read Request/
+Response anywhere, so nothing's hiding behind a mechanism this project's own NSP-focused
+tooling wouldn't decode), every handle that ever saw a write/notify/read was identified and
+matched back to a known characteristic, and the **second, previously-unexplored custom
+service** (`d0002d12-1e4b-0fa4-994e-ceb531f40579`, flagged in `HANDOFF.md` as "purpose
+unknown, not yet looked at") turned out to get a real CCCD subscription (confirmed by handle
+arithmetic: the write always lands exactly on the `bd1da299-...` characteristic's CCCD handle)
+in every capture that includes a fresh-enough connection - but never once fires a notification
+in any of them. Subscribed to, never used, in every capture available.
+
+**The cold-start capture (`Untitled 2 - (null).pklg`) closes the last live hypothesis about
+timing/session-freshness, without opening a new one.** Bluetooth off, then on, capture started
+before 7R was even opened - specifically to see whether something only happens in the first
+moments of a truly fresh connection that a mid-session capture would miss. Result: no `btsmp`
+(pairing) traffic at all (a normal reconnect to the existing bond, not a fresh pair), identical
+service discovery, the same never-fired mystery-service subscription, and `sml.DeviceLog` back
+to its bare 72-byte header-only shape (no unsynced activity behind this particular
+connection). Nothing about starting cold changes the wire-level picture.
+
+**Where this genuinely stands**: every angle available from packet captures, the phone's own
+local database, and the app's own diagnostic log has been tried. None of them show the watch
+ever handing raw GPS points to the phone on the wire, in any capture this project has - yet
+the phone plainly has real ones, from a session predating anything captured here. The most
+likely explanation remains Finding 7's: `sml.DeviceLog` is populated by something specific to
+a live BLE session (possibly bound up in exactly the kind of failure-prone session Aug 3rd's
+log shows, or in the initial pairing flow this project's captures never happened to record
+fresh) that hasn't fired in any capture taken *for this project's own investigation*. Closing
+it for real needs either a capture that happens to catch a genuinely first-time, clean sync of
+a brand-new activity mid-transfer, or the decrypted binary this note has always said was the
+hard path. Not pursued further in this session - see the practical takeaway under Finding 7,
+which stands: for the actual project goal, `kailash_tracklog.py`'s cable-read `TrackLog` and
+`DeviceHistory.LogHeaders.Header`'s summary stats are the reliable paths that already work.
+
 ## Still open (updated against `KAILASH-SCOPING-NOTE.md` §5)
 
 Item 1 (transport family) and item 2 (device identification) were closed by Finding 1 above;
@@ -375,15 +463,21 @@ capped at a handful). What's left, genuinely:
   opposed to one `GPS Power Use` recording) - still untouched; `kailash_tracklog.py`'s cable-
   read `TrackLog` flash region is the closer existing lead for this, not anything in these BLE
   captures.
-- **Item 5, orbital/AGPS** - still untouched.
+- **Item 5, orbital/AGPS** - still functionally untouched, but Finding 8 gave it a real head
+  start: the live endpoint pattern (`uiservices.movescount.com/devices/{gpsorbit,
+  glonassorbit}/binary?appkey=...`) and confirmation the app-side download can fail (HTTP 502,
+  logged as `SGEEUpdate failed`) independent of anything device-side - worth knowing before
+  assuming a failed orbital update on real hardware is this project's own bug rather than the
+  server's.
 - **Genuinely new from Finding 6, still open, and now harder to close than it looked**: the
   real ~31-second fix interval doesn't match the source article's "every second for the first
   15 minutes" claim (a decade-old description of much older firmware). Worth knowing which of
   the two live possibilities is true - the watch itself now fixes less often, or it still
   fixes at 1 Hz but the 7R app only ever syncs a downsampled subset over BLE - before building
   anything that assumes one or the other (e.g. an offline GPX exporter for these activities
-  should not assume it's getting every fix the watch actually took). Finding 7 tried the
-  obvious way to tell them apart (read the watch's own copy directly over cable) and got 0
-  samples three real times running, most likely because `sml.DeviceLog` turns out to be
-  BLE-only, not because of timing - so this still needs a live BLE re-capture, not a cable
-  one, and stays open.
+  should not assume it's getting every fix the watch actually took). Findings 7-8 tried every
+  angle available short of the decrypted binary (cable reads, a full ATT-layer audit, the
+  app's own log and local database) and closed out this session without an answer - deliberately
+  paused here, not abandoned. Picking it back up needs either a capture that happens to catch a
+  genuinely first-time sync of a brand-new activity mid-transfer, or the decrypted `.ipa`
+  `KAILASH-SCOPING-NOTE.md` §3.5 already flagged as the hard path.
