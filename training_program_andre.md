@@ -2124,3 +2124,11 @@ Net effect on the whole feature:
   Binary was always server-side; those sources would need a working Ambit3 compiler too.
 
 Watch restored to clean pre-experiment state (byte-exact verified) after testing.
+
+### Finding 41 addendum: the RuleID-patch lead is disproved (2026-08-09)
+
+Tested André's-approved cheap lead: patched the community binary's embedded RuleID field
+(offset 20, 0 -> 11000001) and installed. Still "--" on the watch. So the non-execution is NOT
+a single header field (RuleID) - it's a genuine compiler/VM-bytecode incompatibility: the
+community App-Zone compiler's output is not run by this Ambit3 Peak firmware, full stop. Authored
+apps/workouts stay blocked on a compiler whose output executes on Ambit3. Watch restored clean.
