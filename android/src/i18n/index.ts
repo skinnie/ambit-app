@@ -377,6 +377,10 @@ const fr = {
   sportModesCloseBtn: 'Fermer',
   sportModesWriteSentNotConfirmed: 'Écriture envoyée mais non confirmée par relecture.',
 
+  // TrackPreview — pas de données GPS (2026-08-10, "for data without gps data, please do a
+  // nice mappyish image saying no data")
+  trackPreviewNoData: 'Pas de données GPS',
+
   // SettingsScreen — Cartes (2026-08-09, "no button to change provider, nor in the
   // settings like the desktop version") - même carte que desktop/qml/pages/SettingsPage.qml,
   // avec IGN en option Android supplémentaire (voir MapProviderService.ts)
@@ -827,6 +831,10 @@ const en: typeof fr = {
   sportModesPickerTitle: 'Choose field type',
   sportModesCloseBtn: 'Close',
   sportModesWriteSentNotConfirmed: 'Write sent but not confirmed by re-read.',
+
+  // TrackPreview — no GPS data (2026-08-10, "for data without gps data, please do a nice
+  // mappyish image saying no data")
+  trackPreviewNoData: 'No GPS data',
 
   // SettingsScreen — Maps (2026-08-09, "no button to change provider, nor in the settings
   // like the desktop version") - same real card as desktop/qml/pages/SettingsPage.qml, plus

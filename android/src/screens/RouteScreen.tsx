@@ -123,7 +123,7 @@ export default function RouteScreen() {
 
         {pending && (
           <View style={{ marginTop: v3Spacing.medium, gap: v3Spacing.small }}>
-            <TrackPreview points={pending.points.map(p => ({ lat: p.lat, lon: p.lon }))} />
+            <TrackPreview points={pending.points.map(p => ({ lat: p.lat, lon: p.lon }))} variableHeight />
             <Text style={styles.itemName}>{pending.name}</Text>
             <Text style={styles.itemStats}>
               {t.routeStats(formatDist(pending.distanceM), pending.points.length, pending.ascentM, pending.descentM)}
@@ -155,7 +155,7 @@ export default function RouteScreen() {
 
         {!onWatchLoading && onWatch && onWatch.map((route, i) => (
           <View key={`${route.name}-${i}`} style={i > 0 ? styles.onWatchItem : { marginTop: v3Spacing.medium, gap: v3Spacing.small }}>
-            {route.points.length > 1 && <TrackPreview points={route.points.map(p => ({ lat: p.latitude, lon: p.longitude }))} height={120} />}
+            {route.points.length > 1 && <TrackPreview points={route.points.map(p => ({ lat: p.latitude, lon: p.longitude }))} height={120} variableHeight />}
             <View style={styles.row}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.itemName}>{route.name}</Text>

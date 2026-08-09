@@ -1,14 +1,14 @@
 import { MapProvider } from './MapProviderService';
 
 // Real, 2026-08-09 ("I would prefer an immediate map view on this side") - a single static
-// XYZ tile image per route/POI thumbnail (rendered via a plain RN <Image>, not a WebView).
-// TrackPreview.tsx's own earlier header comment explains the real constraint this works
+// XYZ tile image per route/POI/activity thumbnail (rendered via plain RN <Image>s, not a
+// WebView). TrackPreview.tsx's own header comment explains the real constraint this works
 // around: N simultaneous live WebView+Leaflet instances in a list is the same
 // hardware-confirmed crash risk desktop's own ActivitiesPage.qml documents for N live map
 // widgets. Desktop's RoutesPage.qml/PoisPage.qml sidestep that by using MapView.qml, a
 // cheap in-process tile renderer with no browser engine involved - this is the RN
-// equivalent of "cheap enough not to need virtualization": one small cached image request
-// per thumbnail, the same real cost as any photo grid, not a browser instance.
+// equivalent of "cheap enough not to need virtualization": a handful of small cached image
+// requests per thumbnail, the same real cost as any photo grid, not a browser instance.
 
 const TILE_SIZE = 256;
 
@@ -26,51 +26,149 @@ export function tileUrl(provider: MapProvider, z: number, x: number, y: number):
   }
 }
 
-// Fractional (sub-tile-precision) Web Mercator tile coordinates - the same real formula
-// every slippy map uses (MapView.qml's own header comment calls it "the same formula every
-// slippy map uses"; IGN's WMTS TILEMATRIXSET=PM is the same Pseudo-Mercator XYZ scheme, see
-// MapHtml.ts).
-function latLonToTileFrac(lat: number, lon: number, z: number): { x: number; y: number } {
+// Real Web Mercator world-pixel coordinates at zoom z (continuous, not snapped to a tile) -
+// the same formula every slippy map uses (MapView.qml's own header comment calls it "the
+// same formula every slippy map uses"; IGN's WMTS TILEMATRIXSET=PM is the same
+// Pseudo-Mercator XYZ scheme, see MapHtml.ts).
+function worldPixel(lat: number, lon: number, z: number): { x: number; y: number } {
   const latRad = (lat * Math.PI) / 180;
-  const n = 2 ** z;
+  const world = TILE_SIZE * 2 ** z;
   return {
-    x: ((lon + 180) / 360) * n,
-    y: ((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) * n,
+    x: world * ((lon + 180) / 360),
+    y: world * ((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2),
   };
 }
 
-export interface FitTile {
+export interface TileMosaic {
   z: number;
-  x: number;
-  y: number;
-  // Real lat/lon -> pixel coordinates in [0, TILE_SIZE] within this exact tile.
-  project: (lat: number, lon: number) => { px: number; py: number };
+  contentWidth: number;
+  contentHeight: number;
+  tiles: { x: number; y: number; left: number; top: number; size: number }[];
+  // Real lat/lon -> display-pixel coordinates within [0,contentWidth] x [0,contentHeight].
+  project: (lat: number, lon: number) => { x: number; y: number };
 }
 
-function tileAt(tx: number, ty: number, z: number): FitTile {
+interface FitOpts {
+  // Height to fit/center within, instead of computing one from the bounding box. Omit for
+  // "fill targetWidth exactly, whatever height that needs" (routes); pass it for "fit
+  // inside this exact box, centered, letterboxed if needed" (activities/POIs - a uniform
+  // grid where every cell must be the same size).
+  targetHeight?: number;
+  padding?: number;
+  maxZoom?: number;
+  maxTiles?: number;
+}
+
+function buildMosaic(
+  centerWorld: { x: number; y: number },
+  bboxW: number, bboxH: number,
+  z: number, targetWidth: number, targetHeight: number | undefined, padding: number,
+): TileMosaic {
+  const scale = targetHeight === undefined
+    ? targetWidth / (bboxW + padding * 2)
+    : Math.min(targetWidth / (bboxW + padding * 2), targetHeight / (bboxH + padding * 2));
+  const contentWidth = targetWidth;
+  const contentHeight = targetHeight ?? (bboxH + padding * 2) * scale;
+
+  // Center the bbox's own center in the content box - not top-left+padding - so any extra
+  // slack (the non-binding axis, when targetHeight forces a smaller scale than the bbox
+  // alone would need) is distributed evenly on both sides instead of piling up on one edge.
+  const originX = centerWorld.x - contentWidth / 2 / scale;
+  const originY = centerWorld.y - contentHeight / 2 / scale;
+  const toDisplay = (worldX: number, worldY: number) => ({
+    x: (worldX - originX) * scale,
+    y: (worldY - originY) * scale,
+  });
+
+  const maxTileIndex = 2 ** z - 1;
+  const firstTileX = Math.max(0, Math.floor(originX / TILE_SIZE));
+  const firstTileY = Math.max(0, Math.floor(originY / TILE_SIZE));
+  const lastTileX = Math.min(maxTileIndex, Math.floor((originX + contentWidth / scale) / TILE_SIZE));
+  const lastTileY = Math.min(maxTileIndex, Math.floor((originY + contentHeight / scale) / TILE_SIZE));
+
+  const tiles: TileMosaic['tiles'] = [];
+  for (let ty = firstTileY; ty <= lastTileY; ty++) {
+    for (let tx = firstTileX; tx <= lastTileX; tx++) {
+      const tl = toDisplay(tx * TILE_SIZE, ty * TILE_SIZE);
+      tiles.push({ x: tx, y: ty, left: tl.x, top: tl.y, size: TILE_SIZE * scale });
+    }
+  }
+
   return {
-    z, x: tx, y: ty,
+    z, contentWidth, contentHeight, tiles,
     project: (lat, lon) => {
-      const f = latLonToTileFrac(lat, lon, z);
-      return { px: (f.x - tx) * TILE_SIZE, py: (f.y - ty) * TILE_SIZE };
+      const p = worldPixel(lat, lon, z);
+      return toDisplay(p.x, p.y);
     },
   };
 }
 
-// Highest zoom (most detail) at which every one of `points` still falls inside the SAME
-// single 256px tile - one image request is enough, no stitching. z=0 (the whole world as
-// one tile) always satisfies this, so the search never fails to find something.
-export function bestSingleTile(points: { lat: number; lon: number }[], maxZoom = 16): FitTile {
-  for (let z = maxZoom; z >= 0; z--) {
-    const fracs = points.map(p => latLonToTileFrac(p.lat, p.lon, z));
-    const tx = Math.floor(fracs[0].x);
-    const ty = Math.floor(fracs[0].y);
-    if (fracs.every(f => Math.floor(f.x) === tx && Math.floor(f.y) === ty)) {
-      return tileAt(tx, ty, z);
-    }
+// Real, 2026-08-10 ("apply the same fix as we did on the desktop, centering the gpx for
+// POIs and Routes on the maps") - desktop's real fix (MapView.qml's own header comment,
+// point 3): "currentZoom auto-fits to the track's real bounding box... instead of the
+// caller's own averaged trackCenter() + a fixed guessed zoomLevel". This is that fit,
+// ported: the real bounding box of every point, centered, at the deepest zoom whose native
+// tiles still fit the given box - stitching however many tiles that needs (desktop's own
+// MapView.qml is a continuous in-process renderer with no tile-count cost; this is the
+// tile-mosaic equivalent). `opts.targetHeight` omitted (routes - see TrackPreview.tsx's own
+// header comment on "allow the cards to have different height to fit the gpx completely" -
+// the real output height here, not letterboxed/cropped) vs provided (activities/POIs - a
+// fixed grid cell, letterboxed and centered instead).
+export function fitBoundsMosaic(
+  points: { lat: number; lon: number }[],
+  targetWidth: number,
+  opts: FitOpts = {},
+): TileMosaic {
+  const padding = opts.padding ?? 20;
+  const maxZoom = opts.maxZoom ?? 18;
+  const maxTiles = opts.maxTiles ?? 12;
+  const targetHeight = opts.targetHeight;
+
+  const lats = points.map(p => p.lat);
+  const lons = points.map(p => p.lon);
+  const minLat = Math.min(...lats), maxLat = Math.max(...lats);
+  const minLon = Math.min(...lons), maxLon = Math.max(...lons);
+
+  const availableWidth = Math.max(targetWidth - padding * 2, 30);
+  const availableHeight = targetHeight !== undefined ? Math.max(targetHeight - padding * 2, 30) : Infinity;
+
+  let z = maxZoom;
+  for (; z >= 0; z--) {
+    const p0 = worldPixel(minLat, minLon, z);
+    const p1 = worldPixel(maxLat, maxLon, z);
+    const w = p1.x - p0.x;
+    const h = p0.y - p1.y; // maxLat -> smaller y (north is up)
+    const tilesAcross = Math.ceil((w + padding * 2) / TILE_SIZE) + 1;
+    const tilesDown = Math.ceil((h + padding * 2) / TILE_SIZE) + 1;
+    if (w <= availableWidth && h <= availableHeight && tilesAcross * tilesDown <= maxTiles) break;
   }
-  const f0 = latLonToTileFrac(points[0].lat, points[0].lon, 0);
-  return tileAt(Math.floor(f0.x), Math.floor(f0.y), 0);
+  if (z < 0) z = 0;
+
+  const p0 = worldPixel(minLat, minLon, z);
+  const p1 = worldPixel(maxLat, maxLon, z);
+  const bboxW = Math.max(p1.x - p0.x, 1);
+  const bboxH = Math.max(p0.y - p1.y, 1);
+  const center = worldPixel((minLat + maxLat) / 2, (minLon + maxLon) / 2, z);
+
+  return buildMosaic(center, bboxW, bboxH, z, targetWidth, targetHeight, padding);
+}
+
+// Same real centering fix, for a single point (a POI, or an activity/route with only one
+// real GPS fix) - degenerates fitBoundsMosaic's bounding box to zero-size at a comfortably
+// close zoom instead of falling through its own zoom search (which would otherwise pick
+// the deepest zoom available for a point, more detail than a marker preview needs).
+export function centeredPointMosaic(
+  lat: number, lon: number, targetWidth: number, targetHeight: number, zoom = 15,
+): TileMosaic {
+  const center = worldPixel(lat, lon, zoom);
+  // Real bug, found live (2026-08-10): a single point is a genuinely zero-size bounding
+  // box, and buildMosaic's scale formula is targetDim/(bboxDim + padding*2) - with both
+  // bboxW/bboxH AND padding at 0 here, that's targetDim/0 = Infinity, which propagates into
+  // every tile's left/top/width/height as Infinity/NaN and RN just silently renders
+  // nothing. Passing the target box's own dimensions as the "bbox" makes the scale formula
+  // resolve to exactly 1 (native tile resolution, no upscaling) - bboxW/H otherwise has no
+  // other effect on buildMosaic (centering is purely center+contentWidth/Height driven).
+  return buildMosaic(center, targetWidth, targetHeight, zoom, targetWidth, targetHeight, 0);
 }
 
 export { TILE_SIZE };
