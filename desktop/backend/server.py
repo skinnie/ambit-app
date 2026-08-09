@@ -48,6 +48,10 @@ from pathlib import Path
 
 TOOLS_DIR = Path(__file__).resolve().parent.parent.parent / "tools"
 PYTHON = sys.executable
+# Real, 2026-08-09 (App Slot picker) - extract_apps_catalog.py's own real, distributable
+# output (data/suunto_apps/{catalog.json,catalog.bin}), tracked in the repo (unlike
+# assets/, gitignored research-only) since this actually ships with the app.
+CATALOG_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "suunto_apps"
 
 # Step 10 (Backup). write_nav.py's own `nav --save PREFIX` / `restore PREFIX --write` is a
 # real, hardware-tested backup/restore mechanism (see that file's own run_nav()/
@@ -71,6 +75,60 @@ GPS_ORBIT_URL = "https://devices.suunto-operations.com/devices/gpsorbit/binary"
 # own retry (Link.open(), 5 tries/2s) only covers the reconnect-permission race, not two of
 # this backend's own requests overlapping - that needs serializing here instead.
 WATCH_LOCK = threading.Lock()
+
+# Real, 2026-08-09 (App Slot picker's own catalog search) - loaded once and cached rather
+# than shelled out to a subprocess per keystroke: this is a pure local-file lookup (no watch
+# involved at all, doesn't need WATCH_LOCK), and the metadata file alone is 5MB - reparsing
+# that JSON on every search request would make the picker feel sluggish for no reason.
+# threading.Lock, not WATCH_LOCK: guards the lazy-load race between request threads, nothing
+# to do with the watch.
+_CATALOG_LOCK = threading.Lock()
+_catalog_entries = None
+
+
+def load_catalog_entries():
+    global _catalog_entries
+    with _CATALOG_LOCK:
+        if _catalog_entries is None:
+            with open(CATALOG_DIR / "catalog.json") as f:
+                _catalog_entries = json.load(f)["entries"]
+        return _catalog_entries
+
+
+def search_catalog(query="", variant=None, category_id=None, limit=50):
+    """Metadata-only search (name substring, optionally filtered to a real watch variant
+    codename via compatibleVariants - see extract_apps_catalog.py's own module docstring
+    for where that field comes from) - never touches catalog.bin, so this stays fast
+    regardless of how large the binary blob is."""
+    entries = load_catalog_entries()
+    query = query.strip().lower()
+    results = []
+    for e in entries:
+        if query and query not in e["name"].lower():
+            continue
+        if variant and variant not in e.get("compatibleVariants", []):
+            continue
+        if category_id is not None and e.get("categoryId") != category_id:
+            continue
+        results.append({k: v for k, v in e.items()
+                         if k not in ("binaryOffset", "binaryLength")})
+        if len(results) >= limit:
+            break
+    return results
+
+
+def catalog_entry_binary(rule_id):
+    """The one real entry's own compiled bytecode, sliced straight out of catalog.bin by
+    its real offset/length (extract_apps_catalog.py's own doing) - never loads the whole
+    9.4MB blob into memory for a single install."""
+    entries = load_catalog_entries()
+    entry = next((e for e in entries if e["ruleId"] == rule_id), None)
+    if entry is None:
+        return None, None
+    with open(CATALOG_DIR / "catalog.bin", "rb") as f:
+        f.seek(entry["binaryOffset"])
+        binary = f.read(entry["binaryLength"])
+    return entry, binary
 
 
 def run_tool(script, args, timeout=180):
@@ -128,6 +186,10 @@ class Handler(BaseHTTPRequestHandler):
             self._handle_customodes_field_types()
         elif self.path == "/api/agps/status":
             self._handle_agps_status()
+        elif self.path == "/api/apps":
+            self._handle_apps_read()
+        elif self.path.startswith("/api/apps/catalog"):
+            self._handle_apps_catalog()
         else:
             self.send_response(404)
             self.end_headers()
@@ -159,6 +221,8 @@ class Handler(BaseHTTPRequestHandler):
             self._handle_customodes_field(body)
         elif self.path == "/api/customodes/display-field":
             self._handle_customodes_display_field(body)
+        elif self.path == "/api/apps/install":
+            self._handle_apps_install(body)
         elif self.path == "/api/pois":
             # POI import/export (GPX and typed coordinates) is real and confirmed working -
             # tested via a real compiled Android app against real hardware, 2026-08-06
@@ -627,6 +691,118 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(502, {"ok": False, "error": "custom_modes_display_field_write_test.py "
                                    "--json produced no parseable JSON", "raw_output": out,
                                    "stderr": err})
+            return
+        self._send_json(200 if info.get("ok") else 502, info)
+
+    def _handle_apps_read(self):
+        """GET /api/apps - real apps currently installed on the watch (the Apps flash
+        region's own directory, tools/apps.py's own already-reverse-engineered format -
+        see that module's docstring). ruleIdx in the response is confirmed to be exactly
+        the RuleIdx a display field's own RULE record points at ("Suunto App Slot N"),
+        so a UI can label that field with the real app name instead of the generic
+        FIELD_TYPE_LABELS placeholder. Real, read-only 0x0b17 flash read, using
+        apps.read_apps_region()'s own fast path (probes the region's real directory
+        instead of a blind 200,000-byte read - see that function's own docstring)."""
+        code, out, err = run_tool("apps.py", ["--json"], timeout=60)
+        info = self._parse_last_json_line(out)
+        if info is None:
+            self._send_json(502, {"ok": False, "error": "apps.py --json produced no "
+                                   "parseable JSON", "raw_output": out, "stderr": err})
+            return
+        self._send_json(200 if info.get("ok") else 502, info)
+
+    def _handle_apps_catalog(self):
+        """GET /api/apps/catalog?q=&variant=&category=&limit= - real, 2026-08-09 ("2
+        bigger. Let's ship the full catalog"). Metadata-only search over this app's own
+        real, bundled copy of SuuntoLink's Suunto Apps catalog (data/suunto_apps/ -
+        extract_apps_catalog.py's own doing, a real SuuntoLink installation asset,
+        13,104 real apps). No watch access at all - a local file search, doesn't touch
+        WATCH_LOCK. `variant` is a real device codename (Emu, Hoopoe is never present -
+        Kailash has no Suunto App concept at all - see compatibleVariants' own real
+        values) to filter to what the actually-connected watch can use."""
+        query = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+        q = query.get("q", [""])[0]
+        variant = query.get("variant", [None])[0]
+        category = query.get("category", [None])[0]
+        limit = int(query.get("limit", ["50"])[0])
+        try:
+            results = search_catalog(query=q, variant=variant,
+                                      category_id=int(category) if category else None,
+                                      limit=limit)
+        except OSError:
+            self._send_json(502, {"ok": False, "error": "catalog not found under "
+                                   f"{CATALOG_DIR} - run tools/extract_apps_catalog.py first"})
+            return
+        self._send_json(200, {"ok": True, "results": results})
+
+    def _handle_apps_install(self, body):
+        """POST /api/apps/install. Body: {"mode": int, "display": int, "field": int,
+        "ruleId": int, "confirm": bool}. Real, 2026-08-09 - wires one real catalog app
+        (by its real ruleId) into a sport mode's own display field, via
+        tools/workout_install.py's own already-verified write path (build_apps_region()/
+        install_app_into_mode()). `mode`/`display`/`field` are the same 0-based indices
+        the /api/customodes response's own arrays use - a UI already holding that data
+        knows a mode's own array position without a second lookup here.
+
+        Real, deliberate difference from this project's usual rehearsal-first pattern:
+        workout_install.py itself only opens a real connection when --write is given (see
+        that file's own main(), and its comment on why this wasn't changed to match
+        settings_write.py's own "always read for real" pattern - real flash-write code,
+        not something to restructure without hardware to verify every flag combination
+        against). So rather than ask that tool for a live dry-run it isn't built to give,
+        confirm:false here never calls it at all - the preview (wouldBeRuleIdx) is built
+        from /api/apps' own already-safe, already-read-only data instead (next_rule_idx()
+        is exactly len(existing entries), confirmed in workout_install.py's own module
+        docstring). confirm:true is the only path that ever touches the watch's flash."""
+        mode = body.get("mode")
+        display = body.get("display")
+        field = body.get("field")
+        rule_id = body.get("ruleId")
+        if mode is None or display is None or field is None or rule_id is None:
+            self._send_json(400, {"error": "missing \"mode\", \"display\", \"field\", "
+                                   "or \"ruleId\""})
+            return
+        try:
+            entry, binary = catalog_entry_binary(int(rule_id))
+        except OSError:
+            self._send_json(502, {"ok": False, "error": "catalog not found under "
+                                   f"{CATALOG_DIR} - run tools/extract_apps_catalog.py first"})
+            return
+        if entry is None:
+            self._send_json(404, {"ok": False, "error": f"no catalog entry with ruleId={rule_id}"})
+            return
+
+        if not bool(body.get("confirm", False)):
+            code, out, err = run_tool("apps.py", ["--json"], timeout=60)
+            info = self._parse_last_json_line(out)
+            if info is None or not info.get("ok"):
+                self._send_json(502, {"ok": False, "error": "couldn't read the watch's "
+                                       "current Apps region for a preview", "raw_output": out,
+                                       "stderr": err})
+                return
+            self._send_json(200, {
+                "ok": True, "dryRun": True, "wouldBeRuleIdx": len(info["entries"]),
+                "name": entry["name"], "ruleId": entry["ruleId"],
+            })
+            return
+
+        compiled = {"name": entry["name"], "activityId": entry["activityId"],
+                    "binary": list(binary)}
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+            json.dump(compiled, f)
+            compiled_path = f.name
+        try:
+            args = [compiled_path, "--mode", str(mode), "--display", str(display),
+                     "--field", str(field), "--json", "--write"]
+            # A real install writes two real flash regions (Apps + CustomModes) - the
+            # default 180s run_tool() timeout already covers this, no override needed.
+            code, out, err = run_tool("workout_install.py", args)
+        finally:
+            Path(compiled_path).unlink(missing_ok=True)
+        info = self._parse_last_json_line(out)
+        if info is None:
+            self._send_json(502, {"ok": False, "error": "workout_install.py --json produced "
+                                   "no parseable JSON", "raw_output": out, "stderr": err})
             return
         self._send_json(200 if info.get("ok") else 502, info)
 

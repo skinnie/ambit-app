@@ -352,6 +352,16 @@ def main():
             args.mode is None or args.display is None or args.field is None):
         ap.error("--mode/--display/--field are required unless --apps-only or --restore")
 
+    # Real, 2026-08-09: considered changing this to match settings_write.py's own pattern
+    # (Link opened for real unconditionally, only the actual write call gated on --write) so
+    # a backend caller could get a real live-watch rehearsal without --write. Backed out -
+    # this file's own CMD_DEVICE_INFO/memory-map check and its --restore/--from-apps/
+    # --from-custom-modes offline paths all currently depend on dry_run's existing "no real
+    # device touched at all" meaning in ways that would need real hardware to verify safely
+    # for every flag combination, not something to change blind on real flash-write code.
+    # Left as the original author had it - see backend/server.py's own _handle_apps_install
+    # for how the rehearsal problem is solved instead (never calling this tool at all until
+    # confirm:true, building the preview from already-safe read-only endpoints instead).
     link = Link(dry_run=not args.write, verbose=args.verbose)
     if args.write:
         print("!! REAL WRITE requested")
