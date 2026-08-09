@@ -12,6 +12,10 @@ ApplicationWindow {
     height: 800
     title: qsTr("AmbitApp")
     color: Theme.background
+    // Real, 2026-08-09 ("general desktop polish pass") - without this, toggling
+    // Settings' light/dark override snapped every color in the app instantly; this is the
+    // one place that's genuinely app-wide (every page sits on this window's background).
+    Behavior on color { ColorAnimation { duration: 150; easing.type: Easing.OutCubic } }
 
     readonly property var pageSources: ({
         home: "pages/HomePage.qml",

@@ -14,4 +14,9 @@ Text {
     color: Theme.text
     horizontalAlignment: Text.AlignHCenter
     verticalAlignment: Text.AlignVCenter
+    // Real, 2026-08-09 ("general desktop polish pass") - every icon in the app uses this
+    // component, so this one Behavior covers every icon's selected/hover/theme color change
+    // at once (NavItem's own selected-row icon, POI markers, etc.) rather than needing the
+    // same fix repeated per call site.
+    Behavior on color { ColorAnimation { duration: 120; easing.type: Easing.OutCubic } }
 }

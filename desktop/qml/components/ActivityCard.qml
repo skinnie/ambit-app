@@ -13,7 +13,14 @@ Card {
 
     readonly property var _center: ActivityViewModel.trackCenter(activity.track)
 
-    TapHandler { onTapped: root.opened() }
+    // Real, 2026-08-09 ("general desktop polish pass") - a real, unmet AMBITAPP_SPEC.md
+    // requirement ("Subtle animations"): this card had zero feedback that it was even
+    // clickable beyond the cursor shape. A small press-scale is a common, well-understood
+    // tactile cue, low-risk to add since it's a pure transform, not a layout change.
+    scale: cardTap.pressed ? 0.98 : 1.0
+    Behavior on scale { NumberAnimation { duration: 100; easing.type: Easing.OutCubic } }
+
+    TapHandler { id: cardTap; onTapped: root.opened() }
 
     Column {
         width: parent.width

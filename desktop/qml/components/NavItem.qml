@@ -21,6 +21,12 @@ Rectangle {
     implicitHeight: 44
     radius: Theme.radiusSmall
     color: selected ? Theme.primary : (hoverHandler.hovered ? Theme.card : "transparent")
+    // AMBITAPP_SPEC.md's own Design Language lists "Subtle animations" as a real
+    // requirement - real, 2026-08-09 ("general desktop polish pass"): before this, every
+    // color in the app (hover, selection, theme changes) snapped instantly with zero
+    // animation anywhere in the codebase, confirmed via a real grep for Behavior/
+    // *Animation/Transition across every qml/ file (none existed).
+    Behavior on color { ColorAnimation { duration: 120; easing.type: Easing.OutCubic } }
 
     HoverHandler { id: hoverHandler }
     TapHandler { onTapped: root.clicked() }
@@ -49,6 +55,7 @@ Rectangle {
             color: root.selected ? Theme.card : Theme.text
             font.pixelSize: 14
             anchors.verticalCenter: parent.verticalCenter
+            Behavior on color { ColorAnimation { duration: 120; easing.type: Easing.OutCubic } }
         }
     }
 }

@@ -17,6 +17,10 @@ Rectangle {
 
     radius: Theme.radiusCard
     color: Theme.card
+    // Real, 2026-08-09 ("general desktop polish pass") - every card in the app builds on
+    // this one Rectangle, so this one Behavior covers every card's light/dark theme
+    // transition at once, matching Main.qml's own window-background fix for the same gap.
+    Behavior on color { ColorAnimation { duration: 150; easing.type: Easing.OutCubic } }
 
     // contentItem is a plain Item, and a plain Item's implicitWidth/implicitHeight are always
     // 0 regardless of its children - unlike Column/Row, it doesn't compute implicit size from
