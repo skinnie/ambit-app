@@ -185,6 +185,18 @@ def _entry_value(schema, entry_id, data, target_fid):
     return None
 
 
+
+# Real, 2026-08-09 ("on the buttons always start with capital letter... gps time keeping
+# => true, it should be True") - the watch's own descriptor spells several enum choice
+# labels lowercase verbatim (confirmed via a real grep across both the Ambit3 and Kailash
+# descriptors: GPSTimeKeeping/FusedAltitude/GpsBackgroundMode all use literal "true"/
+# "false"). Fixed by name, not by blindly capitalizing every enum label's first letter -
+# that same grep also found real unit-symbol choices ("hPa", "km", "kg", "bpm", "24h",
+# "degree", "mil", "min", "hour") that are correct as-is; force-capitalizing those would
+# turn "hPa" into the wrong "HPa". Only the confirmed real words get fixed.
+_ENUM_LABEL_FIXES = {"true": "True", "false": "False"}
+
+
 def describe_field(field):
     """JSON-friendly shape for a UI: {"kind": "enum", "choices": [[0, "Light"], ...]} or
     {"kind": "bool"} or {"kind": "number", "min":..., "max":...}."""
@@ -193,7 +205,7 @@ def describe_field(field):
         choices = []
         for part in m.group(1).split(","):
             value_str, _, label = part.partition("=")
-            choices.append([int(value_str), label])
+            choices.append([int(value_str), _ENUM_LABEL_FIXES.get(label, label)])
         return {"kind": "enum", "choices": choices}
     if field.base == "bool":
         return {"kind": "bool"}
