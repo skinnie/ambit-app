@@ -1860,3 +1860,108 @@ convertBXmlGroups' Trigger section for those tag IDs, then extend custom_modes.p
 decode/encode them, verify by round-tripping any real capture that contains a rule, and build a
 minimal guided-workout writer. No compiler needed - this is pure declarative CustomModes work,
 the same region/write-path already proven this session.
+
+## Finding 34: three distinct interval/workout mechanisms - one is buildable NOW with ground truth (2026-08-09)
+
+Refining Finding 33 with real capture evidence. There are THREE related but distinct things:
+
+1. **Built-in interval timer** (on-watch ACTIVATE menu -> Interval timer On). Stored in the 6
+   interval slots of the CustomModes SETTING_NAME_LEN64 block that this project ALREADY
+   decodes (IntTimerFlags/IntTimerCount + slot Flags/Type/MaxLimit/MinLimit/Len). CONFIRMED
+   against real capture ground truth: `intervaltimerhigh02'05low06'30` decodes to slot0 Len=125
+   (2'05=125s) and slot2 MaxLimit=390 (6'30=390s). **This is buildable NOW** - real bytes,
+   real capture, same CustomModes write-path already proven. Gives real high/low interval
+   guidance on-watch; activated via the ACTIVATE menu, not browsable.
+
+2. **Guided interval workouts** (Movescount WORKOUT menu, browsable, native graph display
+   PID_RUNNER_GPS_TEMPLATE_GUIDANCE). The richer `Triggers` structure (LimitMetric +
+   upper/lower + ActionsOnRise/ActionsOnFall + Enabled + FilterWithBufferedInput). Confirmed
+   DECLARATIVE and part of the CustomModes structure: its writer `FUN_007f1310` is called from
+   inside the custom-mode builder alongside ACTIVITYID/USEHW/AUTOLAP/HeartRateLimits (not from
+   an Apps/IAMRULE path) - so NO dead compiler needed. BUT the exact numeric BXml tag encoding
+   of the Trigger sub-structure is decompile-only and obfuscated; no real capture contains a
+   guidance rule (the reference watch only has 6-byte simple app-slot rules), so it's not yet
+   byte-pinned. This is the browsable feature André wants; it needs more focused BXml-encoding
+   RE before a build.
+
+3. **Planned moves / training programs** (Today, TIME mode). Feature B - Findings 30-32,
+   format decoded, likely depends on #2.
+
+Correction to Finding 33's confidence: "declarative in CustomModes, no compiler" is now BETTER
+supported (the trigger writer lives in the custom-mode builder), but "buildable" applies today
+only to mechanism #1 (interval timer, ground-truthed). Mechanism #2 (the browsable WORKOUT
+guided workout) is declarative but its exact encoding still needs pinning.
+
+Recommendation: mechanism #1 is a real, low-risk, ground-truthed interval-guidance win buildable
+immediately (new tool importing the proven CustomModes write-path). Mechanism #2 remains the
+target for the browsable UX and is the next RE focus (pin the Trigger BXml tag IDs).
+
+## Finding 35: CORRECTION to Findings 33/34 - the "Triggers" are the API view of ordinary per-mode settings, NOT a stored browsable workout (2026-08-09)
+
+Continued RE (André: interval timer already built in custom_modes_write.py; continue). Read
+CustomModesAreaConverter::convertBXmlGroups in full. It branches on ordinary mode SETTING names
+- ACTIVITYID, AUTOLAP, HRHIGH, HRLOW, HRLIMITSUSE, RECORDINGINTERVAL, USEHW, AUTOPAUSE,
+AUTOSCROLLING, ALTIBAROMODE, GPSPOWERMODE, CMIDHIGH/CMIDLOW, etc. - and SYNTHESIZES the
+`Triggers`/`LimitMetric`/`Enabled`/`ActionsOnRise`/`ActionsOnFall` JSON from them (e.g. AUTOLAP
+and the HR high/low limits each become a "Trigger"). i.e. **"Triggers" is just the
+DeviceSettings-API representation of ordinary per-mode settings this project already decodes and
+can write** (HrHigh/HrLow/HrLimitsUse/Autolap/interval slots) - NOT a separately-stored,
+browsable guided-workout entity.
+
+**This retracts Findings 33/34's claim** that the browsable guided workout is "declarative in
+CustomModes, no compiler needed." That conflated two different things:
+- DeviceSettings "Triggers" = per-mode autolap + HR limits + interval timer. Real, already
+  writable (custom_modes_write.py). Gives genuine HR-limit / interval guidance, but it is
+  per-mode settings, NOT the browsable multi-segment WORKOUT with the native segment graph.
+- The browsable Movescount interval WORKOUT (WORKOUT options menu, multi-segment,
+  PID_RUNNER_GPS_TEMPLATE_GUIDANCE graph) is a compiled `guidance`-category Rule (`.Binary`) -
+  per Findings 5/10 this was produced by Movescount's dead server-side compiler.
+
+Accurate state of the three mechanisms:
+1. Built-in interval timer - BUILT (custom_modes_write.py), ground-truthed.
+2. Per-mode HR-limit / autolap guidance - writable now via ordinary settings (custom_modes_write
+   / settings). Real guidance, not browsable multi-segment.
+3. Browsable multi-segment guided WORKOUT (the graph, the WORKOUT menu) - a compiled guidance
+   rule. Needs a compiler. The live community App-Zone compiler (workout.py) can produce interval
+   SCRIPTS but as generic apps pinned to a display field, not confirmed to produce a
+   guidance-category rule that the firmware lists in the browsable WORKOUT menu with the native
+   graph.
+
+Real remaining unknown for the browsable feature (unresolved_questions #1, still open): how the
+firmware decides a rule/app is a browsable "guidance" WORKOUT vs a pinned display app - i.e.
+where the guidance category/type is encoded (compiled binary header? a CustomModes rule field?
+the catalog entry's categoryId?). That is the next RE thread if the browsable UX is the goal.
+
+## Finding 36: the browsable guided WORKOUT ceiling - no on-device category field; browsability is display-template + compiled binary (2026-08-09)
+
+Examined the on-device IAMRULE binary header of real apps: it's the VM/bytecode header
+(own-var count, string-table offsets) with NO category/type field. The Movescount
+`Category:"guidance"` was a SERVER REST attribute, not stored on the watch. So on-device a
+"guidance workout" and a "generic display app" are structurally the same kind of IAMRULE binary
+wired into a sport mode - the browsable-WORKOUT-vs-pinned-display distinction is NOT a stored
+flag we can toggle. It comes from the display TEMPLATE the rule is wired to
+(PID_RUNNER_GPS_TEMPLATE_GUIDANCE = the segment graph, backend ref at 757245) and how the
+firmware enumerates guidance-graph-wired rules, plus the compiled binary actually producing the
+segment/limit data the graph needs.
+
+Consequence: producing the browsable multi-segment WORKOUT with the native graph needs a
+compiled guidance binary that drives that graph (segment count, upper/lower limits, current
+value). The live community App-Zone compiler produces generic display output (a single RESULT
+value), not guidance-graph segment data. So the exact browsable-graph feature remains gated on
+capability the dead Movescount server compiler had - consistent with this project's long-
+standing Finding 5/10/12 conclusion that the dead server compiler is the one real gap.
+
+One concrete experiment still open (speculative): wire a compiled App-Zone interval app to the
+guidance-graph display template and see if the firmware lists it in the WORKOUT menu - but the
+graph would likely not render meaningfully without real guidance segment data, so this is
+low-confidence.
+
+Realistic, achievable interval-guidance revival (no dead compiler), in order of fidelity:
+1. Built-in interval timer - DONE (custom_modes_write.py), ground-truthed.
+2. Per-mode HR-limit / autolap guidance - writable now via ordinary settings.
+3. App-Zone interval workouts (workout.py -> live community compiler -> workout_install.py,
+   now with the corrected Apps/CustomModes format) - real on-watch interval guidance with
+   beeps, as a pinned sport-mode app (not the browsable WORKOUT menu, not the native graph).
+
+Net: the browsable native-graph WORKOUT is not reproducible without the dead server compiler;
+the interval-guidance CAPABILITY is revivable today via paths 1-3.
