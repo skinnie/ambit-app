@@ -8,7 +8,7 @@ export type IconName =
   | 'sync' | 'satellite' | 'route' | 'poi' | 'backup' | 'settings'
   | 'list' | 'link' | 'map' | 'chart' | 'activity' | 'key' | 'person'
   | 'delete' | 'check' | 'info' | 'battery' | 'warning' | 'mountain'
-  | 'watch' | 'etrex' | 'sun' | 'moon' | 'auto';
+  | 'watch' | 'etrex' | 'sun' | 'moon' | 'auto' | 'chevronLeft' | 'chevronRight';
 
 interface Props {
   name: IconName;
@@ -234,6 +234,18 @@ export default function Icon({ name, size = 20, color = '#000' }: Props) {
         <Svg width={size} height={size} viewBox="0 0 24 24">
           <Circle cx={12} cy={12} r={9} stroke={color} strokeWidth={1.9} fill="none" />
           <Path d="M12 3a9 9 0 0 1 0 18z" fill={color} stroke="none" />
+        </Svg>
+      );
+    case 'chevronLeft':
+      return (
+        <Svg width={size} height={size} viewBox="0 0 24 24">
+          <Path d="M15 4.5L7.5 12l7.5 7.5" {...s} />
+        </Svg>
+      );
+    case 'chevronRight':
+      return (
+        <Svg width={size} height={size} viewBox="0 0 24 24">
+          <Path d="M9 4.5L16.5 12L9 19.5" {...s} />
         </Svg>
       );
     default:

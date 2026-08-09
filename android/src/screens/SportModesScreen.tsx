@@ -3,27 +3,26 @@ import {
   View, Text, TextInput, TouchableOpacity, Switch,
   StyleSheet, Alert, ScrollView, ActivityIndicator, Modal, FlatList,
 } from 'react-native';
-import { ExerciseMode, FIELD_TYPES } from '../services/CustomModesReader';
+import { ExerciseMode, FIELD_TYPES, fieldTypeLabel } from '../services/CustomModesReader';
 import {
   readCustomModes, renameCustomMode, writeCustomModeField, writeCustomModeDisplayField,
 } from '../services/CustomModesService';
 import { t } from '../i18n';
+import { useV3Theme, v3Spacing, v3Type } from '../theme/v3';
+import { Card } from '../components/ui/Card';
+import Icon from '../components/ui/Icon';
+import { WatchFacePreview, displayLayoutType } from '../components/WatchFacePreview';
 
-// Real, 2026-08-08 - mirrors the desktop app's own SportModesPage.qml feature set exactly
-// (rename, autolap, HR limits, external-sensor pods, per-display field type), against the
-// same real, hardware-confirmed CustomModes write mechanism (see CustomModesWriter.ts's own
-// header comment). Ambit3-only - App.tsx/HomeScreen.tsx only route here when the connected
-// watch isn't Kailash (its own memory map has no CustomModes region at all).
+// v3.0 UI port (2026-08-09, "replicate the desktop version feature wise, design wise") -
+// full List<->Detail rework matching desktop's own SportModesPage.qml Phase 2 redesign
+// (9d4c7be, "full SuuntoLink-style redesign"), not just a recolor: mode list -> tap a mode
+// -> detail view with a watch-face filmstrip (WatchFacePreview.tsx, same layout-type
+// classification as desktop's own displayLayoutType()) instead of the old inline-expand
+// card. Every read/write handler below is unchanged from the previous version of this
+// screen - only the JSX changed.
 //
-// The native write path itself (writeCustomModesRaw()) is NOT yet hardware-confirmed on
-// Android - see that function's own doc comment in native/AmbitUsbModule.ts. Every write
-// here re-reads the whole region afterward and only reports success once the watch's own
-// reply matches, the same "prove it" contract AmbitSettingsWriter.ts already established -
-// so a broken native composition would show up as a write that doesn't stick, not a silent
-// false "done".
-
-// Real, confirmed pod bits (UseHw bitmask) - see custom_modes_andre.md. 0x0004 stays
-// unconfirmed and is deliberately left out of this UI, same as the desktop page.
+// Real, hardware-confirmed pod bits (UseHw bitmask) - see custom_modes_andre.md. 0x0004
+// stays unconfirmed and is deliberately left out, same as the desktop page.
 const PODS: { bit: number; label: string }[] = [
   { bit: 0x0001, label: 'HR belt' },
   { bit: 0x0100, label: 'Foot pod' },
@@ -31,16 +30,26 @@ const PODS: { bit: number; label: string }[] = [
   { bit: 0x0040, label: 'Power pod' },
 ];
 
+// Real, from SuuntoLink's own real JS source (getMaxDisplays()) - Traverse/Traverse Alpha
+// cap at 4, every other variant in this family caps at 8 (see custom_modes.py's own
+// _MAX_DISPLAYS_BY_VARIANT). Not wired to the connected device's real variant here yet -
+// this screen doesn't currently know which watch is connected (no DeviceCapabilities
+// equivalent plumbed in) - hardcoded to the default 8, a real, explicit simplification, not
+// a silent gap.
+const MAX_DISPLAYS = 8;
+
 type Phase = 'idle' | 'connecting' | 'reading' | 'done' | 'error';
 
 interface PickerTarget { mode: string; display: number; field: number }
 
 export default function SportModesScreen() {
+  const theme = useV3Theme();
   const [modes, setModes] = useState<ExerciseMode[] | null>(null);
   const [phase, setPhase] = useState<Phase>('idle');
   const [error, setError] = useState<string | undefined>();
   const [writingMode, setWritingMode] = useState<string | null>(null);
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [selectedName, setSelectedName] = useState<string | null>(null);
+  const [selectedDisplayIndex, setSelectedDisplayIndex] = useState(0);
   const [picker, setPicker] = useState<PickerTarget | null>(null);
 
   const [nameEdits, setNameEdits] = useState<Record<string, string>>({});
@@ -91,6 +100,7 @@ export default function SportModesScreen() {
     if (!newName || newName === originalName) return;
     withWrite(originalName, () =>
       renameCustomMode(originalName, newName, () => {}));
+    setSelectedName(newName);
   }
 
   function handleSetAutolap(modeName: string) {
@@ -124,269 +134,279 @@ export default function SportModesScreen() {
       writeCustomModeDisplayField(mode, display, field, undefined, typeName, () => {}));
   }
 
-  function toggleExpanded(modeName: string) {
-    setExpanded(prev => {
-      const next = new Set(prev);
-      if (next.has(modeName)) next.delete(modeName); else next.add(modeName);
-      return next;
-    });
+  const busy = phase === 'connecting' || phase === 'reading';
+  const selectedMode = modes?.find(m => m.settings.name === selectedName) ?? null;
+
+  // ── Detail view ──
+  if (selectedMode) {
+    const name = selectedMode.settings.name;
+    const isWriting = writingMode === name;
+    const realDisplays = selectedMode.displays.filter(d => !d.isBuiltIn);
+    const currentDisplay = selectedMode.displays[selectedDisplayIndex] ?? null;
+
+    return (
+      <ScrollView style={styles(theme).root} contentContainerStyle={styles(theme).content}>
+        <TouchableOpacity style={styles(theme).backRow} onPress={() => { setSelectedName(null); setSelectedDisplayIndex(0); }}>
+          <Icon name="chevronLeft" size={18} color={theme.text} />
+          <Text style={[styles(theme).backText]}>{t.sportModesBackBtn}</Text>
+        </TouchableOpacity>
+        <Text style={styles(theme).modeTitle}>{name}</Text>
+
+        <Card style={{ width: '100%' }}>
+          <Text style={styles(theme).label}>{t.sportModesNameLabel}</Text>
+          <View style={styles(theme).row}>
+            <TextInput
+              style={[styles(theme).input, { flex: 1 }]}
+              value={nameEdits[name] ?? name}
+              onChangeText={v => setNameEdits(prev => ({ ...prev, [name]: v }))}
+              placeholderTextColor={theme.mutedText}
+              editable={!isWriting}
+            />
+            <TouchableOpacity
+              style={styles(theme).smallBtn}
+              disabled={isWriting || (nameEdits[name] ?? name) === name}
+              onPress={() => handleRename(name)}
+            >
+              <Text style={styles(theme).smallBtnText}>{t.sportModesRenameBtn}</Text>
+            </TouchableOpacity>
+          </View>
+
+          <Text style={styles(theme).label}>{t.sportModesAutolapLabel}</Text>
+          <View style={styles(theme).row}>
+            <TextInput
+              style={[styles(theme).input, { flex: 1 }]}
+              value={autolapEdits[name] ?? ''}
+              onChangeText={v => setAutolapEdits(prev => ({ ...prev, [name]: v }))}
+              keyboardType="numeric"
+              editable={!isWriting}
+            />
+            <TouchableOpacity style={styles(theme).smallBtn} disabled={isWriting} onPress={() => handleSetAutolap(name)}>
+              <Text style={styles(theme).smallBtnText}>{t.sportModesSetBtn}</Text>
+            </TouchableOpacity>
+          </View>
+
+          <Text style={styles(theme).label}>{t.sportModesHrLimitsLabel}</Text>
+          <View style={styles(theme).row}>
+            <Switch
+              value={hrLimitsEdits[name] ?? false}
+              onValueChange={v => setHrLimitsEdits(prev => ({ ...prev, [name]: v }))}
+              disabled={isWriting}
+              trackColor={{ false: theme.mutedText + '55', true: theme.primary + '88' }}
+              thumbColor={theme.card}
+            />
+            <TextInput
+              style={[styles(theme).input, { flex: 1, marginLeft: 10 }]}
+              value={hrLowEdits[name] ?? ''}
+              onChangeText={v => setHrLowEdits(prev => ({ ...prev, [name]: v }))}
+              placeholder={t.sportModesHrLowLabel}
+              placeholderTextColor={theme.mutedText}
+              keyboardType="numeric"
+              editable={!isWriting}
+            />
+            <TextInput
+              style={[styles(theme).input, { flex: 1, marginLeft: 10 }]}
+              value={hrHighEdits[name] ?? ''}
+              onChangeText={v => setHrHighEdits(prev => ({ ...prev, [name]: v }))}
+              placeholder={t.sportModesHrHighLabel}
+              placeholderTextColor={theme.mutedText}
+              keyboardType="numeric"
+              editable={!isWriting}
+            />
+            <TouchableOpacity style={[styles(theme).smallBtn, { marginLeft: 10 }]} disabled={isWriting} onPress={() => handleSetHrLimits(name)}>
+              <Text style={styles(theme).smallBtnText}>{t.sportModesSetBtn}</Text>
+            </TouchableOpacity>
+          </View>
+
+          <Text style={styles(theme).label}>{t.sportModesPodsLabel}</Text>
+          <View style={styles(theme).chipRow}>
+            {PODS.map(pod => {
+              const active = (selectedMode.settings.useHw & pod.bit) !== 0;
+              return (
+                <TouchableOpacity
+                  key={pod.bit}
+                  style={[styles(theme).chip, active && styles(theme).chipActive]}
+                  disabled={isWriting}
+                  onPress={() => handleTogglePod(name, selectedMode.settings.useHw, pod.bit, !active)}
+                >
+                  <Text style={[styles(theme).chipText, active && styles(theme).chipTextActive]}>{pod.label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {isWriting && (
+            <View style={styles(theme).statusRow}>
+              <ActivityIndicator size="small" color={theme.primary} />
+            </View>
+          )}
+        </Card>
+
+        <Card style={{ width: '100%' }}>
+          <Text style={styles(theme).cardTitle}>
+            {t.sportModesDisplaysCount(realDisplays.length, MAX_DISPLAYS)}
+          </Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: v3Spacing.small }}>
+            <View style={{ flexDirection: 'row', gap: v3Spacing.small }}>
+              {selectedMode.displays.map((display, i) => (
+                <TouchableOpacity key={i} onPress={() => setSelectedDisplayIndex(i)} style={{ alignItems: 'center' }}>
+                  <WatchFacePreview layoutType={displayLayoutType(display)} selected={i === selectedDisplayIndex} diameter={80} />
+                  <Text style={[styles(theme).filmLabel, { color: i === selectedDisplayIndex ? theme.primary : theme.mutedText }]}>
+                    {display.isBuiltIn ? t.sportModesBuiltInShort : String(display.screenNumber)}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </ScrollView>
+
+          {currentDisplay && (
+            <View style={{ marginTop: v3Spacing.medium }}>
+              {currentDisplay.isBuiltIn ? (
+                <Text style={styles(theme).sectionDesc}>
+                  {t.sportModesBuiltInMsg(currentDisplay.templateLabel)}
+                </Text>
+              ) : (
+                <>
+                  <Text style={styles(theme).label}>{t.sportModesScreenLabel(currentDisplay.screenNumber ?? 0)}</Text>
+                  {currentDisplay.fields.map((field, fi) => (
+                    <View key={fi} style={styles(theme).fieldRow}>
+                      <Text style={styles(theme).fieldText} numberOfLines={1}>{field.typeLabel}</Text>
+                      <TouchableOpacity
+                        style={styles(theme).smallBtn}
+                        disabled={isWriting}
+                        onPress={() => setPicker({ mode: name, display: selectedDisplayIndex, field: fi })}
+                      >
+                        <Text style={styles(theme).smallBtnText}>{t.sportModesChangeBtn}</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </>
+              )}
+            </View>
+          )}
+        </Card>
+
+        <Modal visible={!!picker} animationType="slide" transparent onRequestClose={() => setPicker(null)}>
+          <View style={styles(theme).modalOverlay}>
+            <View style={styles(theme).modalBox}>
+              <Text style={styles(theme).cardTitle}>{t.sportModesPickerTitle}</Text>
+              <FlatList
+                data={FIELD_TYPES}
+                keyExtractor={item => String(item.value)}
+                style={{ maxHeight: 400 }}
+                renderItem={({ item }) => (
+                  <TouchableOpacity style={styles(theme).pickerRow} onPress={() => handleSelectFieldType(item.name)}>
+                    <Text style={styles(theme).pickerRowText}>{fieldTypeLabel(item.name)}</Text>
+                  </TouchableOpacity>
+                )}
+              />
+              <TouchableOpacity style={[styles(theme).smallBtn, { marginTop: 10, alignSelf: 'center' }]} onPress={() => setPicker(null)}>
+                <Text style={styles(theme).smallBtnText}>{t.sportModesCloseBtn}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      </ScrollView>
+    );
   }
 
-  const busy = phase === 'connecting' || phase === 'reading';
-
+  // ── List view ──
   return (
-    <ScrollView style={styles.root} contentContainerStyle={styles.content}>
-      <View style={styles.section}>
-        <Text style={styles.sectionDesc}>{t.sportModesDesc}</Text>
+    <ScrollView style={styles(theme).root} contentContainerStyle={styles(theme).content}>
+      <Card style={{ width: '100%' }}>
+        <Text style={styles(theme).sectionDesc}>{t.sportModesDesc}</Text>
 
         {!modes && !busy && (
-          <TouchableOpacity style={[styles.btn, styles.btnPrimary, { marginTop: 10 }]} onPress={handleRead}>
-            <Text style={styles.btnText}>{t.sportModesReadBtn}</Text>
+          <TouchableOpacity style={[styles(theme).smallBtn, { marginTop: 10, alignSelf: 'flex-start' }]} onPress={handleRead}>
+            <Text style={styles(theme).smallBtnText}>{t.sportModesReadBtn}</Text>
           </TouchableOpacity>
         )}
 
         {busy && (
-          <View style={styles.statusRow}>
-            <ActivityIndicator size="small" color="#00e5ff" />
-            <Text style={[styles.statusText, { color: '#8899aa', marginLeft: 8 }]}>
+          <View style={styles(theme).statusRow}>
+            <ActivityIndicator size="small" color={theme.primary} />
+            <Text style={[styles(theme).sectionDesc, { marginLeft: 8, marginBottom: 0 }]}>
               {phase === 'connecting' ? t.connecting : t.sportModesReading}
             </Text>
           </View>
         )}
 
         {phase === 'error' && error && !modes && (
-          <Text style={[styles.sectionDesc, { color: '#f44336', marginTop: 10 }]}>{error}</Text>
+          <Text style={[styles(theme).sectionDesc, { color: theme.error, marginTop: 10 }]}>{error}</Text>
         )}
 
         {modes && (
-          <TouchableOpacity style={[styles.btn, styles.btnPrimary, { marginTop: 10 }]} onPress={handleRead} disabled={busy}>
-            <Text style={styles.btnText}>{t.sportModesRefreshBtn}</Text>
+          <TouchableOpacity style={[styles(theme).smallBtn, { marginTop: 10, alignSelf: 'flex-start' }]} onPress={handleRead} disabled={busy}>
+            <Text style={styles(theme).smallBtnText}>{t.sportModesRefreshBtn}</Text>
           </TouchableOpacity>
         )}
-      </View>
+      </Card>
 
       {modes && modes.map(mode => {
         const name = mode.settings.name;
-        const isExpanded = expanded.has(name);
-        const isWriting = writingMode === name;
+        const realCount = mode.displays.filter(d => !d.isBuiltIn).length;
         return (
-          <View key={name} style={styles.section}>
-            <View style={styles.modeHeaderRow}>
-              <TextInput
-                style={[styles.input, { flex: 1 }]}
-                value={nameEdits[name] ?? name}
-                onChangeText={v => setNameEdits(prev => ({ ...prev, [name]: v }))}
-                placeholderTextColor="#4a5a7a"
-                editable={!isWriting}
-              />
-              <TouchableOpacity
-                style={[styles.smallBtn, styles.btnPrimary]}
-                disabled={isWriting || (nameEdits[name] ?? name) === name}
-                onPress={() => handleRename(name)}
-              >
-                <Text style={styles.btnText}>{t.sportModesRenameBtn}</Text>
-              </TouchableOpacity>
-            </View>
-
-            <TouchableOpacity style={styles.expandRow} onPress={() => toggleExpanded(name)}>
-              <Text style={styles.expandText}>
-                {isExpanded ? t.sportModesCollapseBtn : t.sportModesExpandBtn}
-              </Text>
-            </TouchableOpacity>
-
-            {isWriting && (
-              <View style={styles.statusRow}>
-                <ActivityIndicator size="small" color="#00e5ff" />
+          <TouchableOpacity key={name} onPress={() => setSelectedName(name)} activeOpacity={0.7}>
+            <Card style={{ width: '100%' }}>
+              <View style={styles(theme).listRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles(theme).cardTitle}>{name}</Text>
+                  <Text style={styles(theme).sectionDesc}>
+                    {t.sportModesDisplaysCount(realCount, MAX_DISPLAYS)}
+                  </Text>
+                </View>
+                <Icon name="chevronRight" size={20} color={theme.mutedText} />
               </View>
-            )}
-
-            {isExpanded && (
-              <View>
-                {/* Autolap */}
-                <Text style={styles.label}>{t.sportModesAutolapLabel}</Text>
-                <View style={styles.row}>
-                  <TextInput
-                    style={[styles.input, { flex: 1 }]}
-                    value={autolapEdits[name] ?? ''}
-                    onChangeText={v => setAutolapEdits(prev => ({ ...prev, [name]: v }))}
-                    keyboardType="numeric"
-                    editable={!isWriting}
-                  />
-                  <TouchableOpacity
-                    style={[styles.smallBtn, styles.btnPrimary]}
-                    disabled={isWriting}
-                    onPress={() => handleSetAutolap(name)}
-                  >
-                    <Text style={styles.btnText}>{t.sportModesSetBtn}</Text>
-                  </TouchableOpacity>
-                </View>
-
-                {/* HR limits */}
-                <Text style={styles.label}>{t.sportModesHrLimitsLabel}</Text>
-                <View style={styles.row}>
-                  <Switch
-                    value={hrLimitsEdits[name] ?? false}
-                    onValueChange={v => setHrLimitsEdits(prev => ({ ...prev, [name]: v }))}
-                    disabled={isWriting}
-                    trackColor={{ false: '#1a4a7a', true: '#00e5ff88' }}
-                    thumbColor="#fff"
-                  />
-                  <TextInput
-                    style={[styles.input, { flex: 1, marginLeft: 10 }]}
-                    value={hrLowEdits[name] ?? ''}
-                    onChangeText={v => setHrLowEdits(prev => ({ ...prev, [name]: v }))}
-                    placeholder={t.sportModesHrLowLabel}
-                    placeholderTextColor="#4a5a7a"
-                    keyboardType="numeric"
-                    editable={!isWriting}
-                  />
-                  <TextInput
-                    style={[styles.input, { flex: 1, marginLeft: 10 }]}
-                    value={hrHighEdits[name] ?? ''}
-                    onChangeText={v => setHrHighEdits(prev => ({ ...prev, [name]: v }))}
-                    placeholder={t.sportModesHrHighLabel}
-                    placeholderTextColor="#4a5a7a"
-                    keyboardType="numeric"
-                    editable={!isWriting}
-                  />
-                  <TouchableOpacity
-                    style={[styles.smallBtn, styles.btnPrimary, { marginLeft: 10 }]}
-                    disabled={isWriting}
-                    onPress={() => handleSetHrLimits(name)}
-                  >
-                    <Text style={styles.btnText}>{t.sportModesSetBtn}</Text>
-                  </TouchableOpacity>
-                </View>
-
-                {/* Pods */}
-                <Text style={styles.label}>{t.sportModesPodsLabel}</Text>
-                <View style={styles.chipRow}>
-                  {PODS.map(pod => {
-                    const active = (mode.settings.useHw & pod.bit) !== 0;
-                    return (
-                      <TouchableOpacity
-                        key={pod.bit}
-                        style={[styles.chip, active && styles.chipActive]}
-                        disabled={isWriting}
-                        onPress={() => handleTogglePod(name, mode.settings.useHw, pod.bit, !active)}
-                      >
-                        <Text style={[styles.chipText, active && styles.chipTextActive]}>{pod.label}</Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-
-                {/* Displays */}
-                <Text style={styles.label}>{t.sportModesDisplaysLabel}</Text>
-                {mode.displays.map((display, di) => (
-                  <View key={di} style={styles.displayBlock}>
-                    <Text style={styles.displayTitle}>[{di}] {display.templateName}</Text>
-                    {display.fields.map((field, fi) => (
-                      <View key={fi} style={styles.fieldRow}>
-                        <Text style={styles.fieldText} numberOfLines={1}>{field.typeName}</Text>
-                        <TouchableOpacity
-                          style={[styles.smallBtn, styles.btnPrimary]}
-                          disabled={isWriting}
-                          onPress={() => setPicker({ mode: name, display: di, field: fi })}
-                        >
-                          <Text style={styles.btnText}>{t.sportModesChangeBtn}</Text>
-                        </TouchableOpacity>
-                      </View>
-                    ))}
-                  </View>
-                ))}
-              </View>
-            )}
-          </View>
+            </Card>
+          </TouchableOpacity>
         );
       })}
-
-      <Modal visible={!!picker} animationType="slide" transparent onRequestClose={() => setPicker(null)}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalBox}>
-            <Text style={styles.sectionTitle}>{t.sportModesPickerTitle}</Text>
-            <FlatList
-              data={FIELD_TYPES}
-              keyExtractor={item => String(item.value)}
-              style={{ maxHeight: 400 }}
-              renderItem={({ item }) => (
-                <TouchableOpacity style={styles.pickerRow} onPress={() => handleSelectFieldType(item.name)}>
-                  <Text style={styles.pickerRowText}>{item.name}</Text>
-                </TouchableOpacity>
-              )}
-            />
-            <TouchableOpacity style={[styles.btn, styles.btnDanger, { marginTop: 10 }]} onPress={() => setPicker(null)}>
-              <Text style={styles.btnText}>{t.sportModesCloseBtn}</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
     </ScrollView>
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#16213e' },
-  content: { padding: 20 },
-  section: {
-    backgroundColor: '#0f3460',
-    borderRadius: 14,
-    padding: 16,
-    marginBottom: 16,
-  },
-  sectionTitle: { fontSize: 17, fontWeight: '700', color: '#00e5ff', marginBottom: 8 },
-  sectionDesc: { fontSize: 13, color: '#8899aa', marginBottom: 6, lineHeight: 19 },
-  label: { fontSize: 13, color: '#8899aa', marginTop: 12, marginBottom: 4 },
+const styles = (t: ReturnType<typeof useV3Theme>) => StyleSheet.create({
+  root: { flex: 1, backgroundColor: t.background },
+  content: { padding: v3Spacing.medium, gap: v3Spacing.medium },
+  backRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  backText: { color: t.text, fontSize: v3Type.bodyLarge, fontWeight: '600' },
+  modeTitle: { fontSize: v3Type.largeTitle, fontWeight: '800', color: t.text, marginBottom: 4 },
+  cardTitle: { fontSize: v3Type.heading, fontWeight: '700', color: t.text },
+  sectionDesc: { fontSize: v3Type.body, color: t.mutedText, marginBottom: 6, lineHeight: 19 },
+  label: { fontSize: v3Type.body, color: t.mutedText, marginTop: 12, marginBottom: 4 },
   input: {
-    backgroundColor: '#16213e',
+    backgroundColor: t.background,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#1a4a7a',
+    borderColor: t.mutedText + '33',
     paddingHorizontal: 12,
     paddingVertical: 10,
-    color: '#fff',
-    fontSize: 14,
+    color: t.text,
+    fontSize: v3Type.bodyLarge,
   },
   row: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 },
-  modeHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  expandRow: { marginTop: 10 },
-  expandText: { color: '#00e5ff', fontSize: 13, fontWeight: '600' },
-  btn: {
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   smallBtn: {
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
+    paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8,
+    backgroundColor: t.primary + '1F', borderWidth: 1, borderColor: t.primary,
+    alignItems: 'center', justifyContent: 'center',
   },
-  btnPrimary: { backgroundColor: '#00e5ff22', borderWidth: 1, borderColor: '#00e5ff' },
-  btnDanger:  { backgroundColor: '#f4433622', borderWidth: 1, borderColor: '#f44336' },
-  btnText: { color: '#fff', fontWeight: '600', fontSize: 13 },
+  smallBtnText: { color: t.primary, fontWeight: '600', fontSize: v3Type.label },
   statusRow: { flexDirection: 'row', alignItems: 'center', marginTop: 10 },
-  statusText: { color: '#4caf50', fontSize: 12 },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 4 },
   chip: {
     paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8,
-    borderWidth: 1, borderColor: '#1a4a7a', backgroundColor: '#16213e',
+    borderWidth: 1, borderColor: t.mutedText + '33', backgroundColor: t.background,
   },
-  chipActive: { borderColor: '#00e5ff', backgroundColor: '#00e5ff22' },
-  chipText: { color: '#8899aa', fontSize: 12 },
-  chipTextActive: { color: '#00e5ff', fontWeight: '600' },
-  displayBlock: { marginTop: 8, backgroundColor: '#16213e', borderRadius: 10, padding: 10 },
-  displayTitle: { color: '#8899aa', fontSize: 12, marginBottom: 6 },
+  chipActive: { borderColor: t.primary, backgroundColor: t.primary + '1F' },
+  chipText: { color: t.mutedText, fontSize: v3Type.label },
+  chipTextActive: { color: t.primary, fontWeight: '600' },
+  filmLabel: { fontSize: v3Type.tiny, fontWeight: '700', marginTop: 4, textAlign: 'center' },
   fieldRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    marginTop: 4,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 6,
   },
-  fieldText: { color: '#fff', fontSize: 13, flex: 1, marginRight: 8 },
-  modalOverlay: { flex: 1, backgroundColor: '#000000aa', justifyContent: 'flex-end' },
-  modalBox: { backgroundColor: '#0f3460', borderTopLeftRadius: 16, borderTopRightRadius: 16, padding: 16 },
-  pickerRow: { paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#1a4a7a' },
-  pickerRowText: { color: '#fff', fontSize: 14 },
+  fieldText: { color: t.text, fontSize: v3Type.body, flex: 1, marginRight: 8 },
+  listRow: { flexDirection: 'row', alignItems: 'center' },
+  modalOverlay: { flex: 1, backgroundColor: '#00000066', justifyContent: 'flex-end' },
+  modalBox: { backgroundColor: t.background, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, maxHeight: '85%' },
+  pickerRow: { paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: t.mutedText + '22' },
+  pickerRowText: { color: t.text, fontSize: v3Type.bodyLarge },
 });
