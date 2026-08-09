@@ -2183,3 +2183,16 @@ Honest consolidated status of the whole app/workout-install effort:
   own-variable values / per-app setup are written by SuuntoLink; a real capture of SuuntoLink
   installing a stateful app would show it - the genuine-capture gap from Finding 19).
 Watch restored clean, byte-exact.
+
+### Finding 43 addendum: SuuntoLink's app install writes ONLY Apps+CustomModes (no separate own-var write)
+
+Checked all v2 install captures: SuuntoLink's real app install issues 0x0b16 writes ONLY to
+Apps(0x927c0) and CustomModes(0x2000) - the exact regions we reproduce byte-exact - plus
+ambit3_settings/status READS (4-byte request, 438-byte reply = read, not write). So there is NO
+separate own-variable / per-app-setup write region; own-var defaults are baked into the binary.
+=> our install is functionally equivalent to SuuntoLink's (byte-exact regions, same commands).
+That makes the stateful-app "--" puzzling, not a missing-write: either a subtle difference in how
+we BUILD a fresh entry vs SuuntoLink, or an app/recording nuance. The clean discriminator (only
+André can run): install the SAME app (e.g. Couch-to-5K) via REAL SuuntoLink on the Mac and see if
+IT renders - if yes, diff our-install vs SuuntoLink-install watch state; if it ALSO shows "--",
+the app needs an interaction we're not doing. Not resolved this session.
