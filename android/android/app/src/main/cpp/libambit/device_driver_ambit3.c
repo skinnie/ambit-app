@@ -1508,51 +1508,81 @@ int ambit3_read_custom_modes_raw(ambit_object_t *object, uint8_t *out_buffer)
     return ambit3_read_flash_region(object, AMBIT3_CUSTOM_MODES_BASE, AMBIT3_CUSTOM_MODES_SIZE, out_buffer);
 }
 
+/* DEVICE_CUSTOM - the BXml root tag every real CustomModes region starts with (a 4-byte
+ * header: [u16 LE tag_id][u16 LE length], content follows). Same value as the companion
+ * Python project's custom_modes.py / this app's own CustomModesReader.ts (both named
+ * DEVICE_CUSTOM = 0x003) and Android's Kotlin/JNI callers never had their own separate copy
+ * of this constant to keep in sync - it's declared once, here. */
+#define AMBIT3_DEVICE_CUSTOM_TAG 0x0003
+
 /*
- * Writes a full CustomModes region back - real, hardware-confirmed mechanism, 2026-08-08
- * (custom_modes_andre.md's "first real, hardware-confirmed CustomModes content edit" and
- * follow-up sections): chunked CMD_DATA_WRITE (reusing the existing generic
- * libambit_pmem20_data_write(), the same chunker Routes/Waypoints already use) + a
- * CMD_DATA_TAIL closing hash (SHA256 of the *entire* `datalen`-byte buffer, uppercase hex -
- * confirmed exactly matching the companion Python project's own `region_hash()`
- * HASH_PADDED mode, see tools/ambit_format.py) + CMD_NAV_COMMIT (0x0b04) - the identical
- * three-step sequence Routes/Waypoints already use via ambit3_write_route_to_watch(), not
- * a new mechanism invented for this.
+ * Real bug, found + fixed 2026-08-09 ("DESKTOP version got all fixes that android app never
+ * got" - freshly re-verified live against a real connected Ambit3 Peak the same day, see
+ * this project's own verify_finding28.py-style check: WRITTEN hash matched the watch's own
+ * 0x0b21-reported CustomModes hash exactly, PADDED did not). This function used to hash and
+ * write the *entire* AMBIT3_CUSTOM_MODES_SIZE (12288) buffer and always send
+ * AMBIT3_CMD_NAV_COMMIT afterward - both now-confirmed wrong:
  *
- * `datalen` MUST be the full real region size (AMBIT3_CUSTOM_MODES_SIZE) - the caller is
- * responsible for reading the current region first (ambit3_read_custom_modes_raw()),
- * patching only the specific bytes it wants to change, and passing the *whole* buffer
- * back, exactly the same discipline every one of this session's Python write tools already
- * follows (never a partial-region write).
+ *   - training_program_andre.md Finding 28 (from 4 real SuuntoLink app-install captures,
+ *     byte-exact SHA256 proof against the watch's own self-reported hash): the watch only
+ *     ever hashes the *used extent* of the region (the DEVICE_CUSTOM root tag's own declared
+ *     length + its 4-byte header, ~5.9 KB here, not the full padded 12288) - hashing/writing
+ *     the full padded region is the confirmed cause of "err:62 on all sport modes" after a
+ *     cold boot, because the watch recomputes the used-extent hash on boot and it never
+ *     matched a full-region hash.
+ *   - Finding 27 (same 4 captures): real SuuntoLink NEVER sends CMD_NAV_COMMIT (0x0b04) for
+ *     Apps or CustomModes writes - that command is specifically the *navigation database*
+ *     commit (Routes/Waypoints); sending it here was this project's own addition, copied
+ *     from the Routes/Waypoints path by analogy, and is the strongest suspect for the
+ *     "connect to Moveslink" / needs-restart / clock-reset state seen on real hardware after
+ *     installs. The real per-region finalization is the CMD_DATA_TAIL hash itself.
  *
- * **Real, honest caveat, unlike this session's other native additions**: the desktop side
- * of this exact mechanism (write_nav.py's send_plan()) was live-tested repeatedly against
- * real hardware this session (custom_modes_rename_test.py and friends) and is fully
- * confirmed working. This native Android port has NOT been - it reuses already-proven
- * building blocks (the pmem20 chunker Routes/Waypoints already use in production, the same
- * sha256.c already linked into this binary, the same CMD_NAV_COMMIT Routes/Waypoints
- * already send) but the composition itself, on this platform, is new and untested. Treat
- * this as needing real hardware verification before trusting it with anything other than a
- * deliberate, backed-up test write - the same caution this project's own "bounds-check
- * before write" lesson calls for.
+ * This is the exact same fix desktop's own tools/ambit_format.py / custom_modes.py already
+ * got on 2026-08-09 - this native Android path never received it until now, despite this
+ * function's own prior header comment (now corrected) claiming the desktop mechanism was
+ * "fully confirmed working" - it was confirmed working for the *pre-Finding-28* method,
+ * which desktop has since moved off of for exactly this reason.
  *
- * Returns 0 on success, -1 on failure (a failed intermediate write or tail send aborts
- * immediately - the watch's own commit is the only thing that makes a partial write
- * visible, so an aborted sequence before commit should leave the watch's live state
- * unchanged, matching how the Routes/Waypoints path already behaves on a mid-sequence
- * failure).
+ * `datalen` still MUST be the full real region size (AMBIT3_CUSTOM_MODES_SIZE) - the caller
+ * is still responsible for reading the current region first
+ * (ambit3_read_custom_modes_raw()), patching only the bytes it wants to change, and passing
+ * the *whole* buffer back (never a partial-region read/patch). This function itself now
+ * works out how much of that buffer is real (the used extent) and only ever writes/hashes
+ * that part - the caller does not need to know or compute the extent itself.
+ *
+ * Returns 0 on success, -1 on failure (including a malformed/implausible root tag - see the
+ * bounds checks below, this project's own "bounds-check before write" rule: a real flash
+ * write is downstream of this, so a garbage extent must never reach it).
  */
 int ambit3_write_custom_modes_raw(ambit_object_t *object, const uint8_t *data, size_t datalen)
 {
     if (object == NULL || data == NULL || datalen != AMBIT3_CUSTOM_MODES_SIZE) return -1;
 
-    if (libambit_pmem20_data_write(&object->driver_data->pmem20, AMBIT3_CUSTOM_MODES_BASE, data, datalen) != 0) {
+    /* used_extent(): [u16 LE tag_id][u16 LE length] at offset 0, extent = 4 + length. Same
+     * real check custom_modes.py's own used_extent() makes, not a new one invented here. */
+    if (datalen < 4) return -1;
+    uint16_t root_tag = (uint16_t)(data[0] | (data[1] << 8));
+    uint16_t root_len = (uint16_t)(data[2] | (data[3] << 8));
+    if (root_tag != AMBIT3_DEVICE_CUSTOM_TAG) {
+        LOG_ERROR("ambit3_write_custom_modes_raw: root tag 0x%04x != DEVICE_CUSTOM (0x%04x) "
+                   "- refusing to write, this doesn't look like a real CustomModes image",
+                   root_tag, AMBIT3_DEVICE_CUSTOM_TAG);
+        return -1;
+    }
+    size_t extent = 4 + (size_t)root_len;
+    if (extent > datalen) {
+        LOG_ERROR("ambit3_write_custom_modes_raw: declared extent %zu exceeds buffer size %zu "
+                   "- refusing to write", extent, datalen);
+        return -1;
+    }
+
+    if (libambit_pmem20_data_write(&object->driver_data->pmem20, AMBIT3_CUSTOM_MODES_BASE, data, extent) != 0) {
         LOG_ERROR("ambit3_write_custom_modes_raw: region write failed");
         return -1;
     }
 
     uint8_t hash[32];
-    sha256(data, datalen, hash);
+    sha256(data, extent, hash);
     char hash_hex[65];
     for (int i = 0; i < 32; i++) {
         sprintf(hash_hex + i * 2, "%02X", hash[i]);
@@ -1569,11 +1599,6 @@ int ambit3_write_custom_modes_raw(ambit_object_t *object, const uint8_t *data, s
         return -1;
     }
 
-    if (libambit_protocol_command(object, AMBIT3_CMD_NAV_COMMIT, NULL, 0, NULL, NULL, 0) != 0) {
-        LOG_ERROR("ambit3_write_custom_modes_raw: commit failed - the watch's CustomModes "
-                   "region may be left in a partially-written state. A backup taken before "
-                   "this write is the only way back.");
-        return -1;
-    }
+    /* No CMD_NAV_COMMIT here - Finding 27, see this function's own header comment. */
     return 0;
 }
