@@ -4,7 +4,10 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
-import { useTheme } from './src/theme/useTheme';
+// v3.0 UI port (2026-08-09, "go all the way to the new theming") - the app shell itself
+// (status bar, every native-stack header's background/tint) is the last real holdout;
+// nothing in the app imports theme/useTheme.ts anymore after this.
+import { useV3Theme } from './src/theme/v3';
 import { ThemeModeProvider, useThemeMode } from './src/theme/ThemeModeContext';
 import HomeScreen from './src/screens/HomeScreen';
 import LogListScreen from './src/screens/LogListScreen';
@@ -82,7 +85,7 @@ export default function App() {
 
 function AppShell() {
   const { isDark } = useThemeMode();
-  const theme = useTheme();
+  const theme = useV3Theme();
 
   useEffect(() => {
     // App ouverte depuis un deep link (app déjà lancée)
@@ -102,7 +105,7 @@ function AppShell() {
         <Stack.Navigator
           initialRouteName="Home"
           screenOptions={{
-            headerStyle: { backgroundColor: theme.surface },
+            headerStyle: { backgroundColor: theme.card },
             headerTintColor: theme.text,
             headerTitleStyle: { fontWeight: '700' },
             headerShadowVisible: false,

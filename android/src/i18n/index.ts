@@ -42,6 +42,30 @@ const fr = {
   error:        'Erreur',
   unknownError: 'Erreur inconnue',
   viewActivities: 'Voir les activités',
+  homeNavHome: 'Accueil',
+  homeConnVia: (via: string) => `via ${via}`,
+  homeConnViaUsb: 'USB',
+  homeConnViaBle: 'Bluetooth',
+
+  // WeatherCard (v3.0 UI port, real feature port from desktop's WeatherService/
+  // WeatherViewModel/WeatherCard.qml - open-meteo.com WMO weather codes)
+  weatherClear: 'Ciel dégagé',
+  weatherMainlyClear: 'Généralement dégagé',
+  weatherPartlyCloudy: 'Partiellement nuageux',
+  weatherOvercast: 'Couvert',
+  weatherFog: 'Brouillard',
+  weatherDrizzle: 'Bruine',
+  weatherRain: 'Pluie',
+  weatherRainShowers: 'Averses',
+  weatherSnow: 'Neige',
+  weatherSnowShowers: 'Averses de neige',
+  weatherThunderstorm: 'Orage',
+  weatherUnknown: 'Inconnu',
+  weatherOffline: "Vous êtes hors ligne, sortez pour vérifier la météo !",
+  weatherWind: (speed: number) => `Vent ${speed} km/h`,
+  weatherHighLow: (high: number, low: number) => `H:${high}°  B:${low}°`,
+  weatherHighLowShort: (high: number, low: number) => `${high}°/${low}°`,
+  weatherToday: "Aujourd'hui",
 
   // HomeScreen — connecting flow (v2.3.2 beta)
   homeSearchingTitle: 'Recherche de votre appareil, veuillez patienter…',
@@ -136,6 +160,10 @@ const fr = {
   themeLight:         'Clair',
   themeDark:          'Sombre',
   themeSystem:        'Système',
+
+  // SettingsScreen — Connections card (v3.0 UI port, compact tap-to-open rows)
+  connectionsSection: 'Connexions',
+  closeBtn: 'Fermer',
 
   // SettingsScreen — Strava
   stravaSection:         'Strava',
@@ -311,6 +339,13 @@ const fr = {
   sportModesRenameBtn: 'Renommer',
   sportModesExpandBtn: 'Détails',
   sportModesCollapseBtn: 'Masquer',
+  // v3.0 UI port - List<->Detail rework (real desktop parity, 2026-08-09)
+  sportModesBackBtn: 'Modes sport',
+  sportModesNameLabel: 'Nom',
+  sportModesDisplaysCount: (n: number, max: number) => `Affichages (${n}/${max})`,
+  sportModesBuiltInShort: '•',
+  sportModesBuiltInMsg: (template: string) => `Écran système intégré (${template}) - non modifiable.`,
+  sportModesScreenLabel: (n: number) => `Écran ${n}`,
   sportModesAutolapLabel: 'Autolap (m)',
   sportModesSetBtn: 'Appliquer',
   sportModesHrLimitsLabel: 'Limites FC',
@@ -429,6 +464,30 @@ const en: typeof fr = {
   error:        'Error',
   unknownError: 'Unknown error',
   viewActivities: 'View activities',
+  homeNavHome: 'Home',
+  homeConnVia: (via: string) => `via ${via}`,
+  homeConnViaUsb: 'USB',
+  homeConnViaBle: 'Bluetooth',
+
+  // WeatherCard (v3.0 UI port, real feature port from desktop's WeatherService/
+  // WeatherViewModel/WeatherCard.qml - open-meteo.com WMO weather codes)
+  weatherClear: 'Clear sky',
+  weatherMainlyClear: 'Mainly clear',
+  weatherPartlyCloudy: 'Partly cloudy',
+  weatherOvercast: 'Overcast',
+  weatherFog: 'Fog',
+  weatherDrizzle: 'Drizzle',
+  weatherRain: 'Rain',
+  weatherRainShowers: 'Rain showers',
+  weatherSnow: 'Snow',
+  weatherSnowShowers: 'Snow showers',
+  weatherThunderstorm: 'Thunderstorm',
+  weatherUnknown: 'Unknown',
+  weatherOffline: "You're offline, go outside to check the weather!",
+  weatherWind: (speed: number) => `Wind ${speed} km/h`,
+  weatherHighLow: (high: number, low: number) => `H:${high}°  L:${low}°`,
+  weatherHighLowShort: (high: number, low: number) => `${high}°/${low}°`,
+  weatherToday: 'Today',
 
   // HomeScreen — connecting flow (v2.3.2 beta)
   homeSearchingTitle: 'Searching for your device, please wait…',
@@ -568,6 +627,9 @@ const en: typeof fr = {
   themeDark:          'Dark',
   themeSystem:        'System',
 
+  connectionsSection: 'Connections',
+  closeBtn: 'Close',
+
   stravaSection:         'Strava',
   stravaSettingsDesc:    'Connect your Strava account to export your activities. The connection uses OAuth2.',
   stravaConnectedStatus: 'Strava account connected',
@@ -687,6 +749,13 @@ const en: typeof fr = {
   sportModesRenameBtn: 'Rename',
   sportModesExpandBtn: 'Details',
   sportModesCollapseBtn: 'Hide',
+  // v3.0 UI port - List<->Detail rework (real desktop parity, 2026-08-09)
+  sportModesBackBtn: 'Sport Modes',
+  sportModesNameLabel: 'Name',
+  sportModesDisplaysCount: (n: number, max: number) => `Displays (${n}/${max})`,
+  sportModesBuiltInShort: '•',
+  sportModesBuiltInMsg: (template: string) => `Built-in system screen (${template}) - not editable.`,
+  sportModesScreenLabel: (n: number) => `Screen ${n}`,
   sportModesAutolapLabel: 'Autolap (m)',
   sportModesSetBtn: 'Set',
   sportModesHrLimitsLabel: 'HR limits',

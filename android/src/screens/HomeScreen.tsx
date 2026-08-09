@@ -24,9 +24,15 @@ import { decodeDeviceHistory, KailashHistory } from '../services/KailashHistoryR
 import { decodeDeviceLog, realTrackPoints, deviceLogToGpx, KailashDeviceLog } from '../services/KailashDeviceLogReader';
 import { APP_VERSION } from '../config/version';
 import { t } from '../i18n';
-import { useTheme } from '../theme/useTheme';
 import Icon from '../components/ui/Icon';
 import { ActionTile, Badge, Button, Chip, Logo, StatusLine } from '../components/ui/primitives';
+// v3.0 UI port (2026-08-09, "go all the way to the new theming") - the whole screen (not
+// just the connected dashboard) is on the v3 palette now; tokens.ts/useTheme() aren't
+// imported here anymore at all.
+import { useV3Theme } from '../theme/v3';
+import { Card } from '../components/ui/Card';
+import { WeatherCard } from '../components/WeatherCard';
+import { NavShell, NavShellItem } from '../navigation/NavShell';
 
 // Real, 2026-08-08: Kailash ("Hoopoe") answers the same USB init + 0x0000 device-info
 // commands every Ambit/Traverse does (AmbitUsbModule.kt's SUUNTO_PID_NAMES/
@@ -46,15 +52,31 @@ type ActiveAction = 'sync' | 'orbital';
 // runs once that's happened, not a replacement for it).
 type ConnPhase = 'searching' | 'connecting' | 'connected' | 'timeout' | 'later' | 'connect-error';
 
-const SEARCH_POLL_MS = 1200;
+// Real, 2026-08-09 (v3.0 planning: "via usb should be auto detected, refresh rate
+// 2seconds if no usb is detected") - was 1200ms, bumped to the real requested 2s. Bluetooth
+// stays button-triggered (homeBleConnectBtn / handleBleConnectRef), not auto-polled - the
+// watch's BLE advertising window is short and scanning continuously would drain it for no
+// benefit, see the BLE-connect comments further down this file.
+const SEARCH_POLL_MS = 2000;
 const SEARCH_TIMEOUT_MS = 15000;
 const CONNECTED_POLL_MS = 4000;
 
 // ─── Composant principal ──────────────────────────────────────────────────────
 export default function HomeScreen() {
-  const theme = useTheme();
+  // v3.0 UI port (2026-08-09, "go all the way to the new theming") - the whole screen is on
+  // the v3 palette now, including the pre-connect phase screens (searching/no-device/
+  // connecting/error/later) that were deliberately left on the old theme during the initial
+  // proof-of-concept pass. `theme` is kept as the local name (not renamed to `v3`) purely to
+  // avoid a much larger diff below - every value it returns is v3Colors now.
+  const theme = useV3Theme();
   const styles = createStyles(theme);
   const navigation = useNavigation<Nav>();
+  // deviceName/deviceSub keep their existing font metrics (createStyles(theme) above still
+  // owns size/weight/spacing) - these two exist only because deviceName/deviceSub are style
+  // *objects* (not just color), so overriding color needs a second style-array entry rather
+  // than editing the object in place.
+  const v3TextStyle = { color: theme.text };
+  const v3MutedStyle = { color: theme.mutedText };
 
   // "No device connected" screens (searching/connecting/timeout/error) run
   // ~12.5% larger text than the rest of the app, scaled further by the
@@ -536,7 +558,35 @@ export default function HomeScreen() {
 
   // phase === 'connected' from here on
 
+  // v3.0 UI port - the persistent nav shell (NavRail.qml's real pattern: a fixed item list,
+  // visibility gated by connected-device type, selection by string id). Garmin routes to
+  // GarminRoute/GarminPoi (its own params-carrying screens, see App.tsx's RootStackParamList
+  // comment on why those are separate from Route/Poi) instead of Ambit's Route/Poi. Kailash
+  // excludes Routes/POIs/Sport Modes, same real reasoning as the ActionTile grid below already
+  // encoded (Kailash's own memory map has no route-following feature or CustomModes region).
+  const navItems: NavShellItem[] = [
+    { id: 'home', label: t.homeNavHome, icon: 'mountain', onPress: () => {} },
+    { id: 'activities', label: t.viewActivities, icon: 'list', onPress: () => navigation.navigate('LogList') },
+    ...(deviceType === 'garmin'
+      ? [
+          { id: 'routes', label: t.homeRoutesBtn, icon: 'route' as const, onPress: () => garminInfo && navigation.navigate('GarminRoute', { info: garminInfo }) },
+          { id: 'pois', label: t.homePoisBtn, icon: 'poi' as const, onPress: () => garminInfo && navigation.navigate('GarminPoi', { info: garminInfo }) },
+        ]
+      : !isKailash(ambitInfo)
+        ? [
+            { id: 'routes', label: t.homeRoutesBtn, icon: 'route' as const, onPress: () => navigation.navigate('Route') },
+            { id: 'pois', label: t.homePoisBtn, icon: 'poi' as const, onPress: () => navigation.navigate('Poi') },
+          ]
+        : []),
+    { id: 'backup', label: t.backupButton, icon: 'backup', onPress: () => navigation.navigate('Backup') },
+    ...(deviceType === 'ambit' && !isKailash(ambitInfo)
+      ? [{ id: 'sportModes', label: t.sportModesButton, icon: 'watch' as const, onPress: () => navigation.navigate('SportModes') }]
+      : []),
+    { id: 'settings', label: t.settingsTitle, icon: 'settings', onPress: () => navigation.navigate('Settings') },
+  ];
+
   return (
+    <NavShell items={navItems} selectedId="home">
     <ScrollView
       style={styles.scroll}
       contentContainerStyle={styles.scrollContent}
@@ -557,25 +607,25 @@ export default function HomeScreen() {
       {deviceType === 'garmin' && garminInfo && (() => {
         const vol = garminInfo.volumes.find(v => v.hasGarminDeviceXml) ?? garminInfo.volumes[0];
         return (
-          <View style={[styles.deviceCard, roomy ? styles.deviceCardRoomy : styles.deviceCardCol]}>
-            <Text style={styles.deviceName}>{vol?.model ?? t.garminUnknownModel}</Text>
+          <Card style={[roomy ? styles.deviceCardRoomy : styles.deviceCardCol, styles.deviceCardInner]}>
+            <Text style={[styles.deviceName, v3TextStyle]}>{vol?.model ?? t.garminUnknownModel}</Text>
             {!!vol?.firmwareVersion && (
-              <Text style={styles.deviceSub}>{t.garminFirmwareLabel} {vol.firmwareVersion}</Text>
+              <Text style={[styles.deviceSub, v3MutedStyle]}>{t.garminFirmwareLabel} {vol.firmwareVersion}</Text>
             )}
             <View style={styles.deviceMetaRow}>
-              <Text style={styles.deviceSub}>
+              <Text style={[styles.deviceSub, v3MutedStyle]}>
                 {garminInfo.hasSdCard ? t.garminSdCardPresent : t.garminSdCardAbsent}
               </Text>
               <Chip icon="check" label={t.homeDeviceConnectedStatus} />
             </View>
-          </View>
+          </Card>
         );
       })()}
       {deviceType === 'ambit' && ambitInfo && (
-        <View style={[styles.deviceCard, roomy ? styles.deviceCardRoomy : styles.deviceCardCol]}>
-          <Text style={styles.deviceName}>{ambitInfo.name}</Text>
+        <Card style={[roomy ? styles.deviceCardRoomy : styles.deviceCardCol, styles.deviceCardInner]}>
+          <Text style={[styles.deviceName, v3TextStyle]}>{ambitInfo.name}</Text>
           {!!(ambitInfo.fwVersion || ambitInfo.hwVersion) && (
-            <Text style={styles.deviceSub}>
+            <Text style={[styles.deviceSub, v3MutedStyle]}>
               {ambitInfo.fwVersion ? `${t.garminFirmwareLabel} ${ambitInfo.fwVersion}` : ''}
               {ambitInfo.hwVersion ? `  ·  ${t.homeHwLabel} ${ambitInfo.hwVersion}` : ''}
             </Text>
@@ -583,13 +633,19 @@ export default function HomeScreen() {
           <View style={styles.deviceMetaRow}>
             {ambitInfo.battery >= 0 && (
               <View style={styles.deviceBattery}>
-                <Icon name="battery" size={15} color={theme.textMuted} />
-                <Text style={styles.deviceBatteryText}>{ambitInfo.battery}%</Text>
+                <Icon name="battery" size={15} color={theme.mutedText} />
+                <Text style={[styles.deviceBatteryText, v3MutedStyle]}>{ambitInfo.battery}%</Text>
               </View>
             )}
             <Chip icon="check" label={t.homeDeviceConnectedStatus} />
+            {/* Real, 2026-08-09 ("via usb should be auto detected... bluetooth yes it needs
+                a button") - desktop's own hero card never needed this (USB-only), but Android
+                genuinely has two transports now, so the connected card says which one is
+                live. bleConnected is the same ref this screen already uses to gate the USB
+                watchdog/sync-provider choice - not a new signal invented for this label. */}
+            <Chip icon={bleConnected ? 'link' : 'check'} label={t.homeConnVia(bleConnected ? t.homeConnViaBle : t.homeConnViaUsb)} />
           </View>
-        </View>
+        </Card>
       )}
 
       {/* ── Kailash travel history - real, 2026-08-08 ("if we could import this data
@@ -599,34 +655,34 @@ export default function HomeScreen() {
           each muted detail line, rather than the pre-redesign deviceInfoBox styles this
           screen no longer defines. ── */}
       {deviceType === 'ambit' && isKailash(ambitInfo) && kailashHistory && (
-        <View style={[styles.deviceCard, roomy ? styles.deviceCardRoomy : styles.deviceCardCol]}>
-          <Text style={styles.deviceName}>{t.homeKailashTravelTitle}</Text>
-          <Text style={styles.deviceSub}>
+        <Card style={[roomy ? styles.deviceCardRoomy : styles.deviceCardCol, styles.deviceCardInner]}>
+          <Text style={[styles.deviceName, v3TextStyle]}>{t.homeKailashTravelTitle}</Text>
+          <Text style={[styles.deviceSub, v3MutedStyle]}>
             {t.homeKailashCitiesLabel} {kailashHistory.citiesVisited}
             {'  ·  '}{t.homeKailashCountriesLabel} {kailashHistory.countriesVisited}
           </Text>
           {kailashHistory.hasLastKnownLocation && (
-            <Text style={styles.deviceSub}>
+            <Text style={[styles.deviceSub, v3MutedStyle]}>
               {kailashHistory.lastKnownLatitude.toFixed(4)}, {kailashHistory.lastKnownLongitude.toFixed(4)}
               {kailashHistory.lastKnownCountry ? ` (${kailashHistory.lastKnownCountry})` : ''}
             </Text>
           )}
-          <Text style={styles.deviceSub}>
+          <Text style={[styles.deviceSub, v3MutedStyle]}>
             {t.homeKailashTravelledLabel} {(kailashHistory.travelledDistanceMeters / 1000).toFixed(1)} km
             {'  ·  '}{t.homeKailashFurthestLabel} {(kailashHistory.furthestFromHomeMeters / 1000).toFixed(1)} km
           </Text>
           {kailashHistory.sessions.length > 0 && (
-            <Text style={styles.deviceSub}>
+            <Text style={[styles.deviceSub, v3MutedStyle]}>
               {t.homeKailashLogbookLabel} {kailashHistory.sessions.length}
             </Text>
           )}
-        </View>
+        </Card>
       )}
 
       {deviceType === 'ambit' && isKailash(ambitInfo) && kailashTrack && (
-        <View style={[styles.deviceCard, roomy ? styles.deviceCardRoomy : styles.deviceCardCol]}>
-          <Text style={styles.deviceName}>{t.homeKailashTrackTitle}</Text>
-          <Text style={styles.deviceSub}>
+        <Card style={[roomy ? styles.deviceCardRoomy : styles.deviceCardCol, styles.deviceCardInner]}>
+          <Text style={[styles.deviceName, v3TextStyle]}>{t.homeKailashTrackTitle}</Text>
+          <Text style={[styles.deviceSub, v3MutedStyle]}>
             {realTrackPoints(kailashTrack).length} {t.homeKailashTrackPoints}
           </Text>
           <Button
@@ -635,11 +691,20 @@ export default function HomeScreen() {
             disabled={kailashExportBusy}
             grow={false}
           />
-        </View>
+        </Card>
       )}
       </View>
 
-      {/* ── Menu : dépend de l'appareil connecté (v2.3.2 beta) ── */}
+      {/* ── Weather - real, 2026-08-09 (v3.0 UI port, "replicate the desktop version
+          feature wise"). Same real placement as HomePage.qml: right after the device hero
+          card(s), before the actions row. Collapses to nothing on its own (renders null)
+          until the first fetch attempt finishes, same as WeatherCard.qml's own
+          hasFetchedOnce gate. ── */}
+      <WeatherCard />
+
+      {/* ── Actions : uniquement les actions réelles (sync/GPS) - Routes/POIs/Backup/
+          Sport Modes/Settings sont maintenant des destinations du NavShell ci-dessus,
+          pas des actions sur cette carte (v3.0 UI port, 2026-08-09). ── */}
       {deviceType === 'garmin' ? (
         <View style={[styles.actionsRow, roomy && styles.actionsRowRoomy]}>
           <ActionTile
@@ -648,18 +713,6 @@ export default function HomeScreen() {
             progress={garminSync.phase === 'writing' && garminSync.total > 0 ? `${garminSync.current}/${garminSync.total}` : undefined}
             busy={garminSyncBusy}
             onPress={() => handleGarminSync()}
-            disabled={isBusy}
-          />
-          <ActionTile
-            icon="route"
-            label={t.homeRoutesBtn}
-            onPress={() => garminInfo && navigation.navigate('GarminRoute', { info: garminInfo })}
-            disabled={isBusy}
-          />
-          <ActionTile
-            icon="poi"
-            label={t.homePoisBtn}
-            onPress={() => garminInfo && navigation.navigate('GarminPoi', { info: garminInfo })}
             disabled={isBusy}
           />
         </View>
@@ -680,57 +733,14 @@ export default function HomeScreen() {
             onPress={handleOrbital}
             disabled={isBusy}
           />
-          <ActionTile
-            icon="route"
-            label={t.homeRoutesBtn}
-            onPress={() => navigation.navigate('Route')}
-            disabled={isBusy}
-          />
-          <ActionTile
-            icon="poi"
-            label={t.homePoisBtn}
-            onPress={() => navigation.navigate('Poi')}
-            disabled={isBusy}
-          />
-          <ActionTile
-            icon="backup"
-            label={t.backupButton}
-            onPress={() => navigation.navigate('Backup')}
-            disabled={isBusy}
-          />
-          {/* Real, 2026-08-08 - Ambit3-only: Kailash's own memory map has no CustomModes
-              region at all (confirmed empty, see custom_modes_andre.md's Kailash section),
-              the same exclusion the desktop app's own NavRail.qml applies. Uses ActionTile
-              (2026-08-08 merge) - the theme redesign's own tile component, not the
-              pre-redesign ActionButton this screen no longer defines. */}
-          {!isKailash(ambitInfo) && (
-            <ActionTile
-              icon="watch"
-              label={t.sportModesButton}
-              onPress={() => navigation.navigate('SportModes')}
-              disabled={isBusy}
-            />
-          )}
         </View>
       )}
 
       {/* ── Statut ── */}
       <StatusLine text={statusText} tone={statusTone} />
 
-      {/* ── Bas de page : activités + paramètres ── */}
-      <View style={styles.bottomRow}>
-        <Button
-          label={t.viewActivities}
-          icon="list"
-          onPress={() => navigation.navigate('LogList')}
-          variant="outline"
-        />
-        <TouchableOpacity style={styles.settingsBtn} onPress={() => navigation.navigate('Settings')} activeOpacity={0.75}>
-          <Icon name="settings" size={19} color={theme.text} />
-        </TouchableOpacity>
-      </View>
-
     </ScrollView>
+    </NavShell>
   );
 }
 
@@ -789,7 +799,7 @@ function orbitalStatusMessage(s: OrbitalUpdateState): string {
 // narrower than this, so they're unaffected — width:'100%' still wins there.
 const CONTENT_MAX_WIDTH = 560;
 
-function createStyles(t: ReturnType<typeof useTheme>) {
+function createStyles(t: ReturnType<typeof useV3Theme>) {
   return StyleSheet.create({
     container: {
       flex: 1,
@@ -822,13 +832,13 @@ function createStyles(t: ReturnType<typeof useTheme>) {
       gap: 24,
     },
     deviceFlowTitle: {
-      color: t.textMuted,
+      color: t.mutedText,
       fontSize: 16,
       textAlign: 'center',
       lineHeight: 23,
     },
     deviceFlowError: {
-      color: t.alert,
+      color: t.error,
     },
     deviceFlowButtons: {
       gap: 10,
@@ -864,12 +874,10 @@ function createStyles(t: ReturnType<typeof useTheme>) {
       alignItems: 'stretch',
       gap: 10,
     },
-    deviceCard: {
-      backgroundColor: t.surfaceHigh,
-      borderColor: t.outline,
-      borderWidth: 1,
-      borderRadius: 16,
-      padding: 16,
+    // v3.0 UI port - the old flat-theme surface (background/border) is gone; Card supplies
+    // its own v3-palette background/radius/shadow now. This keeps only what's still real
+    // layout, not color: centering the card's own content.
+    deviceCardInner: {
       alignItems: 'center',
       justifyContent: 'center',
     },
@@ -896,12 +904,12 @@ function createStyles(t: ReturnType<typeof useTheme>) {
       gap: 4,
     },
     deviceBatteryText: {
-      color: t.textMuted,
+      color: t.mutedText,
       fontSize: 11,
       fontWeight: '600',
     },
     deviceSub: {
-      color: t.textMuted,
+      color: t.mutedText,
       fontSize: 11.5,
       textAlign: 'center',
       marginTop: 2,
@@ -939,8 +947,8 @@ function createStyles(t: ReturnType<typeof useTheme>) {
       height: 52,
       borderRadius: 16,
       borderWidth: 1,
-      borderColor: t.outline,
-      backgroundColor: t.surfaceHigh,
+      borderColor: t.mutedText + '33',
+      backgroundColor: t.card,
       alignItems: 'center',
       justifyContent: 'center',
     },
