@@ -1,7 +1,7 @@
 import React, { useCallback, useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, Switch,
-  StyleSheet, Alert, ScrollView, ActivityIndicator, Linking,
+  StyleSheet, Alert, ScrollView, ActivityIndicator, Linking, Modal,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useThemeMode, ThemeMode } from '../theme/ThemeModeContext';
@@ -23,7 +23,7 @@ import {
 } from '../services/ApiStrava';
 import { t } from '../i18n';
 import { APP_VERSION } from '../config/version';
-import { useTheme } from '../theme/useTheme';
+import { useV3Theme } from '../theme/v3';
 import { Button, Chip, FieldRow, IconBadge, StatusLine } from '../components/ui/primitives';
 
 const THEME_OPTIONS: { mode: ThemeMode; icon: IconName; label: () => string }[] = [
@@ -41,7 +41,7 @@ function readOnlyValue(row: DecodedSetting): string {
 }
 
 export default function SettingsScreen() {
-  const theme = useTheme();
+  const theme = useV3Theme();
   const styles = createStyles(theme);
   const { mode, setMode } = useThemeMode();
 
@@ -55,6 +55,13 @@ export default function SettingsScreen() {
   const [intervalsApiKey, setIntervalsApiKey]       = useState('');
   const [intervalsSaved, setIntervalsSaved]         = useState(false);
   const [savingIntervals, setSavingIntervals]       = useState(false);
+
+  // v3.0 UI port (2026-08-09, "settings was completely reworked in our desktop app...
+  // proceed") - desktop's real Connections card (SettingsPage.qml) is one compact card with
+  // a status-dot row per service, tap-to-open a Dialog with that service's own form - not
+  // four separate always-expanded full-height sections like this screen had. Same real
+  // handlers/state above, this only changes which one is visible at a time.
+  const [openConnection, setOpenConnection] = useState<'strava' | 'livelox' | 'runalyze' | 'intervals' | null>(null);
 
   // Real, 2026-08-08 ("Settings on ambit 3 - if they are already cracked to be changed by
   // cable, we will need to build a UI for it"). Not auto-loaded on focus like the API
@@ -250,7 +257,7 @@ export default function SettingsScreen() {
                 activeOpacity={0.75}
                 style={[styles.themeOption, selected && styles.themeOptionSelected]}
               >
-                <Icon name={opt.icon} size={17} color={selected ? theme.onPrimary : theme.text} />
+                <Icon name={opt.icon} size={17} color={selected ? theme.card : theme.text} />
                 <Text style={[styles.themeOptionLabel, selected && styles.themeOptionLabelSelected]}>
                   {opt.label()}
                 </Text>
@@ -290,7 +297,7 @@ export default function SettingsScreen() {
         )}
 
         {ambitSettingsPhase === 'error' && ambitSettingsError && !ambitSettings && (
-          <Text style={[styles.sectionDesc, { color: '#f44336', marginTop: 10 }]}>
+          <Text style={[styles.sectionDesc, { color: theme.error, marginTop: 10 }]}>
             {ambitSettingsError}
           </Text>
         )}
@@ -314,8 +321,8 @@ export default function SettingsScreen() {
                   value={row.value === 1}
                   onValueChange={v => handleWriteAmbitSetting(row.key, v ? 1 : 0)}
                   disabled={busy}
-                  trackColor={{ false: '#1a4a7a', true: '#00e5ff88' }}
-                  thumbColor="#fff"
+                  trackColor={{ false: theme.mutedText + '55', true: theme.primary + '88' }}
+                  thumbColor={theme.card}
                 />
               )}
 
@@ -370,7 +377,7 @@ export default function SettingsScreen() {
                     value={coordEdits[row.key] ?? row.value.toFixed(6)}
                     onChangeText={v => setCoordEdits(prev => ({ ...prev, [row.key]: v }))}
                     editable={!busy}
-                    placeholderTextColor="#4a5a7a"
+                    placeholderTextColor={theme.mutedText}
                   />
                   <TouchableOpacity
                     style={styles.coordSetBtn}
@@ -383,7 +390,7 @@ export default function SettingsScreen() {
               )}
               </>)}
 
-              {busy && <ActivityIndicator size="small" color="#00e5ff" style={{ marginLeft: 8 }} />}
+              {busy && <ActivityIndicator size="small" color={theme.primary} style={{ marginLeft: 8 }} />}
             </View>
           );
         })}
@@ -393,119 +400,153 @@ export default function SettingsScreen() {
         )}
       </View>
 
-      {/* ── Strava ── */}
+      {/* ── Connections - real, 2026-08-09 ("settings was completely reworked in our
+          desktop app... proceed"). Ports SettingsPage.qml's real Connections card: one
+          compact card, a status-dot row per service, tap opens that service's own form in
+          a modal - not four always-expanded full-height sections. ── */}
       <View style={styles.section}>
         <View style={styles.cardHead}>
           <IconBadge icon="link" />
-          <Text style={styles.cardTitle}>{t.stravaSection}</Text>
+          <Text style={styles.cardTitle}>{t.connectionsSection}</Text>
         </View>
-        <Text style={styles.sectionDesc}>{t.stravaSettingsDesc}</Text>
-        {stravaAuth ? (
-          <>
-            <Chip icon="check" label={t.stravaConnectedStatus} />
-            <View style={styles.row}>
-              <Button label={t.stravaDisconnectBtn} variant="text" grow={false} onPress={handleStravaDisconnect} />
-            </View>
-          </>
-        ) : (
-          <View style={styles.row}>
-            <Button label={t.connect} variant="filled" onPress={handleStravaConnect} />
+
+        <TouchableOpacity style={styles.connRow} activeOpacity={0.7} onPress={() => setOpenConnection('strava')}>
+          <View style={[styles.connDot, { backgroundColor: stravaAuth ? theme.success : theme.mutedText }]} />
+          <Text style={styles.connRowText}>
+            {stravaAuth ? t.stravaConnectedStatus : `${t.stravaSection} — ${t.connect}`}
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.connRow} activeOpacity={0.7} onPress={() => setOpenConnection('livelox')}>
+          <View style={[styles.connDot, { backgroundColor: liveloxAuth ? theme.success : theme.mutedText }]} />
+          <Text style={styles.connRowText}>
+            {liveloxAuth ? t.liveloxConnectedStatus : `Livelox — ${t.connect}`}
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.connRow} activeOpacity={0.7} onPress={() => setOpenConnection('runalyze')}>
+          <View style={[styles.connDot, { backgroundColor: savedKey ? theme.success : theme.mutedText }]} />
+          <Text style={styles.connRowText}>
+            {savedKey ? `${t.runalyzeSection} — ${t.keyStored}` : `${t.runalyzeSection} — ${t.connect}`}
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.connRow} activeOpacity={0.7} onPress={() => setOpenConnection('intervals')}>
+          <View style={[styles.connDot, { backgroundColor: intervalsSaved ? theme.success : theme.mutedText }]} />
+          <Text style={styles.connRowText}>
+            {intervalsSaved ? `${t.intervalsSection} — ${t.credsStored}` : `${t.intervalsSection} — ${t.connect}`}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      <Modal visible={openConnection === 'strava'} animationType="slide" transparent onRequestClose={() => setOpenConnection(null)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
+            <Text style={styles.cardTitle}>{t.stravaSection}</Text>
+            <Text style={styles.sectionDesc}>{t.stravaSettingsDesc}</Text>
+            {stravaAuth ? (
+              <>
+                <Chip icon="check" label={t.stravaConnectedStatus} />
+                <View style={styles.row}>
+                  <Button label={t.stravaDisconnectBtn} variant="text" grow={false} onPress={handleStravaDisconnect} />
+                </View>
+              </>
+            ) : (
+              <View style={styles.row}>
+                <Button label={t.connect} variant="filled" onPress={handleStravaConnect} />
+              </View>
+            )}
+            <Button label={t.closeBtn} variant="text" onPress={() => setOpenConnection(null)} style={{ marginTop: 12 }} />
           </View>
-        )}
-      </View>
-
-      {/* ── Livelox ── */}
-      <View style={styles.section}>
-        <View style={styles.cardHead}>
-          <IconBadge icon="map" />
-          <Text style={styles.cardTitle}>Livelox</Text>
         </View>
-        <Text style={styles.sectionDesc}>{t.liveloxSettingsDesc}</Text>
-        {liveloxAuth ? (
-          <>
-            <Chip icon="check" label={t.liveloxConnectedStatus} />
-            <View style={styles.row}>
-              <Button label={t.liveloxDisconnectBtn} variant="text" grow={false} onPress={handleLiveloxDisconnect} />
-            </View>
-          </>
-        ) : (
-          <View style={styles.row}>
-            <Button label={t.connect} variant="filled" onPress={handleLiveloxConnect} />
+      </Modal>
+
+      <Modal visible={openConnection === 'livelox'} animationType="slide" transparent onRequestClose={() => setOpenConnection(null)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
+            <Text style={styles.cardTitle}>Livelox</Text>
+            <Text style={styles.sectionDesc}>{t.liveloxSettingsDesc}</Text>
+            {liveloxAuth ? (
+              <>
+                <Chip icon="check" label={t.liveloxConnectedStatus} />
+                <View style={styles.row}>
+                  <Button label={t.liveloxDisconnectBtn} variant="text" grow={false} onPress={handleLiveloxDisconnect} />
+                </View>
+              </>
+            ) : (
+              <View style={styles.row}>
+                <Button label={t.connect} variant="filled" onPress={handleLiveloxConnect} />
+              </View>
+            )}
+            <Button label={t.closeBtn} variant="text" onPress={() => setOpenConnection(null)} style={{ marginTop: 12 }} />
           </View>
-        )}
-      </View>
-
-      {/* ── Runalyze ── */}
-      <View style={styles.section}>
-        <View style={styles.cardHead}>
-          <IconBadge icon="chart" />
-          <Text style={styles.cardTitle}>{t.runalyzeSection}</Text>
         </View>
-        <Text style={styles.sectionDesc}>{t.runalyzeDesc}</Text>
-        <Text style={styles.sectionDesc}>
-          {t.runalyzeApiHint}
-          <Text style={styles.link}>{t.runalyzeApiLink}</Text>
-        </Text>
+      </Modal>
 
-        <FieldRow
-          icon="key"
-          value={runalyzeKey}
-          onChangeText={setRunalyzeKey}
-          placeholder={t.apiKeyPlaceholder}
-          autoCapitalize="none"
-          autoCorrect={false}
-          secureTextEntry
-        />
-
-        <View style={styles.row}>
-          <Button label={t.saveBtn} variant="filled" loading={saving} onPress={handleSaveRunalyze} />
-          {!!savedKey && (
-            <Button label={t.deleteBtn} icon="delete" variant="outline" tone="alert" grow={false} onPress={handleRemoveRunalyze} />
-          )}
+      <Modal visible={openConnection === 'runalyze'} animationType="slide" transparent onRequestClose={() => setOpenConnection(null)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
+            <Text style={styles.cardTitle}>{t.runalyzeSection}</Text>
+            <Text style={styles.sectionDesc}>{t.runalyzeDesc}</Text>
+            <Text style={styles.sectionDesc}>
+              {t.runalyzeApiHint}
+              <Text style={styles.link}>{t.runalyzeApiLink}</Text>
+            </Text>
+            <FieldRow
+              icon="key"
+              value={runalyzeKey}
+              onChangeText={setRunalyzeKey}
+              placeholder={t.apiKeyPlaceholder}
+              autoCapitalize="none"
+              autoCorrect={false}
+              secureTextEntry
+            />
+            <View style={styles.row}>
+              <Button label={t.saveBtn} variant="filled" loading={saving} onPress={handleSaveRunalyze} />
+              {!!savedKey && (
+                <Button label={t.deleteBtn} icon="delete" variant="outline" tone="alert" grow={false} onPress={handleRemoveRunalyze} />
+              )}
+            </View>
+            {!!savedKey && <StatusLine text={t.keyStored} />}
+            <Button label={t.closeBtn} variant="text" onPress={() => setOpenConnection(null)} style={{ marginTop: 12 }} />
+          </View>
         </View>
+      </Modal>
 
-        {!!savedKey && <StatusLine text={t.keyStored} />}
-      </View>
-
-      {/* ── Intervals.icu ── */}
-      <View style={styles.section}>
-        <View style={styles.cardHead}>
-          <IconBadge icon="activity" />
-          <Text style={styles.cardTitle}>{t.intervalsSection}</Text>
+      <Modal visible={openConnection === 'intervals'} animationType="slide" transparent onRequestClose={() => setOpenConnection(null)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
+            <Text style={styles.cardTitle}>{t.intervalsSection}</Text>
+            <Text style={styles.sectionDesc}>{t.intervalsDesc}</Text>
+            <Text style={styles.sectionDesc}>
+              {t.intervalsApiHint}
+              <Text style={styles.link}>{t.intervalsApiLink}</Text>
+            </Text>
+            <FieldRow
+              icon="person"
+              value={intervalsAthleteId}
+              onChangeText={setIntervalsAthleteId}
+              placeholder={t.athleteIdPlaceholder}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            <FieldRow
+              icon="key"
+              value={intervalsApiKey}
+              onChangeText={setIntervalsApiKey}
+              placeholder={t.apiKeyPlaceholder}
+              autoCapitalize="none"
+              autoCorrect={false}
+              secureTextEntry
+            />
+            <View style={styles.row}>
+              <Button label={t.saveBtn} variant="filled" loading={savingIntervals} onPress={handleSaveIntervals} />
+              {intervalsSaved && (
+                <Button label={t.deleteBtn} icon="delete" variant="outline" tone="alert" grow={false} onPress={handleRemoveIntervals} />
+              )}
+            </View>
+            {intervalsSaved && <StatusLine text={t.credsStored} />}
+            <Button label={t.closeBtn} variant="text" onPress={() => setOpenConnection(null)} style={{ marginTop: 12 }} />
+          </View>
         </View>
-        <Text style={styles.sectionDesc}>{t.intervalsDesc}</Text>
-        <Text style={styles.sectionDesc}>
-          {t.intervalsApiHint}
-          <Text style={styles.link}>{t.intervalsApiLink}</Text>
-        </Text>
-
-        <FieldRow
-          icon="person"
-          value={intervalsAthleteId}
-          onChangeText={setIntervalsAthleteId}
-          placeholder={t.athleteIdPlaceholder}
-          autoCapitalize="none"
-          autoCorrect={false}
-        />
-        <FieldRow
-          icon="key"
-          value={intervalsApiKey}
-          onChangeText={setIntervalsApiKey}
-          placeholder={t.apiKeyPlaceholder}
-          autoCapitalize="none"
-          autoCorrect={false}
-          secureTextEntry
-        />
-
-        <View style={styles.row}>
-          <Button label={t.saveBtn} variant="filled" loading={savingIntervals} onPress={handleSaveIntervals} />
-          {intervalsSaved && (
-            <Button label={t.deleteBtn} icon="delete" variant="outline" tone="alert" grow={false} onPress={handleRemoveIntervals} />
-          )}
-        </View>
-
-        {intervalsSaved && <StatusLine text={t.credsStored} />}
-      </View>
+      </Modal>
 
       {/* ── About / disclaimer ── */}
       <View style={styles.section}>
@@ -536,12 +577,12 @@ export default function SettingsScreen() {
   );
 }
 
-const createStyles = (t: ReturnType<typeof useTheme>) => StyleSheet.create({
+const createStyles = (t: ReturnType<typeof useV3Theme>) => StyleSheet.create({
   root: { flex: 1, backgroundColor: t.background },
   content: { padding: 20 },
   section: {
-    backgroundColor: t.surface,
-    borderColor: t.outline,
+    backgroundColor: t.card,
+    borderColor: t.mutedText + '33',
     borderWidth: 1,
     borderRadius: 16,
     padding: 16,
@@ -549,16 +590,16 @@ const createStyles = (t: ReturnType<typeof useTheme>) => StyleSheet.create({
   },
   cardHead: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 4 },
   cardTitle: { fontSize: 16, fontWeight: '700', color: t.text },
-  sectionDesc: { fontSize: 13, color: t.textMuted, marginBottom: 6, lineHeight: 19 },
+  sectionDesc: { fontSize: 13, color: t.mutedText, marginBottom: 6, lineHeight: 19 },
   link: { color: t.text, fontWeight: '600' },
   row: { flexDirection: 'row', gap: 10, marginTop: 12 },
   creditsHeading: {
     fontSize: 13, fontWeight: '700', color: t.text,
-    marginTop: 16, paddingTop: 12, borderTopWidth: 1, borderTopColor: t.outline,
+    marginTop: 16, paddingTop: 12, borderTopWidth: 1, borderTopColor: t.mutedText + '33',
   },
   creditItem: { marginTop: 10 },
   creditName: { fontSize: 13, fontWeight: '700', color: t.text },
-  creditDesc: { fontSize: 12, color: t.textMuted, lineHeight: 17, marginTop: 2 },
+  creditDesc: { fontSize: 12, color: t.mutedText, lineHeight: 17, marginTop: 2 },
   themeRow: { flexDirection: 'row', gap: 8, marginTop: 12 },
   themeOption: {
     flex: 1,
@@ -569,58 +610,50 @@ const createStyles = (t: ReturnType<typeof useTheme>) => StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 10,
     borderWidth: 1.4,
-    borderColor: t.outline,
-    backgroundColor: t.surfaceHigh,
+    borderColor: t.mutedText + '33',
+    backgroundColor: t.card,
   },
   themeOptionSelected: {
     backgroundColor: t.primary,
     borderColor: t.primary,
   },
   themeOptionLabel: { fontSize: 13, fontWeight: '600', color: t.text },
-  themeOptionLabelSelected: { color: t.onPrimary },
-  // Real, 2026-08-08 - not yet re-themed onto the t.* token system the rest of this
-  // file uses (kept functionally identical to what was already tested rather than
-  // guessing token mappings during the theme-redesign merge); a real follow-up, not
-  // forgotten.
-  btnPrimary: { backgroundColor: '#00e5ff22', borderWidth: 1, borderColor: '#00e5ff' },
-  btnOrange:  { backgroundColor: '#fc4c0222', borderWidth: 1, borderColor: '#fc4c02' },
-  btnDanger:  { backgroundColor: '#f4433622', borderWidth: 1, borderColor: '#f44336' },
-  btnDisabled: { opacity: 0.5 },
-  btnText: { color: '#fff', fontWeight: '600', fontSize: 14 },
+  themeOptionLabelSelected: { color: t.card },
+  btnText: { color: t.card, fontWeight: '600', fontSize: 14 },
   statusRow: { flexDirection: 'row', alignItems: 'center', marginTop: 10 },
-  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#4caf50', marginRight: 6 },
-  statusText: { color: '#4caf50', fontSize: 12 },
   ambitSettingRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     marginTop: 14,
   },
-  ambitSettingLabel: { color: '#fff', fontSize: 14, flex: 1, marginRight: 10 },
+  ambitSettingLabel: { color: t.text, fontSize: 14, flex: 1, marginRight: 10 },
   // Read-only (Ambit 1/2) value display, right-aligned where the control would be.
-  ambitSettingValueRO: { color: '#9fb3d1', fontSize: 14, fontWeight: '600', textAlign: 'right' },
+  ambitSettingValueRO: { color: t.mutedText, fontSize: 14, fontWeight: '600', textAlign: 'right' },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, flexShrink: 1, justifyContent: 'flex-end' },
+  // Same tinted-primary pill treatment as primitives.tsx's own Chip - a real selected
+  // state, not a neutral bordered box.
   chip: {
     paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8,
-    borderWidth: 1, borderColor: '#1a4a7a', backgroundColor: '#16213e',
+    borderWidth: 1, borderColor: t.mutedText + '33', backgroundColor: t.card,
   },
-  chipActive: { borderColor: '#00e5ff', backgroundColor: '#00e5ff22' },
-  chipText: { color: '#8899aa', fontSize: 12 },
-  chipTextActive: { color: '#00e5ff', fontWeight: '600' },
+  chipActive: { borderColor: t.primary, backgroundColor: t.primary + '1F' },
+  chipText: { color: t.mutedText, fontSize: 12 },
+  chipTextActive: { color: t.primary, fontWeight: '600' },
   stepperRow: { flexDirection: 'row', alignItems: 'center' },
   stepperBtn: {
-    width: 32, height: 32, borderRadius: 8, borderWidth: 1, borderColor: '#1a4a7a',
-    alignItems: 'center', justifyContent: 'center', backgroundColor: '#16213e',
+    width: 32, height: 32, borderRadius: 8, borderWidth: 1, borderColor: t.mutedText + '33',
+    alignItems: 'center', justifyContent: 'center', backgroundColor: t.card,
   },
-  stepperBtnText: { color: '#00e5ff', fontSize: 18, fontWeight: '700' },
-  stepperValue: { color: '#fff', fontSize: 14, marginHorizontal: 10, minWidth: 30, textAlign: 'center' },
+  stepperBtnText: { color: t.primary, fontSize: 18, fontWeight: '700' },
+  stepperValue: { color: t.text, fontSize: 14, marginHorizontal: 10, minWidth: 30, textAlign: 'center' },
   coordRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   coordInput: {
-    backgroundColor: '#16213e',
+    backgroundColor: t.card,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#1a4a7a',
+    borderColor: t.mutedText + '33',
     paddingHorizontal: 10,
     paddingVertical: 6,
-    color: '#fff',
+    color: t.text,
     fontSize: 13,
     width: 110,
     textAlign: 'right',
@@ -629,8 +662,19 @@ const createStyles = (t: ReturnType<typeof useTheme>) => StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 12,
     borderRadius: 8,
-    backgroundColor: '#00e5ff22',
+    backgroundColor: t.primary + '1F',
     borderWidth: 1,
-    borderColor: '#00e5ff',
+    borderColor: t.primary,
+  },
+  // ── Connections card - compact tap-to-open rows + modal (v3.0 UI port) ──
+  connRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8 },
+  connDot: { width: 8, height: 8, borderRadius: 4 },
+  connRowText: { color: t.text, fontSize: 14, flex: 1 },
+  modalOverlay: {
+    flex: 1, backgroundColor: '#00000066', justifyContent: 'flex-end',
+  },
+  modalBox: {
+    backgroundColor: t.background, borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    padding: 20, maxHeight: '85%',
   },
 });
