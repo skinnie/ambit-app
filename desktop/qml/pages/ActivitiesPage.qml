@@ -122,7 +122,11 @@ Item {
         z: 1
         visible: root.selectedActivity === null && HomeViewModel.isKailash
                  && KailashService.trackLogLoading
-        anchors.horizontalCenter: parent.horizontalCenter
+        // Real, 2026-08-09 ("align the box... to be centered compared to the cards") -
+        // centers on the grid's actually-occupied columns (activitiesGrid.contentWidthUsed),
+        // not the full page width - see that property's own comment for why those differ.
+        x: activitiesGrid.x + (activitiesGrid.width - activitiesGrid.contentWidthUsed) / 2
+                             + (activitiesGrid.contentWidthUsed - width) / 2
         y: Theme.spacingLarge
         width: Math.min(parent.width - Theme.spacingLarge * 2, bannerText.implicitWidth + Theme.spacingMedium * 2)
         height: bannerText.implicitHeight + Theme.spacingSmall * 2
@@ -151,8 +155,15 @@ Item {
     // if it were current. Garmin has no separate cache concept - its own files already live
     // on the device's own storage, read fresh every time.
     Text {
+        // Real bug, found live 2026-08-09 ("after loaded there is still text under the
+        // cards") - this is genuinely an ActivityService/Ambit3 concept (its own on-disk
+        // exercise-log cache), but was never gated against Kailash, so a stale
+        // ActivityService.showingCachedData left over from an earlier Ambit3 connection this
+        // same app session could show it while a Kailash was the one actually connected -
+        // same declaration-order-vs-GridView issue as the trackLog banner above, peeking out
+        // near/under the card grid instead of being hidden outright.
         visible: root.selectedActivity === null && !root.loading && !HomeViewModel.isGarmin
-                 && ActivityService.showingCachedData
+                 && !HomeViewModel.isKailash && ActivityService.showingCachedData
         anchors.horizontalCenter: parent.horizontalCenter
         y: Theme.spacingLarge
         color: Theme.mutedText
@@ -199,6 +210,7 @@ Item {
     // instantiated, recycled as it scrolls, bounding the live-map count to a small constant
     // regardless of list length.
     GridView {
+        id: activitiesGrid
         anchors.fill: parent
         anchors.margins: Theme.spacingLarge
         visible: root.selectedActivity === null
@@ -206,6 +218,15 @@ Item {
         cellWidth: 360 + Theme.spacingMedium
         cellHeight: 280 + Theme.spacingMedium
         reuseItems: true
+        // Real, 2026-08-09 ("align the box with the loading gps track to be centered
+        // compared to the cards") - GridView packs cards from the left and doesn't stretch
+        // to fill its own width, so centering the loading banner on the *page* only lines up
+        // with the cards when they happen to fill every column exactly. This is how many
+        // columns are actually occupied right now, so the banner below can center on that
+        // real span instead.
+        readonly property int columnsShown:
+            Math.max(1, Math.min(Math.floor(width / cellWidth), Math.max(1, model ? model.length : 1)))
+        readonly property real contentWidthUsed: columnsShown * cellWidth
         model: root.activeActivities
         delegate: Item {
             width: GridView.view.cellWidth
