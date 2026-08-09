@@ -272,7 +272,7 @@ Flickable {
                                 Text { text: qsTr("HR limits"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
                                 Row {
                                     spacing: 6
-                                    Switch {
+                                    RoundedSwitch {
                                         id: hrLimitsSwitch
                                         checked: modeCard.modelData.hrLimitsUse === 1
                                         enabled: !modeCard.busy

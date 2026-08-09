@@ -74,6 +74,7 @@ qt_add_qml_module(ambitapp
         qml/components/RoundedSlider.qml
         qml/components/RoundedTextField.qml
         qml/components/RoundedCheckBox.qml
+        qml/components/RoundedSwitch.qml
         qml/components/NavItem.qml
         qml/components/NavRail.qml
         qml/components/PagePlaceholder.qml

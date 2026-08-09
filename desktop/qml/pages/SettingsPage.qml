@@ -196,7 +196,7 @@ Flickable {
                             font.pixelSize: Theme.fontSizeBody
                         }
 
-                        Switch {
+                        RoundedSwitch {
                             visible: modelData.kind === "bool"
                             anchors.verticalCenter: parent.verticalCenter
                             checked: modelData.value === 1 || modelData.value === true

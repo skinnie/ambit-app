@@ -29,12 +29,16 @@ ComboBox {
         Behavior on border.color { ColorAnimation { duration: 120; easing.type: Easing.OutCubic } }
     }
 
+    // Real, 2026-08-09 ("on the dropdow menus/buttons can we have the ext centered?") -
+    // was left-aligned; centered within the text area (still excluding the reserved
+    // rightPadding for the dropdown arrow, so centered text never overlaps it).
     contentItem: Text {
         text: root.displayText
         color: Theme.text
         font.pixelSize: Theme.fontSizeBody
         leftPadding: Theme.spacingMedium
         rightPadding: root.indicator.width + Theme.spacingSmall
+        horizontalAlignment: Text.AlignHCenter
         verticalAlignment: Text.AlignVCenter
         elide: Text.ElideRight
     }
