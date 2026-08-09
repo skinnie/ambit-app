@@ -17,6 +17,7 @@ import RNFS from 'react-native-fs';
 import { t, dateLocale } from '../i18n';
 import { useV3Theme } from '../theme/v3';
 import { ActivityThumbnail } from '../components/ActivityThumbnail';
+import Icon, { IconName } from '../components/ui/Icon';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'LogList'>;
 
@@ -148,7 +149,11 @@ export default function LogListScreen() {
                 activeOpacity={0.7}
               >
                 {type !== ALL && (
-                  <Text style={styles.chipIcon}>{activityIcon(type)} </Text>
+                  <Icon
+                    name={activityIconName(type)}
+                    size={14}
+                    color={active ? theme.primary : theme.mutedText}
+                  />
                 )}
                 <Text style={[styles.chipText, active && styles.chipTextActive]}>
                   {type === ALL ? type : capitalize(type)}
@@ -188,9 +193,10 @@ export default function LogListScreen() {
               <View style={styles.cardLeft}>
                 <Text style={styles.cardDate}>{formatDate(item.date)}</Text>
                 {!!item.activity_type && (
-                  <Text style={styles.cardType}>
-                    {activityIcon(item.activity_type)} {capitalize(item.activity_type)}
-                  </Text>
+                  <View style={styles.cardTypeRow}>
+                    <Icon name={activityIconName(item.activity_type)} size={12} color={theme.mutedText} />
+                    <Text style={styles.cardType}>{capitalize(item.activity_type)}</Text>
+                  </View>
                 )}
                 <Text style={styles.cardSub}>{formatDuration(item.duration_s)} · {formatDist(item.distance_m)}</Text>
               </View>
@@ -208,36 +214,36 @@ export default function LogListScreen() {
 
 // ─── Helpers d'affichage ──────────────────────────────────────────────────────
 
-const ACTIVITY_ICONS: Record<string, string> = {
-  'orientation':          '🧭',
-  'course à pied':        '🏃',
-  'cyclisme':             '🚴',
-  'vtt':                  '🚵',
-  'randonnée':            '🥾',
-  'marche':               '🚶',
-  'natation':             '🏊',
-  'trail':                '🏔',
-  'ski alpin':            '⛷',
-  'ski de fond':          '⛷',
-  'ski de randonnée':     '⛷',
-  'snowboard':            '🏂',
-  'patinage':             '⛸',
-  'patinage sur glace':   '⛸',
-  'alpinisme':            '🧗',
-  'orienteering':         '🧭',
-  'running':              '🏃',
-  'cycling':              '🚴',
-  'mountain biking':      '🚵',
-  'trekking':             '🥾',
-  'hiking':               '🥾',
-  'swimming':             '🏊',
-  'trail running':        '🏔',
-  'skiing':               '⛷',
-  'cross country skiing': '⛷',
+// Real, 2026-08-10 ("change the orange icons to something more aligned with our material
+// design and colors") - was raw emoji (🚴🏃🥾...), full-color glyphs that can't be tinted
+// and visibly clashed with the rest of this app's monochrome icon language. Maps onto
+// Icon.tsx's own small set (cycling/running/walking are new; trail/ski/alpinisme types
+// reuse the existing 'mountain' icon rather than drawing a one-off glyph for a handful of
+// rarer types; anything else falls back to the existing generic 'activity' icon).
+const ACTIVITY_ICON_NAMES: Record<string, IconName> = {
+  'course à pied':        'running',
+  'running':               'running',
+  'trail running':         'running',
+  'cyclisme':              'cycling',
+  'cycling':               'cycling',
+  'vtt':                   'cycling',
+  'mountain biking':       'cycling',
+  'randonnée':             'walking',
+  'marche':                'walking',
+  'trekking':              'walking',
+  'hiking':                'walking',
+  'trail':                 'mountain',
+  'alpinisme':             'mountain',
+  'ski alpin':             'mountain',
+  'ski de fond':           'mountain',
+  'ski de randonnée':      'mountain',
+  'skiing':                'mountain',
+  'cross country skiing':  'mountain',
+  'snowboard':             'mountain',
 };
 
-function activityIcon(type: string): string {
-  return ACTIVITY_ICONS[type.toLowerCase()] ?? '🏅';
+function activityIconName(type: string): IconName {
+  return ACTIVITY_ICON_NAMES[type.toLowerCase()] ?? 'activity';
 }
 
 function capitalize(s: string): string {
@@ -278,6 +284,7 @@ const createStyles = (t: ReturnType<typeof useV3Theme>) => StyleSheet.create({
   chip: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 6,
     backgroundColor: t.card,
     borderRadius: 999,
     paddingHorizontal: 14,
@@ -291,7 +298,6 @@ const createStyles = (t: ReturnType<typeof useV3Theme>) => StyleSheet.create({
     backgroundColor: t.primary + '1F',
     borderColor: t.primary,
   },
-  chipIcon: { fontSize: 13 },
   chipText: { fontSize: 13, color: t.mutedText, fontWeight: '500' },
   chipTextActive: { color: t.primary, fontWeight: '700' },
   empty: {
@@ -324,7 +330,8 @@ const createStyles = (t: ReturnType<typeof useV3Theme>) => StyleSheet.create({
   cardRow: { flexDirection: 'row', alignItems: 'center' },
   cardLeft: { flex: 1 },
   cardDate: { fontSize: 15, color: t.text, fontWeight: '600', marginBottom: 2 },
-  cardType: { fontSize: 12, color: t.mutedText, marginBottom: 3 },
+  cardTypeRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 3 },
+  cardType: { fontSize: 12, color: t.mutedText },
   cardSub: { fontSize: 13, color: t.mutedText },
   cardRight: { alignItems: 'flex-end' },
   cardDPlus: { fontSize: 13, color: t.mutedText, marginBottom: 4 },

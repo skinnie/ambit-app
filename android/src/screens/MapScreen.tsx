@@ -17,6 +17,7 @@ import { t } from '../i18n';
 import { useV3Theme } from '../theme/v3';
 import { getMapProvider, setMapProvider, MapProvider } from '../services/MapProviderService';
 import { mapTileLayersJs } from '../services/MapHtml';
+import { TRACK_COLOR } from '../services/MapTile';
 
 type Route = RouteProp<RootStackParamList, 'Map'>;
 type Nav   = NativeStackNavigationProp<RootStackParamList, 'Map'>;
@@ -257,7 +258,10 @@ export default function MapScreen() {
   // itself (see onMessage's MAP_PROVIDER_CHANGE) writes back to the same storage.
   const [mapProvider, setMapProviderState] = useState<MapProvider>('ign');
   useEffect(() => { getMapProvider().then(setMapProviderState); }, []);
-  const leafletHtml = useMemo(() => buildLeafletHtml(mapProvider, theme.primary), [mapProvider, theme.primary]);
+  // TRACK_COLOR, not theme.primary - see MapTile.ts's own header comment ("it is grey, not
+  // very visible" - Android's own primary is a deliberately muted slate grey, wrong for a
+  // map overlay that needs to read against arbitrary tile colors).
+  const leafletHtml = useMemo(() => buildLeafletHtml(mapProvider, TRACK_COLOR), [mapProvider]);
 
   useEffect(() => {
     readGpxFile(activity.gpx_path)

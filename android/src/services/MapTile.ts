@@ -12,6 +12,19 @@ import { MapProvider } from './MapProviderService';
 
 const TILE_SIZE = 256;
 
+// Real, 2026-08-10 ("change color of the routes to something visible, elegant and
+// thicker... it is grey, not very visible") - TrackPreview/MapScreen briefly drew tracks in
+// theme.primary, copying desktop's own real pattern (Theme.primary + a white halo). That
+// works on desktop because desktop's dark-mode primary is a teal (#57C9B3); Android's own
+// v3 primary was deliberately changed to a muted slate grey earlier this session (a
+// separate, real, explicit request) - reusing it for a map overlay was the mistake, not
+// the pattern: grey-on-beige-street-tile is genuinely low contrast, confirmed live. Map
+// tiles have their own fixed, mostly-light palette regardless of the app's own light/dark
+// mode, so this is a fixed color, not theme-driven - a Material-ish teal, good contrast
+// against typical OSM/IGN colors (beige/tan roads, green parks, white background, blue
+// water), calmer than the red it replaced.
+export const TRACK_COLOR = '#00897B';
+
 export function tileUrl(provider: MapProvider, z: number, x: number, y: number): string {
   switch (provider) {
     case 'ign':

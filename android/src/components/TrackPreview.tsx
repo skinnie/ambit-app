@@ -4,7 +4,7 @@ import Svg, { Circle, Polyline } from 'react-native-svg';
 import { useFocusEffect } from '@react-navigation/native';
 import { useV3Theme } from '../theme/v3';
 import { getMapProvider, MapProvider } from '../services/MapProviderService';
-import { fitBoundsMosaic, centeredPointMosaic, tileUrl, TileMosaic } from '../services/MapTile';
+import { fitBoundsMosaic, centeredPointMosaic, tileUrl, TileMosaic, TRACK_COLOR } from '../services/MapTile';
 import { t } from '../i18n';
 
 // v3.0 UI port, revised 2026-08-10 ("apply the same fix as we did on the desktop, centering
@@ -102,36 +102,33 @@ export function TrackPreview({
       ))}
       <Svg width={mosaic.contentWidth} height={mosaic.contentHeight} style={StyleSheet.absoluteFill}>
         {hasSinglePoint ? (
-          // Real, 2026-08-10 ("POI: make the marker of a color better visible") - desktop
-          // already solved this exact complaint once (MapView.qml's own header comment:
-          // "change the color of POI point to be more visible... a plain Theme.error glyph
-          // (red) could sit right on top of OSM's own red/orange road cartography with
-          // almost no contrast; a white halo behind Theme.primary stays visible over any
-          // tile color, not just some of them"). Same real fix here: a white disc (visible
-          // against any tile color) with a primary-colored ring and center dot, instead of
-          // a flat primary-colored dot that could blend into a similarly-toned tile.
+          // Real, 2026-08-10 ("POI: make the marker of a color better visible", then "it is
+          // grey, not very visible" once theme.primary turned out to be Android's own muted
+          // slate grey) - a white disc (visible against any tile color) with a TRACK_COLOR
+          // ring and center dot, TRACK_COLOR being the same fixed, map-specific teal used
+          // for the route line below (see MapTile.ts's own header comment on why this is
+          // fixed, not theme.primary).
           <>
-            <Circle cx={projected[0].x} cy={projected[0].y} r={16} fill={theme.primary} opacity={0.18} />
-            <Circle cx={projected[0].x} cy={projected[0].y} r={10} fill="#ffffff" stroke={theme.primary} strokeWidth={2.5} />
-            <Circle cx={projected[0].x} cy={projected[0].y} r={4} fill={theme.primary} />
+            <Circle cx={projected[0].x} cy={projected[0].y} r={16} fill={TRACK_COLOR} opacity={0.18} />
+            <Circle cx={projected[0].x} cy={projected[0].y} r={10} fill="#ffffff" stroke={TRACK_COLOR} strokeWidth={2.5} />
+            <Circle cx={projected[0].x} cy={projected[0].y} r={4} fill={TRACK_COLOR} />
           </>
         ) : (
           <>
             {/* Real, 2026-08-10 ("choose a better color for the route, one that remains
-                visible but not aggressive, and the trace a bit more thicker") - was a
-                hardcoded, unthemed bright red (#ff2200); desktop's own MapView.qml draws
-                its track polyline in Theme.primary with a white halo underneath (same
-                header comment as the marker above), which is inherently the "visible, not
-                aggressive" color this app already picked on purpose - reusing it here
-                instead of a second, disconnected hardcoded color. Both strokes thickened
-                slightly per the same request. */}
+                visible but not aggressive, and the trace a bit more thicker" - then, once
+                theme.primary turned out grey and low-contrast live: "it is grey..not very
+                visible"). TRACK_COLOR is a fixed, theme-independent teal chosen for real
+                contrast against typical OSM/IGN tile colors (MapTile.ts's own header
+                comment) - not tied to the app's own light/dark palette, since map tiles
+                aren't either. Both strokes thickened per the same request. */}
             <Polyline
               points={projected.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ')}
               fill="none" stroke="#ffffff" strokeWidth={6.5} strokeLinecap="round" strokeLinejoin="round"
             />
             <Polyline
               points={projected.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ')}
-              fill="none" stroke={theme.primary} strokeWidth={4} strokeLinecap="round" strokeLinejoin="round"
+              fill="none" stroke={TRACK_COLOR} strokeWidth={4} strokeLinecap="round" strokeLinejoin="round"
             />
           </>
         )}

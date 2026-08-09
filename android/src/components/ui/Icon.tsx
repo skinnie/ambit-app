@@ -8,7 +8,8 @@ export type IconName =
   | 'sync' | 'satellite' | 'route' | 'poi' | 'backup' | 'settings'
   | 'list' | 'link' | 'map' | 'chart' | 'activity' | 'key' | 'person'
   | 'delete' | 'check' | 'info' | 'battery' | 'warning' | 'mountain'
-  | 'watch' | 'etrex' | 'sun' | 'moon' | 'auto' | 'chevronLeft' | 'chevronRight';
+  | 'watch' | 'etrex' | 'sun' | 'moon' | 'auto' | 'chevronLeft' | 'chevronRight'
+  | 'cycling' | 'running' | 'walking';
 
 interface Props {
   name: IconName;
@@ -116,6 +117,35 @@ export default function Icon({ name, size = 20, color = '#000' }: Props) {
       return (
         <Svg width={size} height={size} viewBox="0 0 24 24">
           <Path d="M3 12h4l2-7 4 14 2-7h6" {...s} />
+        </Svg>
+      );
+    // Real, 2026-08-10 ("change the orange icons to something more aligned with our
+    // material design and colors") - LogListScreen's activity-type filter chips/labels
+    // used raw emoji (🚴🏃🥾) for icons - full-color glyphs baked into the system emoji
+    // font, impossible to tint, and visibly clashing with this app's own monochrome
+    // outline icon language everywhere else. Same 24dp/1.9-stroke style as the rest of
+    // this set, tintable like every other icon here.
+    case 'cycling':
+      return (
+        <Svg width={size} height={size} viewBox="0 0 24 24">
+          <Circle cx={6} cy={17} r={3.2} stroke={color} strokeWidth={1.9} fill="none" />
+          <Circle cx={18} cy={17} r={3.2} stroke={color} strokeWidth={1.9} fill="none" />
+          <Path d="M6 17l4-8h4l4 8M10 9l3 5h5M13 14l-3.5 3" {...s} />
+          <Circle cx={15.5} cy={5.5} r={1.5} fill={color} stroke="none" />
+        </Svg>
+      );
+    case 'running':
+      return (
+        <Svg width={size} height={size} viewBox="0 0 24 24">
+          <Circle cx={14.5} cy={4.5} r={1.6} fill={color} stroke="none" />
+          <Path d="M12.5 7l-2.5 2.5 3 1.5-1 4-4.5 4.5M13 8l3 2-1 3.5 4 1.5" {...s} />
+        </Svg>
+      );
+    case 'walking':
+      return (
+        <Svg width={size} height={size} viewBox="0 0 24 24">
+          <Circle cx={13} cy={4.5} r={1.6} fill={color} stroke="none" />
+          <Path d="M12 7v5l-3 2v6M12 12l3 1.5v6.5" {...s} />
         </Svg>
       );
     case 'key':
