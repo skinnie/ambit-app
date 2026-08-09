@@ -75,6 +75,8 @@ qt_add_qml_module(ambitapp
         qml/components/RoundedTextField.qml
         qml/components/RoundedCheckBox.qml
         qml/components/RoundedSwitch.qml
+        qml/components/WatchFacePreview.qml
+        qml/components/DataPickerDialog.qml
         qml/components/NavItem.qml
         qml/components/NavRail.qml
         qml/components/PagePlaceholder.qml
@@ -126,6 +128,8 @@ qt_add_qml_module(ambitapp
         src/services/settingswriteservice.cpp
         src/services/customodesservice.h
         src/services/customodesservice.cpp
+        src/services/appsservice.h
+        src/services/appsservice.cpp
     RESOURCES
         assets/fonts/MaterialSymbolsRounded.ttf
         # assets/map/osm-raster-style.json was MapLibre's own style file - unused since the

@@ -10,11 +10,40 @@ import AmbitApp
 // already live-verified over real HTTP. Still gated behind FeatureFlags.sportModes (see
 // this file's own git history) so the flag flip stays the single point of "is this ready
 // to ship," matching AMBITAPP_SPEC.md's own "no redesign required later" design.
+//
+// Real, 2026-08-09 ("Full SuuntoLink-style redesign"): restructured from a single
+// expand-in-place card list into a real List<->Detail flow (same pattern
+// ActivitiesPage.qml's own selectedActivity already uses), matching SuuntoLink's own real
+// "EDIT SPORT MODE" screen (assets/ambit3 pcap/v2/screens sports modes/8displaysmax.JPG) -
+// a watch-face preview filmstrip through the mode's real screens (custom_modes.py's own
+// screenNumber/isBuiltIn, so built-in system screens like Compass/Map are shown but not
+// numbered as if they were user screens), and a real "SELECT DATA FOR ROW" picker
+// (display1row1graphoptions.JPG) that now includes real Suunto App search/install
+// alongside the existing field-type list. Adapted from SuuntoLink's own one-screen-at-a-
+// time mobile paging to a horizontal filmstrip - the same real information and actions,
+// fitted to this app's much wider desktop layout rather than a literal phone-screen clone.
 Flickable {
     id: root
     contentWidth: width
-    contentHeight: column.height + Theme.spacingLarge * 2
+    contentHeight: (root.selectedMode ? detailColumn.height : listColumn.height) + Theme.spacingLarge * 2
     clip: true
+
+    property string selectedModeName: ""
+    readonly property var selectedMode: {
+        for (const m of CustomModesService.modes) {
+            if (m.name === selectedModeName) return m
+        }
+        return null
+    }
+    readonly property int selectedModeIndex: {
+        const modes = CustomModesService.modes
+        for (let i = 0; i < modes.length; i++) {
+            if (modes[i].name === selectedModeName) return i
+        }
+        return -1
+    }
+    property int currentDisplayIndex: 0
+    onSelectedModeNameChanged: currentDisplayIndex = 0
 
     // Real, confirmed bits only - see custom_modes_andre.md's "Resolves hrbelt_and_pods"
     // section. Bit 0x0004 is deliberately absent: confirmed present on the reference
@@ -53,6 +82,18 @@ Flickable {
     })
     function sportBadgeColor(name) {
         return _sportBadgeColors[name] || Theme.primary
+    }
+
+    // Real, 2026-08-09 - maps a real display's own template/field-count (custom_modes.py's
+    // own decode) to WatchFacePreview's own layoutType. See custom_modes.py's
+    // system_tail_length()/_displays_to_json() for isBuiltIn/screenNumber themselves.
+    function displayLayoutType(disp) {
+        if (disp.isBuiltIn) {
+            return disp.template === "PID_RUNNER_GPS_TEMPLATE_50_MAP_DRAW" ? "map" : "builtin"
+        }
+        if (disp.template.indexOf("GRAPH") >= 0) return "graph"
+        const n = disp.fields.length
+        return n === 1 ? "1row" : n === 2 ? "2rows" : "3rows"
     }
 
     // Real, 2026-08-09 ("sport mode return bad gateway") - the connected watch had become
@@ -109,9 +150,10 @@ Flickable {
         text: qsTr("Sport Modes isn't available on Kailash - it has no CustomModes region on this watch at all.")
     }
 
+    // ============================== LIST VIEW ==============================
     Column {
-        id: column
-        visible: !HomeViewModel.isKailash
+        id: listColumn
+        visible: !HomeViewModel.isKailash && !root.selectedMode
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.top: parent.top
         anchors.topMargin: Theme.spacingLarge
@@ -142,379 +184,296 @@ Flickable {
             model: CustomModesService.modes
             delegate: Card {
                 id: modeCard
-                width: column.width
+                width: listColumn.width
                 required property var modelData
                 readonly property bool busy: CustomModesService.writingMode === modelData.name
-                readonly property bool expanded: expandBtn.checked
 
-                Column {
+                TapHandler { onTapped: root.selectedModeName = modeCard.modelData.name }
+
+                Item {
                     width: parent.width
-                    spacing: Theme.spacingMedium
+                    height: 44
 
-                    // --- Header: real SuuntoLink-list-row shape (colored circular badge +
-                    // name + screen count on the left, actions on the right) - see
-                    // root._sportBadgeColors' own comment for what the badge color is (and
-                    // isn't) based on. Renaming moved into the expanded Details section
-                    // below (was inline here before) so this collapsed row stays as close
-                    // to SuuntoLink's own minimal list look as this app's real edit
-                    // capabilities allow. ---
-                    Item {
-                        width: parent.width
-                        height: 44
+                    Row {
+                        anchors.left: parent.left
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: Theme.spacingMedium
 
-                        Row {
-                            anchors.left: parent.left
+                        Rectangle {
+                            width: 44; height: 44; radius: 22
+                            color: root.sportBadgeColor(modeCard.modelData.name)
                             anchors.verticalCenter: parent.verticalCenter
-                            spacing: Theme.spacingMedium
-
-                            Rectangle {
-                                width: 44; height: 44; radius: 22
-                                color: root.sportBadgeColor(modeCard.modelData.name)
-                                anchors.verticalCenter: parent.verticalCenter
-                                Icon { anchors.centerIn: parent; glyph: Icons.sportModes; size: 22; color: Theme.card }
-                            }
-
-                            Column {
-                                anchors.verticalCenter: parent.verticalCenter
-                                spacing: 2
-                                Text {
-                                    text: modeCard.modelData.name
-                                    font.bold: true
-                                    font.pixelSize: Theme.fontSizeBodyLarge
-                                    color: Theme.text
-                                }
-                                Text {
-                                    text: qsTr("%1 screen(s)").arg(modeCard.modelData.displays.length)
-                                    color: Theme.mutedText
-                                    font.pixelSize: Theme.fontSizeCaption
-                                }
-                            }
+                            Icon { anchors.centerIn: parent; glyph: Icons.sportModes; size: 22; color: Theme.card }
                         }
 
-                        Row {
-                            anchors.right: parent.right
+                        Column {
                             anchors.verticalCenter: parent.verticalCenter
-                            spacing: Theme.spacingSmall
-
+                            spacing: 2
                             Text {
-                                visible: modeCard.busy
-                                anchors.verticalCenter: parent.verticalCenter
-                                text: qsTr("saving...")
+                                text: modeCard.modelData.name
+                                font.bold: true
+                                font.pixelSize: Theme.fontSizeBodyLarge
+                                color: Theme.text
+                            }
+                            Text {
+                                // Real, 2026-08-09 - counts only real, user-configurable
+                                // screens (custom_modes.py's own screenNumber/isBuiltIn),
+                                // not the built-in system screens - matches SuuntoLink's
+                                // own real reported counts exactly (see that module's
+                                // system_tail_length() docstring).
+                                text: qsTr("%1 screen(s)").arg(
+                                    modeCard.modelData.displays.filter(d => !d.isBuiltIn).length)
                                 color: Theme.mutedText
                                 font.pixelSize: Theme.fontSizeCaption
-                                font.italic: true
-                            }
-                            RoundedButton {
-                                id: expandBtn
-                                checkable: true
-                                anchors.verticalCenter: parent.verticalCenter
-                                text: checked ? qsTr("Hide details") : qsTr("Edit")
                             }
                         }
                     }
 
-                    // --- Details: name / Autolap / HR limits / pods / displays ---
-                    Column {
-                        width: parent.width
-                        spacing: Theme.spacingMedium
-                        visible: modeCard.expanded
+                    Row {
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: Theme.spacingSmall
 
-                        // --- Name (moved here from the collapsed header row, real
-                        // 2026-08-09 - see the header Item's own comment) ---
-                        Column {
-                            width: parent.width
-                            spacing: 2
-                            Text { text: qsTr("Name"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
-                            Row {
-                                spacing: 6
-                                RoundedTextField {
-                                    id: nameField
-                                    width: 200
-                                    enabled: !modeCard.busy
-                                    // Real bug, found 2026-08-09 from a live screenshot
-                                    // ("strange characters" in a mode's name field, even
-                                    // though the real watch data was confirmed clean by
-                                    // reading it directly): a plain
-                                    // `text: modeCard.modelData.name` binding plus an
-                                    // imperative `nameField.text = ...` inside a
-                                    // Connections handler is a real QML footgun - the FIRST
-                                    // imperative assignment permanently severs the
-                                    // declarative binding (QML property bindings are
-                                    // one-shot-broken by direct assignment, not
-                                    // re-established), so `text` becomes a dead,
-                                    // non-reactive value from then on. If that assignment
-                                    // happened to run during a moment the Repeater's model
-                                    // was mid-refresh (modelData transiently stale/
-                                    // undefined), whatever it grabbed got frozen in
-                                    // forever, with no further refresh ever able to fix it -
-                                    // the real mechanism behind the garbled name. Fixed with
-                                    // a proper `Binding` element instead, which
-                                    // re-evaluates/re-applies correctly on every change
-                                    // rather than dying after one direct assignment - same
-                                    // "don't type in this exact field right now" guard,
-                                    // correctly reactive this time.
-                                    Binding {
-                                        target: nameField
-                                        property: "text"
-                                        value: modeCard.modelData.name
-                                        when: !nameField.activeFocus
-                                    }
-                                }
-                                RoundedButton {
-                                    text: qsTr("Rename")
-                                    enabled: !modeCard.busy && nameField.text.length > 0
-                                             && nameField.text !== modeCard.modelData.name
-                                    onClicked: CustomModesService.renameMode(modeCard.modelData.name, nameField.text)
+                        Text {
+                            visible: modeCard.busy
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: qsTr("saving...")
+                            color: Theme.mutedText
+                            font.pixelSize: Theme.fontSizeCaption
+                            font.italic: true
+                        }
+                        Icon { glyph: Icons.chevronRight; size: 20; color: Theme.mutedText; anchors.verticalCenter: parent.verticalCenter }
+                    }
+                }
+            }
+        }
+    }
+
+    // ============================= DETAIL VIEW ==============================
+    Column {
+        id: detailColumn
+        visible: !HomeViewModel.isKailash && root.selectedMode
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.top: parent.top
+        anchors.topMargin: Theme.spacingLarge
+        width: 560
+        spacing: Theme.spacingMedium
+
+        Row {
+            width: parent.width
+            spacing: Theme.spacingSmall
+            RoundedButton {
+                text: qsTr("< Back")
+                onClicked: root.selectedModeName = ""
+            }
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                text: root.selectedMode ? root.selectedMode.name : ""
+                font.bold: true
+                font.pixelSize: Theme.fontSizeTitle
+                color: Theme.text
+            }
+        }
+
+        Card {
+            width: parent.width
+            visible: root.selectedMode !== null
+            Column {
+                id: modeColumn
+                width: parent.width
+                spacing: Theme.spacingMedium
+
+                readonly property var mode: root.selectedMode
+                readonly property bool busy: mode && CustomModesService.writingMode === mode.name
+
+                // --- Name ---
+                Column {
+                    width: parent.width
+                    spacing: 2
+                    Text { text: qsTr("Name"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
+                    Row {
+                        spacing: 6
+                        RoundedTextField {
+                            id: nameField
+                            width: 200
+                            enabled: !modeColumn.busy
+                            // Real bug, found 2026-08-09 from a live screenshot ("strange
+                            // characters" in a mode's name field, even though the real
+                            // watch data was confirmed clean by reading it directly): a
+                            // plain `text: ...` binding plus an imperative assignment
+                            // elsewhere is a real QML footgun - the first imperative
+                            // assignment permanently severs the declarative binding. Fixed
+                            // with a proper `Binding` element instead, which re-evaluates
+                            // correctly on every change.
+                            Binding {
+                                target: nameField
+                                property: "text"
+                                value: modeColumn.mode ? modeColumn.mode.name : ""
+                                when: !nameField.activeFocus
+                            }
+                        }
+                        RoundedButton {
+                            text: qsTr("Rename")
+                            enabled: modeColumn.mode && !modeColumn.busy && nameField.text.length > 0
+                                     && nameField.text !== modeColumn.mode.name
+                            onClicked: {
+                                CustomModesService.renameMode(modeColumn.mode.name, nameField.text)
+                                root.selectedModeName = nameField.text
+                            }
+                        }
+                    }
+                }
+
+                // --- Autolap - real, 2026-08-09 ("let's make mit more elegant with a
+                // toggle => off or when on value in the units of the watch"). Confirmed
+                // via SuuntoLink's own real Autolap screen (assets/ambit3 pcap/v2/screens
+                // sports modes/autolap.JPG): a plain "Use autolap" checkbox, and when on,
+                // a distance shown in the real unit ("1.0 km"). ---
+                Column {
+                    spacing: 2
+                    Text { text: qsTr("Autolap"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
+                    Row {
+                        spacing: 6
+                        RoundedSwitch {
+                            id: autolapSwitch
+                            anchors.verticalCenter: parent.verticalCenter
+                            enabled: !modeColumn.busy
+                            Binding {
+                                target: autolapSwitch
+                                property: "checked"
+                                value: modeColumn.mode ? modeColumn.mode.autolap > 0 : false
+                            }
+                            onToggled: {
+                                if (checked) {
+                                    CustomModesService.writeField(modeColumn.mode.name,
+                                        { "Autolap": Math.round(1 * root.autolapUnitDivisor) })
+                                } else {
+                                    CustomModesService.writeField(modeColumn.mode.name, { "Autolap": 0 })
                                 }
                             }
                         }
+                        RoundedTextField {
+                            id: autolapField
+                            visible: autolapSwitch.checked
+                            width: 70
+                            enabled: !modeColumn.busy
+                            validator: DoubleValidator { bottom: 0; decimals: 2; notation: DoubleValidator.StandardNotation }
+                            Binding {
+                                target: autolapField
+                                property: "text"
+                                value: modeColumn.mode ? (modeColumn.mode.autolap / root.autolapUnitDivisor).toFixed(2) : "0"
+                                when: !autolapField.activeFocus
+                            }
+                        }
+                        Text {
+                            visible: autolapSwitch.checked
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: root.autolapUnitSuffix
+                            color: Theme.mutedText
+                            font.pixelSize: Theme.fontSizeLabel
+                        }
+                        RoundedButton {
+                            visible: autolapSwitch.checked
+                            text: qsTr("Set")
+                            enabled: !modeColumn.busy
+                            onClicked: {
+                                const parsed = parseFloat(autolapField.text);
+                                if (isNaN(parsed) || parsed <= 0) return;
+                                CustomModesService.writeField(modeColumn.mode.name,
+                                    { "Autolap": Math.round(parsed * root.autolapUnitDivisor) })
+                            }
+                        }
+                    }
+                }
 
-                        // --- Autolap - real, 2026-08-09 ("let's make mit more elegant
-                        // with a toggle => off or when on value in the units of the
-                        // watch"). The raw field is still real meters, 0=off (unchanged,
-                        // confirmed via SuuntoLink's own real Autolap screen - assets/
-                        // ambit3 pcap/v2/screens sports modes/autolap.JPG, a plain "Use
-                        // autolap" checkbox + a distance shown in the real unit, "1.0 km"
-                        // there) - this only changes how it's presented: a toggle instead
-                        // of a raw-meters text field, and the value converted to/from
-                        // whichever unit root.autolapUnitSuffix says the watch is
-                        // actually configured for (see that property's own comment). ---
-                        Column {
-                            spacing: 2
-                            Text { text: qsTr("Autolap"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
-                            Row {
-                                spacing: 6
-                                RoundedSwitch {
-                                    id: autolapSwitch
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    enabled: !modeCard.busy
-                                    // A plain `checked: ...` binding here would suffer the
-                                    // exact same footgun the Name field's own comment
-                                    // documents (AbstractButton's click-handling assigns
-                                    // `checked` itself, one-shot-breaking a declarative
-                                    // binding) - a real risk for any interactive
-                                    // checked/text property, not just TextField.text.
-                                    Binding {
-                                        target: autolapSwitch
-                                        property: "checked"
-                                        value: modeCard.modelData.autolap > 0
-                                    }
+                // --- HR limits ---
+                Row {
+                    width: parent.width
+                    spacing: Theme.spacingLarge
+
+                    Column {
+                        spacing: 2
+                        Text { text: qsTr("HR limits"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
+                        Row {
+                            spacing: 6
+                            RoundedSwitch {
+                                id: hrLimitsSwitch
+                                checked: modeColumn.mode ? modeColumn.mode.hrLimitsUse === 1 : false
+                                enabled: !modeColumn.busy
+                            }
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: qsTr("enabled")
+                                color: Theme.text
+                                font.pixelSize: Theme.fontSizeLabel
+                            }
+                        }
+                    }
+                    Column {
+                        spacing: 2
+                        Text { text: qsTr("Low (bpm)"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
+                        RoundedTextField {
+                            id: hrLowField
+                            width: 70
+                            validator: IntValidator { bottom: 0; top: 255 }
+                            text: modeColumn.mode ? modeColumn.mode.hrLow : 0
+                            enabled: !modeColumn.busy
+                        }
+                    }
+                    Column {
+                        spacing: 2
+                        Text { text: qsTr("High (bpm)"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
+                        RoundedTextField {
+                            id: hrHighField
+                            width: 70
+                            validator: IntValidator { bottom: 0; top: 255 }
+                            text: modeColumn.mode ? modeColumn.mode.hrHigh : 0
+                            enabled: !modeColumn.busy
+                        }
+                    }
+                    Column {
+                        spacing: 2
+                        Text { text: " "; font.pixelSize: Theme.fontSizeLabel }  // vertical alignment spacer
+                        RoundedButton {
+                            text: qsTr("Set")
+                            enabled: !modeColumn.busy
+                            onClicked: CustomModesService.writeField(modeColumn.mode.name, {
+                                "HrLow": parseInt(hrLowField.text || "0"),
+                                "HrHigh": parseInt(hrHighField.text || "0"),
+                                "HrLimitsUse": hrLimitsSwitch.checked ? 1 : 0,
+                            })
+                        }
+                    }
+                }
+
+                // --- Pods (UseHw bitmask) ---
+                Column {
+                    width: parent.width
+                    spacing: 4
+                    Text { text: qsTr("Pods"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
+                    Row {
+                        spacing: Theme.spacingMedium
+                        Repeater {
+                            model: root.podBits
+                            delegate: Row {
+                                id: podRow
+                                required property var modelData
+                                spacing: 4
+                                RoundedCheckBox {
+                                    checked: modeColumn.mode ? (modeColumn.mode.useHw & podRow.modelData.bit) !== 0 : false
+                                    enabled: !modeColumn.busy
                                     onToggled: {
-                                        if (checked) {
-                                            // SuuntoLink's own real Autolap screen shows
-                                            // "1.0" as its example value when enabling -
-                                            // used as the real default here too, in
-                                            // whichever unit the watch is actually in.
-                                            CustomModesService.writeField(modeCard.modelData.name,
-                                                { "Autolap": Math.round(1 * root.autolapUnitDivisor) })
-                                        } else {
-                                            CustomModesService.writeField(modeCard.modelData.name,
-                                                { "Autolap": 0 })
-                                        }
-                                    }
-                                }
-                                RoundedTextField {
-                                    id: autolapField
-                                    visible: autolapSwitch.checked
-                                    width: 70
-                                    enabled: !modeCard.busy
-                                    validator: DoubleValidator {
-                                        bottom: 0; decimals: 2
-                                        notation: DoubleValidator.StandardNotation
-                                    }
-                                    Binding {
-                                        target: autolapField
-                                        property: "text"
-                                        value: (modeCard.modelData.autolap / root.autolapUnitDivisor).toFixed(2)
-                                        when: !autolapField.activeFocus
+                                        const newUseHw = checked
+                                            ? (modeColumn.mode.useHw | podRow.modelData.bit)
+                                            : (modeColumn.mode.useHw & ~podRow.modelData.bit)
+                                        CustomModesService.writeField(modeColumn.mode.name, { "UseHw": newUseHw })
                                     }
                                 }
                                 Text {
-                                    visible: autolapSwitch.checked
                                     anchors.verticalCenter: parent.verticalCenter
-                                    text: root.autolapUnitSuffix
-                                    color: Theme.mutedText
+                                    text: podRow.modelData.label
+                                    color: Theme.text
                                     font.pixelSize: Theme.fontSizeLabel
-                                }
-                                RoundedButton {
-                                    visible: autolapSwitch.checked
-                                    text: qsTr("Set")
-                                    enabled: !modeCard.busy
-                                    onClicked: {
-                                        const parsed = parseFloat(autolapField.text);
-                                        if (isNaN(parsed) || parsed <= 0) return;
-                                        CustomModesService.writeField(modeCard.modelData.name,
-                                            { "Autolap": Math.round(parsed * root.autolapUnitDivisor) })
-                                    }
-                                }
-                            }
-                        }
-
-                        // --- HR limits ---
-                        Row {
-                            width: parent.width
-                            spacing: Theme.spacingLarge
-
-                            Column {
-                                spacing: 2
-                                Text { text: qsTr("HR limits"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
-                                Row {
-                                    spacing: 6
-                                    RoundedSwitch {
-                                        id: hrLimitsSwitch
-                                        checked: modeCard.modelData.hrLimitsUse === 1
-                                        enabled: !modeCard.busy
-                                    }
-                                    Text {
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        text: qsTr("enabled")
-                                        color: Theme.text
-                                        font.pixelSize: Theme.fontSizeLabel
-                                    }
-                                }
-                            }
-                            Column {
-                                spacing: 2
-                                Text { text: qsTr("Low (bpm)"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
-                                RoundedTextField {
-                                    id: hrLowField
-                                    width: 70
-                                    validator: IntValidator { bottom: 0; top: 255 }
-                                    text: modeCard.modelData.hrLow
-                                    enabled: !modeCard.busy
-                                }
-                            }
-                            Column {
-                                spacing: 2
-                                Text { text: qsTr("High (bpm)"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
-                                RoundedTextField {
-                                    id: hrHighField
-                                    width: 70
-                                    validator: IntValidator { bottom: 0; top: 255 }
-                                    text: modeCard.modelData.hrHigh
-                                    enabled: !modeCard.busy
-                                }
-                            }
-                            Column {
-                                spacing: 2
-                                Text { text: " "; font.pixelSize: Theme.fontSizeLabel }  // vertical alignment spacer
-                                RoundedButton {
-                                    text: qsTr("Set")
-                                    enabled: !modeCard.busy
-                                    onClicked: CustomModesService.writeField(modeCard.modelData.name, {
-                                        "HrLow": parseInt(hrLowField.text || "0"),
-                                        "HrHigh": parseInt(hrHighField.text || "0"),
-                                        "HrLimitsUse": hrLimitsSwitch.checked ? 1 : 0,
-                                    })
-                                }
-                            }
-                        }
-
-                        // --- Pods (UseHw bitmask) ---
-                        Column {
-                            width: parent.width
-                            spacing: 4
-                            Text { text: qsTr("Pods"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
-                            Row {
-                                spacing: Theme.spacingMedium
-                                Repeater {
-                                    model: root.podBits
-                                    delegate: Row {
-                                        id: podRow
-                                        required property var modelData
-                                        spacing: 4
-                                        RoundedCheckBox {
-                                            checked: (modeCard.modelData.useHw & podRow.modelData.bit) !== 0
-                                            enabled: !modeCard.busy
-                                            onToggled: {
-                                                const newUseHw = checked
-                                                    ? (modeCard.modelData.useHw | podRow.modelData.bit)
-                                                    : (modeCard.modelData.useHw & ~podRow.modelData.bit)
-                                                CustomModesService.writeField(modeCard.modelData.name,
-                                                    { "UseHw": newUseHw })
-                                            }
-                                        }
-                                        Text {
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            text: podRow.modelData.label
-                                            color: Theme.text
-                                            font.pixelSize: Theme.fontSizeLabel
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        // --- Displays: which data each row shows. Real, live-confirmed
-                        // 2026-08-08: "type" (not "index") is the actual content selector
-                        // for the common case every real display uses - see
-                        // CustomModesService's own header comment. ---
-                        Column {
-                            width: parent.width
-                            spacing: Theme.spacingSmall
-                            Text {
-                                text: qsTr("Displays (%1)").arg(modeCard.modelData.displays.length)
-                                color: Theme.mutedText
-                                font.pixelSize: Theme.fontSizeLabel
-                            }
-                            Repeater {
-                                model: modeCard.modelData.displays
-                                delegate: Column {
-                                    id: dispCol
-                                    required property var modelData
-                                    width: parent.width
-                                    spacing: 2
-                                    Text {
-                                        text: qsTr("Screen %1 - %2").arg(dispCol.modelData.index).arg(dispCol.modelData.templateLabel)
-                                        color: Theme.mutedText
-                                        font.pixelSize: Theme.fontSizeCaption
-                                    }
-                                    Repeater {
-                                        model: dispCol.modelData.fields
-                                        delegate: Row {
-                                            id: fieldRow
-                                            required property var modelData
-                                            spacing: 6
-                                            Text {
-                                                width: 90
-                                                anchors.verticalCenter: parent.verticalCenter
-                                                text: fieldRow.modelData.field === 0 ? qsTr("Top")
-                                                    : fieldRow.modelData.field === 1 ? qsTr("Middle") : qsTr("Bottom")
-                                                color: Theme.text
-                                                font.pixelSize: Theme.fontSizeLabel
-                                            }
-                                            RoundedComboBox {
-                                                id: typeCombo
-                                                width: 260
-                                                model: CustomModesService.fieldTypes
-                                                // Real, 2026-08-09 ("shows the variable
-                                                // names, can't we have the normal names?") -
-                                                // textRole shows the human label, but the
-                                                // write below must still send the real raw
-                                                // FIELD_TYPES name (custom_modes.py's own
-                                                // --type resolver only knows those, not the
-                                                // display labels) - CustomModesService.
-                                                // fieldTypes[currentIndex].name, not
-                                                // textAt(currentIndex).
-                                                textRole: "label"
-                                                valueRole: "value"
-                                                enabled: !modeCard.busy
-                                                currentIndex: {
-                                                    for (let i = 0; i < CustomModesService.fieldTypes.length; i++) {
-                                                        if (CustomModesService.fieldTypes[i].value === fieldRow.modelData.type) return i;
-                                                    }
-                                                    return -1;
-                                                }
-                                                onActivated: {
-                                                    if (currentValue === fieldRow.modelData.type) return;
-                                                    CustomModesService.writeDisplayField(
-                                                        modeCard.modelData.name, dispCol.modelData.index,
-                                                        fieldRow.modelData.field,
-                                                        CustomModesService.fieldTypes[currentIndex].name)
-                                                }
-                                            }
-                                        }
-                                    }
                                 }
                             }
                         }
@@ -522,5 +481,142 @@ Flickable {
                 }
             }
         }
+
+        // --- Displays: real SuuntoLink-style watch-face filmstrip + per-row editing ---
+        Card {
+            width: parent.width
+            visible: root.selectedMode !== null
+            Column {
+                id: displaysColumn
+                width: parent.width
+                spacing: Theme.spacingMedium
+
+                readonly property var displays: root.selectedMode ? root.selectedMode.displays : []
+                readonly property var realDisplays: displays.filter(d => !d.isBuiltIn)
+
+                Text {
+                    text: qsTr("Displays (%1/8)").arg(displaysColumn.realDisplays.length)
+                    font.bold: true
+                    font.pixelSize: Theme.fontSizeBodyLarge
+                    color: Theme.text
+                }
+
+                // Filmstrip - adapted from SuuntoLink's own one-at-a-time paging
+                // (assets/ambit3 pcap/v2/screens sports modes/8displaysmax.JPG) to a
+                // horizontal scroll, better suited to this app's own wide desktop layout.
+                Flickable {
+                    width: parent.width
+                    height: 140
+                    contentWidth: filmRow.width
+                    clip: true
+                    boundsBehavior: Flickable.StopAtBounds
+
+                    Row {
+                        id: filmRow
+                        spacing: Theme.spacingMedium
+                        Repeater {
+                            model: displaysColumn.displays
+                            delegate: Column {
+                                id: filmItem
+                                required property var modelData
+                                required property int index
+                                spacing: 4
+                                WatchFacePreview {
+                                    diameter: 100
+                                    layoutType: root.displayLayoutType(filmItem.modelData)
+                                    selected: index === root.currentDisplayIndex
+                                    TapHandler { onTapped: root.currentDisplayIndex = filmItem.index }
+                                }
+                                Text {
+                                    width: 100
+                                    horizontalAlignment: Text.AlignHCenter
+                                    text: filmItem.modelData.isBuiltIn
+                                        ? qsTr("Built-in")
+                                        : qsTr("Screen %1").arg(filmItem.modelData.screenNumber)
+                                    color: Theme.mutedText
+                                    font.pixelSize: Theme.fontSizeCaption
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Current screen's own detail - matches SuuntoLink's own "DISPLAY: N ROWS"
+                // list (display3rows_down5max.JPG): one row per field, each tappable to
+                // open the data picker below.
+                Column {
+                    id: currentScreenColumn
+                    width: parent.width
+                    spacing: Theme.spacingSmall
+                    visible: displaysColumn.displays.length > root.currentDisplayIndex
+
+                    readonly property var current: visible ? displaysColumn.displays[root.currentDisplayIndex] : null
+
+                    Text {
+                        visible: currentScreenColumn.current
+                        text: currentScreenColumn.current
+                            ? (currentScreenColumn.current.isBuiltIn
+                               ? qsTr("Built-in: %1").arg(currentScreenColumn.current.templateLabel)
+                               : qsTr("Screen %1").arg(currentScreenColumn.current.screenNumber))
+                            : ""
+                        font.bold: true
+                        color: Theme.text
+                    }
+                    Text {
+                        visible: currentScreenColumn.current && currentScreenColumn.current.isBuiltIn
+                        width: parent.width
+                        wrapMode: Text.WordWrap
+                        text: qsTr("A built-in watch screen (Compass, Navigation, Map, " +
+                                    "etc.) - not one of your own configurable displays, " +
+                                    "so its data isn't editable here.")
+                        color: Theme.mutedText
+                        font.pixelSize: Theme.fontSizeCaption
+                    }
+
+                    Repeater {
+                        model: (currentScreenColumn.current && !currentScreenColumn.current.isBuiltIn)
+                            ? currentScreenColumn.current.fields : []
+                        delegate: Row {
+                            id: fieldRow
+                            required property var modelData
+                            required property int index
+                            width: parent.width
+                            spacing: Theme.spacingSmall
+
+                            Text {
+                                width: 24
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: qsTr("%1.").arg(fieldRow.index + 1)
+                                color: Theme.mutedText
+                                font.pixelSize: Theme.fontSizeBody
+                            }
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: fieldRow.modelData.typeLabel
+                                color: Theme.text
+                                font.pixelSize: Theme.fontSizeBody
+                            }
+                            Item { width: 1; height: 1 }
+                            RoundedButton {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: qsTr("Change")
+                                onClicked: {
+                                    dataPicker.displayIndex = root.currentDisplayIndex
+                                    dataPicker.fieldIndex = fieldRow.index
+                                    dataPicker.open()
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    DataPickerDialog {
+        id: dataPicker
+        modeName: root.selectedMode ? root.selectedMode.name : ""
+        modeIndex: root.selectedModeIndex
+        anchors.centerIn: Overlay.overlay
     }
 }
