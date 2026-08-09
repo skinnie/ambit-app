@@ -323,8 +323,6 @@ class AmbitBleModule(private val reactContext: ReactApplicationContext) :
         ) {
             // Watch -> phone NSP data lands here (writes to c6339440).
             if (characteristic.uuid == NSP_WRITE_CHAR_UUID) {
-                Log.d("AmbitBleModule", "rx write ${value.size}B: " +
-                    value.take(6).joinToString("") { "%02x".format(it) })
                 nativeAmbitBleOnNotify(value)
             }
             if (responseNeeded) {

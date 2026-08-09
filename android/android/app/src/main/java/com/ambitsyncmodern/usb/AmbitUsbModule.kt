@@ -94,6 +94,7 @@ class AmbitUsbModule(private val reactContext: ReactApplicationContext) :
     private external fun nativeAmbitReadRegion(address: Long, length: Long): String?
     private external fun nativeAmbitReadPoiListRaw(): String?
     private external fun nativeAmbitReadDeviceHistoryRaw(): String?
+    private external fun nativeAmbitReadDeviceLogRaw(): String?
     private external fun nativeAmbitReadSettingsRaw(): String?
     private external fun nativeAmbitWriteSettingsRaw(data: ByteArray): Boolean
     private external fun nativeAmbitReadCustomModesRaw(): String?
@@ -315,16 +316,32 @@ class AmbitUsbModule(private val reactContext: ReactApplicationContext) :
             promise.reject("JNI_NOT_LOADED", "Native library unavailable")
             return
         }
+        // Over BLE there is no USB `currentDevice`, but the native g_device
+        // (populated by the BLE handshake) still holds model/serial/fw/hw. So don't
+        // gate on the USB device: read the native info first, and only treat it as
+        // "not connected" when there's neither a USB device nor a native model.
+        // Gating on currentDevice here is exactly what made getDeviceInfo() reject
+        // over BLE, so isKailash(model==='Hoopoe') was never true and the Kailash
+        // branch was skipped (2026-08-09).
         val device = currentDevice
-        if (device == null) {
-            promise.reject("AMBIT_NOT_CONNECTED", "Call connect() first")
-            return
-        }
         try {
             val json = JSONObject(nativeAmbitGetDeviceInfo())
+            val model = json.optString("model", "")
+            if (device == null && model.isEmpty()) {
+                promise.reject("AMBIT_NOT_CONNECTED", "Call connect() first")
+                return
+            }
+            val name = when {
+                device != null -> SUUNTO_PID_NAMES[device.productId] ?: device.productName ?: "Suunto"
+                // BLE: derive a friendly name from the watch's own codename.
+                model == "Hoopoe" -> "Suunto Kailash"
+                model == "Emu"    -> "Suunto Ambit3 Peak"
+                model.isNotEmpty() -> "Suunto $model"
+                else -> "Suunto"
+            }
             val info = Arguments.createMap().apply {
-                putString("name", SUUNTO_PID_NAMES[device.productId] ?: device.productName ?: "Suunto")
-                putString("model", json.optString("model", ""))
+                putString("name", name)
+                putString("model", model)
                 putString("serial", json.optString("serial", ""))
                 putString("fwVersion", json.optString("fwVersion", ""))
                 putString("hwVersion", json.optString("hwVersion", ""))
@@ -571,6 +588,26 @@ class AmbitUsbModule(private val reactContext: ReactApplicationContext) :
                 else promise.reject("HISTORY_READ_FAILED", "Failed to read device history (see logcat AmbitJNI)")
             } catch (e: Exception) {
                 promise.reject("HISTORY_READ_ERROR", e.message ?: "Unknown error")
+            }
+        }
+    }
+
+    // Kailash test hook (2026-08-09). Reads sml.DeviceLog (entry 0x53) — the ephemeral
+    // per-activity GPS sample store — to confirm KAILASH-BLE-FINDINGS.md Finding 7 live
+    // over BLE. Same native path as readDeviceHistoryRaw, different entry id.
+    @ReactMethod
+    fun readDeviceLogRaw(promise: Promise) {
+        if (!jniLoaded) {
+            promise.reject("JNI_NOT_LOADED", "Native library unavailable")
+            return
+        }
+        executor.execute {
+            try {
+                val b64 = nativeAmbitReadDeviceLogRaw()
+                if (b64 != null) promise.resolve(b64)
+                else promise.reject("DEVICELOG_READ_FAILED", "Failed to read device log (see logcat AmbitJNI)")
+            } catch (e: Exception) {
+                promise.reject("DEVICELOG_READ_ERROR", e.message ?: "Unknown error")
             }
         }
     }

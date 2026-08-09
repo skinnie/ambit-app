@@ -11,8 +11,9 @@ import { updateOrbitalData, OrbitalUpdateState } from '../services/SgeeService';
 import {
   connect as ambitConnect, disconnect as ambitDisconnect, getDeviceInfo, AmbitDeviceInfo,
   wasLaunchedViaUsbAttach, onUsbAttached, detectAttachedDeviceType, AttachedDeviceType,
-  readDeviceHistoryRaw, setBleTransportActive,
+  readDeviceHistoryRaw, readDeviceLogRaw, setBleTransportActive, saveToDownloads,
 } from '../native/AmbitUsbModule';
+import RNFS from 'react-native-fs';
 import { scanAndConnect as bleScanAndConnect } from '../native/AmbitBleModule';
 import * as Garmin from '../native/GarminModule';
 import type { GarminConnectResult } from '../native/GarminModule';
@@ -20,6 +21,7 @@ import { syncGarminActivities, GarminActivitySyncState } from '../services/Garmi
 import { kailashDeviceProvider } from '../services/devices/KailashDeviceProvider';
 import { ambitBleDeviceProvider } from '../services/devices/AmbitBleDeviceProvider';
 import { decodeDeviceHistory, KailashHistory } from '../services/KailashHistoryReader';
+import { decodeDeviceLog, realTrackPoints, deviceLogToGpx, KailashDeviceLog } from '../services/KailashDeviceLogReader';
 import { APP_VERSION } from '../config/version';
 import { t } from '../i18n';
 import { useTheme } from '../theme/useTheme';
@@ -84,6 +86,11 @@ export default function HomeScreen() {
   // Kailash only - visited cities/countries, travel stats, and the real activity-mode
   // logbook, all fetched once at connect time (see connectFlow's own 'ambit' branch below).
   const [kailashHistory, setKailashHistory] = useState<KailashHistory | null>(null);
+  // Kailash only - the ephemeral GPS track (DeviceLog 0x53) fetched over the live BLE link
+  // at connect time; null when the store was empty (already drained by the 7R app). Held so
+  // the "export track" action below can write it without a second read. See handleBleConnect.
+  const [kailashTrack, setKailashTrack] = useState<KailashDeviceLog | null>(null);
+  const [kailashExportBusy, setKailashExportBusy] = useState(false);
   // Distinguishes a BLE connect attempt from connectFlow('ambit')'s USB one for
   // the "connecting…" message only — both land on the same deviceType==='ambit'.
   const [bleAttempt, setBleAttempt] = useState(false);
@@ -209,6 +216,23 @@ export default function HomeScreen() {
       let devInfo: AmbitDeviceInfo | null = null;
       try { devInfo = await getDeviceInfo(); } catch { /* non-fatal — hide the info block below */ }
       setAmbitInfo(devInfo);
+      // Kailash (2026-08-09, KAILASH-BLE-FINDINGS.md Finding 7): while the BLE link is
+      // live, read the persistent activity summaries (DeviceHistory 0x67 → the on-screen
+      // panel) and the EPHEMERAL GPS sample store (DeviceLog 0x53 → an exportable track).
+      // 0x53 only has real samples over an active BLE session and before the 7R app drains
+      // it, so this read must happen here, on the live link. Both non-fatal.
+      if (isKailash(devInfo)) {
+        try {
+          setKailashHistory(decodeDeviceHistory(await readDeviceHistoryRaw()));
+        } catch { setKailashHistory(null); }
+        try {
+          const log = decodeDeviceLog(await readDeviceLogRaw());
+          setKailashTrack(log && realTrackPoints(log).length > 0 ? log : null);
+        } catch { setKailashTrack(null); }
+      } else {
+        setKailashHistory(null);
+        setKailashTrack(null);
+      }
       setBleConnected(true);
       bleConnectedRef.current = true;
       setBleTransportActive(true);   // route all connect()/disconnect() through BLE
@@ -226,6 +250,29 @@ export default function HomeScreen() {
   }
   const handleBleConnectRef = useRef(handleBleConnect);
   handleBleConnectRef.current = handleBleConnect;
+
+  // Writes the Kailash track fetched at connect time (kailashTrack) to Downloads as GPX.
+  // No watch round-trip here — the samples were already read over the live link in
+  // handleBleConnect, because DeviceLog (0x53) is ephemeral (see KailashDeviceLogReader.ts).
+  async function handleExportKailashTrack() {
+    if (!kailashTrack || kailashExportBusy) return;
+    setKailashExportBusy(true);
+    try {
+      const pts = realTrackPoints(kailashTrack);
+      const gpx = deviceLogToGpx(kailashTrack, `Kailash ${pts[0]?.time ?? ''}`.trim());
+      if (!gpx) { Alert.alert(t.homeKailashTrackTitle, t.homeKailashExportEmpty); return; }
+      const stamp = (pts[0]?.time ?? new Date().toISOString()).replace(/[:.]/g, '-');
+      const fileName = `kailash_${stamp}.gpx`;
+      const path = `${RNFS.CachesDirectoryPath}/${fileName}`;
+      await RNFS.writeFile(path, gpx, 'utf8');
+      await saveToDownloads(path, fileName, 'application/gpx+xml');
+      Alert.alert(t.homeKailashTrackTitle, t.homeKailashExportDone.replace('%d', String(pts.length)));
+    } catch (e: any) {
+      Alert.alert(t.homeKailashTrackTitle, e?.message ?? t.unknownError);
+    } finally {
+      setKailashExportBusy(false);
+    }
+  }
 
   function startSearching() {
     stopSearchTimers();
@@ -563,6 +610,21 @@ export default function HomeScreen() {
               {t.homeKailashLogbookLabel} {kailashHistory.sessions.length}
             </Text>
           )}
+        </View>
+      )}
+
+      {deviceType === 'ambit' && isKailash(ambitInfo) && kailashTrack && (
+        <View style={styles.deviceCard}>
+          <Text style={styles.deviceName}>{t.homeKailashTrackTitle}</Text>
+          <Text style={styles.deviceSub}>
+            {realTrackPoints(kailashTrack).length} {t.homeKailashTrackPoints}
+          </Text>
+          <Button
+            label={t.homeKailashTrackExport}
+            onPress={handleExportKailashTrack}
+            disabled={kailashExportBusy}
+            grow={false}
+          />
         </View>
       )}
 

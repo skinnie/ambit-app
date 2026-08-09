@@ -711,8 +711,41 @@ Java_com_ambitsyncmodern_usb_AmbitUsbModule_nativeAmbitReadDeviceHistoryRaw(
         LOGE("ambit3_read_object_by_id_raw(0x67) failed: %d", ret);
         return nullptr;
     }
+    LOGI("nativeAmbitReadDeviceHistoryRaw(0x67): %zu raw bytes", rawlen);
     std::string b64 = (raw && rawlen > 0) ? base64Encode(raw, rawlen) : std::string();
     free(raw);  // same equivalence as nativeAmbitReadPoiListRaw's own free(), see its comment
+    return env->NewStringUTF(b64.c_str());
+}
+
+/**
+ * nativeAmbitReadDeviceLogRaw
+ *
+ * Kailash test hook (2026-08-09). Reads the watch's raw sml.DeviceLog reply
+ * (0x1200, entry 0x53) — the EPHEMERAL per-activity GPS sample store, distinct
+ * from the persistent DeviceHistory (0x67) summaries above. Same generic
+ * ambit3_read_object_by_id_raw() path, different entry id. Base64-encoded, null
+ * on failure. Diagnostic: this exists to confirm KAILASH-BLE-FINDINGS.md
+ * Finding 7 live — whether DeviceLog returns real samples over an active BLE
+ * session (and only before the 7R app drains it), or comes back empty. The raw
+ * length is logged so a capture-free logcat read answers that. No TS decoder
+ * yet — a non-empty length is the signal; full decode is the follow-up work.
+ */
+JNIEXPORT jstring JNICALL
+Java_com_ambitsyncmodern_usb_AmbitUsbModule_nativeAmbitReadDeviceLogRaw(
+        JNIEnv *env, jobject /* thiz */)
+{
+    if (!g_device) { LOGE("nativeAmbitReadDeviceLogRaw: Not connected"); return nullptr; }
+
+    uint8_t *raw = nullptr;
+    size_t rawlen = 0;
+    int ret = ambit3_read_object_by_id_raw(g_device, 0x53, &raw, &rawlen);
+    if (ret != 0) {
+        LOGE("ambit3_read_object_by_id_raw(0x53) failed: %d", ret);
+        return nullptr;
+    }
+    LOGI("nativeAmbitReadDeviceLogRaw(0x53): %zu raw bytes", rawlen);
+    std::string b64 = (raw && rawlen > 0) ? base64Encode(raw, rawlen) : std::string();
+    free(raw);
     return env->NewStringUTF(b64.c_str());
 }
 

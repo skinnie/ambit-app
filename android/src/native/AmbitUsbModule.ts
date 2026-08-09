@@ -169,6 +169,17 @@ export function readDeviceHistoryRaw(): Promise<string> {
 }
 
 /**
+ * Kailash test hook (2026-08-09). Reads the watch's raw sml.DeviceLog reply
+ * (0x1200, entry 0x53) in base64 — the ephemeral per-activity GPS sample store,
+ * distinct from readDeviceHistoryRaw()'s persistent 0x67 summaries. Exists to
+ * confirm KAILASH-BLE-FINDINGS.md Finding 7 live over BLE; no decoder yet, a
+ * non-empty result is the signal. The watch must already be connected.
+ */
+export function readDeviceLogRaw(): Promise<string> {
+  return NativeAmbit.readDeviceLogRaw();
+}
+
+/**
  * Ambit3 (and Traverse/Ambit2, same schema family). Reads the watch's raw
  * sml.DeviceSettings reply (0x1100, four zero bytes) in base64. Decoding happens in TS
  * (AmbitSettingsReader.ts). The watch must already be connected.

@@ -505,6 +505,16 @@ int libambit_ble_handshake_device_info(ambit_object_t *object, ambit_device_info
                     info->fw_version[2] = pl[34];
                     info->fw_version[3] = pl[35];
                 }
+                /* hw_version at offset 36, mirroring the USB device-info reply layout
+                 * (libambit.c: model 16, serial 16, fw 4, hw 4). The BLE hello wasn't
+                 * reading it, so hw showed 0.0.0 over BLE — needed for picking the right
+                 * firmware image. (2026-08-09.) */
+                if (pll >= 40) {
+                    info->hw_version[0] = pl[36];
+                    info->hw_version[1] = pl[37];
+                    info->hw_version[2] = pl[38];
+                    info->hw_version[3] = pl[39];
+                }
                 if (pll >= 32) {
                     char id[17]; memcpy(id, pl + 16, 16); id[16] = '\0';
                     free(info->serial); info->serial = strdup(id);

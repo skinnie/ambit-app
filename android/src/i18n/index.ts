@@ -73,6 +73,11 @@ const fr = {
   homeKailashTravelledLabel:  'distance parcourue',
   homeKailashFurthestLabel:   'plus loin de la maison',
   homeKailashLogbookLabel:    'sessions enregistrées',
+  homeKailashTrackTitle:      'Activité GPS',
+  homeKailashTrackPoints:     'points GPS',
+  homeKailashTrackExport:     'Exporter la trace (GPX)',
+  homeKailashExportDone:      'Trace exportée (%d points) vers Téléchargements',
+  homeKailashExportEmpty:     'Aucune trace GPS à exporter',
 
   // LogListScreen
   all:          'Toutes',
@@ -453,6 +458,11 @@ const en: typeof fr = {
   homeKailashTravelledLabel:  'travelled',
   homeKailashFurthestLabel:   'furthest from home',
   homeKailashLogbookLabel:    'recorded sessions',
+  homeKailashTrackTitle:      'GPS activity',
+  homeKailashTrackPoints:     'GPS points',
+  homeKailashTrackExport:     'Export track (GPX)',
+  homeKailashExportDone:      'Track exported (%d points) to Downloads',
+  homeKailashExportEmpty:     'No GPS track to export',
 
   all:          'All',
   loadError:    'Load error',
