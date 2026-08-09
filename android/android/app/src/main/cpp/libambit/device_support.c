@@ -46,6 +46,28 @@ typedef struct int_known_device_s {
  * Static variables
  */
 static int_known_device_t known_devices[] = {
+    // Real bug, found live on a real connected Kailash (2026-08-09, "tablet works ok with
+    // ambit 3 but not kailash") - this is the ORIGINAL openambit device_support.c table
+    // (unmodified upstream, (C) 2014), which predates Kailash's release and never had an
+    // entry for it at all. libambit_new_from_fd() -> libambit_device_support_find_first()
+    // walks exactly this table (vid+pid+supported+driver match, no firmware-version
+    // filtering for this path) - with no row here, it always returned NULL for Kailash,
+    // "libambit initialization failed (VID=0x1493 PID=0x2a)" every time, even though the
+    // Kotlin-side SUUNTO_PID_NAMES map (AmbitUsbModule.kt, a DIFFERENT table, display-name/
+    // permission-filter only) already had Kailash correctly registered - that one only
+    // decides whether Android's own USB-permission dialog and device_filter.xml intent
+    // matching accept the device, not whether libambit itself can actually open it. Same
+    // real class of "missing from one of several separate device tables" bug this project's
+    // own history already hit twice (write_nav.py's PRODUCT_IDS, then AmbitUsbModule.kt's
+    // own SUUNTO_PID_NAMES) - this native table was the third place, missed until now.
+    // ambit_device_driver_ambit3, not a new driver: Kailash answers the same USB init +
+    // 0x0000 device-info commands every Ambit3-family watch does (confirmed throughout this
+    // project's own real Kailash work - device history/tracklog/settings/CustomModes reads
+    // all already assume this same transport). min_sw_version/komposti_version don't gate
+    // libambit_device_support_find_first() at all (only the separate, model-string-matching
+    // libambit_device_support_find() reads them) - {0} here matches the Ambit3-family rows'
+    // own "accept any version" style below, not a real Kailash-specific value.
+    { SUUNTO_USB_VENDOR_ID, 0x002a, "Hoopoe", {0x00,0x00,0x00,0x00}, { "Suunto Kailash", true, &ambit_device_driver_ambit3, 0x0400, {0x02,0x04,0x59,0x00} } },
     { SUUNTO_USB_VENDOR_ID, 0x002d, "Loon", {0x01,0x00,0x04,0x0}, { "Suunto Traverse Alpha", true, &ambit_device_driver_ambit3, 0x0400, {0x02,0x04,0x59,0x00} } },
     { SUUNTO_USB_VENDOR_ID, 0x002c, "Kaka", {0x01,0x00,0x1b,0x00}, { "Suunto Ambit3 Vertical", true, &ambit_device_driver_ambit3, 0x0400, {0x02,0x04,0x59,0x00} } },
     { SUUNTO_USB_VENDOR_ID, 0x002b, "Jabiru", {0x01,0x00,0x04,0x00}, { "Suunto Traverse", true, &ambit_device_driver_ambit3, 0x0400, {0x02,0x04,0x59,0x00} } },
