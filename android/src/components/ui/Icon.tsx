@@ -9,7 +9,8 @@ export type IconName =
   | 'list' | 'link' | 'map' | 'chart' | 'activity' | 'key' | 'person'
   | 'delete' | 'check' | 'info' | 'battery' | 'warning' | 'mountain'
   | 'watch' | 'etrex' | 'sun' | 'moon' | 'auto' | 'chevronLeft' | 'chevronRight'
-  | 'cycling' | 'running' | 'walking';
+  | 'cycling' | 'running' | 'walking'
+  | 'play' | 'pause' | 'skipBack' | 'skipForward';
 
 interface Props {
   name: IconName;
@@ -148,6 +149,38 @@ export default function Icon({ name, size = 20, color = '#000' }: Props) {
           <Path d="M12 7v5l-3 2v6M12 12l3 1.5v6.5" {...s} />
         </Svg>
       );
+    // Real, 2026-08-10 ("I still see the orange buttons on activities") - MapScreen's
+    // replay bar (rewind/play-pause/fast-forward) used raw emoji (⏪▶️⏸⏩), same root cause
+    // as the activity-type icons: Android's own emoji font bakes a colored (orange/amber)
+    // shape into these specific glyphs, uncontrollable via style/color. Plain filled
+    // triangles/bars instead - fully tintable like every other icon here.
+    case 'play':
+      return (
+        <Svg width={size} height={size} viewBox="0 0 24 24">
+          <Path d="M6 4l14 8-14 8V4z" fill={color} stroke="none" />
+        </Svg>
+      );
+    case 'pause':
+      return (
+        <Svg width={size} height={size} viewBox="0 0 24 24">
+          <Rect x={5} y={4} width={5} height={16} rx={1.2} fill={color} stroke="none" />
+          <Rect x={14} y={4} width={5} height={16} rx={1.2} fill={color} stroke="none" />
+        </Svg>
+      );
+    case 'skipBack':
+      return (
+        <Svg width={size} height={size} viewBox="0 0 24 24">
+          <Path d="M12 4l-9 8 9 8V4z" fill={color} stroke="none" />
+          <Path d="M21 4l-9 8 9 8V4z" fill={color} stroke="none" />
+        </Svg>
+      );
+    case 'skipForward':
+      return (
+        <Svg width={size} height={size} viewBox="0 0 24 24">
+          <Path d="M12 4l9 8-9 8V4z" fill={color} stroke="none" />
+          <Path d="M3 4l9 8-9 8V4z" fill={color} stroke="none" />
+        </Svg>
+      );
     case 'key':
       return (
         <Svg width={size} height={size} viewBox="0 0 24 24">
@@ -230,13 +263,18 @@ export default function Icon({ name, size = 20, color = '#000' }: Props) {
     case 'etrex':
       // Garmin eTrex 10 silhouette — tall rounded handheld body, screen,
       // top-right round button, side D-pad/menu nubs (see etrex10.jpg).
+      // Real, 2026-08-10 ("adjust the etrex screen position a bit down to not touch the
+      // circle that represents the joystick, give it a little spacing to match the
+      // original device") - the screen's top edge (was y=6.6) sat only 0.3 units below the
+      // button circle's own bottom edge (y=3.9+2.4=6.3) - practically touching at real icon
+      // sizes. Moved down to y=8 for real, visible separation.
       return (
         <Svg width={size} height={size} viewBox="0 0 24 24">
           <Rect x={6} y={1} width={12} height={22} rx={4} stroke={color} strokeWidth={1.9} fill="none" />
-          <Rect x={8} y={6.6} width={8} height={8.6} rx={1} stroke={color} strokeWidth={1.9} fill="none" />
+          <Rect x={8} y={8} width={8} height={8.6} rx={1} stroke={color} strokeWidth={1.9} fill="none" />
           <Circle cx={14.6} cy={5.1} r={1.2} stroke={color} strokeWidth={1.5} fill="none" />
-          <Line x1={6} y1={9} x2={4.6} y2={9} {...s} />
-          <Line x1={18} y1={13} x2={19.4} y2={13} {...s} />
+          <Line x1={6} y1={10.5} x2={4.6} y2={10.5} {...s} />
+          <Line x1={18} y1={14.5} x2={19.4} y2={14.5} {...s} />
         </Svg>
       );
     case 'sun':

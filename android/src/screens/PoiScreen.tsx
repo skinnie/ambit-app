@@ -2,7 +2,7 @@ import React, { useCallback, useState } from 'react';
 import { View, Text, StyleSheet, Alert, ScrollView, TouchableOpacity } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import {
-  addPoiToWatch, AddPoiState, readOnWatchPois, exportSinglePoiToGpx, pickAndParseWaypoints,
+  addPoiToWatch, AddPoiState, readOnWatchPois, getCachedPois, exportSinglePoiToGpx, pickAndParseWaypoints,
   WatchPoi,
 } from '../services/PoiService';
 import { t } from '../i18n';
@@ -41,13 +41,22 @@ export default function PoiScreen() {
   const [onWatchError, setOnWatchError] = useState<string | undefined>();
   const [exportingIndex, setExportingIndex] = useState<number | null>(null);
 
+  // Real, 2026-08-10 ("it is not upon the watch to give you that, is on the app to store
+  // the activities, so they can load almost immediately and just refresh what is new") -
+  // same real local-first pattern as RouteScreen.tsx's own loadOnWatch(): the persisted
+  // cache renders instantly, a real watch read refreshes it silently in the background.
   const loadOnWatch = useCallback(async () => {
-    setOnWatchLoading(true);
+    const cached = await getCachedPois();
+    if (cached) {
+      setOnWatch(cached);
+    } else {
+      setOnWatchLoading(true);
+    }
     setOnWatchError(undefined);
     try {
       setOnWatch(await readOnWatchPois());
     } catch (e: any) {
-      setOnWatchError(e?.message ?? t.unknownError);
+      if (!cached) setOnWatchError(e?.message ?? t.unknownError);
     } finally {
       setOnWatchLoading(false);
     }

@@ -2,7 +2,7 @@ import React, { useCallback, useState } from 'react';
 import { View, Text, StyleSheet, Alert, ScrollView, TouchableOpacity } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import {
-  pickAndParseRoute, uploadRoute, readOnWatchNavigation, exportSingleRouteToGpx,
+  pickAndParseRoute, uploadRoute, readOnWatchNavigation, getCachedNavigation, exportSingleRouteToGpx,
   PendingRoute, SendRouteState,
 } from '../services/NavigationService';
 import { WatchRoute } from '../services/RouteReader';
@@ -42,14 +42,27 @@ export default function RouteScreen() {
   const [onWatchError, setOnWatchError] = useState<string | undefined>();
   const [exportingIndex, setExportingIndex] = useState<number | null>(null);
 
+  // Real, 2026-08-10 ("it is not upon the watch to give you that, is on the app to store
+  // the activities, so they can load almost immediately and just refresh what is new") -
+  // the persisted cache (if any) renders instantly, with no loading spinner; the real watch
+  // read then runs in the background and silently updates the list when it lands. A cache
+  // miss (first ever use) falls back to the old spinner+error behavior - there's nothing to
+  // show instantly yet.
   const loadOnWatch = useCallback(async () => {
-    setOnWatchLoading(true);
+    const cached = await getCachedNavigation();
+    if (cached) {
+      setOnWatch(cached.routes);
+    } else {
+      setOnWatchLoading(true);
+    }
     setOnWatchError(undefined);
     try {
       const nav = await readOnWatchNavigation();
       setOnWatch(nav.routes);
     } catch (e: any) {
-      setOnWatchError(e?.message ?? t.unknownError);
+      // A failed background refresh shouldn't blank out a list we already have real,
+      // if possibly stale, data for - only surface the error when there's nothing to show.
+      if (!cached) setOnWatchError(e?.message ?? t.unknownError);
     } finally {
       setOnWatchLoading(false);
     }

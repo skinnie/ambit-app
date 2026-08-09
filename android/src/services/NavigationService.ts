@@ -1,4 +1,5 @@
 import RNFS from 'react-native-fs';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { connect, disconnect, pickGpxFile, writeRoute, readRegion, saveToDownloads } from '../native/AmbitUsbModule';
 import { parseRouteGpx, nearestPointIndex, RoutePoint } from './RouteGpxParser';
 import { simplifyRoute } from './RouteSimplify';
@@ -41,7 +42,11 @@ function haversineM(a: { latitude: number; longitude: number }, b: { latitude: n
   return R * 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1 - s));
 }
 
-function computeDistanceAscentDescent(points: RoutePoint[]): { distanceM: number; ascentM: number; descentM: number } {
+// Exported, 2026-08-10 ("Garmin: POIs and routes, please follow the same logic as suunto,
+// showing them on the maps") - GarminGpxExportService.ts's new preview list needs the same
+// distance/ascent/descent stats this file already computes for the Suunto pending-route
+// preview, rather than a second copy of the same math.
+export function computeDistanceAscentDescent(points: RoutePoint[]): { distanceM: number; ascentM: number; descentM: number } {
   let distanceM = 0;
   let ascentM = 0;
   let descentM = 0;
@@ -170,7 +175,7 @@ export async function uploadRoute(route: PendingRoute, onState: Listener): Promi
   emit({ phase: 'writing', ...meta });
   try {
     await writeRoute(route);
-    onWatchCache = null; // real watch state just changed - see readOnWatchNavigation()
+    await clearNavigationCache(); // real watch state just changed - see below
     emit({ phase: 'done', ...meta });
   } catch (e: any) {
     emit({ phase: 'error', error: e?.message ?? 'Failed to write the route' });
@@ -179,32 +184,40 @@ export async function uploadRoute(route: PendingRoute, onState: Listener): Promi
   }
 }
 
-// Real, 2026-08-09 ("cache activities/POIs and only import the differences from the watch,
-// making it faster") - desktop was checked for the exact mechanism this referenced (see
-// ambit_app memory): it does NOT have a byte-diff/incremental importer for routes or POIs.
-// RouteService::refresh()/PoiService::refresh() (desktop/src/services/routeservice.cpp,
-// poiservice.cpp) always do a full read, every call, no cache at all - there's nothing to
-// port faithfully. What IS real and worth doing: this read is a fixed ~146KB raw region
-// transfer (16KB waypoints + 130KB routes) regardless of how much actually changed - the
-// protocol has no "give me only the changed bytes" capability to diff against - and
-// RouteScreen's useFocusEffect was re-running it on every single screen focus, even
-// Home->Routes->Home->Routes seconds apart with nothing changed. A short in-memory TTL
-// cache (not persisted - the watch's own on-disk state can't be trusted across reconnects/
-// a SuuntoLink sync in between anyway) skips that redundant round trip; any real write
-// (uploadRoute, just above) still clears it immediately so the very next read is fresh.
-const ON_WATCH_CACHE_TTL_MS = 30_000;
-let onWatchCache: { data: WatchNavigation; at: number } | null = null;
+// Real, 2026-08-10 ("cache activities/POIs and only import the differences from the
+// watch, making it faster" -> "it is not upon the watch to give you that, is on the app to
+// store the activities, so they can load almost immediately and just refresh what is new") -
+// this app's own Activities already work this way (a local SQLite table - see database/
+// db.ts - loads instantly, a Sync only fetches what's new off the watch). Routes/Waypoints
+// had no such local copy at all before this: readOnWatchNavigation() always needed a real
+// ~146KB watch round trip before RouteScreen could show anything, even offline. Persisted
+// via AsyncStorage (not SQLite - this is one JSON blob, the watch's own last-known full
+// snapshot, not query-able rows) so it survives app restarts, not just navigation. Any real
+// write (uploadRoute, above) clears it immediately, same as before.
+const NAV_CACHE_KEY = 'ambitapp:cachedNavigation';
+
+/** The locally persisted copy of the watch's Routes/Waypoints, if any - for an instant
+ * "On the watch" list before (or entirely without) a real watch round trip. */
+export async function getCachedNavigation(): Promise<WatchNavigation | null> {
+  try {
+    const raw = await AsyncStorage.getItem(NAV_CACHE_KEY);
+    return raw ? (JSON.parse(raw) as WatchNavigation) : null;
+  } catch {
+    return null;
+  }
+}
+
+async function clearNavigationCache(): Promise<void> {
+  await AsyncStorage.removeItem(NAV_CACHE_KEY).catch(() => {});
+}
 
 /** Read-only: the watch's own current Routes/Waypoints, for a real "On the watch" list -
  * matches desktop's own RouteService.onWatchRoutes/GarminService.onDeviceRoutes shape
  * (RoutesPage.qml). Reuses exportNavigationToGpx()'s own read half, just returns the rich
- * per-route/per-waypoint data instead of only a count + a combined GPX file.
- * `force` bypasses the TTL cache above - used nowhere yet, kept for a future explicit
- * "refresh" affordance rather than only ever trusting the 30s window. */
-export async function readOnWatchNavigation(force = false): Promise<WatchNavigation> {
-  if (!force && onWatchCache && Date.now() - onWatchCache.at < ON_WATCH_CACHE_TTL_MS) {
-    return onWatchCache.data;
-  }
+ * per-route/per-waypoint data instead of only a count + a combined GPX file. Always does a
+ * real watch read (the "refresh what's new" half) - RouteScreen's own loadOnWatch() is what
+ * shows getCachedNavigation()'s result first so this doesn't block the UI. */
+export async function readOnWatchNavigation(): Promise<WatchNavigation> {
   await connect();
   try {
     const [waypointsB64, routesB64] = await Promise.all([
@@ -212,7 +225,7 @@ export async function readOnWatchNavigation(force = false): Promise<WatchNavigat
       readRegion(AMBIT3_ROUTE_BASE, AMBIT3_ROUTE_REGION_SIZE),
     ]);
     const data = decodeNavigation(waypointsB64, routesB64);
-    onWatchCache = { data, at: Date.now() };
+    await AsyncStorage.setItem(NAV_CACHE_KEY, JSON.stringify(data)).catch(() => {});
     return data;
   } finally {
     await disconnect().catch(() => {});

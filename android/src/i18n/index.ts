@@ -445,6 +445,12 @@ const fr = {
   garminRouteExportDone: (count: number) =>
     count === 0 ? 'Aucun fichier de route trouvé.' : `${count} fichier${count !== 1 ? 's' : ''} exporté${count !== 1 ? 's' : ''}.`,
   garminShareBtn: 'Partager…',
+  // Real, 2026-08-10 ("Garmin: POIs and routes, please follow the same logic as suunto,
+  // showing them on the maps") - même carte "Sur l'appareil" que routeOnWatchSection, avec
+  // un aperçu carte par élément (TrackPreview), pas seulement un export en masse.
+  garminRouteOnDeviceSection: "Sur l'appareil",
+  garminRouteOnDeviceReading: "Lecture des routes sur l'appareil…",
+  garminRouteOnDeviceEmpty: "Aucune route sur l'appareil.",
 
   // GarminPoiScreen (v2.3.2 beta)
   garminPoiScreenTitle: 'POI Garmin',
@@ -459,6 +465,9 @@ const fr = {
   garminPoiRetrieveBtn: 'Récupérer',
   garminPoiRetrieveDone: (count: number) =>
     count === 0 ? 'Aucun fichier de POI trouvé.' : `${count} fichier${count !== 1 ? 's' : ''} récupéré${count !== 1 ? 's' : ''}.`,
+  garminPoiOnDeviceSection: "Sur l'appareil",
+  garminPoiOnDeviceReading: "Lecture des POI sur l'appareil…",
+  garminPoiOnDeviceEmpty: "Aucun POI sur l'appareil.",
 
   // BackupScreen (v2.3.2 beta) — Ambit firmware backup
   backupButton:      'Backup',
@@ -902,6 +911,12 @@ const en: typeof fr = {
   garminRouteExportDone: (count: number) =>
     count === 0 ? 'No route files found.' : `${count} file${count !== 1 ? 's' : ''} exported.`,
   garminShareBtn: 'Share…',
+  // Real, 2026-08-10 ("Garmin: POIs and routes, please follow the same logic as suunto,
+  // showing them on the maps") - same "On the device" card as routeOnWatchSection, with a
+  // real per-item map preview (TrackPreview), not only a bulk export.
+  garminRouteOnDeviceSection: 'On the device',
+  garminRouteOnDeviceReading: 'Reading routes off the device...',
+  garminRouteOnDeviceEmpty: 'No routes on the device.',
 
   // GarminPoiScreen (v2.3.2 beta)
   garminPoiScreenTitle: 'Garmin POI',
@@ -916,6 +931,9 @@ const en: typeof fr = {
   garminPoiRetrieveBtn: 'Retrieve',
   garminPoiRetrieveDone: (count: number) =>
     count === 0 ? 'No POI files found.' : `${count} file${count !== 1 ? 's' : ''} retrieved.`,
+  garminPoiOnDeviceSection: 'On the device',
+  garminPoiOnDeviceReading: 'Reading POIs off the device...',
+  garminPoiOnDeviceEmpty: 'No POIs on the device.',
 
   // BackupScreen (v2.3.2 beta) — Ambit firmware backup
   backupButton:      'Backup',

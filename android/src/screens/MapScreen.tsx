@@ -18,6 +18,7 @@ import { useV3Theme } from '../theme/v3';
 import { getMapProvider, setMapProvider, MapProvider } from '../services/MapProviderService';
 import { mapTileLayersJs } from '../services/MapHtml';
 import { TRACK_COLOR } from '../services/MapTile';
+import Icon from '../components/ui/Icon';
 
 type Route = RouteProp<RootStackParamList, 'Map'>;
 type Nav   = NativeStackNavigationProp<RootStackParamList, 'Map'>;

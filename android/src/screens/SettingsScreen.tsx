@@ -24,6 +24,7 @@ import {
 import {
   getMapProvider, setMapProvider, MapProvider, MAP_PROVIDER_LABELS,
 } from '../services/MapProviderService';
+import { detectAttachedDeviceType } from '../native/AmbitUsbModule';
 import { t } from '../i18n';
 import { APP_VERSION } from '../config/version';
 import { useV3Theme } from '../theme/v3';
@@ -85,6 +86,16 @@ export default function SettingsScreen() {
   // guaranteed just because this screen is open, so it's behind an explicit "Read
   // Settings" tap instead (same "explicit action, no surprise USB traffic" spirit as the
   // rest of this app's own on-demand connect/read/disconnect flows - see PoiService.ts).
+  // Real, 2026-08-10 ("watch settings, hide it when garmin is plugged") - the AmbitSettings
+  // cable protocol below is Suunto-only; a real Garmin connected live surfaced that this
+  // card was showing (and its "Read Settings" tap would just fail) with a Garmin plugged
+  // in. Re-checked on every focus, same on-demand pattern as the rest of this app (no
+  // context/prop-drilling from Home - this screen queries what it needs itself).
+  const [isGarminAttached, setIsGarminAttached] = useState(false);
+  useFocusEffect(useCallback(() => {
+    detectAttachedDeviceType().then(t => setIsGarminAttached(t === 'garmin')).catch(() => {});
+  }, []));
+
   const [ambitSettings, setAmbitSettings] = useState<DecodedSetting[] | null>(null);
   const [ambitSettingsFields, setAmbitSettingsFields] = useState<SettingField[] | null>(null);
   // The connected watch's own name (from getDeviceInfo()'s device list), used to label
@@ -294,7 +305,12 @@ export default function SettingsScreen() {
           confirmed on each watch's own screen that flipping display_dark visibly switched
           it Light -> Dark) - readAmbitSettings() detects which one is connected and picks
           the matching curated table (AmbitSettingsService.ts's own header comment), so
-          this section works unmodified for either. ── */}
+          this section works unmodified for either. "Both device types" means Ambit/
+          Traverse/Kailash, though - a real Garmin connected live (2026-08-10) surfaced
+          that this card doesn't apply to Garmin at all (no AmbitSettings protocol there),
+          so it's hidden while one's attached rather than shown with a "Read Settings"
+          button that would just fail. ── */}
+      {!isGarminAttached && (
       <View style={styles.section}>
         <View style={styles.cardHead}>
           <IconBadge icon="watch" />
@@ -421,6 +437,7 @@ export default function SettingsScreen() {
           <Button label={t.ambitSettingsRefreshBtn} icon="sync" onPress={handleReadAmbitSettings} style={{ marginTop: 14 }} />
         )}
       </View>
+      )}
 
       {/* ── Connections - real, 2026-08-09 ("settings was completely reworked in our
           desktop app... proceed"). Ports SettingsPage.qml's real Connections card: one

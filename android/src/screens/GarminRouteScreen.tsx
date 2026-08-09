@@ -1,14 +1,18 @@
-import React, { useState } from 'react';
-import { StyleSheet, ScrollView, View } from 'react-native';
-import { useRoute, RouteProp } from '@react-navigation/native';
+import React, { useCallback, useState } from 'react';
+import { StyleSheet, ScrollView, View, Text, TouchableOpacity } from 'react-native';
+import { useRoute, useFocusEffect, RouteProp } from '@react-navigation/native';
 import * as Garmin from '../native/GarminModule';
-import { pickGpxFile, shareFile } from '../native/AmbitUsbModule';
-import { exportGarminGpxFiles, isGarminRouteFile, GarminGpxExportResult, GarminGpxExportState } from '../services/GarminGpxExportService';
+import { pickGpxFile, shareFile, saveToDownloads } from '../native/AmbitUsbModule';
+import {
+  exportGarminGpxFiles, isGarminRouteFile, listGarminRoutePreviews,
+  GarminGpxExportResult, GarminGpxExportState, GarminRoutePreview,
+} from '../services/GarminGpxExportService';
 import RNFS from 'react-native-fs';
 import { t } from '../i18n';
 import type { RootStackParamList } from '../../App';
-import { useV3Theme } from '../theme/v3';
+import { useV3Theme, v3Spacing, v3Type } from '../theme/v3';
 import { Button, ExportedFileRow, Section, StatusLine, WarningNote } from '../components/ui/primitives';
+import { TrackPreview } from '../components/TrackPreview';
 
 /*
  * v2.3.2 beta — mirrors the Ambit RouteScreen's structure (send / export),
@@ -33,6 +37,44 @@ export default function GarminRouteScreen() {
 
   const [exportState, setExportState] = useState<GarminGpxExportState>({ phase: 'idle' });
   const [exportedFiles, setExportedFiles] = useState<GarminGpxExportResult[]>([]);
+
+  // Real, 2026-08-10 ("Garmin: POIs and routes, please follow the same logic as suunto,
+  // showing them on the maps") - a real browsable "On the device" list with a per-item map
+  // preview (TrackPreview), matching RouteScreen.tsx's own on-watch list, instead of only
+  // ever bulk-exporting unseen files to Downloads.
+  const [onDevice, setOnDevice] = useState<GarminRoutePreview[] | null>(null);
+  const [onDeviceLoading, setOnDeviceLoading] = useState(false);
+  const [onDeviceError, setOnDeviceError] = useState<string | undefined>();
+  const [exportingItem, setExportingItem] = useState<string | null>(null);
+
+  const loadOnDevice = useCallback(async () => {
+    setOnDeviceLoading(true);
+    setOnDeviceError(undefined);
+    try {
+      setOnDevice(await listGarminRoutePreviews(info));
+    } catch (e: any) {
+      setOnDeviceError(e?.message ?? t.unknownError);
+    } finally {
+      setOnDeviceLoading(false);
+    }
+  }, [info]);
+
+  useFocusEffect(useCallback(() => { loadOnDevice(); }, [loadOnDevice]));
+
+  async function handleExportItem(item: GarminRoutePreview) {
+    if (exportingItem) return;
+    setExportingItem(item.fileName);
+    try {
+      const content = await Garmin.readGpxDirFile(item.volumeIndex, item.fileName);
+      const localPath = `${RNFS.CachesDirectoryPath}/${item.fileName}`;
+      await RNFS.writeFile(localPath, content, 'utf8');
+      await saveToDownloads(localPath, item.fileName, 'application/gpx+xml');
+    } catch {
+      // silent - the bulk "Export routes" button below remains the reliable fallback
+    } finally {
+      setExportingItem(null);
+    }
+  }
 
   const busy = sendState === 'picking' || sendState === 'uploading' || exportState.phase === 'reading';
 
@@ -107,12 +149,55 @@ export default function GarminRouteScreen() {
         ))}
       </Section>
 
+      {/* ── On the device - real, 2026-08-10 ("follow the same logic as suunto, showing
+          them on the maps"). Same real map-thumbnail-per-item pattern as RouteScreen.tsx's
+          own "On the watch" card. ── */}
+      <Section title={t.garminRouteOnDeviceSection}>
+        {onDeviceLoading && <StatusLine text={t.garminRouteOnDeviceReading} />}
+        {!onDeviceLoading && onDeviceError && (
+          <Text style={[styles.itemStats, { color: theme.error, marginTop: v3Spacing.small }]}>{onDeviceError}</Text>
+        )}
+        {!onDeviceLoading && !onDeviceError && onDevice && onDevice.length === 0 && (
+          <Text style={[styles.itemStats, { marginTop: v3Spacing.small }]}>{t.garminRouteOnDeviceEmpty}</Text>
+        )}
+        {!onDeviceLoading && onDevice && onDevice.map((item, i) => (
+          <View key={`${item.volumeIndex}-${item.fileName}`} style={i > 0 ? styles.onDeviceItem : { marginTop: v3Spacing.medium, gap: v3Spacing.small }}>
+            {item.points.length > 1 && <TrackPreview points={item.points} height={120} variableHeight />}
+            <View style={styles.row}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.itemName}>{item.name}</Text>
+                <Text style={styles.itemStats}>{t.routeStats(formatDist(item.distanceM), item.points.length, item.ascentM, item.descentM)}</Text>
+              </View>
+              <TouchableOpacity
+                style={styles.exportBtn}
+                disabled={exportingItem !== null}
+                onPress={() => handleExportItem(item)}
+              >
+                <Text style={styles.exportBtnText}>{exportingItem === item.fileName ? '…' : t.routeItemExportBtn}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ))}
+      </Section>
+
     </ScrollView>
   );
+}
+
+function formatDist(m: number): string {
+  return m >= 1000 ? `${(m / 1000).toFixed(2)} km` : `${Math.round(m)} m`;
 }
 
 const createStyles = (t: ReturnType<typeof useV3Theme>) => StyleSheet.create({
   root: { flex: 1, backgroundColor: t.background },
   content: { padding: 20 },
-  row: { flexDirection: 'row', gap: 10, marginTop: 10 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10 },
+  itemName: { fontSize: v3Type.bodyLarge, fontWeight: '700', color: t.text },
+  itemStats: { fontSize: v3Type.label, color: t.mutedText, marginTop: 2 },
+  onDeviceItem: { marginTop: v3Spacing.large, paddingTop: v3Spacing.medium, borderTopWidth: 1, borderTopColor: t.mutedText + '22', gap: v3Spacing.small },
+  exportBtn: {
+    paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8,
+    backgroundColor: t.primary + '1F', borderWidth: 1, borderColor: t.primary,
+  },
+  exportBtnText: { color: t.primary, fontWeight: '600', fontSize: v3Type.label },
 });

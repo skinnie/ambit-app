@@ -2,6 +2,8 @@ import RNFS from 'react-native-fs';
 import * as Garmin from '../native/GarminModule';
 import type { GarminConnectResult } from '../native/GarminModule';
 import { saveToDownloads } from '../native/AmbitUsbModule';
+import { parseRouteGpx, parseGpxWaypoints, RouteWaypoint } from './RouteGpxParser';
+import { computeDistanceAscentDescent } from './NavigationService';
 
 /*
  * v2.3.2 beta — shared by GarminRouteScreen's "Export routes" and
@@ -72,4 +74,92 @@ export function isGarminWaypointFile(fileName: string): boolean {
 /** Anything in Garmin/GPX that isn't a Waypoints* POI file is a saved route/track. */
 export function isGarminRouteFile(fileName: string): boolean {
   return !isGarminWaypointFile(fileName);
+}
+
+// Real, 2026-08-10 ("Garmin: POIs and routes, please follow the same logic as suunto,
+// showing them on the maps") - a real Garmin connected live surfaced that GarminRoute/
+// PoiScreen only ever offered "export everything to Downloads", no browsable "On the
+// device" list with a map preview the way RouteScreen/PoiScreen already have for Suunto.
+// Same real files (Garmin/GPX/*.gpx) as exportGarminGpxFiles above, just parsed for
+// display (RouteGpxParser.ts's parseRouteGpx/parseGpxWaypoints - the same real parsers
+// Suunto's own pending-route-preview and GPX-import flows already use) instead of only
+// ever being saved straight to Downloads unseen.
+
+export interface GarminRoutePreview {
+  fileName: string;
+  volumeIndex: number;
+  name: string;
+  points: { lat: number; lon: number }[];
+  distanceM: number;
+  ascentM: number;
+  descentM: number;
+}
+
+export async function listGarminRoutePreviews(info: GarminConnectResult): Promise<GarminRoutePreview[]> {
+  const results: GarminRoutePreview[] = [];
+  for (const vol of info.volumes) {
+    let files: string[];
+    try {
+      files = await Garmin.listGpxDirFiles(vol.volumeIndex);
+    } catch {
+      continue;
+    }
+    for (const fileName of files.filter(isGarminRouteFile)) {
+      try {
+        const content = await Garmin.readGpxDirFile(vol.volumeIndex, fileName);
+        const parsed = parseRouteGpx(content, fileName.replace(/\.gpx$/i, ''));
+        const { distanceM, ascentM, descentM } = computeDistanceAscentDescent(parsed.points);
+        results.push({
+          fileName, volumeIndex: vol.volumeIndex, name: parsed.name,
+          points: parsed.points.map(p => ({ lat: p.latitude, lon: p.longitude })),
+          distanceM, ascentM, descentM,
+        });
+      } catch {
+        // one bad/unparseable file shouldn't hide every other real route - skip it
+      }
+    }
+  }
+  return results;
+}
+
+export interface GarminPoiPreview {
+  fileName: string;
+  volumeIndex: number;
+  waypoint: RouteWaypoint;
+}
+
+export async function listGarminPoiPreviews(info: GarminConnectResult): Promise<GarminPoiPreview[]> {
+  const results: GarminPoiPreview[] = [];
+  for (const vol of info.volumes) {
+    let files: string[];
+    try {
+      files = await Garmin.listGpxDirFiles(vol.volumeIndex);
+    } catch {
+      continue;
+    }
+    for (const fileName of files.filter(isGarminWaypointFile)) {
+      try {
+        const content = await Garmin.readGpxDirFile(vol.volumeIndex, fileName);
+        for (const waypoint of parseGpxWaypoints(content)) {
+          results.push({ fileName, volumeIndex: vol.volumeIndex, waypoint });
+        }
+      } catch {
+        // one bad/unparseable file shouldn't hide every other real POI - skip it
+      }
+    }
+  }
+  return results;
+}
+
+function escapeXml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+/** A single waypoint as its own standalone GPX file - for GarminPoiScreen's per-item
+ * Export (a POI file on the device may hold several waypoints; exporting just the one
+ * being looked at, not the whole file, matches PoiService.ts's own exportSinglePoiToGpx). */
+export function waypointToGpx(wp: RouteWaypoint): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>\n` +
+    `<gpx version="1.1" creator="AmbitApp" xmlns="http://www.topografix.com/GPX/1/1">\n` +
+    `  <wpt lat="${wp.latitude.toFixed(7)}" lon="${wp.longitude.toFixed(7)}"><name>${escapeXml(wp.name)}</name></wpt>\n</gpx>`;
 }

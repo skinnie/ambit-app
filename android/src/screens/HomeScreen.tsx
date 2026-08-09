@@ -465,7 +465,9 @@ export default function HomeScreen() {
               the logo") - the very first thing shown on launch, while the app is still
               looking for the watch. */}
           {phase === 'searching' && (
-            <Text style={[styles.deviceFlowTagline, { color: theme.mutedText }]}>{t.homeTagline}</Text>
+            <Text style={[styles.deviceFlowTagline, deviceFlowTaglineScale(deviceFlowScale), { color: theme.mutedText }]}>
+              {t.homeTagline}
+            </Text>
           )}
         </View>
         {phase === 'searching' ? (
@@ -607,10 +609,14 @@ export default function HomeScreen() {
       {/* Real, 2026-08-09 ("the icon of the watch could be like 20% bigger while in
           vertical, on horizontal is ok") - portrait-only scale-up; roomy (landscape+wide)
           keeps the original 40. Not tied to `roomy` itself since a narrow landscape phone
-          is neither roomy nor portrait and should also keep the unscaled size. */}
+          is neither roomy nor portrait and should also keep the unscaled size.
+          Real, 2026-08-10 ("icon: please make it 10% bigger") - a real Garmin eTrex
+          connected live revealed the etrex glyph reads a little small next to the Suunto
+          watch glyph at the same nominal size - a further 10% bump, on top of the same
+          portrait/landscape scaling above, Garmin-only. */}
       <Icon
         name={deviceType === 'garmin' ? 'etrex' : 'watch'}
-        size={winWidth < winHeight ? 48 : 40}
+        size={Math.round((winWidth < winHeight ? 48 : 40) * (deviceType === 'garmin' ? 1.1 : 1))}
         color={theme.text}
       />
 
@@ -778,6 +784,10 @@ function deviceFlowTitleScale(scale: number) {
   return { fontSize: Math.round(16 * scale), lineHeight: Math.round(23 * scale) };
 }
 
+function deviceFlowTaglineScale(scale: number) {
+  return { fontSize: Math.round(12.5 * scale) };
+}
+
 function syncPhaseLabel(phase: SyncState['phase']): string {
   switch (phase) {
     case 'connecting': return t.conn;
@@ -867,8 +877,17 @@ function createStyles(t: ReturnType<typeof useV3Theme>) {
       paddingHorizontal: 32,
       gap: 24,
     },
+    // Real, 2026-08-10 ("the initial screen while we are waiting for devices to connect
+    // has a big mix of type of letters, sizes, can you uniformize it") - deviceFlowTitle
+    // had no explicit fontWeight at all (defaulting to regular, 400), looking flimsy next
+    // to the wordmark's own bold 800 right above it; the tagline was italic (the only
+    // italic text anywhere in this app) and didn't scale with deviceFlowScale the way the
+    // wordmark/title/badge all do, so it looked disproportionately small on a tablet. Both
+    // fixed: one consistent weight scheme (wordmark 800 > title 600 > tagline 500 > badge
+    // 700, small-pill convention) and one consistent scale factor throughout.
     deviceFlowTitle: {
       color: t.mutedText,
+      fontWeight: '600',
       fontSize: 16,
       textAlign: 'center',
       lineHeight: 23,
@@ -886,8 +905,8 @@ function createStyles(t: ReturnType<typeof useV3Theme>) {
       gap: 10,
     },
     deviceFlowTagline: {
+      fontWeight: '500',
       fontSize: 12.5,
-      fontStyle: 'italic',
       textAlign: 'center',
     },
     header: {

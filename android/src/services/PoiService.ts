@@ -1,4 +1,5 @@
 import RNFS from 'react-native-fs';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { connect, disconnect, addPoi, pickGpxFile, readPoiListRaw, saveToDownloads } from '../native/AmbitUsbModule';
 import { parseGpxWaypoints } from './RouteGpxParser';
 import { base64ToBytes } from './Base64';
@@ -166,7 +167,7 @@ export async function addPoiToWatch(
   onState({ phase: 'writing' });
   try {
     await addPoi(name, lat, lon);
-    onWatchPoiCache = null; // real watch state just changed - see readOnWatchPois()
+    await clearPoiCache(); // real watch state just changed - see below
     onState({ phase: 'done' });
   } catch (e: any) {
     onState({ phase: 'error', error: e?.message ?? 'Failed to add the POI' });
@@ -180,24 +181,36 @@ export async function addPoiToWatch(
 // (PoiService.importedPois + per-item Add, not one opaque write-everything button), plus
 // per-item Export - none of this existed before; the screen was action-buttons-only.
 //
-// Real, same day ("cache activities/POIs and only import the differences from the watch,
-// making it faster") - same real reasoning as NavigationService.ts's own
-// ON_WATCH_CACHE_TTL_MS (see its header comment): desktop has no actual diff/incremental
-// importer to port (checked directly, PoiService::refresh() always does a full read too),
-// but re-reading the Waypoints region on every screen focus when nothing's changed is a
-// real, fixable waste. Same short in-memory TTL, cleared on any real write (addPoiToWatch).
-const ON_WATCH_POI_CACHE_TTL_MS = 30_000;
-let onWatchPoiCache: { data: WatchPoi[]; at: number } | null = null;
+// Real, 2026-08-10 ("cache activities/POIs and only import the differences from the watch,
+// making it faster" -> "it is not upon the watch to give you that, is on the app to store
+// the activities, so they can load almost immediately and just refresh what is new") - same
+// real local-first pattern as NavigationService.ts's own getCachedNavigation() (see its
+// header comment): a persisted last-known snapshot for an instant "On the watch" list, kept
+// fresh by a real watch read in the background, not a scheme for skipping that read.
+const POI_CACHE_KEY = 'ambitapp:cachedPois';
 
-/** Read-only: the watch's own current POIs, for a real "On the watch" list. */
-export async function readOnWatchPois(force = false): Promise<WatchPoi[]> {
-  if (!force && onWatchPoiCache && Date.now() - onWatchPoiCache.at < ON_WATCH_POI_CACHE_TTL_MS) {
-    return onWatchPoiCache.data;
+/** The locally persisted copy of the watch's POIs, if any. */
+export async function getCachedPois(): Promise<WatchPoi[] | null> {
+  try {
+    const raw = await AsyncStorage.getItem(POI_CACHE_KEY);
+    return raw ? (JSON.parse(raw) as WatchPoi[]) : null;
+  } catch {
+    return null;
   }
+}
+
+async function clearPoiCache(): Promise<void> {
+  await AsyncStorage.removeItem(POI_CACHE_KEY).catch(() => {});
+}
+
+/** Read-only: the watch's own current POIs, for a real "On the watch" list. Always does a
+ * real watch read - PoiScreen's own loadOnWatch() shows getCachedPois()'s result first so
+ * this doesn't block the UI. */
+export async function readOnWatchPois(): Promise<WatchPoi[]> {
   await connect();
   try {
     const data = await readPoisFromWatch();
-    onWatchPoiCache = { data, at: Date.now() };
+    await AsyncStorage.setItem(POI_CACHE_KEY, JSON.stringify(data)).catch(() => {});
     return data;
   } finally {
     await disconnect().catch(() => {});
