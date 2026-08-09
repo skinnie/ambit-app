@@ -70,7 +70,16 @@ Item {
         // page didn't fetch TrackLog at all before (track was always the empty placeholder).
         // A real ~1.3MB flash read (slow, see KailashService::refreshTrackLog()'s own
         // comment) but this page is only opened on demand, not part of the Home hot path.
-        KailashService.refreshTrackLog()
+        //
+        // Real, 2026-08-09 ("activities, they take a while to load...any chance of fixing?")
+        // - Component.onCompleted re-fires every time this page is (re)loaded (Main.qml's
+        // Loader recreates it on navigation), so leaving this unconditional meant paying the
+        // real ~39s flash read again on every single visit, even though the watch's own
+        // TrackLog data can't have changed since the last read within the same connected
+        // session. Skipped once a real read has already succeeded - HomePage.qml's own
+        // Kailash-connect handler still does the first one.
+        if (!KailashService.trackLogOk)
+            KailashService.refreshTrackLog()
     }
 
     // Real, not a guess: the watch's ExerciseLog region is ~5.3MB, read 1024 bytes at a
@@ -87,6 +96,24 @@ Item {
         color: Theme.mutedText
         text: qsTr("Reading activities off the watch - this can take a couple of minutes " +
                     "(the log is read in full over USB, there's no faster path yet)...")
+    }
+
+    // Real, 2026-08-09 ("activities, they take a while to load...any chance of fixing?") -
+    // sessions themselves (name/distance/duration) already show up fast once
+    // KailashService.historyOk arrives (a single quick SBEM query), well before this. Without
+    // this text, cards would just silently gain a GPS track/map some ~30-40s later with zero
+    // explanation - looked like nothing was happening, not "still working." trackLogLoading
+    // is tracked separately from KailashService.loading specifically because that shared flag
+    // already clears as soon as the fast history request finishes (see its own header
+    // comment) - this needed its own signal that stays true for this request's real duration.
+    Text {
+        visible: root.selectedActivity === null && HomeViewModel.isKailash
+                 && KailashService.trackLogLoading
+        anchors.horizontalCenter: parent.horizontalCenter
+        y: Theme.spacingLarge
+        color: Theme.mutedText
+        text: qsTr("Loading GPS tracks for these activities off the watch " +
+                    "(a real ~1.3MB flash read, can take up to a minute)...")
     }
 
     // Real request 2026-08-07: "activities... saved in the computer... loads when watch is

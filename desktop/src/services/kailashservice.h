@@ -55,6 +55,12 @@ class KailashService : public QObject
     // entries already use, so ActivityCard/MapView need no new QML code to show them.
     Q_PROPERTY(bool trackLogOk READ trackLogOk NOTIFY trackLogChanged)
     Q_PROPERTY(QVariantList trackLogActivities READ trackLogActivities NOTIFY trackLogChanged)
+    // Real, 2026-08-09 ("activities, they take a while to load...any chance of fixing?") -
+    // `loading` above is shared with refreshHistory() and clears as soon as that fast
+    // request finishes, well before this slow one does, so ActivitiesPage had no way to
+    // show "still fetching GPS tracks" without it looking done-but-actually-not. Tracked
+    // separately so it stays true for this request's own real ~1.3MB-flash-read duration.
+    Q_PROPERTY(bool trackLogLoading READ trackLogLoading NOTIFY trackLogLoadingChanged)
 
     // Real, 2026-08-09 ("I believe you put a POI icon for home, name home and identify the
     // city by coordinates") - the watch's real HomeLocation setting (sml.DeviceSettings.
@@ -91,6 +97,7 @@ public:
 
     bool trackLogOk() const { return m_trackLogOk; }
     QVariantList trackLogActivities() const { return m_trackLogActivities; }
+    bool trackLogLoading() const { return m_trackLogLoading; }
 
     bool hasHomeLocation() const { return m_hasHomeLocation; }
     double homeLatitude() const { return m_homeLatitude; }
@@ -115,6 +122,7 @@ signals:
     void historyChanged();
     void trackLogChanged();
     void homeLocationChanged();
+    void trackLogLoadingChanged();
 
 private:
     QNetworkAccessManager m_network;
@@ -137,6 +145,7 @@ private:
 
     bool m_trackLogOk = false;
     QVariantList m_trackLogActivities;
+    bool m_trackLogLoading = false;
 
     bool m_hasHomeLocation = false;
     double m_homeLatitude = 0;
@@ -144,6 +153,7 @@ private:
     QString m_homeCity;
 
     void setLoading(bool value);
+    void setTrackLogLoading(bool value);
     void setLastError(const QString &message);
 
     static QUrl backendUrl(const QString &path);

@@ -25,6 +25,14 @@ void KailashService::setLoading(bool value)
     emit loadingChanged();
 }
 
+void KailashService::setTrackLogLoading(bool value)
+{
+    if (m_trackLogLoading == value)
+        return;
+    m_trackLogLoading = value;
+    emit trackLogLoadingChanged();
+}
+
 void KailashService::setLastError(const QString &message)
 {
     m_lastError = message;
@@ -100,11 +108,13 @@ void KailashService::refreshHistory()
 void KailashService::refreshTrackLog()
 {
     setLoading(true);
+    setTrackLogLoading(true);
     QNetworkReply *reply =
         m_network.get(QNetworkRequest(backendUrl(QStringLiteral("/api/kailash/tracklog"))));
     connect(reply, &QNetworkReply::finished, this, [this, reply] {
         reply->deleteLater();
         setLoading(false);
+        setTrackLogLoading(false);
 
         const auto obj = QJsonDocument::fromJson(reply->readAll()).object();
         m_trackLogOk = (reply->error() == QNetworkReply::NoError)
