@@ -2029,3 +2029,38 @@ reproduced is the native browsable WORKOUT-menu + segment graph: that needs the 
 IAMRULE binary the dead server compiled (or confirmation the community compiler can emit one) AND
 the on-device rendering that lists a guidance rule in the WORKOUT menu with the graph. The one
 missing ground-truth artifact is a real guidance `Binary` (the gists carry Source, not Binary).
+
+## Finding 39: IAMRULE header decoded; the guidance binary is ordinary -> the native WORKOUT graph is on-device WIRING, not the binary (2026-08-09)
+
+Chasing the native browsable-WORKOUT + graph (André's pick). Decoded the IAMRULE binary header
+from real on-watch apps + the gist's guidance binary:
+- after the 8-byte "IAMRULE\0" magic: [u32 field0=8 or 6][u32 field1][u32 field2=1]
+  [u32 field3 = RuleID][u32 field4 = string-table offset][u32 field5 = hash], then VM data.
+  field3=RuleID confirmed (10000003=Sunrise, 6833=HR Zones, 39=Cooper, ... all match).
+- **field1 tracks OutputFormatID**: field1=1 <-> OFID 0; field1=10 <-> OFID 1 ("onedecimal");
+  field1=255 <-> OFID 3. The gist GUIDANCE workout has field1=10 = OutputFormat "onedecimal" =
+  OFID 1 - identical to HR Zones, an ordinary generic app.
+
+**Conclusion: a guidance workout's IAMRULE binary is structurally ORDINARY** - same header, same
+output format as a generic single-value app. The binary does NOT encode "I am a workout / draw a
+graph." So the browsable-WORKOUT-menu + segment graph is decided by ON-DEVICE WIRING, not the
+binary - which means it's reachable through this project's existing install path, not gated on a
+special compiler output.
+
+Two convergent leads for the on-device switch:
+1. **The graph is an appended SYSTEM screen.** Manual 3.18: the workout graph "is shown as the
+   last display of the selected sport mode." custom_modes.py already identified an invariant
+   appended last system screen (0x0127) plus the guidance template
+   PID_RUNNER_GPS_TEMPLATE_GUIDANCE (backend, resolved via a runtime name->id table). So the
+   graph is likely firmware-appended when a workout is active, not a user-wired display.
+2. **A workout = a guidance rule present but NOT wired to a display-field slot.** An app is an
+   EXERCISE_MODES_RULE whose RuleIdx is wired to a display field (Type 51/52/53 = rule-engine
+   slot). A browsable workout is selected from the WORKOUT menu and only then activated - i.e.
+   it is likely a rule that exists for the mode but is not pinned to a display field. This
+   project's installer always wires to a field (=> pinned app); NOT wiring it (rule present,
+   no field slot) is the concrete, testable hypothesis for making it a browsable WORKOUT.
+
+Concrete next experiment (declarative, no compiler, our existing tools): install a workout
+IAMRULE (workout.py -> live compiler) as a rule in a mode's RULES WITHOUT assigning it to a
+display-field slot, and see whether it appears in the on-watch WORKOUT options menu. Safe/
+recoverable (CustomModes write, backups + restore in place).
