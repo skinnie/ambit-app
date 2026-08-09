@@ -106,14 +106,43 @@ Item {
     // is tracked separately from KailashService.loading specifically because that shared flag
     // already clears as soon as the fast history request finishes (see its own header
     // comment) - this needed its own signal that stays true for this request's real duration.
-    Text {
+    Rectangle {
+        // Real bug, found live 2026-08-09 ("the loading text is on the back of the
+        // activities cards") - unlike the other loading texts on this page, this one can be
+        // visible at the same time the GridView below already has real cards to draw (the
+        // fast session list arrives before this slow TrackLog read finishes), and QML stacks
+        // siblings by declaration order when z isn't set - the GridView, declared later in
+        // this file, was painting over this text instead of the reverse. Explicit z instead
+        // of just reordering the declarations, so this stays correct regardless of future
+        // edits moving things around. Also given a real opaque background (a plain Text
+        // wasn't enough on its own - readable over the page's own background, but not over a
+        // busy map/photo card sitting right under it) and made click-through-blocking so it
+        // doesn't sit invisibly on top of a card's own TapHandler.
+        id: trackLogLoadingBanner
+        z: 1
         visible: root.selectedActivity === null && HomeViewModel.isKailash
                  && KailashService.trackLogLoading
         anchors.horizontalCenter: parent.horizontalCenter
         y: Theme.spacingLarge
-        color: Theme.mutedText
-        text: qsTr("Loading GPS tracks for these activities off the watch " +
-                    "(a real ~1.3MB flash read, can take up to a minute)...")
+        width: Math.min(parent.width - Theme.spacingLarge * 2, bannerText.implicitWidth + Theme.spacingMedium * 2)
+        height: bannerText.implicitHeight + Theme.spacingSmall * 2
+        radius: Theme.radiusCard
+        color: Theme.card
+        border.color: Theme.primary
+        border.width: 1
+
+        MouseArea { anchors.fill: parent }  // absorbs clicks meant for the banner, not a card underneath
+
+        Text {
+            id: bannerText
+            anchors.centerIn: parent
+            width: parent.width - Theme.spacingMedium * 2
+            wrapMode: Text.WordWrap
+            horizontalAlignment: Text.AlignHCenter
+            color: Theme.mutedText
+            text: qsTr("Loading GPS tracks for these activities off the watch " +
+                        "(a real ~1.3MB flash read, can take up to a minute)...")
+        }
     }
 
     // Real request 2026-08-07: "activities... saved in the computer... loads when watch is
