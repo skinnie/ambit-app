@@ -1,43 +1,47 @@
 #!/usr/bin/env python3
 """Decodes the Ambit3 "Apps" flash region - where a Suunto App's compiled bytecode gets
-written once assigned to a sport mode's display via SuuntoLink. Confirmed live, 2026-08-05,
-after installing "Climb counter" (ruleId 32) onto Cycling: the same event also populates
-CustomModes' EXERCISE_MODES_RULES/EXERCISE_MODES_APP_META tags - see custom_modes.py and
-custom_modes_andre.md for that side of it.
+written once assigned to a sport mode's display via SuuntoLink.
 
-Unlike everything else this project has reverse-engineered, this wrapper format was NOT found
-in any decompiled asset - grepped for "IAMRULE" across every .c decompile and every .exe/.dll/
-.so in assets/, zero hits. It's derived purely empirically, from one real installed app,
-by comparing the watch's actual flash bytes against SuuntoLink's own bundled catalog
-(suunto-apps/index.json, 13,104 pre-compiled apps bundled offline - no Movescount account
-needed). Confirmed byte-for-byte: the watch's on-flash blob position [44:] matches catalog
-entry ruleId=32's "binary" field exactly, and the u32 at offset 8 equals 44 + that blob's
-length exactly, for that one entry.
+**SOLVED, 2026-08-08 (training_program_andre.md Finding 25), from 4 real, clean USBPcap
+captures of SuuntoLink actually installing apps** (`assets/ambit3 pcap/v2/`, provided by
+André - each one a single deliberate action, exactly the "genuine gap" Finding 19 flagged as
+missing). The whole region write is a real, self-describing directory, not a flat list of
+opaque entries:
 
-**Correction, 2026-08-05, from a real 3-entry region**: `total_length` is NOT that entry's own
-size - it's a running watermark of total bytes used in the *whole* region so far, updated on
-every install (confirmed: the region's first entry's `total_length` exactly equalled the true
-end of all real data once two more apps had been added after it). Harmless with one entry
-(where "this entry's size" and "total used so far" are the same number), actively wrong with
-more than one - and this project trusted it blindly once, in `workout_install.py`, causing a
-real out-of-bounds flash write (see `training_program_andre.md`). That code now finds the
-region's free offset by scanning for the true end of real data directly, not through this
-decoder. Per-entry boundaries in a multi-app region (where one entry's bytecode actually ends
-and the next one's header begins) are NOT reliably determined by this decoder - flagged below
-rather than guessed at a second time from three examples that aren't enough to pin the real
-rule down. `decode()` still reports each entry it finds and its name (both confirmed reliable
-across all three real entries), just not a trustworthy individual `binary`/`total_length` once
-more than one entry is present.
+    [u16 num_entries][u16 unknown2][u32 entry_offset]*num_entries [u32 total_length]
+    then, back to back, one block per entry at its own entry_offset:
+        [u8 reserved=0][u8 activityId][u8 marker][name, null-padded to fill 29 bytes]
+        [8-byte "IAMRULE\\0" magic][binary bytes, up to the next entry_offset or total_length]
 
-**2026-08-08 (training_program_andre.md Finding 22), from a real 6-entry region**: the "44 bytes
-back from magic" header this module assumes is confirmed WRONG for real SuuntoLink-installed
-entries - it only happens to produce sane field_a/field_b/field_c/total_length for an entry this
-project's own `workout_install.py` wrote itself (self-consistent, not independent evidence). Real
-entries instead have, immediately before the name: a 1-byte marker (undecoded) preceded by a
-2-byte value matching the app's real `activityId`, and further back what looks like
-floating-point data that differs between two installs of the *same* binary (per-mode config?,
-undecoded). `build_apps_entry()` in `workout_install.py` doesn't emit any of this - a more likely
-cause of the standing "app error" than anything guessed at previously. Not yet fixed here.
+Verified byte-exact against all 4 real captures (3-5 entries each) AND against a real live
+11-entry region read straight off the reference watch: every `entry_offset` in the table points
+exactly at a real entry, every entry's magic is exactly 32 bytes after its own `entry_offset`
+(confirming the 3-byte header + 29-byte name field is genuinely fixed-size), `activityId`
+matches the app's real catalog `activityId` for every single entry with a catalog match, and
+`total_length` (the table's last value) always equals the write's own real total length exactly
+- zero exceptions across close to 20 real entries checked this way. `num_entries` is the real
+entry count in every sample checked. `unknown2` varies (1, 1, 6, 7, 9 across the 5 samples
+checked) and is NOT yet explained - not entry count, not directly a RuleIdx, still open.
+One real edge case found live: an app name longer than 29 bytes (a 38-char name) simply isn't
+null-terminated within its own block and reads into the following magic - the client doesn't
+appear to truncate, so this project's own writer should.
+
+**This confirms the whole region is rewritten (directory + all live entries) on every single
+install**, not appended to - explains every earlier "field_a/field_b/field_c look inconsistent
+across entries" observation without needing per-entry hacks: those were reads of different
+directory generations, not fields with unstable meaning.
+
+**Retraction of Finding 23's retraction**: the "activityId + marker" theory from Finding 22 was
+right all along. Finding 23 called it wrong after checking it against 6 new real entries, but
+that check used the flawed "backward-scan from magic" heuristic (the same one this whole
+docstring's history has repeatedly shown breaks once more than one entry is present) instead of
+the real fixed-offset block now confirmed above - the theory wasn't wrong, the extraction method
+checking it was. Re-run against those same "disproving" entries (`Cooper estimate`,
+`Real Temerature`, `25m Swimming pool counter`) with the real fixed offsets: all three decode
+cleanly, `activityId` matches their real catalog values exactly (3, 1, 6), no exceptions.
+
+`build_apps_entry()`/`find_apps_free_offset()` in `workout_install.py` are rewritten to match
+this real format - see that module for what changed.
 
     ./tools/apps.py --from /tmp/dump_Apps.bin --catalog ".../suunto-apps/index.json"
 """
@@ -50,80 +54,46 @@ APPS_BASE = 0x0927C0
 APPS_SIZE = 200000  # confirmed live via 0x0b21, 2026-08-05
 
 MAGIC = b"IAMRULE\x00"
-HEADER_LEN = 12  # [u16][u16][u32][u32 total_length]
-NAME_LEN = 32  # null-padded, observed exactly filling offset 12..44
-PREAMBLE_LEN = HEADER_LEN + NAME_LEN  # 44: everything before the IAMRULE blob itself
-
-
-def _find_all_magic(data):
-    offsets = []
-    idx = data.find(MAGIC)
-    while idx != -1:
-        offsets.append(idx)
-        idx = data.find(MAGIC, idx + len(MAGIC))
-    return offsets
-
-
-def _real_data_end(data):
-    """The true end of all real (non-0xFF) content, scanned directly - independent of
-    trusting any header field. See the module docstring's 2026-08-05 correction."""
-    end = len(data)
-    while end > 0 and data[end - 1] == 0xFF:
-        end -= 1
-    return end
-
-
-def _name_before(data, magic_offset):
-    """The name is a variable-length, null-padded string immediately before the IAMRULE
-    magic - NOT reliably at a fixed PREAMBLE_LEN offset once more than one entry is packed
-    into the region (confirmed 2026-08-05: the gap between header and magic differs per
-    entry). Found directly instead: walk back through the null padding, then back through
-    the printable name itself. Verified clean against all three real entries in a packed
-    region ("R-Climb counter"/"Current incline"/"Downhill Stats"), unlike the fixed-offset
-    slice, which picks up a stray byte or two of whatever precedes the name for entries
-    after the first."""
-    j = magic_offset - 1
-    while j >= 0 and data[j] == 0:
-        j -= 1
-    name_end = j + 1
-    k = j
-    while k >= 0 and 32 <= data[k] < 127:
-        k -= 1
-    name_start = k + 1
-    return data[name_start:name_end].decode("iso-8859-15", "replace")
+ENTRY_HEADER_LEN = 3  # [u8 reserved=0][u8 activityId][u8 marker]
+NAME_LEN = 29  # null-padded (or truncated if the real name doesn't fit - see module docstring)
+ENTRY_BLOCK_LEN = ENTRY_HEADER_LEN + NAME_LEN  # 32: entry_offset -> magic, fixed, confirmed
 
 
 def decode(data):
-    """Finds every IAMRULE-tagged app entry. Name and magic offset are reliable for any
-    number of entries (verified against three real ones, 2026-08-05). `total_length` is only
-    trustworthy as *this entry's own size* when it's the sole entry in the region (see the
-    module docstring) - with more than one entry present, `binary`/`total_length` are left
-    unset and flagged rather than guessed a second time."""
-    magic_offsets = _find_all_magic(data)
-    real_end = _real_data_end(data)
+    """Finds every real app entry via the region's own directory table (see module
+    docstring) - not by scanning for the IAMRULE magic and guessing backwards, which is what
+    every earlier version of this function did and which is exactly what made per-entry
+    fields look unreliable once more than one entry was present. Returns [] if the header
+    doesn't look like a real directory (e.g. an empty/all-0xFF region)."""
+    if len(data) < 4:
+        return []
+    num_entries, unknown2 = struct.unpack_from("<HH", data, 0)
+    table_len = 4 + 4 * (num_entries + 1)
+    if num_entries == 0 or num_entries > 1000 or table_len > len(data):
+        return []  # doesn't look like a real directory - don't guess further
+    table = struct.unpack_from(f"<{num_entries + 1}I", data, 4)
+    if table[0] != table_len:
+        return []  # first entry_offset must equal the directory's own size - real invariant
+    total_length = table[-1]
     entries = []
-    for idx in magic_offsets:
-        entry = {"magic_offset": idx, "name": _name_before(data, idx)}
-        pre_start = idx - PREAMBLE_LEN
-        if pre_start >= 0 and data[pre_start:pre_start + PREAMBLE_LEN].count(0xFF) < PREAMBLE_LEN:
-            field_a, field_b, field_c, total_length = struct.unpack_from(
-                "<HHII", data, pre_start)
-            entry.update({
-                "entry_offset": pre_start, "field_a": field_a, "field_b": field_b,
-                "field_c": field_c, "total_length": total_length,
-            })
-            blob_end = pre_start + total_length
-            if len(magic_offsets) == 1 and blob_end <= real_end:
-                entry["binary"] = data[idx:blob_end]
-            else:
-                entry["_warning"] = (
-                    "total_length is a whole-region watermark with more than one entry "
-                    "present, not this entry's own size - binary/total_length not reliable "
-                    "here (see module docstring)")
-        else:
-            entry["_warning"] = "no wrapper preamble found before IAMRULE (or it's all 0xFF)"
-            entry["binary"] = data[idx:idx + 4]  # just the header, unknown extent
-        entries.append(entry)
+    for i in range(num_entries):
+        off = table[i]
+        magic_off = off + ENTRY_BLOCK_LEN
+        if data[magic_off:magic_off + len(MAGIC) - 1] != MAGIC[:-1]:
+            entries.append({"entry_offset": off, "unknown2": unknown2,
+                             "_warning": "magic not found where the directory says it should "
+                             "be - region doesn't match this format"})
+            continue
+        reserved, activity_id, marker = data[off], data[off + 1], data[off + 2]
+        name_field = data[off + ENTRY_HEADER_LEN:off + ENTRY_BLOCK_LEN]
+        name = name_field.split(b"\0", 1)[0].decode("iso-8859-15", "replace")
+        bin_start = magic_off + len(MAGIC)
+        bin_end = table[i + 1] if i + 1 < num_entries else total_length
+        entries.append({
+            "entry_offset": off, "reserved": reserved, "activityId": activity_id,
+            "marker": marker, "name": name, "magic_offset": magic_off, "unknown2": unknown2,
+            "binary": data[bin_start:bin_end],
+        })
     return entries
 
 
@@ -136,13 +106,17 @@ def match_catalog(binary, catalog):
 
 def show(entries, catalog=None):
     if not entries:
-        print("no IAMRULE entries found - Apps region is empty (no apps installed)")
+        print("no app entries found - Apps region is empty, or doesn't look like a real"
+              " directory (see apps.py's module docstring)")
         return
     print(f"{len(entries)} app entry(ies) found:")
     for e in entries:
-        print(f"  offset 0x{e['magic_offset']:x}: name={e.get('name', '?')!r}"
-              f"  total_length={e.get('total_length', '?')}"
-              + (f"  binary_length={len(e['binary'])}" if "binary" in e else "  binary_length=?"))
+        marker = f"0x{e['marker']:02x}" if "marker" in e else "?"
+        binary_length = len(e["binary"]) if "binary" in e else "?"
+        print(f"  offset 0x{e['entry_offset']:x}: name={e.get('name', '?')!r}"
+              f"  activityId={e.get('activityId', '?')}"
+              f"  marker={marker}"
+              f"  binary_length={binary_length}")
         if "_warning" in e:
             print(f"    WARNING: {e['_warning']}")
         if catalog is not None and "binary" in e:

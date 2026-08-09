@@ -186,6 +186,26 @@ FIELD_TYPE_LABELS = {
 }
 
 
+def used_extent(data):
+    """The number of real (used) bytes at the start of a CustomModes region image: the
+    DEVICE_CUSTOM root BXML tag plus its 4-byte header. Everything after this is slack/0xFF
+    padding within the fixed CUSTOM_MODES_REGION_SIZE region.
+
+    This is the span SuuntoLink actually writes AND hashes (confirmed byte-exact against all 4
+    real app-install captures in assets/ambit3 pcap/v2/, and against the watch's own reported
+    0x0b21 CustomModes hash - training_program_andre.md Finding 28). Writers must write only
+    data[:used_extent(data)] so the closing hash covers exactly what the firmware re-hashes on
+    a cold boot; writing the full padded region instead produces a hash the watch rejects with
+    'err:62' on all sport modes after a restart."""
+    root_id, root_len = struct.unpack_from("<HH", data, 0)
+    if root_id != DEVICE_CUSTOM:
+        raise ValueError(f"not a CustomModes image: root tag 0x{root_id:x} != DEVICE_CUSTOM")
+    extent = 4 + root_len
+    if extent > len(data):
+        raise ValueError(f"declared extent {extent} exceeds image length {len(data)}")
+    return extent
+
+
 def field_type_label(name):
     """Human-readable label for a real FIELD_TYPES name - the curated dict above for every
     FT_*/MT_NONE entry, or a real-but-honest fallback for the PID_RUNNER_GPS_TEMPLATE_*

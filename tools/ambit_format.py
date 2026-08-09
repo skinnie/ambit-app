@@ -43,7 +43,19 @@ REGIONS = {
     # growing into what was previously 0xFF padding - the same fixed-region-rewritten-whole
     # shape, not a variable-length append-only heap.
     APPS_BASE: ("Apps", APPS_REGION_SIZE, HASH_WRITTEN),
-    CUSTOM_MODES_BASE: ("CustomModes", CUSTOM_MODES_REGION_SIZE, HASH_PADDED),
+    # CORRECTED 2026-08-09 (training_program_andre.md Finding 28) from PADDED to WRITTEN, from 4
+    # real SuuntoLink app-install captures (assets/ambit3 pcap/v2/) - the earlier PADDED value
+    # was an unverified "by analogy with Routes/Waypoints" guess and it was WRONG. Every real
+    # capture writes CustomModes as ONLY its used BXML extent (4 + the DEVICE_CUSTOM root tag's
+    # length, ~5.9 KB, not the full 12288), and the closing 0x0b18 hash covers exactly that
+    # extent. Proven byte-exact: SHA256 of the used extent equals the hash the watch itself
+    # reports for CustomModes in its 0x0b21 memory-map reply (EDF772C7... for the trekking
+    # capture); SHA256 of the full padded 12288 does NOT. The old PADDED hash is the confirmed
+    # cause of "err:62 on all sport modes" after a cold boot: the watch recomputes the used-
+    # extent hash on boot and it never matched this project's full-region hash. Writers must
+    # therefore write ONLY the used extent (see custom_modes.used_extent()), so the WRITTEN
+    # span equals the extent the watch will hash.
+    CUSTOM_MODES_BASE: ("CustomModes", CUSTOM_MODES_REGION_SIZE, HASH_WRITTEN),
 }
 
 WAYPOINT_HEADER_MAGIC = 0x0334

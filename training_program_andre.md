@@ -1451,3 +1451,169 @@ The *correct* non-zero encoding (day-of-month? days-from-today? something else e
 a single byte, max 255) is still unknown - 1 is the simplest non-zero placeholder, not a
 verified date encoding. `--start-time` is now a CLI flag rather than hardcoded, so a real test
 can try different values without editing the file.
+
+## Finding 25: the Apps-region wrapper is SOLVED - real USBPcap captures of SuuntoLink actually installing apps, the "genuine gap" from Finding 19, turned out to already exist in assets/
+
+André had real captures of exactly this operation the whole time
+(`assets/ambit3 pcap/v2/{ambit3addapptoexistingsportmode,installappontrekking,
+installcyclingappmiddlescreenheartzone1-5,appstopscreensunrisunset}`) - the missing real
+capture Finding 19 spent real effort trying to get via Ghidra decompilation of the Windows
+binary, then the iOS/Mac Suunto app binary (both dead ends - see below), then a proposed
+Wireshark USB capture that was about to be walked through by hand. Checking `assets/` for
+existing pcaps first would have shortcut all of that.
+
+**The real format, decoded byte-exact from 4 independent real installs plus a real live
+11-entry region, zero exceptions across ~20 real entries checked:**
+
+    [u16 num_entries][u16 unknown2][u32 entry_offset]*num_entries [u32 total_length]
+    then, per entry, back to back starting at its own entry_offset:
+        [u8 reserved=0][u8 activityId][u8 marker][name, null-padded to 29 bytes]
+        [8-byte "IAMRULE\0" magic][binary bytes, up to the next entry_offset or total_length]
+
+A real, self-describing directory - not the flat guessed-header-per-entry shape this project
+had assumed since Finding 16. `num_entries` matches the real entry count in every sample.
+`table[0]` always equals the directory's own byte size exactly (4 + 4*(num_entries+1)) - a real
+structural invariant, not a coincidence. `activityId` matches the app's real catalog
+`activityId` for every entry with a catalog match (checked against
+`assets/issue_workout_builder_windows/index.json`). `total_length` (the table's last value)
+always equals the real write's own total length exactly. **The whole region - directory plus
+every existing entry - is rewritten on every single install, not appended to**: this alone
+explains every earlier "the header fields look inconsistent across entries" observation
+(Findings 22/23) without needing any per-entry-format theory - those were reads of different
+full-region-rewrite generations, not an unstable format.
+
+**Also confirmed from the same captures: `HASH_WRITTEN`/SHA256 is exactly right for the Apps
+region's commit hash** - computed SHA256 over just the real written bytes of one capture
+matches its real captured `0x0b18` tail hash exactly. `ambit_format.py` already assumed this by
+analogy; now independently confirmed.
+
+**Correction to Finding 23's retraction**: the "activityId + marker" theory (Finding 22) was
+right. Finding 23 called it wrong after testing it against 6 new real entries, but that test used
+a backward-scan-from-magic heuristic to *find* each entry - the same kind of heuristic every
+earlier version of this format's decoder used and which this whole investigation's history
+(Findings 16-19, 22, 23) kept tripping over. With the real fixed-offset block location (known
+from the directory table, no scanning needed), those same "disproving" entries (`Cooper
+estimate`, `Real Temerature`, `25m Swimming pool counter`) decode cleanly with correct
+`activityId` values. The theory wasn't wrong; the method checking it was.
+
+**Still open**: `unknown2` (varies 1, 1, 6, 7, 9 across the 5 real samples checked - not entry
+count, not a direct RuleIdx match) and `marker` (consistent for a given real app across every
+capture checked - e.g. `Sunrise/Sunset` is always `0x76`, `Heart Rate Zones1-5` always `0x78` -
+but the rule assigning it isn't determined; two different apps have been seen sharing the same
+marker, ruling out "hash of the name" cleanly). `apps.py` and `workout_install.py` are rewritten
+around the real format; both new writer functions are tested by round-tripping a real 3-entry
+capture through `build_apps_region()` and confirming the 3 original entries survive byte-exact
+alongside a correctly-appended 4th - genuinely new coverage, not present before.
+
+**What this makes obsolete, for anyone reading this project's history in order**: the entire
+Ghidra detour (installing Ghidra, analyzing the decompiled Windows `SDSApplicationServer.exe`,
+then the iOS/Mac `Suunto` binary - both hit real dead ends: `IAMRULE` appears in zero client-side
+code across Windows/Android/iOS, meaning the wrapper is firmware-side and was never going to be
+in a client decompile; the iOS binary's own Ghidra analysis got stuck twice on real Ghidra
+limitations with obfuscated Swift, `VarnodeContext: out of address spaces` and a switch-analyzer
+infinite retry) and the proposed Frida/CoreBluetooth-hook plan (wrong target entirely - Ambit3's
+sport-mode/Apps configuration only ever syncs over USB cable via SuuntoLink, never over BLE via
+the modern mobile/Mac Suunto app, which is the whole reason this project exists) were all real
+effort spent looking for something that was already sitting in `assets/`. Worth remembering:
+check what real captures already exist before reaching for static/dynamic analysis of client
+software as a way to infer a wire format.
+
+## Finding 26: slot-Type bug fixed - FT_RULE_ENGINE_0/1/2 are three distinct display slots, not one "51" sentinel
+
+First real hardware install attempt (2026-08-09, myworkout onto Walk display 0). A trivial
+second app (`RESULT = 100;`, zero dependencies) was then installed to Walk display 0 field 1 to
+get a GPS/recording-independent readout - and read back as TWO fields both of Type 51. Root
+cause: `install_app_into_mode()` hardcoded Type 51 for every field. Real CustomModes has three
+distinct app-display slot Types - `FT_RULE_ENGINE_0/1/2` = 51/52/53 ("Suunto App Slot 1/2/3" in
+custom_modes.py's own FIELD_TYPE_LABELS). Fixed: `next_app_slot_type()` picks the lowest unused
+of 51/52/53 for the target mode. This is DISTINCT from SPORT_MODE_APP_LIMIT (5): a mode may have
+up to 5 apps *assigned* (rules) but only 3 can be *shown* on display fields, since only 3 slot
+Types exist. Confirmed on hardware: reverted the duplicate cleanly, reinstalled to slot 52,
+read back correct (51 + 52 side by side).
+
+## Finding 27: the real defect was never the wrapper bytes - it's the write FINALIZATION. Our writer sent a spurious nav-DB commit (0x0b04); real SuuntoLink never does, for these regions
+
+The install read back byte-exact every time, yet the watch kept ending up in a bad state:
+first "connect to Moveslink" (full-screen, needs restart), and after a restart, `err:62` on
+EVERY sport mode (including Cycling, which only holds real SuuntoLink-catalog apps) - i.e. the
+firmware rejecting the whole CustomModes region on a cold-boot parse. Byte-exact readback but
+cold-boot rejection = the data is fine, the write *mechanism*/finalization is not.
+
+Decoded all 4 real `assets/ambit3 pcap/v2/` app-install captures for their finalization
+sequence. Findings, all byte-verified:
+- **The 0x0b18 tail is a SHA256 of the written span** - matches all 6 real tails exactly, and
+  our own tool's computed hash matched too. This IS the real per-region commit.
+- **Real SuuntoLink NEVER sends 0x0b04 (CMD_NAV_COMMIT) for the Apps or CustomModes regions** -
+  zero occurrences across all 4 captures. 0x0b04 is specifically the *navigation database*
+  (routes/waypoints) commit. This project's `workout_install.py` sent it anyway (commit=True) -
+  the ONE command we emitted that real SuuntoLink never does for these regions.
+- Real SuuntoLink writes each region ~3 times per session with different intermediate data
+  (its own internal staging); the final state + SHA256 tail is what persists.
+- The 0x0b18 "extra" u32 varies wildly across captures (including 0, our value) - the watch
+  does not validate it.
+
+Causal chain that fits ALL observed symptoms: firing 0x0b04 after an Apps/CustomModes write
+tells the watch "the nav DB changed, revalidate it" - but the nav DB was untouched, so it finds
+a stale/inconsistent state -> "connect to Moveslink". A real nav write+0x0b04 (the `write_nav.py
+restore`) is exactly what CLEARED it each time - broke on apps-write+nav-commit, fixed by
+nav-write+nav-commit. Fix applied: `workout_install.py` now sends `commit=False` for BOTH
+Apps and CustomModes (no 0x0b04); the 0x0b18 SHA256 tail is the only finalization, matching
+the real captures.
+
+**Still UNPROVEN and important**: even byte-identical, our single-pass write had never faced a
+cold boot until this session, and the cold boot produced err:62 across all modes. So it is NOT
+yet established that our write mechanism (single-pass + SHA256 tail, even with the 0x0b04 fix)
+survives a reboot the way SuuntoLink's multi-pass write does. The err:62 recovery was done via
+a full SuuntoLink resync on the Mac (its own proven multi-pass write), NOT via this project's
+tooling. Open question for next session: whether the 0x0b04 removal alone makes our writes
+cold-boot-durable, or whether the multi-pass staging is also required. Do not retry a real
+install without a guaranteed SuuntoLink-resync recovery path on hand.
+
+## Finding 28: the REAL err:62 root cause - CustomModes hashed over the full padded region instead of its used BXML extent. Fixed and proven byte-exact against real captures.
+
+The 0x0b04 removal (Finding 27) was correct but was NOT the whole story, and Finding 27's
+"single-pass unproven across cold boot" framing was imprecise. The decisive bug, found by
+decoding the 4 real SuuntoLink app-install captures (assets/ambit3 pcap/v2/) that were in
+assets/ all along:
+
+**CustomModes must be written and hashed as ONLY its used BXML extent (4 + the DEVICE_CUSTOM
+root tag's length, ~5.9 KB), not the full 12288-byte region.** ambit_format.py had CustomModes
+as HASH_PADDED (hash of the whole 12288, unwritten bytes as 0xFF) - an unverified "by analogy
+with Routes/Waypoints" guess. It was wrong. Proven three independent ways:
+- All 4 captures write CustomModes over exactly `4 + root_len` bytes (5940/5964/5954/5836),
+  matching the BXML extent to the byte, and the closing 0x0b18 hashes exactly that span.
+- SHA256(used extent) == the hash the WATCH ITSELF reports for CustomModes in its 0x0b21
+  memory-map reply (e.g. EDF772C7... for the trekking capture). SHA256(full padded 12288) does
+  not. So the firmware stores and re-validates the used-extent hash.
+- Same holds for Apps (already HASH_WRITTEN over total_length - correct; the watch-reported
+  Apps hash 72DF... == SHA256 of the 2332-byte used extent).
+
+This is why installs worked LIVE but died on a cold boot: the live firmware uses the just-
+written bytes, but a cold boot re-reads flash and recomputes the used-extent hash - which never
+matched this project's full-region hash -> "err:62 on all sport modes". It is almost certainly
+the true root cause of the entire Findings 16-19 "app error" saga, not the wrapper bytes,
+field_c, the compiler, or anything else chased there - every CustomModes write this project
+ever made stored a hash the watch would reject on reboot.
+
+Fixes applied:
+- `ambit_format.py`: CustomModes REGIONS entry PADDED -> WRITTEN, with the evidence in a comment.
+- `custom_modes.py`: new `used_extent(data)` = 4 + DEVICE_CUSTOM root length.
+- `workout_install.py`: both the install path and `--restore` now write only
+  `new_custom_modes[:used_extent]` (so the WRITTEN hash covers exactly the extent the firmware
+  re-hashes), and both use commit=False (no 0x0b04, Finding 27).
+- `restore_apps_custommodes.py`: new dedicated recovery tool - restores a known-good
+  Apps+CustomModes backup pair with the correct write shape, backs up first, and verifies
+  readback + cross-region rule<->app consistency.
+
+Self-check (all offline, no watch needed - the watch was on the Mac): our fixed writer now
+reproduces every one of the 4 real captures' Apps AND CustomModes writes BYTE-EXACT, both the
+written span and the closing SHA256 hash. All 27 selftests still pass.
+
+Recovery status at time of writing: the watch was not on this machine's USB bus (on the Mac,
+where a SuuntoLink resync had failed with "unknown error" - plausibly because SuuntoLink choked
+on this project's own wrong-hash CustomModes state). A background waiter
+(scratchpad/await_and_recover.sh, log at backups/AUTO_RECOVERY.log) will run
+restore_apps_custommodes.py the moment the Ambit3 reappears on the Linux bus, restoring the
+pristine pre-session before_walk_install pair with the corrected write shape. If that recovery
+also fails a cold boot (it should not - it writes byte-identical to what SuuntoLink writes), the
+firmware reflash remains as the user's fallback.

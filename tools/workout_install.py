@@ -15,17 +15,32 @@ and failed); a `DISP_FIELD_SETTING`'s `Type` field set to 51 is the real sentine
 field shows an app's result"; `RuleIdx` is a global, monotonically increasing counter across
 the whole watch, not per-mode or per-field; and assigning an app also resets `HrHigh`/`HrLow`
 to 0 and sets `IntTimerCount` to 99 as a real, reproducible side effect (confirmed identical
-twice with openambit verified closed, so it isn't contamination). The Apps-region wrapper
-format (`apps.py`) is verified against one real sample only - `field_a`/`field_b`/`field_c`'s
-meaning isn't known, so new entries replicate that sample's values verbatim rather than guess.
+twice with openambit verified closed, so it isn't contamination).
 
-**What's NOT verified**: the write mechanism itself for either region - hash mode
-(`ambit_format.py`'s `HASH_WRITTEN`/`HASH_PADDED` choice for `Apps`/`CustomModes`) and whether
-`CustomModes` needs a `CMD_NAV_COMMIT` afterward are both reasoned inferences (by analogy with
-GpsSGEE/TrainingProgram and Routes/Waypoints respectively), not confirmed against any real
-capture - no capture of a real write to either region exists; every real install seen was done
-by SuuntoLink itself, never on the wire. Use `--backup-to` before a real `--write` and keep
-`--restore` in mind.
+**2026-08-08 (training_program_andre.md Finding 25): the Apps-region format is now SOLVED**,
+from 4 real USBPcap captures of SuuntoLink actually installing apps (`assets/ambit3 pcap/v2/`)
+plus a real live 11-entry region - see `apps.py`'s module docstring for the full derivation.
+The whole region is a self-describing directory (`[u16 num_entries][u16 unknown2][u32
+entry_offset]*N[u32 total_length]`, then fixed 32-byte `[header 3B][name 29B]` blocks + magic +
+binary per entry) that gets **entirely rewritten** on every single install, not appended to -
+this project's own writer used to append one raw entry with a guessed 12-byte header and no
+directory at all, which is almost certainly the real cause of the "app error" chased across
+Findings 16-19 (a structurally wrong format, not a wrong constant in an otherwise-right one).
+Rewritten below to build the real directory + all existing entries + the new one, every time.
+One field remains genuinely unknown: the per-entry `marker` byte - consistent for a given app
+across every real capture checked, but its rule isn't determined, so new entries here use `0`
+as a placeholder rather than a guess with false confidence.
+
+**Apps region hash mode now confirmed too**: computed SHA256 over just the real written bytes
+of the `appstopscreensunrisunset` capture (4300 bytes) matches the real captured `0x0b18` tail
+hash exactly - `HASH_WRITTEN` (hash of only the written bytes, not the whole padded region) was
+already what `ambit_format.py` assumed, now independently confirmed rather than reasoned by
+analogy.
+
+**Still NOT verified**: whether `CustomModes` needs a `CMD_NAV_COMMIT` afterward - still a
+reasoned inference by analogy with Routes/Waypoints, not confirmed against these Apps captures
+(that's a CustomModes question, not an Apps one). Use `--backup-to` before a real `--write` and
+keep `--restore` in mind.
 
     ./tools/workout_install.py compiled.json --mode 2 --display 0 --field 0 --write
     ./tools/workout_install.py --restore backup_CustomModes.bin --write
@@ -53,43 +68,60 @@ from write_nav import (CMD_DEVICE_INFO, Link, check_memory_map, read_flash,
                         read_memory_map, send_plan)
 
 
-def build_apps_entry(compiled, field_a=1, field_b=3, field_c=12):
-    """Wraps a compiler response in the Apps-region wrapper `apps.py` decoded empirically from
-    the one real install this project has seen ("Climb counter"): [u16 field_a][u16 field_b]
-    [u32 field_c][u32 total_length] + a 32-byte null-padded name + the raw IAMRULE binary.
-    field_a/field_b/field_c's meaning isn't known - replicated verbatim from that one real
-    sample (1, 3, 12) rather than guessed, the safest available choice with a single example."""
+def build_apps_region(existing_entries, compiled, marker=0):
+    """Builds a full Apps-region write: the real directory format (apps.py's module
+    docstring, Finding 25) - `[u16 num_entries][u16 unknown2][u32 entry_offset]*N
+    [u32 total_length]`, then one `[3-byte header][29-byte name]` block + magic + binary per
+    entry, back to back. Confirmed the whole region is rewritten (directory + every existing
+    entry) on every real install, not appended to - `existing_entries` should be
+    `apps.decode(current_apps_bytes)` of what's there now, and the new one is always placed
+    last (matching every real capture checked: new entries append to the end of the list, not
+    inserted).
+
+    `unknown2` is set to 1 - not confirmed (varies 1/1/6/7/9 across the 5 real samples this
+    was derived from, meaning unknown), but 1 is what two of those five real, otherwise
+    ordinary-looking captures used. `marker` (a 2026-08-08 addendum - see the module docstring)
+    is NOT confirmed either: consistent for a given real app across every capture checked, but
+    the rule that assigns it isn't known, so this defaults to 0 rather than a guess dressed up
+    as confidence. `activityId` is read straight from `compiled` (falls back to 0) - this IS
+    confirmed to matter (matches the app's real catalog activityId in every sample checked).
+
+    Real edge case guarded against here that a real client apparently doesn't guard against
+    (found live, Finding 25): a name over apps.NAME_LEN (29) bytes wouldn't leave room for its
+    own null terminator and would run into the next field - truncated here instead."""
     binary = bytes(compiled["binary"])
-    name = compiled.get("name", "App").encode("iso-8859-15", "replace")[:31]
-    name_field = name + b"\0" * (32 - len(name))
-    total_length = 44 + len(binary)
-    header = struct.pack("<HHII", field_a, field_b, field_c, total_length)
-    return header + name_field + binary
+    activity_id = compiled.get("activityId", 0) & 0xFF
+    name = compiled.get("name", "App").encode("iso-8859-15", "replace")[:apps.NAME_LEN - 1]
+    name_field = name + b"\0" * (apps.NAME_LEN - len(name))
+    new_entry_bytes = (bytes([0, activity_id, marker]) + name_field
+                       + apps.MAGIC + binary)
+
+    all_bytes = [e["_raw_block"] for e in existing_entries] + [new_entry_bytes]
+    num_entries = len(all_bytes)
+    table_len = 4 + 4 * (num_entries + 1)
+
+    offsets = []
+    cursor = table_len
+    for block in all_bytes:
+        offsets.append(cursor)
+        cursor += len(block)
+    total_length = cursor
+
+    header = struct.pack("<HH", num_entries, 1) + struct.pack(
+        f"<{num_entries + 1}I", *offsets, total_length)
+    return header + b"".join(all_bytes)
 
 
-def find_apps_free_offset(apps_dump):
-    """Where to append a new entry: right after the true end of real data.
-
-    NOT `apps.decode()`'s own entry arithmetic - a real 3-entry dump (2026-08-05) proved that
-    wrong. Each entry's `total_length` field turned out not to be that entry's own size at
-    all: it's a running watermark of *total bytes used in the whole region so far*, updated on
-    every install (confirmed: the region's very first entry's `total_length` exactly equalled
-    the true end of all real data). `apps.py` was only ever verified against one entry and
-    trusted `total_length` as per-entry size - harmless there, actively wrong with more than
-    one entry, and it caused a real out-of-bounds write. This instead finds the boundary
-    directly and empirically: the last non-0xFF byte in the whole dump, independent of
-    trusting any header field's meaning. Raises if the region doesn't look like a clean
-    real-data/blank-padding split (defense in depth - never silently trust a weird region)."""
-    last_real = len(apps_dump) - 1
-    while last_real >= 0 and apps_dump[last_real] == 0xFF:
-        last_real -= 1
-    free_offset = last_real + 1
-    tail = apps_dump[free_offset:]
-    if tail.count(0xFF) != len(tail):
-        raise RuntimeError(
-            "Apps region doesn't look like clean real-data-then-blank-padding - "
-            "refusing to guess a free offset")
-    return free_offset
+def apps_entries_with_raw_blocks(apps_dump):
+    """apps.decode() plus each entry's own raw bytes (header+name+magic+binary), needed to
+    reassemble existing entries verbatim into a fresh build_apps_region() call without
+    re-deriving marker/activityId by hand."""
+    entries = apps.decode(apps_dump)
+    for e in entries:
+        start = e["entry_offset"]
+        end = e["magic_offset"] + len(apps.MAGIC) + len(e["binary"])
+        e["_raw_block"] = apps_dump[start:end]
+    return entries
 
 
 def _read_tag(data, offset):
@@ -179,6 +211,55 @@ def check_mode_app_limit(decoded, mode_index):
             f"documented limit is {SPORT_MODE_APP_LIMIT} apps per sport mode")
 
 
+# Real, distinct field Types - confirmed 2026-08-08 (training_program_andre.md Finding 26)
+# from a real bug: FT_RULE_ENGINE_0/1/2 (custom_modes.py's own FIELD_TYPE_LABELS: "Suunto App
+# Slot 1/2/3"), not one single "51 means app result" sentinel. A first live test hardcoded 51
+# for every field regardless of how many slots a mode already used, producing two duplicate
+# "Slot 1" fields on Walk instead of Slot 1 + Slot 2 - caught by checking the field labels
+# before asking for a second physical watch check. This is DISTINCT from
+# SPORT_MODE_APP_LIMIT/5: a mode can have up to 5 apps *assigned* (real Apps-region entries,
+# real RULES tags) but only up to 3 of them can ever be *visible* on a display field, because
+# only 3 slot Types exist at all - matches a real observation on hardware this session
+# (Trekking has 1 real assigned rule with zero fields of any of these 3 Types anywhere in its
+# 11 displays - installed-but-not-shown is a real, normal state, not a bug).
+APP_SLOT_TYPES = (51, 52, 53)  # FT_RULE_ENGINE_0, _1, _2 in that fixed order
+
+
+def _used_app_slot_types(data, mode_content, mode_len):
+    """Which of APP_SLOT_TYPES are already wired to a display field somewhere in this mode."""
+    used = set()
+    mode_end = mode_content + mode_len
+    for tag_id, content, length, _ in _walk_children(data, mode_content, mode_end):
+        if tag_id != cm.EXERCISE_MODES_DISPLAYS:
+            continue
+        for d_id, d_content, d_len, _ in _walk_children(data, content, content + length):
+            if d_id != cm.EXERCISE_MODES_DISPLAY:
+                continue
+            for f_id, f_content, f_len, _ in _walk_children(data, d_content, d_content + d_len):
+                if f_id != cm.EXERCISE_MODES_DISP_FIELD:
+                    continue
+                gg_id, gg_content, _, _ = next(_walk_children(data, f_content, f_content + f_len))
+                if gg_id == cm.EXERCISE_MODES_DISP_FIELD_SETTING:
+                    typ = struct.unpack_from("<H", data, gg_content + 2)[0]
+                    if typ in APP_SLOT_TYPES:
+                        used.add(typ)
+    return used
+
+
+def next_app_slot_type(data, mode_content, mode_len):
+    """The next free FT_RULE_ENGINE_N Type for this mode - Slot 1 (51) if none are used yet,
+    Slot 2 (52) if only Slot 1 is taken, etc. Raises once all 3 are used - there's no 4th slot
+    Type to fall back to, regardless of SPORT_MODE_APP_LIMIT."""
+    used = _used_app_slot_types(data, mode_content, mode_len)
+    for slot_type in APP_SLOT_TYPES:
+        if slot_type not in used:
+            return slot_type
+    raise RuntimeError(
+        f"this mode already has all {len(APP_SLOT_TYPES)} Suunto App display slots in use "
+        f"(Types {APP_SLOT_TYPES}) - no free slot Type to wire a new field to, even though "
+        "more apps could still be assigned (see SPORT_MODE_APP_LIMIT)")
+
+
 def install_app_into_mode(custom_modes_bytes, mode_index, display_index, field_index, rule_idx):
     """Returns new CustomModes region bytes with the app wired into
     (mode_index, display_index, field_index). See module docstring for what's verified."""
@@ -193,9 +274,10 @@ def install_app_into_mode(custom_modes_bytes, mode_index, display_index, field_i
     _, settings_content, settings_len, _ = settings
     app_meta_insert_at = settings_content + settings_len
 
+    slot_type = next_app_slot_type(data, mode_content, mode_len)
     field_setting_offset = _find_field_setting_offset(
         data, mode_content, mode_len, display_index, field_index)
-    struct.pack_into("<H", data, field_setting_offset + 2, 51)  # Type -> "shows app result"
+    struct.pack_into("<H", data, field_setting_offset + 2, slot_type)
 
     for name in ("HrHigh", "HrLow"):
         off = settings_content + 64 + 2 * [f for f, _ in cm.SETTING_FIELDS].index(name)
@@ -280,13 +362,19 @@ def main():
         if len(new_custom_modes) != F.CUSTOM_MODES_REGION_SIZE:
             sys.exit(f"'{args.restore}' is {len(new_custom_modes)} bytes, expected "
                      f"{F.CUSTOM_MODES_REGION_SIZE}")
+        # Write ONLY the used BXML extent, not the full padded region, and no 0x0b04
+        # (Finding 28): this is exactly what real SuuntoLink does and what the watch's cold-
+        # boot hash validation expects. Writing the full region produced a wrong hash and
+        # 'err:62' on every mode after a restart.
+        extent = cm.used_extent(new_custom_modes)
+        payload = new_custom_modes[:extent]
         flash = FlashImage()
-        flash.write(F.CUSTOM_MODES_BASE, new_custom_modes)
-        layout = [("CustomModes", F.CUSTOM_MODES_BASE, new_custom_modes),
+        flash.write(F.CUSTOM_MODES_BASE, payload)
+        layout = [("CustomModes", F.CUSTOM_MODES_BASE, payload),
                   ("tail", F.CUSTOM_MODES_BASE, None)]
-        send_plan(link, flash, layout, commit=True)
-        print(f"\n{'wrote' if args.write else 'would write'} {len(new_custom_modes)} bytes"
-              " to CustomModes (restore)")
+        send_plan(link, flash, layout, commit=False)
+        print(f"\n{'wrote' if args.write else 'would write'} {extent} used bytes"
+              f" (of {len(new_custom_modes)}) to CustomModes (restore)")
         return 0
 
     with open(args.compiled) as f:
@@ -319,17 +407,18 @@ def main():
                 f.write(current_custom_modes)
             print(f"backed up current CustomModes to {args.backup_to}")
 
-    apps_offset = find_apps_free_offset(current_apps)
-    entry = build_apps_entry(compiled)
-    if apps_offset + len(entry) > F.APPS_REGION_SIZE:
-        sys.exit(f"refusing to write: offset 0x{apps_offset:x} + {len(entry)} bytes would "
-                 f"land past the end of the {F.APPS_REGION_SIZE}-byte Apps region")
-    print(f"Apps entry: {len(entry)} bytes at offset 0x{apps_offset:x}"
-          f" (name={compiled.get('name')!r})")
+    existing_apps_entries = apps_entries_with_raw_blocks(current_apps)
+    new_region = build_apps_region(existing_apps_entries, compiled)
+    if len(new_region) > F.APPS_REGION_SIZE:
+        sys.exit(f"refusing to write: the rebuilt Apps region would be {len(new_region)} "
+                 f"bytes, past the end of the {F.APPS_REGION_SIZE}-byte Apps region")
+    print(f"Apps region: {len(existing_apps_entries)} existing entr"
+          f"{'y' if len(existing_apps_entries) == 1 else 'ies'} + 1 new "
+          f"(name={compiled.get('name')!r}) = {len(new_region)} bytes total")
 
     flash = FlashImage()
-    flash.write(F.APPS_BASE, entry)
-    apps_layout = [("Apps entry", F.APPS_BASE + apps_offset, entry),
+    flash.write(F.APPS_BASE, new_region)
+    apps_layout = [("Apps region", F.APPS_BASE, new_region),
                    ("tail", F.APPS_BASE, None)]
 
     if args.apps_only:
@@ -346,15 +435,29 @@ def main():
         new_custom_modes = install_app_into_mode(
             current_custom_modes, args.mode, args.display, args.field, rule_idx)
 
+        # Write ONLY the used BXML extent (Finding 28) - see custom_modes.used_extent(). The
+        # full-region write was the confirmed cause of 'err:62' on every mode after a restart.
+        cm_extent = cm.used_extent(new_custom_modes)
+        cm_payload = new_custom_modes[:cm_extent]
         flash2 = FlashImage()
-        flash2.write(F.CUSTOM_MODES_BASE, new_custom_modes)
-        cm_layout = [("CustomModes", F.CUSTOM_MODES_BASE, new_custom_modes),
+        flash2.write(F.CUSTOM_MODES_BASE, cm_payload)
+        cm_layout = [("CustomModes", F.CUSTOM_MODES_BASE, cm_payload),
                      ("tail", F.CUSTOM_MODES_BASE, None)]
 
         # write the app itself first, then wire it in - so a failure partway through never
-        # leaves CustomModes pointing at an app that isn't actually there
+        # leaves CustomModes pointing at an app that isn't actually there.
+        # commit=False for BOTH (no CMD_NAV_COMMIT / 0x0b04): confirmed 2026-08-09
+        # (training_program_andre.md Finding 27) against all 4 real SuuntoLink app-install
+        # captures in assets/ambit3 pcap/v2/ - not one of them EVER sends 0x0b04 for the
+        # Apps or CustomModes regions. 0x0b04 is specifically the *navigation database*
+        # commit (routes/waypoints); firing it after an Apps/CustomModes write was this
+        # project's own addition, and is the single command we sent that real SuuntoLink
+        # never does. The real per-region finalization is the 0x0b18 tail itself (a SHA256
+        # of the written span, verified byte-exact against every real tail). Sending the
+        # spurious nav-commit is the strongest suspect for the "connect to Moveslink" /
+        # needs-restart / clock-reset state seen on real hardware after installs.
         send_plan(link, flash, apps_layout, commit=False)
-        send_plan(link, flash2, cm_layout, commit=True)
+        send_plan(link, flash2, cm_layout, commit=False)
 
     total = sum(len(payload) for _, payload, _ in link.sent)
     print(f"\n{len(link.sent)} messages, {total} payload bytes"
