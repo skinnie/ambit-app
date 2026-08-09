@@ -139,6 +139,12 @@ export interface KailashSession {
   maxSpeed: number;
 }
 
+export interface VisitedPlace {
+  lat: number;
+  lon: number;
+  country: string | null;
+}
+
 export interface KailashHistory {
   name: string;
   serial: string;
@@ -154,6 +160,15 @@ export interface KailashHistory {
   cumulatedDistanceMeters: number;
   furthestFromHomeMeters: number;
   sessions: KailashSession[];
+  // Real, 2026-08-09 ("Add a world map with the points were kailash has been") - every real
+  // VisitedCities.Location/VisitedCountries.CountryCode pair encountered, not just the last
+  // one. Direct port of tools/kailash_history.py's own visited_places fix - lastKnown* above
+  // (kept for backward compatibility, same real meaning as before) only ever held the final
+  // value, silently discarding every earlier visited place on a watch with real multi-place
+  // travel history. Same real caveat as the Python side: genuinely unconfirmed whether a
+  // second real place preserves this Location-then-CountryCode pairing order until a watch
+  // with real multi-place history is available to check against.
+  visitedPlaces: VisitedPlace[];
 }
 
 function emptyHistory(): KailashHistory {
@@ -162,7 +177,7 @@ function emptyHistory(): KailashHistory {
     hasLastKnownLocation: false, lastKnownLatitude: 0, lastKnownLongitude: 0,
     lastKnownCountry: '', lastKnownTime: '', travellingDays: 0,
     travelledDistanceMeters: 0, cumulatedDistanceMeters: 0, furthestFromHomeMeters: 0,
-    sessions: [],
+    sessions: [], visitedPlaces: [],
   };
 }
 
@@ -196,21 +211,30 @@ export function decodeDeviceHistory(b64: string): KailashHistory | null {
         break;
       }
       case 0x5b: {
+        // Real, 2026-08-09 - every record, not just the last (see visitedPlaces' own
+        // interface comment). lastKnown* still tracks the final value seen, same real
+        // meaning as before.
         const records = decodeGroupRecords(bytes, entry.start, entry.end, LOCATION_FIELDS);
-        const last = records[records.length - 1];
-        if (last) {
-          const lonRad = last.get(0x58) as number;
-          const latRad = last.get(0x59) as number;
+        for (const record of records) {
+          const lonRad = record.get(0x58) as number;
+          const latRad = record.get(0x59) as number;
+          const lat = (latRad * 180) / Math.PI;
+          const lon = (lonRad * 180) / Math.PI;
           history.hasLastKnownLocation = true;
-          history.lastKnownLatitude = (latRad * 180) / Math.PI;
-          history.lastKnownLongitude = (lonRad * 180) / Math.PI;
+          history.lastKnownLatitude = lat;
+          history.lastKnownLongitude = lon;
+          history.visitedPlaces.push({ lat, lon, country: null });
         }
         break;
       }
       case 0x5c: {
         const records = decodeGroupRecords(bytes, entry.start, entry.end, COUNTRY_FIELDS);
-        const last = records[records.length - 1];
-        if (last) history.lastKnownCountry = last.get(0x5a) as string;
+        for (const record of records) {
+          const country = record.get(0x5a) as string;
+          history.lastKnownCountry = country;
+          const lastPlace = history.visitedPlaces[history.visitedPlaces.length - 1];
+          if (lastPlace) lastPlace.country = country;
+        }
         break;
       }
       case 0x5d:

@@ -1,4 +1,5 @@
 import { base64ToBytes } from './Base64';
+import { KailashSession } from './KailashHistoryReader';
 
 // Decodes the Suunto Kailash's `TrackLog` flash region into GPX - a real, confirmed 20-byte
 // fixed-stride GPS record format, mirroring the companion research project's
@@ -105,4 +106,79 @@ export function decodeTrackLogToGpx(b64: string): string | null {
   const points = walkRecords(bytes);
   if (points.length === 0) return null;
   return pointsToGpx(points);
+}
+
+// Real, found live 2026-08-09 debugging "activities still don't show gps track" - direct
+// port of tools/kailash_tracklog.py's own SESSION_LOCAL_UTC_OFFSET_HOURS: DeviceHistory's
+// LogHeaders.Header.DateTime (KailashSession.when) is the watch's LOCAL time, while
+// TrackLog's own embedded year/month/day/hour/minute fields are UTC - two independently-
+// decoded clocks with a real, non-obvious offset between them. Confirmed against three
+// independent real events the same day: a clean 2-hour local-ahead-of-UTC offset, i.e. CEST
+// (France, August). NOT necessarily correct outside daylight saving time or for a watch
+// configured to a different timezone - there is no confirmed dynamic offset field to read
+// this from instead, so this is real-but-seasonal, worth revisiting outside CEST.
+const SESSION_LOCAL_UTC_OFFSET_HOURS = 2;
+const MATCH_TOLERANCE_MINUTES = 2;
+
+/** Pulls (year, month, day, hour, minute) out of a real DeviceHistory Header.DateTime string
+ * - tolerant of "-"/":"/"T"/" " or no separator at all, same as kailash_tracklog.py's own
+ * _parse_when(), since TrackLog's own points are only ever compared at minute resolution
+ * anyway. Returns minutes-since-epoch (UTC-naive, matching the points' own field values -
+ * there's no real Date object needed here, just comparable integers). */
+function parseWhenToMinutes(when: string): number | null {
+  const m = /(\d{4})\D?(\d{2})\D?(\d{2})\D?(\d{2})\D?(\d{2})/.exec(when || '');
+  if (!m) return null;
+  const [, y, mo, d, h, mi] = m.map(Number);
+  return Date.UTC(y, mo - 1, d, h, mi) / 60000;
+}
+
+function pointMinutes(p: TrackLogPoint): number {
+  return Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute) / 60000;
+}
+
+/** One GPX per real DeviceHistory session, correlating each session's own
+ * [when, when + duration] window (converted from local to UTC, +/-2 minutes tolerance)
+ * against TrackLog's own per-point timestamps - direct port of kailash_tracklog.py's own
+ * split_into_activities(). Real request 2026-08-09 ("Something is bizarre on the
+ * activities, they say no gps, but they have gps") - DeviceHistory sessions carry summary
+ * stats only (no GPS of their own), and until now KailashDeviceProvider.getLogs() bundled
+ * every point from the whole region into one single GPX, with no per-"Walk" correlation at
+ * all.
+ *
+ * Unlike the Python original, sessions with zero correlated points are skipped here rather
+ * than returned as an empty-track entry - Android's getLogs() feeds these GPX strings
+ * directly into the real local-activity sync pipeline (SyncService.ts), and a synced
+ * zero-point activity is a real, deliberate scope trim: this project hasn't verified the
+ * rest of that pipeline (GpxParser.ts, ElevationChart.tsx, LogListScreen.tsx) tolerates one
+ * gracefully, so this only ever emits activities that actually have a real track. */
+export function splitIntoActivities(points: TrackLogPoint[], sessions: KailashSession[]): string[] {
+  if (sessions.length === 0) {
+    const gpx = points.length > 0 ? pointsToGpx(points) : null;
+    return gpx ? [gpx] : [];
+  }
+
+  const pointMins = points.map(p => ({ mins: pointMinutes(p), p }));
+  const gpxList: string[] = [];
+  for (const s of sessions) {
+    const startLocal = parseWhenToMinutes(s.when);
+    if (startLocal === null) continue;
+    const start = startLocal - SESSION_LOCAL_UTC_OFFSET_HOURS * 60;
+    const end = start + (s.durationSeconds || 0) / 60;
+    const lo = start - MATCH_TOLERANCE_MINUTES;
+    const hi = end + MATCH_TOLERANCE_MINUTES;
+    const matched = pointMins.filter(({ mins }) => mins >= lo && mins <= hi).map(({ p }) => p);
+    if (matched.length > 0) gpxList.push(pointsToGpx(matched));
+  }
+  return gpxList;
+}
+
+/** Decodes a base64 TrackLog region dump into one GPX per real DeviceHistory session (see
+ * splitIntoActivities()'s own comment) - falls back to the old single-bundled-GPX behavior
+ * (decodeTrackLogToGpx()) when there are no sessions to correlate against at all, same real
+ * fallback kailash_tracklog.py's own split_into_activities() has. */
+export function decodeTrackLogToActivities(b64: string, sessions: KailashSession[]): string[] {
+  if (!b64) return [];
+  const bytes = base64ToBytes(b64);
+  const points = walkRecords(bytes);
+  return splitIntoActivities(points, sessions);
 }

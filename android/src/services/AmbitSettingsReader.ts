@@ -84,8 +84,10 @@ export const AMBIT3_SETTINGS_FIELDS: SettingField[] = [
     ] },
   { key: 'time_format', entryId: 0x13, kind: 'enum', byteWidth: 1,
     choices: [{ value: 0, label: '24h' }, { value: 1, label: '12h' }] },
+  // Real bug, found 2026-08-09 ("gps time keeping => true, it should be True") - same fix
+  // as desktop's tools/settings_write.py own _ENUM_LABEL_FIXES, never ported here until now.
   { key: 'gps_time_keeping', entryId: 0x14, kind: 'enum', byteWidth: 1,
-    choices: [{ value: 0, label: 'true' }, { value: 1, label: 'false' }] },
+    choices: [{ value: 0, label: 'True' }, { value: 1, label: 'False' }] },
   { key: 'display_contrast', entryId: 0x1f, kind: 'number', byteWidth: 1 },
   { key: 'display_dark', entryId: 0x20, kind: 'bool', byteWidth: 1 },
   { key: 'backlight_mode', entryId: 0x21, kind: 'enum', byteWidth: 1,
