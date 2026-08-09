@@ -50,7 +50,7 @@ type ActiveAction = 'sync' | 'orbital';
 // OS's USB_DEVICE_ATTACHED intent-filter + device_filter.xml already launches/
 // forefronts the app when something is plugged in — this state machine is what
 // runs once that's happened, not a replacement for it).
-type ConnPhase = 'searching' | 'connecting' | 'connected' | 'timeout' | 'later' | 'connect-error';
+type ConnPhase = 'searching' | 'connecting' | 'connected' | 'timeout' | 'connect-error';
 
 // Real, 2026-08-09 (v3.0 planning: "via usb should be auto detected, refresh rate
 // 2seconds if no usb is detected") - was 1200ms, bumped to the real requested 2s. Bluetooth
@@ -316,11 +316,6 @@ export default function HomeScreen() {
   const startSearchingRef = useRef(startSearching);
   startSearchingRef.current = startSearching;
 
-  function handleConnectLater() {
-    stopSearchTimers();
-    setPhase('later');
-  }
-
   // On every focus: if we're already showing a connected device, just check
   // it's still there rather than restarting the whole search/connect dance
   // (that would re-trigger auto-sync every time the user comes back from
@@ -335,7 +330,7 @@ export default function HomeScreen() {
       detectAttachedDeviceType().then(type => {
         if (type === 'none' || type !== deviceTypeRef.current) startSearchingRef.current();
       }).catch(() => {});
-    } else if (phaseRef.current !== 'later') {
+    } else {
       startSearchingRef.current();
     }
     return () => stopSearchTimers();
@@ -483,12 +478,18 @@ export default function HomeScreen() {
             <Button label={t.homeConnectRetryBtn} onPress={startSearching} variant="text" grow={false} />
           )}
           <Button label={t.homeBleConnectBtn} onPress={handleBleConnectRef.current} variant="text" grow={false} />
-          <Button label={t.homeConnectLaterBtn} onPress={handleConnectLater} variant="outline" grow={false} />
           {/* Activities are stored locally and don't depend on a device being
               connected — don't trap the user behind the search/timeout screen
               if all they want is to look at what's already synced. */}
           <Button label={t.viewActivities} onPress={() => navigation.navigate('LogList')} variant="text" grow={false} />
         </View>
+        {/* Real, 2026-08-10 ("you can remove the pair device later, doesn't make sense") -
+            "Connect device later" led to a whole separate near-empty screen whose only real
+            purpose was reaching Settings without a device connected - that's reachable
+            directly now, no detour through an extra phase. */}
+        <TouchableOpacity style={styles.settingsBtn} onPress={() => navigation.navigate('Settings')} activeOpacity={0.75}>
+          <Icon name="settings" size={19} color={theme.text} />
+        </TouchableOpacity>
       </View>
     );
   }
@@ -533,33 +534,11 @@ export default function HomeScreen() {
           {!bleAttempt && (
             <Button label={t.homeBleConnectBtn} onPress={handleBleConnectRef.current} variant="text" grow={false} />
           )}
-          <Button label={t.homeConnectLaterBtn} onPress={handleConnectLater} variant="outline" grow={false} />
           <Button label={t.viewActivities} onPress={() => navigation.navigate('LogList')} variant="text" grow={false} />
         </View>
-      </View>
-    );
-  }
-
-  if (phase === 'later') {
-    return (
-      <View style={styles.container}>
-        <View style={styles.header}>
-          <Text style={styles.appName}>AmbitApp</Text>
-          <Badge label={`v${APP_VERSION}`} />
-        </View>
-        <Icon name="mountain" size={48} color={theme.text} />
-        <Button label={t.homeBleConnectBtn} onPress={handleBleConnectRef.current} variant="text" grow={false} />
-        <View style={styles.bottomRow}>
-          <Button
-            label={t.viewActivities}
-            icon="list"
-            onPress={() => navigation.navigate('LogList')}
-            variant="outline"
-          />
-          <TouchableOpacity style={styles.settingsBtn} onPress={() => navigation.navigate('Settings')} activeOpacity={0.75}>
-            <Icon name="settings" size={19} color={theme.text} />
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity style={styles.settingsBtn} onPress={() => navigation.navigate('Settings')} activeOpacity={0.75}>
+          <Icon name="settings" size={19} color={theme.text} />
+        </TouchableOpacity>
       </View>
     );
   }
@@ -839,14 +818,6 @@ const CONTENT_MAX_WIDTH = 560;
 
 function createStyles(t: ReturnType<typeof useV3Theme>) {
   return StyleSheet.create({
-    container: {
-      flex: 1,
-      backgroundColor: t.background,
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      paddingVertical: 56,
-      paddingHorizontal: 24,
-    },
     // The connected screen scrolls (a lot of content: device cards + a 2-column tile
     // grid + footer), so on short/landscape screens nothing clips.
     scroll: {
@@ -1004,13 +975,6 @@ function createStyles(t: ReturnType<typeof useV3Theme>) {
     // handled inside ActionTile's own width check).
     actionsRowRoomy: {
       maxWidth: 960,
-    },
-    bottomRow: {
-      flexDirection: 'row',
-      width: '100%',
-      maxWidth: CONTENT_MAX_WIDTH,
-      gap: 10,
-      alignItems: 'center',
     },
     settingsBtn: {
       width: 52,

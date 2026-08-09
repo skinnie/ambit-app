@@ -71,7 +71,6 @@ const fr = {
   homeSearchingTitle: 'Recherche de votre appareil, veuillez patienter…',
   // Real, 2026-08-10 ("under the icon put AmbitApp and a funny quote")
   homeTagline: "L'aventure commence dehors.",
-  homeConnectLaterBtn: 'Connecter plus tard',
   homeNoDeviceTitle:
     "Aucun appareil détecté. Vérifiez le câble et l'appareil, ou utilisez l'app sans appareil.",
   homeConnectingAmbit: 'Connexion à la montre…',
@@ -552,7 +551,6 @@ const en: typeof fr = {
   // easy one-line swaps if a different tone is wanted: "Track it. Trust it." /
   // "Your next summit is calling." / "Built for the trail, not the couch."
   homeTagline: 'Adventure starts outside.',
-  homeConnectLaterBtn: 'Connect device later',
   homeNoDeviceTitle:
     'No device detected, please check your cable and device or use app without it.',
   homeConnectingAmbit: 'Connecting to watch…',
