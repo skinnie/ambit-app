@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Effects
 import AmbitApp
 
 // Step 7: real Apple-Photos-style activity cards, backed by ActivityService (parses the
@@ -127,14 +128,26 @@ Item {
         // packs cards flush against its own left edge, it doesn't center an incomplete last
         // column, so all of (width - contentWidthUsed) is unused space on the *right*, not
         // split evenly on both sides as the first version of this assumed.
+        // Real, 2026-08-09 ("replicate the design of the cards... to avoid unnecessary
+        // colors") - dropped the green accent border, plain Theme.card background plus the
+        // exact same shadow Card.qml itself uses everywhere else in the app (layer.enabled +
+        // MultiEffect.shadowEnabled - unlike the maskEnabled/maskSource attempt reverted
+        // earlier, this specific shadow usage is the same one already proven stable on
+        // every card in the app, not a new risk).
         x: activitiesGrid.x + (activitiesGrid.contentWidthUsed - width) / 2
         y: Theme.spacingLarge
         width: Math.min(parent.width - Theme.spacingLarge * 2, bannerText.implicitWidth + Theme.spacingMedium * 2)
         height: bannerText.implicitHeight + Theme.spacingSmall * 2
         radius: Theme.radiusCard
         color: Theme.card
-        border.color: Theme.primary
-        border.width: 1
+        layer.enabled: true
+        layer.effect: MultiEffect {
+            shadowEnabled: true
+            shadowColor: Theme.isDark ? "#80000000" : "#33000000"
+            shadowBlur: 0.5
+            shadowVerticalOffset: 2
+            shadowHorizontalOffset: 0
+        }
 
         MouseArea { anchors.fill: parent }  // absorbs clicks meant for the banner, not a card underneath
 
@@ -212,8 +225,19 @@ Item {
     // regardless of list length.
     GridView {
         id: activitiesGrid
-        anchors.fill: parent
-        anchors.margins: Theme.spacingLarge
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        anchors.leftMargin: Theme.spacingLarge
+        anchors.rightMargin: Theme.spacingLarge
+        anchors.bottomMargin: Theme.spacingLarge
+        // Real, 2026-08-09 ("put the cards down, give space between the text and the
+        // cards") - the loading banner above used to sit at the same y as this grid's own
+        // top margin, with the grid painting right up against/behind it (z: 1 on the banner
+        // only fixed which one is on top, not the fact they occupied the same space). Drops
+        // below the banner's own bottom edge, with real spacing, only while it's visible.
+        anchors.top: trackLogLoadingBanner.visible ? trackLogLoadingBanner.bottom : parent.top
+        anchors.topMargin: trackLogLoadingBanner.visible ? Theme.spacingMedium : Theme.spacingLarge
         visible: root.selectedActivity === null
         clip: true
         cellWidth: 360 + Theme.spacingMedium
