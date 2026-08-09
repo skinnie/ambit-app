@@ -1,10 +1,13 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
+import React, { useCallback, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   runFirmwareCheck, downloadFirmware, BackupState,
 } from '../services/FirmwareBackupService';
+import { createNavBackup, listNavBackups, backupsFolderPath, BackupEntry } from '../services/NavBackupService';
+import { shareFile } from '../native/AmbitUsbModule';
 import { t } from '../i18n';
-import { useV3Theme } from '../theme/v3';
+import { useV3Theme, v3Spacing, v3Type } from '../theme/v3';
 import { Button, Section, StatusLine, WarningNote } from '../components/ui/primitives';
 
 /*
@@ -29,6 +32,37 @@ export default function BackupScreen() {
   const [downloadedTo, setDownloadedTo] = useState<string | undefined>();
   const [downloadError, setDownloadError] = useState<string | undefined>();
   const [downloading, setDownloading] = useState(false);
+
+  const [backups, setBackups] = useState<BackupEntry[]>([]);
+  const [navBackupBusy, setNavBackupBusy] = useState(false);
+  const [navBackupError, setNavBackupError] = useState<string | undefined>();
+
+  const refreshBackups = useCallback(() => {
+    listNavBackups().then(setBackups).catch(() => {});
+  }, []);
+  useFocusEffect(useCallback(() => { refreshBackups(); }, [refreshBackups]));
+
+  async function handleCreateNavBackup() {
+    if (navBackupBusy) return;
+    setNavBackupBusy(true);
+    setNavBackupError(undefined);
+    try {
+      await createNavBackup();
+      refreshBackups();
+    } catch (e: any) {
+      setNavBackupError(e?.message ?? t.unknownError);
+    } finally {
+      setNavBackupBusy(false);
+    }
+  }
+
+  async function handleShareBackup(entry: BackupEntry) {
+    try {
+      await shareFile(`${backupsFolderPath()}/${entry.prefix}_routes.bin`, 'application/octet-stream');
+    } catch (e: any) {
+      Alert.alert(t.error, e?.message ?? t.unknownError);
+    }
+  }
 
   const busy = state.phase === 'connecting' || state.phase === 'reading' ||
     state.phase === 'checking' || downloading;
@@ -64,10 +98,32 @@ export default function BackupScreen() {
   return (
     <ScrollView style={styles.root} contentContainerStyle={styles.content}>
 
+      {/* ── Navigation backup - real "Backup & Restore" card (BackupPage.qml parity) ── */}
+      <Section title={t.backupNavSection} description={t.backupNavDesc} style={{ marginTop: 16 }}>
+        <View style={styles.row}>
+          <Button label={t.backupNavCreateBtn} variant="filled" loading={navBackupBusy} disabled={navBackupBusy} onPress={handleCreateNavBackup} />
+        </View>
+        {navBackupBusy && <StatusLine text={t.backupNavWorking} />}
+        {!!navBackupError && <StatusLine text={navBackupError} tone="alert" />}
+      </Section>
+
+      <Section title={t.backupExistingSection}>
+        {backups.length === 0 && <StatusLine text={t.backupExistingEmpty} />}
+        {backups.map(b => (
+          <View key={b.prefix} style={styles.backupRow}>
+            <Text style={styles.backupDate}>{new Date(b.createdAt).toLocaleString()}</Text>
+            <TouchableOpacity style={styles.shareBtn} onPress={() => handleShareBackup(b)}>
+              <Text style={styles.shareBtnText}>{t.backupShareBtn}</Text>
+            </TouchableOpacity>
+          </View>
+        ))}
+        <Text style={styles.restoreNote}>{t.backupRestoreUnavailable}</Text>
+      </Section>
+
       <WarningNote>{t.backupWarning}</WarningNote>
 
       {/* ── Check available firmware ── */}
-      <Section title={t.backupCheckSection} description={t.backupCheckDesc} style={{ marginTop: 16 }}>
+      <Section title={t.backupCheckSection} description={t.backupCheckDesc}>
         <View style={styles.row}>
           <Button
             label={t.backupCheckBtn}
@@ -129,4 +185,15 @@ const createStyles = (t: ReturnType<typeof useV3Theme>) => StyleSheet.create({
   deviceInfoBox: { marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: t.mutedText + '33' },
   deviceInfoPrimary: { color: t.text, fontSize: 15, fontWeight: '600', marginBottom: 4 },
   deviceInfoSecondary: { color: t.mutedText, fontSize: 12, marginBottom: 2 },
+  backupRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    marginTop: v3Spacing.small,
+  },
+  backupDate: { color: t.text, fontSize: v3Type.bodyLarge },
+  shareBtn: {
+    paddingVertical: 6, paddingHorizontal: 12, borderRadius: 8,
+    backgroundColor: t.primary + '1F', borderWidth: 1, borderColor: t.primary,
+  },
+  shareBtnText: { color: t.primary, fontWeight: '600', fontSize: v3Type.label },
+  restoreNote: { color: t.mutedText, fontSize: v3Type.caption, marginTop: v3Spacing.small, lineHeight: 16 },
 });
