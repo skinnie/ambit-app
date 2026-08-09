@@ -48,6 +48,7 @@ this real format - see that module for what changed.
 
 import argparse
 import json
+import pathlib
 import struct
 
 APPS_BASE = 0x0927C0
@@ -154,6 +155,63 @@ def match_catalog(binary, catalog):
     return None
 
 
+# Real, 2026-08-09 - the real distributable catalog this app actually ships
+# (extract_apps_catalog.py's own output: data/suunto_apps/catalog.json + catalog.bin) is a
+# different shape from the raw suunto-apps/index.json `--catalog` above still supports (that
+# one embeds every binary inline as a JSON int array - fine for a one-off research match,
+# far too wasteful to load whole for routine use). These two helpers are for the real
+# shipped catalog instead: metadata-only entries plus offset/length pointers into a separate
+# blob file, loaded/matched without ever holding all 13,104 binaries in memory at once.
+DEFAULT_CATALOG_DIR = pathlib.Path(__file__).resolve().parent.parent / "data" / "suunto_apps"
+
+
+def load_distributable_catalog(catalog_dir=DEFAULT_CATALOG_DIR):
+    catalog_dir = pathlib.Path(catalog_dir)
+    with open(catalog_dir / "catalog.json") as f:
+        entries = json.load(f)["entries"]
+    with open(catalog_dir / "catalog.bin", "rb") as f:
+        blob = f.read()
+    return entries, blob
+
+
+def catalog_entry_binary(entry, blob):
+    return blob[entry["binaryOffset"]:entry["binaryOffset"] + entry["binaryLength"]]
+
+
+def match_distributable_catalog(binary, entries, blob):
+    for e in entries:
+        if catalog_entry_binary(e, blob) == binary:
+            return e
+    return None
+
+
+def to_json(entries, catalog_entries=None, catalog_blob=None):
+    """JSON-friendly view for backend/server.py - real, 2026-08-09, alongside the App
+    Slot picker work. `ruleIdx` is the entry's own 0-based position in this list -
+    confirmed (workout_install.py's own module docstring, Finding via real
+    CustomModes-cross-reference) to be exactly the RuleIdx a display field's own RULE
+    record points at, i.e. entries[N] is "Suunto App Slot" wherever RuleIdx=N is wired.
+    Deliberately excludes the raw binary (only its length) - this is for listing/
+    labeling, not for re-installing an app elsewhere."""
+    out = []
+    for i, e in enumerate(entries):
+        row = {
+            "ruleIdx": i, "name": e.get("name"), "activityId": e.get("activityId"),
+            "binaryLength": len(e["binary"]) if "binary" in e else None,
+        }
+        if "_warning" in e:
+            row["warning"] = e["_warning"]
+        if catalog_entries is not None and catalog_blob is not None and "binary" in e:
+            match = match_distributable_catalog(e["binary"], catalog_entries, catalog_blob)
+            if match:
+                row["catalogMatch"] = {
+                    "ruleId": match["ruleId"], "name": match["name"],
+                    "categoryId": match["categoryId"], "description": match["description"],
+                }
+        out.append(row)
+    return out
+
+
 def show(entries, catalog=None):
     if not entries:
         print("no app entries found - Apps region is empty, or doesn't look like a real"
@@ -186,6 +244,10 @@ def main():
     ap.add_argument("--catalog", metavar="FILE",
                      help="suunto-apps/index.json from a SuuntoLink install, to identify"
                           " apps by exact binary match against the public catalog")
+    ap.add_argument("--json", action="store_true",
+                     help="print one JSON line instead of human-readable lines - for"
+                          " backend/server.py, matches this app's real shipped catalog"
+                          " (data/suunto_apps/), not --catalog above")
     args = ap.parse_args()
 
     if args.from_file:
@@ -193,17 +255,30 @@ def main():
             data = f.read()
     else:
         from write_nav import Link
-        link = Link(dry_run=False, verbose=False)
-        print("read-only: 0x0b17 reads flash, nothing is written")
+        link = Link(dry_run=False, verbose=not args.json)
+        if not args.json:
+            print("read-only: 0x0b17 reads flash, nothing is written")
         link.open()
         data = read_apps_region(link)
+
+    entries = decode(data)
+
+    if args.json:
+        catalog_entries = catalog_blob = None
+        try:
+            catalog_entries, catalog_blob = load_distributable_catalog()
+        except OSError:
+            pass  # catalog not extracted yet - still show entries, just without matches
+        print(json.dumps({"ok": True, "entries": to_json(
+            entries, catalog_entries=catalog_entries, catalog_blob=catalog_blob)}))
+        return 0
 
     catalog = None
     if args.catalog:
         with open(args.catalog) as f:
             catalog = json.load(f)
 
-    show(decode(data), catalog=catalog)
+    show(entries, catalog=catalog)
     return 0
 
 

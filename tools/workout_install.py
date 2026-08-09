@@ -68,9 +68,9 @@ from write_nav import (CMD_DEVICE_INFO, Link, check_memory_map, read_flash,
                         read_memory_map, send_plan)
 
 
-def build_apps_region(existing_entries, compiled, marker=0):
+def build_apps_region(existing_entries, compiled):
     """Builds a full Apps-region write: the real directory format (apps.py's module
-    docstring, Finding 25) - `[u16 num_entries][u16 unknown2][u32 entry_offset]*N
+    docstring, Finding 25) - `[u16 num_entries][u16 count^0x02][u32 entry_offset]*N
     [u32 total_length]`, then one `[3-byte header][29-byte name]` block + magic + binary per
     entry, back to back. Confirmed the whole region is rewritten (directory + every existing
     entry) on every real install, not appended to - `existing_entries` should be
@@ -78,19 +78,20 @@ def build_apps_region(existing_entries, compiled, marker=0):
     last (matching every real capture checked: new entries append to the end of the list, not
     inserted).
 
-    `unknown2` is set to 1 - not confirmed (varies 1/1/6/7/9 across the 5 real samples this
-    was derived from, meaning unknown), but 1 is what two of those five real, otherwise
-    ordinary-looking captures used. `marker` (a 2026-08-08 addendum - see the module docstring)
-    is NOT confirmed either: consistent for a given real app across every capture checked, but
-    the rule that assigns it isn't known, so this defaults to 0 rather than a guess dressed up
-    as confidence. `activityId` is read straight from `compiled` (falls back to 0) - this IS
-    confirmed to matter (matches the app's real catalog activityId in every sample checked).
+    Both formerly-unknown fields are now SOLVED (2026-08-09, Finding 29, via openambit's
+    serialize_app_data prior art + verification against all 26 real entries this project has):
+    - the header's second u16 is `num_entries ^ 0x02`, not an opaque value.
+    - the per-entry `marker` byte is `apps.entry_checksum(binary)` (XOR of MAGIC+binary ^ len),
+      no longer a guess left at 0.
+    `activityId` is read from `compiled` (falls back to 0) - confirmed to match the app's real
+    catalog activityId in every sample.
 
     Real edge case guarded against here that a real client apparently doesn't guard against
     (found live, Finding 25): a name over apps.NAME_LEN (29) bytes wouldn't leave room for its
     own null terminator and would run into the next field - truncated here instead."""
     binary = bytes(compiled["binary"])
     activity_id = compiled.get("activityId", 0) & 0xFF
+    marker = apps.entry_checksum(binary)
     name = compiled.get("name", "App").encode("iso-8859-15", "replace")[:apps.NAME_LEN - 1]
     name_field = name + b"\0" * (apps.NAME_LEN - len(name))
     new_entry_bytes = (bytes([0, activity_id, marker]) + name_field
@@ -107,7 +108,7 @@ def build_apps_region(existing_entries, compiled, marker=0):
         cursor += len(block)
     total_length = cursor
 
-    header = struct.pack("<HH", num_entries, 1) + struct.pack(
+    header = struct.pack("<HH", num_entries, num_entries ^ 0x02) + struct.pack(
         f"<{num_entries + 1}I", *offsets, total_length)
     return header + b"".join(all_bytes)
 
@@ -338,6 +339,11 @@ def main():
                      help="append to the Apps region only - skip CustomModes entirely (e.g."
                           " when it's already correctly wired from a previous run)")
     ap.add_argument("--verbose", action="store_true")
+    ap.add_argument("--json", action="store_true",
+                     help="print one final JSON line summarizing the result - for"
+                          " backend/server.py. Human-readable progress lines still print"
+                          " before it (server.py's own \"last JSON-parseable line\""
+                          " convention, same as every other tool here)")
     args = ap.parse_args()
 
     if not args.restore and args.compiled is None:
@@ -384,7 +390,10 @@ def main():
         with open(args.from_apps, "rb") as f:
             current_apps = f.read()
     elif not link.dry_run:
-        current_apps = read_flash(link, F.APPS_BASE, F.APPS_REGION_SIZE, label="Apps")
+        # Real, 2026-08-09: apps.read_apps_region()'s own probe-first fast path (the
+        # region's real directory has an exact total_length boundary - see that
+        # function's own docstring), not a blind full-200,000-byte read.
+        current_apps = apps.read_apps_region(link)
     else:
         ap.error("reading the watch needs --write (Link opens no connection in dry-run) - "
                  "pass --from-apps for an offline plan against a real capture instead")
@@ -421,6 +430,7 @@ def main():
     apps_layout = [("Apps region", F.APPS_BASE, new_region),
                    ("tail", F.APPS_BASE, None)]
 
+    rule_idx = mode_name = None
     if args.apps_only:
         print("--apps-only: leaving CustomModes untouched")
         send_plan(link, flash, apps_layout, commit=False)
@@ -462,6 +472,13 @@ def main():
     total = sum(len(payload) for _, payload, _ in link.sent)
     print(f"\n{len(link.sent)} messages, {total} payload bytes"
           + ("" if args.write else " — nothing was emitted"))
+
+    if args.json:
+        print(json.dumps({
+            "ok": True, "written": bool(args.write), "ruleIdx": rule_idx,
+            "modeName": mode_name, "name": compiled.get("name"),
+            "messages": len(link.sent), "payloadBytes": total,
+        }))
     return 0
 
 
