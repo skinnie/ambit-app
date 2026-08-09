@@ -23,6 +23,10 @@ export interface ReadSettingsState {
   settings?: DecodedSetting[];
   fields?: SettingField[];
   isKailash?: boolean;
+  // The connected watch's own friendly name (e.g. "Suunto Kailash", "Suunto Ambit3
+  // Peak") from getDeviceInfo()'s device list, so the UI can label the section with the
+  // real device instead of a hardcoded "Ambit3".
+  deviceName?: string;
   error?: string;
 }
 
@@ -38,10 +42,15 @@ export async function readAmbitSettings(onState: (s: ReadSettingsState) => void)
   onState({ phase: 'reading' });
   try {
     let isKailash = false;
-    try { isKailash = (await getDeviceInfo()).model === 'Hoopoe'; } catch { /* non-fatal - assume Ambit3 */ }
+    let deviceName: string | undefined;
+    try {
+      const info = await getDeviceInfo();
+      isKailash = info.model === 'Hoopoe';
+      deviceName = info.name || undefined;
+    } catch { /* non-fatal - assume Ambit3 */ }
     const fields = isKailash ? KAILASH_SETTINGS_FIELDS : AMBIT3_SETTINGS_FIELDS;
     const settings = decodeSettings(await readSettingsRaw(), fields);
-    onState({ phase: 'done', settings, fields, isKailash });
+    onState({ phase: 'done', settings, fields, isKailash, deviceName });
   } catch (e: any) {
     onState({ phase: 'error', error: e?.message ?? 'Failed to read settings' });
   } finally {

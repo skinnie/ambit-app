@@ -56,7 +56,10 @@ export default function SettingsScreen() {
   // rest of this app's own on-demand connect/read/disconnect flows - see PoiService.ts).
   const [ambitSettings, setAmbitSettings] = useState<DecodedSetting[] | null>(null);
   const [ambitSettingsFields, setAmbitSettingsFields] = useState<SettingField[] | null>(null);
-  const [ambitIsKailash, setAmbitIsKailash] = useState(false);
+  // The connected watch's own name (from getDeviceInfo()'s device list), used to label
+  // this section adaptively — "Suunto Kailash Settings" etc. — instead of a hardcoded
+  // "Ambit3". Empty until the settings read connects and identifies the watch.
+  const [ambitDeviceName, setAmbitDeviceName] = useState<string>('');
   const [ambitSettingsPhase, setAmbitSettingsPhase] =
     useState<'idle' | 'connecting' | 'reading' | 'done' | 'error'>('idle');
   const [ambitSettingsError, setAmbitSettingsError] = useState<string | undefined>();
@@ -78,7 +81,7 @@ export default function SettingsScreen() {
         setCoordEdits(coords);
       }
       if (s.fields) setAmbitSettingsFields(s.fields);
-      if (s.isKailash !== undefined) setAmbitIsKailash(s.isKailash);
+      if (s.deviceName) setAmbitDeviceName(s.deviceName);
       setAmbitSettingsError(s.error);
     });
   }
@@ -245,120 +248,6 @@ export default function SettingsScreen() {
         </View>
       </View>
 
-      {/* ── Strava ── */}
-      <View style={styles.section}>
-        <View style={styles.cardHead}>
-          <IconBadge icon="link" />
-          <Text style={styles.cardTitle}>{t.stravaSection}</Text>
-        </View>
-        <Text style={styles.sectionDesc}>{t.stravaSettingsDesc}</Text>
-        {stravaAuth ? (
-          <>
-            <Chip icon="check" label={t.stravaConnectedStatus} />
-            <View style={styles.row}>
-              <Button label={t.stravaDisconnectBtn} variant="text" grow={false} onPress={handleStravaDisconnect} />
-            </View>
-          </>
-        ) : (
-          <View style={styles.row}>
-            <Button label={t.connect} variant="filled" onPress={handleStravaConnect} />
-          </View>
-        )}
-      </View>
-
-      {/* ── Livelox ── */}
-      <View style={styles.section}>
-        <View style={styles.cardHead}>
-          <IconBadge icon="map" />
-          <Text style={styles.cardTitle}>Livelox</Text>
-        </View>
-        <Text style={styles.sectionDesc}>{t.liveloxSettingsDesc}</Text>
-        {liveloxAuth ? (
-          <>
-            <Chip icon="check" label={t.liveloxConnectedStatus} />
-            <View style={styles.row}>
-              <Button label={t.liveloxDisconnectBtn} variant="text" grow={false} onPress={handleLiveloxDisconnect} />
-            </View>
-          </>
-        ) : (
-          <View style={styles.row}>
-            <Button label={t.connect} variant="filled" onPress={handleLiveloxConnect} />
-          </View>
-        )}
-      </View>
-
-      {/* ── Runalyze ── */}
-      <View style={styles.section}>
-        <View style={styles.cardHead}>
-          <IconBadge icon="chart" />
-          <Text style={styles.cardTitle}>{t.runalyzeSection}</Text>
-        </View>
-        <Text style={styles.sectionDesc}>{t.runalyzeDesc}</Text>
-        <Text style={styles.sectionDesc}>
-          {t.runalyzeApiHint}
-          <Text style={styles.link}>{t.runalyzeApiLink}</Text>
-        </Text>
-
-        <FieldRow
-          icon="key"
-          value={runalyzeKey}
-          onChangeText={setRunalyzeKey}
-          placeholder={t.apiKeyPlaceholder}
-          autoCapitalize="none"
-          autoCorrect={false}
-          secureTextEntry
-        />
-
-        <View style={styles.row}>
-          <Button label={t.saveBtn} variant="filled" loading={saving} onPress={handleSaveRunalyze} />
-          {!!savedKey && (
-            <Button label={t.deleteBtn} icon="delete" variant="outline" tone="alert" grow={false} onPress={handleRemoveRunalyze} />
-          )}
-        </View>
-
-        {!!savedKey && <StatusLine text={t.keyStored} />}
-      </View>
-
-      {/* ── Intervals.icu ── */}
-      <View style={styles.section}>
-        <View style={styles.cardHead}>
-          <IconBadge icon="activity" />
-          <Text style={styles.cardTitle}>{t.intervalsSection}</Text>
-        </View>
-        <Text style={styles.sectionDesc}>{t.intervalsDesc}</Text>
-        <Text style={styles.sectionDesc}>
-          {t.intervalsApiHint}
-          <Text style={styles.link}>{t.intervalsApiLink}</Text>
-        </Text>
-
-        <FieldRow
-          icon="person"
-          value={intervalsAthleteId}
-          onChangeText={setIntervalsAthleteId}
-          placeholder={t.athleteIdPlaceholder}
-          autoCapitalize="none"
-          autoCorrect={false}
-        />
-        <FieldRow
-          icon="key"
-          value={intervalsApiKey}
-          onChangeText={setIntervalsApiKey}
-          placeholder={t.apiKeyPlaceholder}
-          autoCapitalize="none"
-          autoCorrect={false}
-          secureTextEntry
-        />
-
-        <View style={styles.row}>
-          <Button label={t.saveBtn} variant="filled" loading={savingIntervals} onPress={handleSaveIntervals} />
-          {intervalsSaved && (
-            <Button label={t.deleteBtn} icon="delete" variant="outline" tone="alert" grow={false} onPress={handleRemoveIntervals} />
-          )}
-        </View>
-
-        {intervalsSaved && <StatusLine text={t.credsStored} />}
-      </View>
-
       {/* ── Watch Settings - real, 2026-08-08. Cable settings-write is confirmed working
           for both device types (see AmbitSettingsWriter.ts's own header comment: André
           confirmed on each watch's own screen that flipping display_dark visibly switched
@@ -369,7 +258,7 @@ export default function SettingsScreen() {
         <View style={styles.cardHead}>
           <IconBadge icon="watch" />
           <Text style={styles.cardTitle}>
-            {ambitIsKailash ? t.kailashSettingsSection : t.ambitSettingsSection}
+            {ambitDeviceName ? t.ambitSettingsTitle(ambitDeviceName) : t.ambitSettingsSection}
           </Text>
         </View>
         <Text style={styles.sectionDesc}>{t.ambitSettingsDesc}</Text>
@@ -483,6 +372,120 @@ export default function SettingsScreen() {
         {ambitSettings && (
           <Button label={t.ambitSettingsRefreshBtn} icon="sync" onPress={handleReadAmbitSettings} style={{ marginTop: 14 }} />
         )}
+      </View>
+
+      {/* ── Strava ── */}
+      <View style={styles.section}>
+        <View style={styles.cardHead}>
+          <IconBadge icon="link" />
+          <Text style={styles.cardTitle}>{t.stravaSection}</Text>
+        </View>
+        <Text style={styles.sectionDesc}>{t.stravaSettingsDesc}</Text>
+        {stravaAuth ? (
+          <>
+            <Chip icon="check" label={t.stravaConnectedStatus} />
+            <View style={styles.row}>
+              <Button label={t.stravaDisconnectBtn} variant="text" grow={false} onPress={handleStravaDisconnect} />
+            </View>
+          </>
+        ) : (
+          <View style={styles.row}>
+            <Button label={t.connect} variant="filled" onPress={handleStravaConnect} />
+          </View>
+        )}
+      </View>
+
+      {/* ── Livelox ── */}
+      <View style={styles.section}>
+        <View style={styles.cardHead}>
+          <IconBadge icon="map" />
+          <Text style={styles.cardTitle}>Livelox</Text>
+        </View>
+        <Text style={styles.sectionDesc}>{t.liveloxSettingsDesc}</Text>
+        {liveloxAuth ? (
+          <>
+            <Chip icon="check" label={t.liveloxConnectedStatus} />
+            <View style={styles.row}>
+              <Button label={t.liveloxDisconnectBtn} variant="text" grow={false} onPress={handleLiveloxDisconnect} />
+            </View>
+          </>
+        ) : (
+          <View style={styles.row}>
+            <Button label={t.connect} variant="filled" onPress={handleLiveloxConnect} />
+          </View>
+        )}
+      </View>
+
+      {/* ── Runalyze ── */}
+      <View style={styles.section}>
+        <View style={styles.cardHead}>
+          <IconBadge icon="chart" />
+          <Text style={styles.cardTitle}>{t.runalyzeSection}</Text>
+        </View>
+        <Text style={styles.sectionDesc}>{t.runalyzeDesc}</Text>
+        <Text style={styles.sectionDesc}>
+          {t.runalyzeApiHint}
+          <Text style={styles.link}>{t.runalyzeApiLink}</Text>
+        </Text>
+
+        <FieldRow
+          icon="key"
+          value={runalyzeKey}
+          onChangeText={setRunalyzeKey}
+          placeholder={t.apiKeyPlaceholder}
+          autoCapitalize="none"
+          autoCorrect={false}
+          secureTextEntry
+        />
+
+        <View style={styles.row}>
+          <Button label={t.saveBtn} variant="filled" loading={saving} onPress={handleSaveRunalyze} />
+          {!!savedKey && (
+            <Button label={t.deleteBtn} icon="delete" variant="outline" tone="alert" grow={false} onPress={handleRemoveRunalyze} />
+          )}
+        </View>
+
+        {!!savedKey && <StatusLine text={t.keyStored} />}
+      </View>
+
+      {/* ── Intervals.icu ── */}
+      <View style={styles.section}>
+        <View style={styles.cardHead}>
+          <IconBadge icon="activity" />
+          <Text style={styles.cardTitle}>{t.intervalsSection}</Text>
+        </View>
+        <Text style={styles.sectionDesc}>{t.intervalsDesc}</Text>
+        <Text style={styles.sectionDesc}>
+          {t.intervalsApiHint}
+          <Text style={styles.link}>{t.intervalsApiLink}</Text>
+        </Text>
+
+        <FieldRow
+          icon="person"
+          value={intervalsAthleteId}
+          onChangeText={setIntervalsAthleteId}
+          placeholder={t.athleteIdPlaceholder}
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
+        <FieldRow
+          icon="key"
+          value={intervalsApiKey}
+          onChangeText={setIntervalsApiKey}
+          placeholder={t.apiKeyPlaceholder}
+          autoCapitalize="none"
+          autoCorrect={false}
+          secureTextEntry
+        />
+
+        <View style={styles.row}>
+          <Button label={t.saveBtn} variant="filled" loading={savingIntervals} onPress={handleSaveIntervals} />
+          {intervalsSaved && (
+            <Button label={t.deleteBtn} icon="delete" variant="outline" tone="alert" grow={false} onPress={handleRemoveIntervals} />
+          )}
+        </View>
+
+        {intervalsSaved && <StatusLine text={t.credsStored} />}
       </View>
 
       {/* ── About / disclaimer ── */}

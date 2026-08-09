@@ -287,8 +287,9 @@ const fr = {
   poiImportedMsg: (n: number) => `${n} POI${n !== 1 ? 's' : ''} envoyé${n !== 1 ? 's' : ''} à la montre.`,
 
   // SettingsScreen — Ambit3 Settings (2026-08-08)
-  ambitSettingsSection: 'Réglages Ambit3',
+  ambitSettingsSection: 'Réglages de la montre',
   kailashSettingsSection: 'Réglages Kailash',
+  ambitSettingsTitle: (name: string) => `Réglages ${name}`,
   ambitSettingsDesc:
     'Réglages réels de la montre (langue, formats, luminosité, etc.), lus et modifiés par ' +
     'câble USB — confirmé sur du matériel réel le 8 août 2026.',
@@ -661,8 +662,9 @@ const en: typeof fr = {
   poiImportedMsg: (n: number) => `${n} POI${n !== 1 ? 's' : ''} sent to the watch.`,
 
   // SettingsScreen — Ambit3 Settings (2026-08-08)
-  ambitSettingsSection: 'Ambit3 Settings',
+  ambitSettingsSection: 'Watch settings',
   kailashSettingsSection: 'Kailash Settings',
+  ambitSettingsTitle: (name: string) => `${name} Settings`,
   ambitSettingsDesc:
     'Real watch settings (language, formats, brightness, etc.), read and written over ' +
     'USB cable - confirmed working against real hardware 2026-08-08.',
