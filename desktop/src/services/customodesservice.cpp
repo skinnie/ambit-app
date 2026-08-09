@@ -81,6 +81,18 @@ void CustomModesService::refresh()
                 dispRow[QStringLiteral("index")] = disp.value(QStringLiteral("index")).toInt();
                 dispRow[QStringLiteral("template")] = disp.value(QStringLiteral("template")).toString();
                 dispRow[QStringLiteral("templateLabel")] = disp.value(QStringLiteral("templateLabel")).toString();
+                dispRow[QStringLiteral("isBuiltIn")] = disp.value(QStringLiteral("isBuiltIn")).toBool();
+                // Real bug, found 2026-08-09 ("screen unidentified where it should show screen
+                // number"): this dispRow was never given screenNumber/isBuiltIn at all, even
+                // though custom_modes.py's own _displays_to_json() already computes both - QML
+                // read undefined for both, so every screen showed "Screen undefined" and the
+                // built-in system-tail screens (see _GPS_SYSTEM_TAIL/_NON_GPS_SYSTEM_TAIL) got
+                // counted as real ones in the "Displays (N/8)" total. screenNumber is real JSON
+                // null for built-ins - toInt() on that would silently become 0, so this stays
+                // an unset QVariant instead, same as the Python side's None.
+                const auto screenNumberValue = disp.value(QStringLiteral("screenNumber"));
+                dispRow[QStringLiteral("screenNumber")] =
+                    screenNumberValue.isNull() ? QVariant() : QVariant(screenNumberValue.toInt());
 
                 QVariantList fields;
                 int fieldIdx = 0;
