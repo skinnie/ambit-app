@@ -63,6 +63,60 @@ TRACKLOG_BASE = 0x48A1C0
 TRACKLOG_SIZE = 1310713
 
 
+def _plausible_record(rec):
+    """The same real plausibility check walk_records() uses on one already-sliced 20-byte
+    record - factored out so _real_data_end() below can reuse the exact same bounds without
+    them drifting apart if either is ever tuned."""
+    lat, lon, third = struct.unpack_from("<iii", rec, 0)
+    year = struct.unpack_from("<H", rec, 12)[0]
+    month, day, hour, minute = rec[14], rec[15], rec[16], rec[17]
+    return (
+        2015 <= year <= 2035 and 1 <= month <= 12 and 1 <= day <= 31
+        and hour <= 23 and minute <= 59
+        and -900000000 <= lat <= 900000000 and -1800000000 <= lon <= 1800000000
+        # Real bound, not guessed: every confirmed record's own "third" field clusters
+        # tightly (roughly 2,000-9,000) - wide enough for real variation, still narrow
+        # enough to reject record 0's own 3,735,608 (a different-shaped header/init record
+        # whose date fields alone happen to look valid too, so this field is what actually
+        # tells the two apart).
+        and 500 <= third <= 50000
+    )
+
+
+# Real, 2026-08-09 ("why on the ambit the activities is faster? ... check the
+# documentation") - exercise_log.py's own real fix for the exact same class of problem
+# (probe a small prefix, read a real watch-reported "next_free_address" boundary, then read
+# only that much instead of the full declared region - a real 119x speedup there). TrackLog
+# has no equivalent master-header/next-free-address field to read directly (it's a plain
+# flash region, not a PMEM20 log with its own index), but the same *principle* applies: real
+# records only ever occupy a small, contiguous run from the start of the region (every real
+# capture so far has been under 100 records, ~2KB, out of a 1.3MB region - see module
+# docstring), so probing a generous prefix and only reading the rest when that prefix isn't
+# enough gets the same real win without needing a watch-reported boundary at all.
+TRACKLOG_PROBE_SIZE = 65536  # ~32x more than every real capture has needed so far
+
+
+def _real_data_end(data):
+    """Byte offset just past the last real-looking record in `data` (mirrors
+    walk_records()'s own bad_streak cutoff exactly), or None if `data` runs out before that
+    cutoff is reached - meaning this buffer is too short to know where the real data ends,
+    and the caller should read more (or the full region) instead of trusting a truncated
+    guess."""
+    n = (len(data) - RECORD_START) // RECORD_SIZE
+    bad_streak = 0
+    end = RECORD_START
+    for i in range(n):
+        off = RECORD_START + i * RECORD_SIZE
+        if _plausible_record(data[off:off + RECORD_SIZE]):
+            bad_streak = 0
+            end = off + RECORD_SIZE
+        else:
+            bad_streak += 1
+            if bad_streak > 5:
+                return end
+    return None
+
+
 def walk_records(data):
     """Every 20-byte slot (starting at RECORD_START, not 0) that looks like a real GPS fix,
     in order, stopping at the first run of implausible ones (the region's own unused/padding
@@ -72,27 +126,15 @@ def walk_records(data):
     for i in range(n):
         off = RECORD_START + i * RECORD_SIZE
         rec = data[off:off + RECORD_SIZE]
-        lat, lon, third = struct.unpack_from("<iii", rec, 0)
-        year = struct.unpack_from("<H", rec, 12)[0]
-        month, day, hour, minute = rec[14], rec[15], rec[16], rec[17]
-        trailer = rec[18:20]
-        plausible = (
-            2015 <= year <= 2035 and 1 <= month <= 12 and 1 <= day <= 31
-            and hour <= 23 and minute <= 59
-            and -900000000 <= lat <= 900000000 and -1800000000 <= lon <= 1800000000
-            # Real bound, not guessed: every confirmed record's own "third" field clusters
-            # tightly (roughly 2,000-9,000) - wide enough for real variation, still narrow
-            # enough to reject record 0's own 3,735,608 (a different-shaped header/init
-            # record whose date fields alone happen to look valid too, so this field is what
-            # actually tells the two apart).
-            and 500 <= third <= 50000
-        )
-        if plausible:
+        if _plausible_record(rec):
             bad_streak = 0
+            lat, lon, third = struct.unpack_from("<iii", rec, 0)
+            year = struct.unpack_from("<H", rec, 12)[0]
+            month, day, hour, minute = rec[14], rec[15], rec[16], rec[17]
             yield {
                 "index": i, "lat": lat / 1e7, "lon": lon / 1e7, "third_raw": third,
                 "year": year, "month": month, "day": day, "hour": hour, "minute": minute,
-                "trailer": trailer,
+                "trailer": rec[18:20],
             }
         else:
             bad_streak += 1
@@ -278,7 +320,17 @@ def main():
         if not args.json:
             print("read-only: 0x0b17 reads flash, nothing is written")
         link.open()
-        data = read_flash(link, TRACKLOG_BASE, TRACKLOG_SIZE, label="TrackLog")
+        # Real, 2026-08-09 ("why on the ambit the activities is faster?... check the
+        # documentation") - see TRACKLOG_PROBE_SIZE's own comment: probes a generous prefix
+        # first and checks whether the real bad_streak cutoff already falls inside it (every
+        # real capture so far has). If so, that's genuinely all of the real data - no reason
+        # to keep reading another 1.2+MB of confirmed-unused flash. Falls back to the full,
+        # always-correct read if the probe isn't conclusive, the same safety net
+        # exercise_log.py's own version of this fix uses for ExerciseLog.
+        probe = read_flash(link, TRACKLOG_BASE, TRACKLOG_PROBE_SIZE, label="TrackLog (probe)")
+        real_end = _real_data_end(probe)
+        data = probe[:real_end] if real_end is not None \
+            else read_flash(link, TRACKLOG_BASE, TRACKLOG_SIZE, label="TrackLog")
         if args.save:
             with open(args.save, "wb") as f:
                 f.write(data)
