@@ -2132,3 +2132,18 @@ Tested André's-approved cheap lead: patched the community binary's embedded Rul
 a single header field (RuleID) - it's a genuine compiler/VM-bytecode incompatibility: the
 community App-Zone compiler's output is not run by this Ambit3 Peak firmware, full stop. Authored
 apps/workouts stay blocked on a compiler whose output executes on Ambit3. Watch restored clean.
+
+## Finding 42: shipped 'install pre-compiled catalog workouts' - the real, working revival (2026-08-09)
+
+Given Finding 41 (our installer works with OFFICIAL binaries; community-compiled ones don't
+execute on Ambit3), built `tools/catalog_workouts.py`: browses the official SuuntoLink catalog
+(assets/.../suunto-apps/index.json, ~13,100 pre-compiled apps, all with real executable
+binaries), filters by device (codename map from history.md - Emu/Finch/Kaka/Jabiru/... so it's
+cross-device per rule 2) and by interval/HR/workout heuristic, and exports a chosen app as the
+`{name,activityId,binary}` compiled-JSON that `workout_install.py` already installs. ~3,160
+Ambit3-Peak-compatible workout apps available (Heart Rate Zones, interval trainer, Interval
+training V1, Tabata, ...). No compiler, no network, no account. Validated offline end to end
+(export -> workout_install dry-run). Official-binary execution on hardware already proven
+(Finding 41, Real Temerature). This is the concrete, working guided-workout revival for Ambit3:
+install real pre-compiled interval/workout apps; authoring our own remains blocked on an
+Ambit3-compatible compiler.
