@@ -18,7 +18,7 @@ Item {
 
             Text {
                 text: title
-                font.pixelSize: 20
+                font.pixelSize: Theme.fontSizeLargeTitle
                 font.bold: true
                 color: Theme.text
             }

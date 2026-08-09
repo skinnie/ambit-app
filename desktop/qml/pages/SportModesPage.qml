@@ -63,7 +63,7 @@ Flickable {
 
         Row {
             width: parent.width
-            Text { text: qsTr("Sport Modes"); font.bold: true; font.pixelSize: 18; color: Theme.text }
+            Text { text: qsTr("Sport Modes"); font.bold: true; font.pixelSize: Theme.fontSizeTitle; color: Theme.text }
         }
 
         Text {
@@ -77,7 +77,7 @@ Flickable {
             width: parent.width
             wrapMode: Text.WordWrap
             color: Theme.error
-            font.pixelSize: 12
+            font.pixelSize: Theme.fontSizeLabel
             text: CustomModesService.lastError
         }
 
@@ -145,7 +145,7 @@ Flickable {
                             anchors.verticalCenter: parent.verticalCenter
                             text: qsTr("saving...")
                             color: Theme.mutedText
-                            font.pixelSize: 11
+                            font.pixelSize: Theme.fontSizeCaption
                             font.italic: true
                         }
                     }
@@ -159,7 +159,7 @@ Flickable {
                         // --- Autolap ---
                         Column {
                             spacing: 2
-                            Text { text: qsTr("Autolap (m, 0 = off)"); color: Theme.mutedText; font.pixelSize: 12 }
+                            Text { text: qsTr("Autolap (m, 0 = off)"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
                             Row {
                                 spacing: 6
                                 TextField {
@@ -185,7 +185,7 @@ Flickable {
 
                             Column {
                                 spacing: 2
-                                Text { text: qsTr("HR limits"); color: Theme.mutedText; font.pixelSize: 12 }
+                                Text { text: qsTr("HR limits"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
                                 Row {
                                     spacing: 6
                                     Switch {
@@ -197,13 +197,13 @@ Flickable {
                                         anchors.verticalCenter: parent.verticalCenter
                                         text: qsTr("enabled")
                                         color: Theme.text
-                                        font.pixelSize: 12
+                                        font.pixelSize: Theme.fontSizeLabel
                                     }
                                 }
                             }
                             Column {
                                 spacing: 2
-                                Text { text: qsTr("Low (bpm)"); color: Theme.mutedText; font.pixelSize: 12 }
+                                Text { text: qsTr("Low (bpm)"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
                                 TextField {
                                     id: hrLowField
                                     width: 70
@@ -214,7 +214,7 @@ Flickable {
                             }
                             Column {
                                 spacing: 2
-                                Text { text: qsTr("High (bpm)"); color: Theme.mutedText; font.pixelSize: 12 }
+                                Text { text: qsTr("High (bpm)"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
                                 TextField {
                                     id: hrHighField
                                     width: 70
@@ -225,7 +225,7 @@ Flickable {
                             }
                             Column {
                                 spacing: 2
-                                Text { text: " "; font.pixelSize: 12 }  // vertical alignment spacer
+                                Text { text: " "; font.pixelSize: Theme.fontSizeLabel }  // vertical alignment spacer
                                 Button {
                                     text: qsTr("Set")
                                     enabled: !modeCard.busy
@@ -242,7 +242,7 @@ Flickable {
                         Column {
                             width: parent.width
                             spacing: 4
-                            Text { text: qsTr("Pods"); color: Theme.mutedText; font.pixelSize: 12 }
+                            Text { text: qsTr("Pods"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
                             Row {
                                 spacing: Theme.spacingMedium
                                 Repeater {
@@ -266,7 +266,7 @@ Flickable {
                                             anchors.verticalCenter: parent.verticalCenter
                                             text: podRow.modelData.label
                                             color: Theme.text
-                                            font.pixelSize: 12
+                                            font.pixelSize: Theme.fontSizeLabel
                                         }
                                     }
                                 }
@@ -283,7 +283,7 @@ Flickable {
                             Text {
                                 text: qsTr("Displays (%1)").arg(modeCard.modelData.displays.length)
                                 color: Theme.mutedText
-                                font.pixelSize: 12
+                                font.pixelSize: Theme.fontSizeLabel
                             }
                             Repeater {
                                 model: modeCard.modelData.displays
@@ -295,7 +295,7 @@ Flickable {
                                     Text {
                                         text: qsTr("Screen %1 - %2").arg(dispCol.modelData.index).arg(dispCol.modelData.templateLabel)
                                         color: Theme.mutedText
-                                        font.pixelSize: 11
+                                        font.pixelSize: Theme.fontSizeCaption
                                     }
                                     Repeater {
                                         model: dispCol.modelData.fields
@@ -309,7 +309,7 @@ Flickable {
                                                 text: fieldRow.modelData.field === 0 ? qsTr("Top")
                                                     : fieldRow.modelData.field === 1 ? qsTr("Middle") : qsTr("Bottom")
                                                 color: Theme.text
-                                                font.pixelSize: 12
+                                                font.pixelSize: Theme.fontSizeLabel
                                             }
                                             RoundedComboBox {
                                                 id: typeCombo

@@ -51,7 +51,7 @@ Flickable {
                 Text {
                     text: qsTr("AmbitApp V2 — see AMBITAPP_SPEC.md")
                     color: Theme.mutedText
-                    font.pixelSize: 12
+                    font.pixelSize: Theme.fontSizeLabel
                 }
                 Row {
                     spacing: 6
@@ -63,14 +63,14 @@ Flickable {
                     Text {
                         text: qsTr("Backend: %1").arg(HomeViewModel.connectionStatusText)
                         color: Theme.mutedText
-                        font.pixelSize: 12
+                        font.pixelSize: Theme.fontSizeLabel
                     }
                 }
                 Text {
                     width: parent.width
                     wrapMode: Text.WordWrap
                     color: Theme.mutedText
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.fontSizeCaption
                     text: qsTr("Backend address is fixed to 127.0.0.1:8766 for now - making " +
                                 "it configurable needs every Service updated together, not " +
                                 "done here (see DeviceService's own comment on this).")
@@ -94,7 +94,7 @@ Flickable {
                     Text {
                         text: qsTr("Suunto Ambit 3 (USB, via the local backend)")
                         color: Theme.mutedText
-                        font.pixelSize: 12
+                        font.pixelSize: Theme.fontSizeLabel
                     }
                 }
                 Row {
@@ -107,7 +107,7 @@ Flickable {
                     Text {
                         text: qsTr("Garmin eTrex — connected (%1)").arg(GarminService.model)
                         color: Theme.text
-                        font.pixelSize: 12
+                        font.pixelSize: Theme.fontSizeLabel
                     }
                 }
             }
@@ -157,7 +157,7 @@ Flickable {
                     width: parent.width
                     wrapMode: Text.WordWrap
                     color: Theme.error
-                    font.pixelSize: 12
+                    font.pixelSize: Theme.fontSizeLabel
                     text: SettingsWriteService.lastError
                 }
 
@@ -193,7 +193,7 @@ Flickable {
                             anchors.verticalCenter: parent.verticalCenter
                             text: parent.label
                             color: Theme.text
-                            font.pixelSize: 13
+                            font.pixelSize: Theme.fontSizeBody
                         }
 
                         Switch {
@@ -239,7 +239,7 @@ Flickable {
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: modelData.value
                                 color: Theme.mutedText
-                                font.pixelSize: 12
+                                font.pixelSize: Theme.fontSizeLabel
                             }
                         }
 
@@ -250,7 +250,7 @@ Flickable {
                             anchors.verticalCenter: parent.verticalCenter
                             text: modelData.value
                             color: Theme.mutedText
-                            font.pixelSize: 13
+                            font.pixelSize: Theme.fontSizeBody
                         }
 
                         // HomeLocation.Latitude/Longitude - free-text degrees input rather
@@ -285,7 +285,7 @@ Flickable {
                             anchors.verticalCenter: parent.verticalCenter
                             text: qsTr("saving...")
                             color: Theme.mutedText
-                            font.pixelSize: 11
+                            font.pixelSize: Theme.fontSizeCaption
                             font.italic: true
                         }
                     }
@@ -323,7 +323,7 @@ Flickable {
                                 .arg(ConnectionsService.intervalsIcuAthleteId)
                             : qsTr("Intervals.icu — tap to set up")
                         color: Theme.text
-                        font.pixelSize: 13
+                        font.pixelSize: Theme.fontSizeBody
                     }
                 }
                 Row {
@@ -339,7 +339,7 @@ Flickable {
                             ? qsTr("Runalyze — connected")
                             : qsTr("Runalyze — tap to set up")
                         color: Theme.text
-                        font.pixelSize: 13
+                        font.pixelSize: Theme.fontSizeBody
                     }
                 }
                 Row {
@@ -355,7 +355,7 @@ Flickable {
                             ? qsTr("Strava — connected")
                             : qsTr("Strava — tap to set up")
                         color: Theme.text
-                        font.pixelSize: 13
+                        font.pixelSize: Theme.fontSizeBody
                     }
                 }
             }
@@ -382,7 +382,7 @@ Flickable {
                     width: parent.width
                     wrapMode: Text.WordWrap
                     color: Theme.mutedText
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.fontSizeCaption
                     text: qsTr("Athlete ID and API key from intervals.icu → Settings → " +
                                 "Developer Settings. Stored locally on this computer, not " +
                                 "sent anywhere except intervals.icu itself.")
@@ -440,7 +440,7 @@ Flickable {
                     width: parent.width
                     wrapMode: Text.WordWrap
                     color: Theme.mutedText
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.fontSizeCaption
                     text: qsTr("API key from your Runalyze account. Stored locally on " +
                                 "this computer, not sent anywhere except runalyze.com " +
                                 "itself.")
@@ -494,7 +494,7 @@ Flickable {
                     width: parent.width
                     wrapMode: Text.WordWrap
                     color: Theme.mutedText
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.fontSizeCaption
                     text: qsTr("Real OAuth2, not a personal API key like the other two - " +
                                 "register your own app at strava.com/settings/api first " +
                                 "(Authorization Callback Domain: localhost), then paste its " +
@@ -517,7 +517,7 @@ Flickable {
                     visible: ConnectionsService.stravaConnecting
                     text: qsTr("Waiting for you to approve in the browser...")
                     color: Theme.mutedText
-                    font.pixelSize: 12
+                    font.pixelSize: Theme.fontSizeLabel
                 }
                 Text {
                     visible: !ConnectionsService.stravaConnecting
@@ -525,7 +525,7 @@ Flickable {
                     width: parent.width
                     wrapMode: Text.WordWrap
                     color: Theme.error
-                    font.pixelSize: 12
+                    font.pixelSize: Theme.fontSizeLabel
                     text: ConnectionsService.stravaError
                 }
                 Row {
@@ -562,7 +562,7 @@ Flickable {
                     text: qsTr("Provider: tiles from %1")
                         .arg(MapService.provider === "osm" ? "OpenStreetMap" : "CyclOSM")
                     color: Theme.text
-                    font.pixelSize: 13
+                    font.pixelSize: Theme.fontSizeBody
                 }
                 Row {
                     spacing: Theme.spacingSmall
@@ -603,10 +603,10 @@ Flickable {
                 Text {
                     text: qsTr("Provider: Open-Meteo")
                     color: Theme.mutedText
-                    font.pixelSize: 12
+                    font.pixelSize: Theme.fontSizeLabel
                 }
 
-                Text { text: qsTr("Location source"); color: Theme.text; font.pixelSize: 13 }
+                Text { text: qsTr("Location source"); color: Theme.text; font.pixelSize: Theme.fontSizeBody }
                 Row {
                     spacing: Theme.spacingSmall
                     // IP-based is the real default now (Main.qml calls
@@ -661,7 +661,7 @@ Flickable {
                     width: parent.width
                     wrapMode: Text.WordWrap
                     color: Theme.mutedText
-                    font.pixelSize: 12
+                    font.pixelSize: Theme.fontSizeLabel
                     text: qsTr("Create/list/restore backups from the Backup page in the " +
                                 "main navigation - not duplicated here.")
                 }
@@ -678,13 +678,13 @@ Flickable {
                 Text {
                     text: qsTr("AmbitApp V2.5.11")
                     color: Theme.text
-                    font.pixelSize: 13
+                    font.pixelSize: Theme.fontSizeBody
                 }
                 Text {
                     width: parent.width
                     wrapMode: Text.WordWrap
                     color: Theme.mutedText
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.fontSizeCaption
                     text: qsTr("Independent, unofficial software - not affiliated with, " +
                                 "endorsed by, or supported by Suunto or Garmin. Map data © " +
                                 "OpenStreetMap contributors. Icons: Google Material " +
@@ -694,7 +694,7 @@ Flickable {
                     width: parent.width
                     wrapMode: Text.WordWrap
                     color: Theme.mutedText
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.fontSizeCaption
                     // Real text, not a placeholder - matches LICENSE and CREDITS.md at the
                     // repo root, which existed before this was wired into the app itself
                     // (found 2026-08-07: added to the repo, never surfaced here - fixed).
@@ -706,7 +706,7 @@ Flickable {
                     width: parent.width
                     wrapMode: Text.WordWrap
                     color: Theme.mutedText
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.fontSizeCaption
                     text: qsTr("Built on real prior work: openambit, opensportsync, " +
                                 "marguslt (firmware-download recipe, gists, openmoves), " +
                                 "sebchastang (published Suunto App Zone interval-training " +

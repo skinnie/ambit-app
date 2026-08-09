@@ -37,7 +37,7 @@ Flickable {
                     Text {
                         text: qsTr("Interval Workout Builder")
                         font.bold: true
-                        font.pixelSize: 16
+                        font.pixelSize: Theme.fontSizeHeading
                         color: Theme.text
                         anchors.verticalCenter: parent.verticalCenter
                     }
@@ -47,7 +47,7 @@ Flickable {
                     width: parent.width
                     wrapMode: Text.WordWrap
                     color: Theme.mutedText
-                    font.pixelSize: 12
+                    font.pixelSize: Theme.fontSizeLabel
                     text: qsTr("Build a structured interval workout and compile it into a " +
                                 "real Suunto App, the same tool as tools/workout_gui.py - " +
                                 "opens in your default browser as its own local app, " +
@@ -70,7 +70,7 @@ Flickable {
                     visible: root.lastResultText.length > 0
                     width: parent.width
                     wrapMode: Text.WordWrap
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.fontSizeCaption
                     color: root.lastResultOk ? Theme.success : Theme.error
                     text: root.lastResultText
                 }

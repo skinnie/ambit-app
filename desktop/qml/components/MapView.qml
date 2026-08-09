@@ -308,7 +308,7 @@ Item {
             Text {
                 anchors.centerIn: parent
                 text: "+"
-                font.pixelSize: 16
+                font.pixelSize: Theme.fontSizeHeading
                 font.bold: true
                 color: "#333333"
             }
@@ -322,7 +322,7 @@ Item {
             Text {
                 anchors.centerIn: parent
                 text: "−"
-                font.pixelSize: 16
+                font.pixelSize: Theme.fontSizeHeading
                 font.bold: true
                 color: "#333333"
             }
@@ -347,7 +347,7 @@ Item {
             id: attributionText
             anchors.centerIn: parent
             text: MapService.attribution
-            font.pixelSize: 10
+            font.pixelSize: Theme.fontSizeTiny
             color: "#333333"
         }
     }

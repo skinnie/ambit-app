@@ -53,7 +53,7 @@ Rectangle {
         Text {
             text: root.label
             color: root.selected ? Theme.card : Theme.text
-            font.pixelSize: 14
+            font.pixelSize: Theme.fontSizeBodyLarge
             anchors.verticalCenter: parent.verticalCenter
             Behavior on color { ColorAnimation { duration: 120; easing.type: Easing.OutCubic } }
         }

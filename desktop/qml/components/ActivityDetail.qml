@@ -59,7 +59,7 @@ Item {
             }
             Text {
                 text: activity ? (activity.name || qsTr("Untitled activity")) : ""
-                font.pixelSize: 18
+                font.pixelSize: Theme.fontSizeTitle
                 font.bold: true
                 color: Theme.text
                 anchors.verticalCenter: parent.verticalCenter
@@ -123,33 +123,33 @@ Item {
                     spacing: Theme.spacingLarge
                     Column {
                         spacing: 2
-                        Text { text: qsTr("Distance"); color: Theme.mutedText; font.pixelSize: 12 }
+                        Text { text: qsTr("Distance"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
                         Text {
                             text: activity ? ActivityViewModel.formatDistance(activity.distanceMeters) : ""
-                            color: Theme.text; font.pixelSize: 15; font.bold: true
+                            color: Theme.text; font.pixelSize: Theme.fontSizeSubtitle; font.bold: true
                         }
                     }
                     Column {
                         spacing: 2
-                        Text { text: qsTr("Duration"); color: Theme.mutedText; font.pixelSize: 12 }
+                        Text { text: qsTr("Duration"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
                         Text {
                             text: activity ? ActivityViewModel.formatDuration(activity.durationSeconds) : ""
-                            color: Theme.text; font.pixelSize: 15; font.bold: true
+                            color: Theme.text; font.pixelSize: Theme.fontSizeSubtitle; font.bold: true
                         }
                     }
                     Column {
                         spacing: 2
-                        Text { text: qsTr("Elevation gain"); color: Theme.mutedText; font.pixelSize: 12 }
+                        Text { text: qsTr("Elevation gain"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
                         Text {
                             text: activity ? ActivityViewModel.formatElevation(activity.ascentMeters) : ""
-                            color: Theme.text; font.pixelSize: 15; font.bold: true
+                            color: Theme.text; font.pixelSize: Theme.fontSizeSubtitle; font.bold: true
                         }
                     }
                 }
                 Text {
                     text: activity ? qsTr("%1 GPS points recorded").arg(activity.track.length) : ""
                     color: Theme.mutedText
-                    font.pixelSize: 12
+                    font.pixelSize: Theme.fontSizeLabel
                 }
             }
 
@@ -187,7 +187,7 @@ Item {
                     width: parent.width
                     wrapMode: Text.WordWrap
                     color: Theme.mutedText
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.fontSizeCaption
                     text: qsTr("No FIT data for this activity (GPS-less entries can't be " +
                                 "converted - see exercise_log.py).")
                 }
@@ -196,7 +196,7 @@ Item {
                     width: parent.width
                     wrapMode: Text.WordWrap
                     color: Theme.error
-                    font.pixelSize: 12
+                    font.pixelSize: Theme.fontSizeLabel
                     text: qsTr("Couldn't save: %1").arg(root.saveError)
                 }
             }

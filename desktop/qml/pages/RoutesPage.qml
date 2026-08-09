@@ -111,7 +111,7 @@ Flickable {
                     visible: RouteService.pendingRoute.name !== undefined
                     text: RouteService.pendingRoute.name || ""
                     color: Theme.text
-                    font.pixelSize: 13
+                    font.pixelSize: Theme.fontSizeBody
                 }
 
                 // Real, 2026-08-08 ("routes/POI we maintain the same feature... but on the
@@ -129,7 +129,7 @@ Flickable {
                     width: parent.width
                     wrapMode: Text.WordWrap
                     color: Theme.mutedText
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.fontSizeCaption
                     text: GarminService.hasSdCard
                         ? qsTr("This will be sent to the SD card only - writing to " +
                                 "internal memory can break your device.")
@@ -167,7 +167,7 @@ Flickable {
                     visible: !HomeViewModel.isGarmin && RouteService.uploadResultText.length > 0
                     width: parent.width
                     wrapMode: Text.WordWrap
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.fontSizeCaption
                     color: RouteService.uploadOk ? Theme.success : Theme.error
                     text: RouteService.uploadResultText
                 }
@@ -175,7 +175,7 @@ Flickable {
                     visible: HomeViewModel.isGarmin && GarminService.writeError.length > 0
                     width: parent.width
                     wrapMode: Text.WordWrap
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.fontSizeCaption
                     color: Theme.error
                     text: GarminService.writeError
                 }
@@ -184,7 +184,7 @@ Flickable {
                              && GarminService.writeError.length === 0
                     width: parent.width
                     wrapMode: Text.WordWrap
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.fontSizeCaption
                     color: Theme.success
                     text: qsTr("Sent to the SD card.")
                 }
@@ -231,7 +231,7 @@ Flickable {
                     width: parent.width
                     wrapMode: Text.WordWrap
                     color: Theme.error
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.fontSizeCaption
                     text: qsTr("Export failed: %1").arg(RouteService.exportError)
                 }
                 Text {
@@ -239,7 +239,7 @@ Flickable {
                     width: parent.width
                     wrapMode: Text.WordWrap
                     color: Theme.error
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.fontSizeCaption
                     text: qsTr("Couldn't save: %1").arg(root.saveError)
                 }
 
@@ -278,7 +278,7 @@ Flickable {
                                 Text {
                                     text: modelData.name
                                     color: Theme.text
-                                    font.pixelSize: 13
+                                    font.pixelSize: Theme.fontSizeBody
                                     font.bold: true
                                 }
                                 Text {
@@ -288,7 +288,7 @@ Flickable {
                                         .arg(modelData.ascentMeters)
                                         .arg(modelData.descentMeters)
                                     color: Theme.mutedText
-                                    font.pixelSize: 11
+                                    font.pixelSize: Theme.fontSizeCaption
                                 }
                             }
 
@@ -330,7 +330,7 @@ Flickable {
                         ? qsTr("No routes on this Garmin device.")
                         : qsTr("No routes on the watch.")
                     color: Theme.mutedText
-                    font.pixelSize: 12
+                    font.pixelSize: Theme.fontSizeLabel
                 }
                 Text {
                     visible: !HomeViewModel.isGarmin && !onDeviceCard.loading
@@ -338,7 +338,7 @@ Flickable {
                              && RouteService.lastError.length > 0
                     text: qsTr("Couldn't read routes: %1").arg(RouteService.lastError)
                     color: Theme.error
-                    font.pixelSize: 12
+                    font.pixelSize: Theme.fontSizeLabel
                 }
             }
         }

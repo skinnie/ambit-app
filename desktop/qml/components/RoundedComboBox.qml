@@ -32,7 +32,7 @@ ComboBox {
     contentItem: Text {
         text: root.displayText
         color: Theme.text
-        font.pixelSize: 13
+        font.pixelSize: Theme.fontSizeBody
         leftPadding: Theme.spacingMedium
         rightPadding: root.indicator.width + Theme.spacingSmall
         verticalAlignment: Text.AlignVCenter

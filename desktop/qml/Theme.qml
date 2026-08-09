@@ -67,4 +67,22 @@ QtObject {
     readonly property int spacingSmall: 8
     readonly property int spacingMedium: 16
     readonly property int spacingLarge: 24
+
+    // Real, 2026-08-09 ("Introdup proper type scale and migrate pages onto it") - font
+    // sizes were hardcoded ad hoc across every page (a real grep found 10 distinct raw
+    // pixelSize values, 10-24, with no shared scale anywhere), the same mistake the color/
+    // spacing tokens above already exist to avoid. Each token here matches an existing size
+    // exactly (not a new visual hierarchy) - this pass is about giving every page a shared
+    // name to bind to instead of a bare number, not re-designing type sizes blind without a
+    // way to see the result rendered.
+    readonly property int fontSizeTiny: 10        // MapView's zoom-control glyphs
+    readonly property int fontSizeCaption: 11     // timestamps, secondary annotations
+    readonly property int fontSizeLabel: 12       // the most common size - stat labels, body
+    readonly property int fontSizeBody: 13        // primary readable body text
+    readonly property int fontSizeBodyLarge: 14   // card titles, emphasized body text
+    readonly property int fontSizeSubtitle: 15
+    readonly property int fontSizeHeading: 16     // section headings
+    readonly property int fontSizeTitle: 18
+    readonly property int fontSizeLargeTitle: 20
+    readonly property int fontSizeDisplay: 24     // hero numbers (e.g. Home's battery %)
 }

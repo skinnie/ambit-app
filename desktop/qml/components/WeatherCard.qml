@@ -31,7 +31,7 @@ Card {
                 width: parent.width - 28 - Theme.spacingMedium
                 text: qsTr("You're offline, go outside to check the weather!")
                 color: Theme.mutedText
-                font.pixelSize: 13
+                font.pixelSize: Theme.fontSizeBody
                 wrapMode: Text.WordWrap
                 anchors.verticalCenter: parent.verticalCenter
             }
@@ -57,18 +57,18 @@ Card {
                         visible: WeatherService.placeName.length > 0
                         text: WeatherService.placeName
                         color: Theme.mutedText
-                        font.pixelSize: 12
+                        font.pixelSize: Theme.fontSizeLabel
                     }
                     Text {
                         text: qsTr("%1°").arg(Math.round(WeatherService.currentTemperature))
-                        font.pixelSize: 24
+                        font.pixelSize: Theme.fontSizeDisplay
                         font.bold: true
                         color: Theme.text
                     }
                     Text {
                         text: WeatherViewModel.currentLabel
                         color: Theme.mutedText
-                        font.pixelSize: 13
+                        font.pixelSize: Theme.fontSizeBody
                     }
                 }
 
@@ -80,14 +80,14 @@ Card {
                     Text {
                         text: qsTr("Wind %1 km/h").arg(Math.round(WeatherService.windSpeed))
                         color: Theme.mutedText
-                        font.pixelSize: 12
+                        font.pixelSize: Theme.fontSizeLabel
                     }
                     Text {
                         text: qsTr("H:%1°  L:%2°")
                             .arg(Math.round(WeatherService.todayHigh))
                             .arg(Math.round(WeatherService.todayLow))
                         color: Theme.mutedText
-                        font.pixelSize: 12
+                        font.pixelSize: Theme.fontSizeLabel
                     }
                 }
             }
@@ -103,7 +103,7 @@ Card {
                         Text {
                             text: WeatherViewModel.dayLabel(modelData.date, index)
                             color: Theme.mutedText
-                            font.pixelSize: 12
+                            font.pixelSize: Theme.fontSizeLabel
                             anchors.horizontalCenter: parent.horizontalCenter
                         }
                         Icon {
@@ -117,7 +117,7 @@ Card {
                                 .arg(Math.round(modelData.high))
                                 .arg(Math.round(modelData.low))
                             color: Theme.text
-                            font.pixelSize: 12
+                            font.pixelSize: Theme.fontSizeLabel
                             anchors.horizontalCenter: parent.horizontalCenter
                         }
                     }

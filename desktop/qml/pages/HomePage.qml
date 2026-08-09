@@ -139,7 +139,7 @@ Flickable {
                             text: HomeViewModel.isGarmin
                                 ? (GarminService.model || qsTr("Garmin eTrex"))
                                 : HomeViewModel.deviceDisplayName
-                            font.pixelSize: 18
+                            font.pixelSize: Theme.fontSizeTitle
                             font.bold: true
                             color: Theme.text
                         }
@@ -157,7 +157,7 @@ Flickable {
                                     ? qsTr("Connected")
                                     : HomeViewModel.connectionStatusText
                                 color: Theme.mutedText
-                                font.pixelSize: 13
+                                font.pixelSize: Theme.fontSizeBody
                             }
                         }
                     }
@@ -171,18 +171,18 @@ Flickable {
 
                     Column {
                         spacing: 2
-                        Text { text: qsTr("Battery"); color: Theme.mutedText; font.pixelSize: 12 }
-                        Text { text: HomeViewModel.batteryText; color: Theme.text; font.pixelSize: 13 }
+                        Text { text: qsTr("Battery"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
+                        Text { text: HomeViewModel.batteryText; color: Theme.text; font.pixelSize: Theme.fontSizeBody }
                     }
                     Column {
                         spacing: 2
-                        Text { text: qsTr("Firmware"); color: Theme.mutedText; font.pixelSize: 12 }
-                        Text { text: HomeViewModel.firmwareText; color: Theme.text; font.pixelSize: 13 }
+                        Text { text: qsTr("Firmware"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
+                        Text { text: HomeViewModel.firmwareText; color: Theme.text; font.pixelSize: Theme.fontSizeBody }
                     }
                     Column {
                         width: 140
                         spacing: 2
-                        Text { text: qsTr("GPS orbit"); color: Theme.mutedText; font.pixelSize: 12 }
+                        Text { text: qsTr("GPS orbit"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
                         // Real, 2026-08-07 (was "Not available yet" - the backend side,
                         // sgee_andre.md, was already built and hardware-verified, only this
                         // UI was missing). Passively shows the watch's own currently-stored
@@ -199,7 +199,7 @@ Flickable {
                                 ? qsTr("Checking...")
                                 : (DeviceService.gpsOrbitStatusText || qsTr("Tap to check"))
                             color: Theme.primary
-                            font.pixelSize: 13
+                            font.pixelSize: Theme.fontSizeBody
                             font.underline: !DeviceService.gpsOrbitBusy
                             TapHandler {
                                 enabled: !DeviceService.gpsOrbitBusy
@@ -216,13 +216,13 @@ Flickable {
 
                     Column {
                         spacing: 2
-                        Text { text: qsTr("Serial number"); color: Theme.mutedText; font.pixelSize: 12 }
-                        Text { text: HomeViewModel.serialText; color: Theme.text; font.pixelSize: 13 }
+                        Text { text: qsTr("Serial number"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
+                        Text { text: HomeViewModel.serialText; color: Theme.text; font.pixelSize: Theme.fontSizeBody }
                     }
                     Column {
                         spacing: 2
-                        Text { text: qsTr("Hardware"); color: Theme.mutedText; font.pixelSize: 12 }
-                        Text { text: HomeViewModel.hardwareText; color: Theme.text; font.pixelSize: 13 }
+                        Text { text: qsTr("Hardware"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
+                        Text { text: HomeViewModel.hardwareText; color: Theme.text; font.pixelSize: Theme.fontSizeBody }
                     }
                 }
 
@@ -239,27 +239,27 @@ Flickable {
 
                     Column {
                         spacing: 2
-                        Text { text: qsTr("Firmware"); color: Theme.mutedText; font.pixelSize: 12 }
+                        Text { text: qsTr("Firmware"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
                         Text {
                             text: GarminService.firmwareVersion || qsTr("Not available")
-                            color: Theme.text; font.pixelSize: 13
+                            color: Theme.text; font.pixelSize: Theme.fontSizeBody
                         }
                     }
                     Column {
                         spacing: 2
-                        Text { text: qsTr("Part number"); color: Theme.mutedText; font.pixelSize: 12 }
+                        Text { text: qsTr("Part number"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
                         Text {
                             text: GarminService.partNumber || qsTr("Not available")
-                            color: Theme.text; font.pixelSize: 13
+                            color: Theme.text; font.pixelSize: Theme.fontSizeBody
                         }
                     }
                     Column {
                         spacing: 2
-                        Text { text: qsTr("SD card"); color: Theme.mutedText; font.pixelSize: 12 }
+                        Text { text: qsTr("SD card"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
                         Text {
                             text: GarminService.hasSdCard ? qsTr("Present") : qsTr("Not detected")
                             color: GarminService.hasSdCard ? Theme.text : Theme.mutedText
-                            font.pixelSize: 13
+                            font.pixelSize: Theme.fontSizeBody
                         }
                     }
                 }
@@ -273,7 +273,7 @@ Flickable {
                     width: parent.width
                     wrapMode: Text.WordWrap
                     color: Theme.error
-                    font.pixelSize: 12
+                    font.pixelSize: Theme.fontSizeLabel
                     text: DeviceService.lastError
                 }
             }
@@ -317,7 +317,7 @@ Flickable {
                     width: parent.width
                     wrapMode: Text.WordWrap
                     color: Theme.error
-                    font.pixelSize: 12
+                    font.pixelSize: Theme.fontSizeLabel
                     text: KailashService.lastError
                 }
 
@@ -337,47 +337,47 @@ Flickable {
                     Column {
                         Layout.fillWidth: true
                         spacing: 2
-                        Text { text: qsTr("Cities visited"); color: Theme.mutedText; font.pixelSize: 12 }
+                        Text { text: qsTr("Cities visited"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
                         Text {
                             text: KailashService.citiesVisited
-                            color: Theme.text; font.pixelSize: 13
+                            color: Theme.text; font.pixelSize: Theme.fontSizeBody
                         }
                     }
                     Column {
                         Layout.fillWidth: true
                         spacing: 2
-                        Text { text: qsTr("Countries visited"); color: Theme.mutedText; font.pixelSize: 12 }
+                        Text { text: qsTr("Countries visited"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
                         Text {
                             text: KailashService.countriesVisited
-                            color: Theme.text; font.pixelSize: 13
+                            color: Theme.text; font.pixelSize: Theme.fontSizeBody
                         }
                     }
                     Column {
                         Layout.fillWidth: true
                         spacing: 2
-                        Text { text: qsTr("Travel days"); color: Theme.mutedText; font.pixelSize: 12 }
+                        Text { text: qsTr("Travel days"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
                         Text {
                             text: KailashService.travellingDays
-                            color: Theme.text; font.pixelSize: 13
+                            color: Theme.text; font.pixelSize: Theme.fontSizeBody
                         }
                     }
 
                     Column {
                         Layout.fillWidth: true
                         spacing: 2
-                        Text { text: qsTr("Travelled distance"); color: Theme.mutedText; font.pixelSize: 12 }
+                        Text { text: qsTr("Travelled distance"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
                         Text {
                             text: ActivityViewModel.formatDistance(KailashService.travelledDistanceMeters)
-                            color: Theme.text; font.pixelSize: 13
+                            color: Theme.text; font.pixelSize: Theme.fontSizeBody
                         }
                     }
                     Column {
                         Layout.fillWidth: true
                         spacing: 2
-                        Text { text: qsTr("Furthest from home"); color: Theme.mutedText; font.pixelSize: 12 }
+                        Text { text: qsTr("Furthest from home"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
                         Text {
                             text: ActivityViewModel.formatDistance(KailashService.furthestFromHomeMeters)
-                            color: Theme.text; font.pixelSize: 13
+                            color: Theme.text; font.pixelSize: Theme.fontSizeBody
                         }
                     }
                 }
@@ -398,7 +398,7 @@ Flickable {
                                                 .arg(KailashService.lastKnownLongitude.toFixed(4))
                                 : qsTr("No known location yet")
                             color: Theme.text
-                            font.pixelSize: 13
+                            font.pixelSize: Theme.fontSizeBody
                         }
                         Text {
                             visible: KailashService.lastKnownCountry.length > 0
@@ -409,7 +409,7 @@ Flickable {
                                              ActivityViewModel.formatDate(KailashService.lastKnownTime))
                                        : ""].filter(s => s.length > 0).join(" · ")
                             color: Theme.mutedText
-                            font.pixelSize: 12
+                            font.pixelSize: Theme.fontSizeLabel
                         }
                     }
                 }
@@ -433,7 +433,7 @@ Flickable {
                         Text {
                             text: qsTr("Home")
                             color: Theme.text
-                            font.pixelSize: 13
+                            font.pixelSize: Theme.fontSizeBody
                             font.bold: true
                         }
                         Text {
@@ -444,7 +444,7 @@ Flickable {
                                 : qsTr("%1, %2").arg(KailashService.homeLatitude.toFixed(4))
                                                  .arg(KailashService.homeLongitude.toFixed(4))
                             color: Theme.mutedText
-                            font.pixelSize: 12
+                            font.pixelSize: Theme.fontSizeLabel
                         }
                     }
                 }
@@ -464,7 +464,7 @@ Flickable {
                     Text {
                         text: qsTr("Places visited (%1)").arg(KailashService.visitedPlaces.length)
                         color: Theme.mutedText
-                        font.pixelSize: 12
+                        font.pixelSize: Theme.fontSizeLabel
                     }
                     // Real, 2026-08-09 ("On the map if possible put round corners"), reverted
                     // the same day: a QtQuick.Effects MultiEffect maskSource/maskEnabled
@@ -499,7 +499,7 @@ Flickable {
                     Text {
                         text: qsTr("Activity mode logbook (%1)").arg(KailashService.sessions.length)
                         color: Theme.mutedText
-                        font.pixelSize: 12
+                        font.pixelSize: Theme.fontSizeLabel
                     }
 
                     // Real, 2026-08-09 ("make the 3rd collumn of numbers of activity mode
@@ -517,21 +517,21 @@ Flickable {
                                 width: 140
                                 text: ActivityViewModel.formatDate(modelData.when)
                                 color: Theme.text
-                                font.pixelSize: 12
+                                font.pixelSize: Theme.fontSizeLabel
                             }
                             Text {
                                 width: 70
                                 horizontalAlignment: Text.AlignRight
                                 text: ActivityViewModel.formatDuration(modelData.durationSeconds)
                                 color: Theme.mutedText
-                                font.pixelSize: 12
+                                font.pixelSize: Theme.fontSizeLabel
                             }
                             Text {
                                 width: 70
                                 horizontalAlignment: Text.AlignRight
                                 text: ActivityViewModel.formatDistance(modelData.distanceMeters)
                                 color: Theme.mutedText
-                                font.pixelSize: 12
+                                font.pixelSize: Theme.fontSizeLabel
                             }
                         }
                     }
@@ -582,7 +582,7 @@ Flickable {
                         anchors.verticalCenter: parent.verticalCenter
                         text: qsTr("(cached)")
                         font.italic: true
-                        font.pixelSize: 11
+                        font.pixelSize: Theme.fontSizeCaption
                         color: Theme.mutedText
                     }
                 }
@@ -603,7 +603,7 @@ Flickable {
                     width: parent.width
                     wrapMode: Text.WordWrap
                     color: Theme.error
-                    font.pixelSize: 12
+                    font.pixelSize: Theme.fontSizeLabel
                     text: ActivityService.lastError
                 }
 
@@ -613,7 +613,7 @@ Flickable {
                     width: parent.width
                     wrapMode: Text.WordWrap
                     color: Theme.error
-                    font.pixelSize: 12
+                    font.pixelSize: Theme.fontSizeLabel
                     text: KailashService.lastError
                 }
 
@@ -633,14 +633,14 @@ Flickable {
                                   : ""
                             font.bold: true
                             color: Theme.text
-                            font.pixelSize: 14
+                            font.pixelSize: Theme.fontSizeBodyLarge
                         }
                         Text {
                             text: lastActivityColumn.activity
                                   ? ActivityViewModel.formatDate(lastActivityColumn.activity.startTime)
                                   : ""
                             color: Theme.mutedText
-                            font.pixelSize: 12
+                            font.pixelSize: Theme.fontSizeLabel
                         }
                     }
                 }
@@ -654,21 +654,21 @@ Flickable {
                               ? ActivityViewModel.formatDistance(lastActivityColumn.activity.distanceMeters)
                               : ""
                         color: Theme.text
-                        font.pixelSize: 12
+                        font.pixelSize: Theme.fontSizeLabel
                     }
                     Text {
                         text: lastActivityColumn.activity
                               ? ActivityViewModel.formatDuration(lastActivityColumn.activity.durationSeconds)
                               : ""
                         color: Theme.text
-                        font.pixelSize: 12
+                        font.pixelSize: Theme.fontSizeLabel
                     }
                     Text {
                         text: lastActivityColumn.activity
                               ? ActivityViewModel.formatElevation(lastActivityColumn.activity.ascentMeters)
                               : ""
                         color: Theme.text
-                        font.pixelSize: 12
+                        font.pixelSize: Theme.fontSizeLabel
                     }
                 }
             }

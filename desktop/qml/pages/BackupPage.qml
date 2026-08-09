@@ -51,7 +51,7 @@ Flickable {
                     width: parent.width
                     wrapMode: Text.WordWrap
                     color: Theme.mutedText
-                    font.pixelSize: 12
+                    font.pixelSize: Theme.fontSizeLabel
                     text: qsTr("Covers Routes and POIs together (the watch's whole " +
                                 "navigation database) - Sport Modes, Settings, and Profiles " +
                                 "are future, not part of this mechanism.")
@@ -67,7 +67,7 @@ Flickable {
                     visible: BackupService.lastActionText.length > 0
                     width: parent.width
                     wrapMode: Text.WordWrap
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.fontSizeCaption
                     color: BackupService.lastActionOk ? Theme.success : Theme.error
                     text: BackupService.lastActionText
                 }
@@ -87,7 +87,7 @@ Flickable {
                     visible: BackupService.backups.length === 0
                     text: qsTr("None yet.")
                     color: Theme.mutedText
-                    font.pixelSize: 12
+                    font.pixelSize: Theme.fontSizeLabel
                 }
 
                 Repeater {
@@ -99,7 +99,7 @@ Flickable {
                             text: new Date(modelData.createdAt * 1000)
                                 .toLocaleString(Qt.locale(), Locale.ShortFormat)
                             color: Theme.text
-                            font.pixelSize: 13
+                            font.pixelSize: Theme.fontSizeBody
                         }
                         Row {
                             spacing: Theme.spacingSmall
@@ -138,7 +138,7 @@ Flickable {
                     width: parent.width
                     wrapMode: Text.WordWrap
                     color: Theme.error
-                    font.pixelSize: 12
+                    font.pixelSize: Theme.fontSizeLabel
                     font.bold: true
                     text: qsTr("For backup only - this cannot be used to flash the watch. " +
                                 "There is no known way to install firmware over this " +
@@ -150,7 +150,7 @@ Flickable {
                 Text {
                     visible: BackupService.firmwareCheckOk
                     color: Theme.text
-                    font.pixelSize: 13
+                    font.pixelSize: Theme.fontSizeBody
                     text: qsTr("Latest available: %1 (uploaded %2)")
                         .arg(BackupService.firmwareLatestVersion)
                         .arg(BackupService.firmwareUploadDate)
@@ -158,7 +158,7 @@ Flickable {
                 Text {
                     visible: !BackupService.firmwareCheckOk && !BackupService.firmwareLoading
                     color: Theme.mutedText
-                    font.pixelSize: 12
+                    font.pixelSize: Theme.fontSizeLabel
                     text: qsTr("Couldn't check for firmware yet.")
                 }
 
@@ -180,7 +180,7 @@ Flickable {
                     visible: BackupService.firmwareActionText.length > 0
                     width: parent.width
                     wrapMode: Text.WordWrap
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.fontSizeCaption
                     color: BackupService.firmwareActionOk ? Theme.success : Theme.error
                     text: BackupService.firmwareActionText
                 }
@@ -208,7 +208,7 @@ Flickable {
                     width: parent.width
                     wrapMode: Text.WordWrap
                     color: Theme.mutedText
-                    font.pixelSize: 12
+                    font.pixelSize: Theme.fontSizeLabel
                     text: qsTr("Copies every real GPX file from Garmin/GPX on this device " +
                                 "- routes and POIs together, since they live in the same " +
                                 "real folder on real hardware - from both internal memory " +
@@ -229,7 +229,7 @@ Flickable {
                     visible: GarminService.backupResultText.length > 0
                     width: parent.width
                     wrapMode: Text.WordWrap
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.fontSizeCaption
                     color: GarminService.backupOk ? Theme.success : Theme.error
                     text: GarminService.backupResultText
                 }

@@ -51,7 +51,7 @@ Card {
                     anchors.centerIn: parent
                     text: qsTr("No GPS track")
                     color: Theme.mutedText
-                    font.pixelSize: 12
+                    font.pixelSize: Theme.fontSizeLabel
                 }
             }
         }
@@ -69,12 +69,12 @@ Card {
                     text: activity.name || qsTr("Untitled activity")
                     font.bold: true
                     color: Theme.text
-                    font.pixelSize: 14
+                    font.pixelSize: Theme.fontSizeBodyLarge
                 }
                 Text {
                     text: ActivityViewModel.formatDate(activity.startTime)
                     color: Theme.mutedText
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.fontSizeCaption
                 }
             }
         }
@@ -89,17 +89,17 @@ Card {
             Text {
                 text: ActivityViewModel.formatDistance(activity.distanceMeters)
                 color: Theme.text
-                font.pixelSize: 12
+                font.pixelSize: Theme.fontSizeLabel
             }
             Text {
                 text: ActivityViewModel.formatDuration(activity.durationSeconds)
                 color: Theme.text
-                font.pixelSize: 12
+                font.pixelSize: Theme.fontSizeLabel
             }
             Text {
                 text: ActivityViewModel.formatElevation(activity.ascentMeters)
                 color: Theme.text
-                font.pixelSize: 12
+                font.pixelSize: Theme.fontSizeLabel
             }
         }
     }

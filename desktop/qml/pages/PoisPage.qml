@@ -121,7 +121,7 @@ Flickable {
                     width: parent.width
                     wrapMode: Text.WordWrap
                     color: Theme.mutedText
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.fontSizeCaption
                     text: GarminService.hasSdCard
                         ? qsTr("This will be sent to the SD card only - writing to " +
                                 "internal memory can break your device.")
@@ -149,7 +149,7 @@ Flickable {
                     visible: !HomeViewModel.isGarmin && PoiService.addResultText.length > 0
                     width: parent.width
                     wrapMode: Text.WordWrap
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.fontSizeCaption
                     color: Theme.error
                     text: PoiService.addResultText
                 }
@@ -157,7 +157,7 @@ Flickable {
                     visible: HomeViewModel.isGarmin && GarminService.writeError.length > 0
                     width: parent.width
                     wrapMode: Text.WordWrap
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.fontSizeCaption
                     color: Theme.error
                     text: GarminService.writeError
                 }
@@ -166,7 +166,7 @@ Flickable {
                              && GarminService.writeError.length === 0
                     width: parent.width
                     wrapMode: Text.WordWrap
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.fontSizeCaption
                     color: Theme.success
                     text: qsTr("Sent to the SD card.")
                 }
@@ -196,7 +196,7 @@ Flickable {
                     width: parent.width
                     wrapMode: Text.WordWrap
                     color: Theme.error
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.fontSizeCaption
                     text: PoiService.importError
                 }
 
@@ -210,7 +210,7 @@ Flickable {
                             anchors.verticalCenter: parent.verticalCenter
                             elide: Text.ElideRight
                             color: Theme.text
-                            font.pixelSize: 12
+                            font.pixelSize: Theme.fontSizeLabel
                             text: qsTr("%1  (%2, %3)")
                                 .arg(modelData.name)
                                 .arg(modelData.lat.toFixed(5))
@@ -270,7 +270,7 @@ Flickable {
                     width: parent.width
                     wrapMode: Text.WordWrap
                     color: Theme.error
-                    font.pixelSize: 12
+                    font.pixelSize: Theme.fontSizeLabel
                     text: qsTr("Couldn't read POIs: %1").arg(PoiService.lastError)
                 }
                 Text {
@@ -286,7 +286,7 @@ Flickable {
                     width: parent.width
                     wrapMode: Text.WordWrap
                     color: Theme.error
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.fontSizeCaption
                     text: qsTr("Couldn't save: %1").arg(root.saveError)
                 }
 
@@ -318,7 +318,7 @@ Flickable {
                                 elide: Text.ElideRight
                                 text: modelData.name
                                 color: Theme.text
-                                font.pixelSize: 13
+                                font.pixelSize: Theme.fontSizeBody
                                 font.bold: true
                             }
 
