@@ -115,20 +115,18 @@ export function TrackPreview({
           </>
         ) : (
           <>
-            {/* Real, 2026-08-10 ("choose a better color for the route, one that remains
-                visible but not aggressive, and the trace a bit more thicker" - then, once
-                theme.primary turned out grey and low-contrast live: "it is grey..not very
-                visible"). TRACK_COLOR is a fixed, theme-independent teal chosen for real
-                contrast against typical OSM/IGN tile colors (MapTile.ts's own header
-                comment) - not tied to the app's own light/dark palette, since map tiles
-                aren't either. Both strokes thickened per the same request. */}
+            {/* Real, 2026-08-10 ("make the route even more thicker...it is better than
+                before but not optimal") - third pass on thickness (4 -> 6), halo scaled up
+                to match (6.5 -> 9) so it still reads as a clean border around the main
+                line, not an uneven smear. TRACK_COLOR is a fixed, theme-independent teal -
+                see MapTile.ts's own header comment. */}
             <Polyline
               points={projected.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ')}
-              fill="none" stroke="#ffffff" strokeWidth={6.5} strokeLinecap="round" strokeLinejoin="round"
+              fill="none" stroke="#ffffff" strokeWidth={9} strokeLinecap="round" strokeLinejoin="round"
             />
             <Polyline
               points={projected.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ')}
-              fill="none" stroke={TRACK_COLOR} strokeWidth={4} strokeLinecap="round" strokeLinejoin="round"
+              fill="none" stroke={TRACK_COLOR} strokeWidth={6} strokeLinecap="round" strokeLinejoin="round"
             />
           </>
         )}

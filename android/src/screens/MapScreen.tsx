@@ -121,7 +121,7 @@ function buildLeafletHtml(provider: MapProvider, trackColor: string): string {
       if (window.Replay.marker) map.removeLayer(window.Replay.marker);
 
       if (lls.length > 0) {
-        line = L.polyline(lls, { color: '${trackColor}', weight: 5, opacity: 0.95 }).addTo(map);
+        line = L.polyline(lls, { color: '${trackColor}', weight: 7, opacity: 0.95 }).addTo(map);
         startMarker = L.marker(lls[0], { icon: dot('#2ecc71') }).addTo(map);
         endMarker = L.marker(lls[lls.length - 1], { icon: dot('#e74c3c') }).addTo(map);
         map.fitBounds(line.getBounds(), { padding: [30, 30] });
