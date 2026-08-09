@@ -7,9 +7,13 @@
 // decision) means. Screens migrate to useV3Theme()/Card/NavShell one at a time; tokens.ts
 // stays exactly as it is for whichever screens haven't moved onto this yet.
 //
-// Every value here is copied by hand from desktop/qml/Theme.qml, not re-derived or
-// approximated - same reasoning as that file's own header comment: one visual identity
-// across both apps, not two palettes that happen to look similar.
+// spacing/radius/type scale still copied by hand from desktop/qml/Theme.qml, same reasoning
+// as before: one shared layout/type language across both apps. primary/accent are a real,
+// deliberate exception to that, same day ("why we have this cyano blue? ... change to a
+// nicer grey") - a real, explicit design choice to move Android off desktop's teal onto a
+// slate grey instead, not a bug or a stale copy. success/warning/error/background/card/text/
+// mutedText are unchanged (already neutral or real semantic status colors, not the "cyano
+// blue" being asked about).
 
 import { useThemeMode } from './ThemeModeContext';
 
@@ -29,9 +33,9 @@ export interface V3Colors {
 export const v3Light: V3Colors = {
   background: '#F6F8F9',
   card:       '#FFFFFF',
-  primary:    '#167E6A',
+  primary:    '#475569',
   secondary:  '#5B6270',
-  accent:     '#2FA98C',
+  accent:     '#64748B',
   success:    '#1A7F37',
   warning:    '#946200',
   error:      '#C0392B',
@@ -42,9 +46,9 @@ export const v3Light: V3Colors = {
 export const v3Dark: V3Colors = {
   background: '#14171C',
   card:       '#1B1F27',
-  primary:    '#57C9B3',
+  primary:    '#9CA3AF',
   secondary:  '#9AA3AF',
-  accent:     '#7CD6C4',
+  accent:     '#CBD5E1',
   success:    '#4CAF6D',
   warning:    '#E0A73B',
   error:      '#E0655A',

@@ -43,9 +43,15 @@ export function WeatherCard() {
           <Text style={[styles.offlineText, { color: theme.mutedText }]}>{t.weatherOffline}</Text>
         </View>
       ) : (
-        <View style={{ gap: v3Spacing.medium }}>
+        // Real bug, found live on a real wide tablet screen (2026-08-09, "check the home
+        // page the orientation of icons of weather can be improved") - sideInfo used
+        // marginLeft:'auto' to push wind/high-low to the card's own far edge, which reads
+        // fine on a phone-width card but left a huge, unbalanced gap on a wide tablet-rail
+        // layout card. Capped to a real max content width and centered instead, so the
+        // whole block stays visually grouped regardless of how wide the card itself gets.
+        <View style={styles.contentWrap}>
           <View style={styles.mainRow}>
-            <Text style={styles.mainEmoji}>{weatherEmoji(weather.data.currentWeatherCode)}</Text>
+            <Text style={styles.mainEmoji} textBreakStrategy="simple">{weatherEmoji(weather.data.currentWeatherCode)}</Text>
             <View style={styles.mainInfo}>
               {!!weather.placeName && (
                 <Text style={[styles.placeName, { color: theme.mutedText }]}>{weather.placeName}</Text>
@@ -87,21 +93,28 @@ export function WeatherCard() {
 }
 
 const styles = StyleSheet.create({
-  card: { width: '100%' },
+  card: { width: '100%', alignItems: 'center' },
   offlineRow: { flexDirection: 'row', alignItems: 'center', gap: v3Spacing.medium },
   offlineEmoji: { fontSize: 28 },
   offlineText: { flex: 1, fontSize: v3Type.bodyLarge },
+  // Real cap, not a full-bleed stretch - on a wide tablet-rail card this content block
+  // would otherwise spread thin across the whole width. 420 keeps the main row's own
+  // three sections (icon/temp, wind+high-low) close enough to read as one group.
+  contentWrap: { width: '100%', maxWidth: 420, gap: v3Spacing.medium },
   mainRow: { flexDirection: 'row', alignItems: 'center', gap: v3Spacing.medium },
-  mainEmoji: { fontSize: 40 },
+  // includeFontPadding/textAlignVertical: emoji glyphs render with extra vertical padding
+  // baked into Android's own font metrics that plain text doesn't have, throwing off
+  // alignItems:'center' against the numbers/labels beside them - real, found live on device.
+  mainEmoji: { fontSize: 40, includeFontPadding: false, textAlignVertical: 'center' },
   mainInfo: { gap: 2 },
   placeName: { fontSize: v3Type.label },
   temp: { fontSize: v3Type.display, fontWeight: '800' },
   condLabel: { fontSize: v3Type.bodyLarge },
   sideInfo: { marginLeft: 'auto', gap: 2, alignItems: 'flex-end' },
   sideLine: { fontSize: v3Type.label },
-  forecastRow: { flexDirection: 'row', justifyContent: 'space-around' },
+  forecastRow: { flexDirection: 'row', justifyContent: 'space-between' },
   forecastCol: { alignItems: 'center', gap: 4 },
   forecastDay: { fontSize: v3Type.label },
-  forecastEmoji: { fontSize: 22 },
+  forecastEmoji: { fontSize: 22, includeFontPadding: false, textAlignVertical: 'center' },
   forecastTemp: { fontSize: v3Type.label, fontWeight: '600' },
 });
