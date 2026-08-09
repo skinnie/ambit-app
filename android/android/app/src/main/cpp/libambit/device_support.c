@@ -73,14 +73,22 @@ static int_known_device_t known_devices[] = {
     // via a genuinely rebuilt binary (different BuildId each time), not a stale-build
     // artifact. Two real bugs were found and fixed in libambit.c along the way (a
     // NULL-deref-before-check on komposti_version, and an Ambit3-only "compact serial" quirk
-    // command now excluded for this PID) but the crash persisted after both - the real
-    // trigger is still somewhere in the actual USB device-info exchange with Kailash's real
-    // firmware, not yet isolated. Disabled (supported: false) rather than removed, so this
-    // is a clean "unsupported" rejection again instead of a crash while that investigation
-    // continues - BLE-Kailash is unaffected (it never used this row; see AmbitBleModule.kt's
-    // own guessProductId(), which mislabels Kailash as 0x001c "Ambit3 Sport" - a different,
-    // already-registered PID - which is the real reason BLE "already worked").
-    { SUUNTO_USB_VENDOR_ID, 0x002a, "Hoopoe", {0x00,0x00,0x00,0x00}, { "Suunto Kailash", false, NULL, 0x0400, {0x02,0x04,0x59,0x00} } },
+    // command now excluded for this PID) but the crash persisted after both - disabled
+    // (supported: false) at the time, a clean "unsupported" rejection instead of a crash.
+    //
+    // UPDATE, 2026-08-10: tried komposti_version 02 48 03 00 (tools/write_nav.py's own real,
+    // hardware-proven device_info request payload, vs this row's previous 02 04 59 00 - the
+    // shared value every real Ambit3-family row below uses, copied onto Kailash without real
+    // evidence it applies there too). Rebuilt, reinstalled, tested on the real connected
+    // Kailash - the crash is UNCHANGED. Real new information though, not a wasted test: the
+    // tombstone's backtrace this time is abort -> 2 inlined frames -> libambit_new_from_fd
+    // itself (not a further call into device_info_get as such - they may be the same inlined
+    // code, optimized build, no line numbers survive) - so either the komposti_version bytes
+    // were never the real trigger, or they're a real bug that isn't THE bug. The actual
+    // divergence is still somewhere in the live USB device-info exchange with Kailash's real
+    // firmware, unidentified. Disabled again (supported: false) - a clean "unsupported"
+    // rejection, not a crash, while this keeps getting investigated.
+    { SUUNTO_USB_VENDOR_ID, 0x002a, "Hoopoe", {0x00,0x00,0x00,0x00}, { "Suunto Kailash", false, NULL, 0x0400, {0x02,0x48,0x03,0x00} } },
     { SUUNTO_USB_VENDOR_ID, 0x002d, "Loon", {0x01,0x00,0x04,0x0}, { "Suunto Traverse Alpha", true, &ambit_device_driver_ambit3, 0x0400, {0x02,0x04,0x59,0x00} } },
     { SUUNTO_USB_VENDOR_ID, 0x002c, "Kaka", {0x01,0x00,0x1b,0x00}, { "Suunto Ambit3 Vertical", true, &ambit_device_driver_ambit3, 0x0400, {0x02,0x04,0x59,0x00} } },
     { SUUNTO_USB_VENDOR_ID, 0x002b, "Jabiru", {0x01,0x00,0x04,0x00}, { "Suunto Traverse", true, &ambit_device_driver_ambit3, 0x0400, {0x02,0x04,0x59,0x00} } },
