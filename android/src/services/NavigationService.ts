@@ -3,7 +3,7 @@ import { connect, disconnect, pickGpxFile, writeRoute, readRegion, saveToDownloa
 import { parseRouteGpx, nearestPointIndex, RoutePoint } from './RouteGpxParser';
 import { simplifyRoute } from './RouteSimplify';
 import {
-  decodeNavigation, navigationToGpx,
+  decodeNavigation, navigationToGpx, WatchNavigation, WatchRoute, WatchWaypoint,
   AMBIT3_WAYPOINT_BASE, AMBIT3_WAYPOINT_REGION_SIZE, AMBIT3_ROUTE_BASE, AMBIT3_ROUTE_REGION_SIZE,
 } from './RouteReader';
 
@@ -73,71 +73,93 @@ function computeDistanceAscentDescent(points: RoutePoint[]): { distanceM: number
  * — nothing to choose or pass. If a BLE link is already up it's used as-is (no
  * re-scan/re-pair); otherwise the cable is opened.
  */
-export async function sendRouteToWatch(
-  onState: Listener,
-): Promise<void> {
-  const emit = (s: SendRouteState) => onState(s);
+export interface PendingRoute {
+  name: string;
+  points: { lat: number; lon: number; alt: number | null }[];
+  waypoints: { lat: number; lon: number; name: string; pointIndex: number }[];
+  distanceM: number;
+  ascentM: number;
+  descentM: number;
+  timestampSec: number;
+}
 
-  emit({ phase: 'picking' });
+// v3.0 UI port (2026-08-09, "re do routes... to match entirely desktop") - split from the
+// old single sendRouteToWatch() into pick+parse / upload, matching desktop's own real
+// RouteService.pendingRoute pattern (RoutesPage.qml: import shows a live preview + a real
+// "Upload to watch" tap, not one opaque button that picks-and-immediately-writes). Same
+// underlying calls as before (pickGpxFile/parseRouteGpx/simplifyRoute/writeRoute), just the
+// intermediate parsed route is now a real value the caller can render before committing to
+// a write, instead of being hidden inside one function.
+export async function pickAndParseRoute(): Promise<PendingRoute | null> {
   let gpxPath: string;
   try {
     gpxPath = await pickGpxFile();
   } catch (e: any) {
-    if (e?.code === 'GPX_PICK_CANCELLED') { emit({ phase: 'idle' }); return; }
-    emit({ phase: 'error', error: e?.message ?? 'Sélection du fichier annulée' });
-    return;
+    if (e?.code === 'GPX_PICK_CANCELLED') return null;
+    throw new Error(e?.message ?? 'Sélection du fichier annulée');
   }
 
-  emit({ phase: 'parsing' });
-  let route;
-  try {
-    const xml = await RNFS.readFile(gpxPath, 'utf8');
-    const fallbackName = (gpxPath.split('/').pop() ?? 'Route').replace(/\.gpx$/i, '');
-    const parsed = parseRouteGpx(xml, fallbackName);
+  const xml = await RNFS.readFile(gpxPath, 'utf8');
+  const fallbackName = (gpxPath.split('/').pop() ?? 'Route').replace(/\.gpx$/i, '');
+  const parsed = parseRouteGpx(xml, fallbackName);
 
-    const kept = simplifyRoute(
-      parsed.points,
-      MAX_ROUTE_POINTS,
-      parsed.waypoints.map(w => nearestPointIndex(parsed.points, w)),
-    );
-    if (kept === null) {
-      throw new Error(`Route too complex to simplify under ${MAX_ROUTE_POINTS} points`);
-    }
-
-    const keptSet = new Map(kept.map((origIdx, newIdx) => [origIdx, newIdx]));
-    const simplifiedPoints = kept.map(i => parsed.points[i]);
-    const { distanceM, ascentM, descentM } = computeDistanceAscentDescent(parsed.points);
-
-    const waypoints = parsed.waypoints.map(w => {
-      const origIdx = nearestPointIndex(parsed.points, w);
-      // simplifyRoute is called with every waypoint's original index in
-      // `forced`, which guarantees each one survives simplification — so
-      // this lookup cannot miss. If it somehow did, the native side refuses
-      // a route with zero resolvable waypoints rather than silently writing
-      // a route invisible in the watch's own Navigation menu.
-      const newIdx = keptSet.get(origIdx);
-      return { lat: w.latitude, lon: w.longitude, name: w.name.slice(0, MAX_NAME_BYTES), pointIndex: newIdx ?? 0 };
-    });
-
-    route = {
-      name: parsed.name.slice(0, MAX_NAME_BYTES),
-      points: simplifiedPoints.map(p => ({
-        lat: p.latitude,
-        lon: p.longitude,
-        alt: p.elevation !== null ? Math.round(p.elevation) : null,
-      })),
-      waypoints,
-      distanceM,
-      ascentM,
-      descentM,
-      timestampSec: Math.floor(Date.now() / 1000),
-    };
-  } catch (e: any) {
-    emit({ phase: 'error', error: e?.message ?? 'Erreur de lecture du GPX' });
-    return;
+  const kept = simplifyRoute(
+    parsed.points,
+    MAX_ROUTE_POINTS,
+    parsed.waypoints.map(w => nearestPointIndex(parsed.points, w)),
+  );
+  if (kept === null) {
+    throw new Error(`Route too complex to simplify under ${MAX_ROUTE_POINTS} points`);
   }
 
-  emit({ phase: 'connecting', routeName: route.name, pointCount: route.points.length, waypointCount: route.waypoints.length });
+  const keptSet = new Map(kept.map((origIdx, newIdx) => [origIdx, newIdx]));
+  const simplifiedPoints = kept.map(i => parsed.points[i]);
+  const { distanceM, ascentM, descentM } = computeDistanceAscentDescent(parsed.points);
+
+  const waypoints = parsed.waypoints.map(w => {
+    const origIdx = nearestPointIndex(parsed.points, w);
+    // simplifyRoute is called with every waypoint's original index in `forced`, which
+    // guarantees each one survives simplification - so this lookup cannot miss. If it
+    // somehow did, the native side refuses a route with zero resolvable waypoints rather
+    // than silently writing a route invisible in the watch's own Navigation menu.
+    const newIdx = keptSet.get(origIdx);
+    return { lat: w.latitude, lon: w.longitude, name: w.name.slice(0, MAX_NAME_BYTES), pointIndex: newIdx ?? 0 };
+  });
+
+  return {
+    name: parsed.name.slice(0, MAX_NAME_BYTES),
+    points: simplifiedPoints.map(p => ({
+      lat: p.latitude,
+      lon: p.longitude,
+      alt: p.elevation !== null ? Math.round(p.elevation) : null,
+    })),
+    waypoints,
+    distanceM,
+    ascentM,
+    descentM,
+    timestampSec: Math.floor(Date.now() / 1000),
+  };
+}
+
+/**
+ * Uploads an already-picked-and-parsed route.
+ *
+ * IMPORTANT, surfaced to the caller via SendRouteState so the UI can show it: a route
+ * written this way is NOT durable. Any subsequent SuuntoLink cable sync, or the Suunto phone
+ * app merely coming into BLE range, will silently wholesale-replace whatever is in the
+ * watch's Routes region - confirmed on hardware. POIs are preserved automatically on the
+ * native side; existing on-watch routes are not. This is a "load right before you go"
+ * feature, not a save.
+ *
+ * Transport (BLE vs USB) is auto-detected via the shared connect()/disconnect() - nothing to
+ * choose or pass. If a BLE link is already up it's used as-is (no re-scan/re-pair);
+ * otherwise the cable is opened.
+ */
+export async function uploadRoute(route: PendingRoute, onState: Listener): Promise<void> {
+  const emit = (s: SendRouteState) => onState(s);
+  const meta = { routeName: route.name, pointCount: route.points.length, waypointCount: route.waypoints.length };
+
+  emit({ phase: 'connecting', ...meta });
   try {
     await connect();
   } catch (e: any) {
@@ -145,15 +167,53 @@ export async function sendRouteToWatch(
     return;
   }
 
-  emit({ phase: 'writing', routeName: route.name, pointCount: route.points.length, waypointCount: route.waypoints.length });
+  emit({ phase: 'writing', ...meta });
   try {
     await writeRoute(route);
-    emit({ phase: 'done', routeName: route.name, pointCount: route.points.length, waypointCount: route.waypoints.length });
+    emit({ phase: 'done', ...meta });
   } catch (e: any) {
     emit({ phase: 'error', error: e?.message ?? 'Failed to write the route' });
   } finally {
     await disconnect().catch(() => {});
   }
+}
+
+/** Read-only: the watch's own current Routes/Waypoints, for a real "On the watch" list -
+ * matches desktop's own RouteService.onWatchRoutes/GarminService.onDeviceRoutes shape
+ * (RoutesPage.qml). Reuses exportNavigationToGpx()'s own read half, just returns the rich
+ * per-route/per-waypoint data instead of only a count + a combined GPX file. */
+export async function readOnWatchNavigation(): Promise<WatchNavigation> {
+  await connect();
+  try {
+    const [waypointsB64, routesB64] = await Promise.all([
+      readRegion(AMBIT3_WAYPOINT_BASE, AMBIT3_WAYPOINT_REGION_SIZE),
+      readRegion(AMBIT3_ROUTE_BASE, AMBIT3_ROUTE_REGION_SIZE),
+    ]);
+    return decodeNavigation(waypointsB64, routesB64);
+  } finally {
+    await disconnect().catch(() => {});
+  }
+}
+
+/** Exports one already-read on-watch route/waypoint as its own GPX file in Downloads -
+ * matches desktop's own per-route/per-POI "Export" button (RoutesPage.qml/PoisPage.qml),
+ * which needs no new watch round trip since readOnWatchNavigation() already has the data. */
+export async function exportSingleRouteToGpx(route: WatchRoute): Promise<void> {
+  const gpx = navigationToGpx({ routes: [route], waypoints: [] });
+  const safeName = route.name.replace(/[\\/:*?"<>|]/g, '_') || 'route';
+  const fileName = `${safeName}.gpx`;
+  const path = `${RNFS.CachesDirectoryPath}/${fileName}`;
+  await RNFS.writeFile(path, gpx, 'utf8');
+  await saveToDownloads(path, fileName, 'application/gpx+xml');
+}
+
+export async function exportSingleWaypointToGpx(wp: WatchWaypoint): Promise<void> {
+  const gpx = navigationToGpx({ routes: [], waypoints: [wp] });
+  const safeName = wp.name.replace(/[\\/:*?"<>|]/g, '_') || 'waypoint';
+  const fileName = `${safeName}.gpx`;
+  const path = `${RNFS.CachesDirectoryPath}/${fileName}`;
+  await RNFS.writeFile(path, gpx, 'utf8');
+  await saveToDownloads(path, fileName, 'application/gpx+xml');
 }
 
 export interface ExportNavState {

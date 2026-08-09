@@ -1,58 +1,89 @@
-import React, { useState } from 'react';
-import { StyleSheet, Alert, ScrollView } from 'react-native';
+import React, { useCallback, useState } from 'react';
+import { View, Text, StyleSheet, Alert, ScrollView, TouchableOpacity } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import {
-  sendRouteToWatch, SendRouteState,
-  exportNavigationToGpx, ExportNavState,
+  pickAndParseRoute, uploadRoute, readOnWatchNavigation, exportSingleRouteToGpx,
+  PendingRoute, SendRouteState,
 } from '../services/NavigationService';
+import { WatchRoute } from '../services/RouteReader';
 import { t } from '../i18n';
-import { useV3Theme } from '../theme/v3';
-import { Button, Section, StatusLine } from '../components/ui/primitives';
+import { useV3Theme, v3Spacing, v3Type } from '../theme/v3';
+import { Card } from '../components/ui/Card';
+import { Button, StatusLine } from '../components/ui/primitives';
+import { TrackPreview } from '../components/TrackPreview';
 
-// One button each for Send and Export (2026-08-09). Transport is auto-detected:
-// the operations go through the shared, transport-aware connect()/disconnect()
-// (see NavigationService), so they use whatever the watch is currently connected
-// over — an existing BLE link (no re-scan/re-pair) or the USB cable — with no
-// per-transport buttons or "trigger Sync now" prompts.
+// v3.0 UI port (2026-08-09, "re do routes... to match entirely desktop") - real structural
+// rebuild matching desktop's own RoutesPage.qml: an "Import a route" card with a real
+// preview (name/points/track shape) before you commit to uploading, not one opaque
+// pick-and-immediately-write button, and a real "On the watch" card listing every route
+// already there with its own track preview and a per-route Export - this screen used to be
+// pure action buttons with no browsing at all.
+function formatDist(m: number): string {
+  return m >= 1000 ? `${(m / 1000).toFixed(2)} km` : `${Math.round(m)} m`;
+}
+
 export default function RouteScreen() {
   const theme = useV3Theme();
   const styles = createStyles(theme);
 
+  const [pending, setPending] = useState<PendingRoute | null>(null);
+  const [picking, setPicking] = useState(false);
   const [sendState, setSendState] = useState<SendRouteState>({ phase: 'idle' });
-  const sendBusy = sendState.phase !== 'idle' && sendState.phase !== 'done' && sendState.phase !== 'error';
+  const sendBusy = sendState.phase === 'connecting' || sendState.phase === 'writing';
 
-  const [exportState, setExportState] = useState<ExportNavState>({ phase: 'idle' });
-  const exportBusy = exportState.phase !== 'idle' && exportState.phase !== 'done' && exportState.phase !== 'error';
+  const [onWatch, setOnWatch] = useState<WatchRoute[] | null>(null);
+  const [onWatchLoading, setOnWatchLoading] = useState(false);
+  const [onWatchError, setOnWatchError] = useState<string | undefined>();
+  const [exportingIndex, setExportingIndex] = useState<number | null>(null);
 
-  const anyBusy = sendBusy || exportBusy;
+  const loadOnWatch = useCallback(async () => {
+    setOnWatchLoading(true);
+    setOnWatchError(undefined);
+    try {
+      const nav = await readOnWatchNavigation();
+      setOnWatch(nav.routes);
+    } catch (e: any) {
+      setOnWatchError(e?.message ?? t.unknownError);
+    } finally {
+      setOnWatchLoading(false);
+    }
+  }, []);
 
-  function handleSendRoute() {
-    if (anyBusy) return;
+  useFocusEffect(useCallback(() => { loadOnWatch(); }, [loadOnWatch]));
+
+  async function handlePick() {
+    if (picking || sendBusy) return;
+    setPicking(true);
+    try {
+      const route = await pickAndParseRoute();
+      if (route) setPending(route);
+    } catch (e: any) {
+      Alert.alert(t.error, e?.message ?? t.unknownError);
+    } finally {
+      setPicking(false);
+    }
+  }
+
+  function handleUpload() {
+    if (!pending || sendBusy) return;
     Alert.alert(
       t.sendRouteConfirmTitle,
       t.sendRouteConfirmMsg,
       [
         { text: t.cancel, style: 'cancel' },
-        { text: t.sendRouteConfirmBtn, onPress: runSendRoute },
+        { text: t.sendRouteConfirmBtn, onPress: runUpload },
       ]
     );
   }
 
-  async function runSendRoute() {
+  async function runUpload() {
+    if (!pending) return;
     try {
-      await sendRouteToWatch(setSendState);
-    } catch (e: any) {
-      Alert.alert(t.error, e?.message ?? t.unknownError);
-      setSendState({ phase: 'error', error: e?.message });
-    }
-  }
-
-  async function handleExportNav() {
-    if (anyBusy) return;
-    try {
-      await exportNavigationToGpx(setExportState);
-      setExportState(s => {
+      await uploadRoute(pending, setSendState);
+      setSendState(s => {
         if (s.phase === 'done') {
-          Alert.alert(t.navExportedTitle, t.navExportedMsg(s.routeCount ?? 0, s.waypointCount ?? 0));
+          setPending(null);
+          loadOnWatch();
         } else if (s.phase === 'error') {
           Alert.alert(t.error, s.error ?? t.unknownError);
         }
@@ -60,59 +91,101 @@ export default function RouteScreen() {
       });
     } catch (e: any) {
       Alert.alert(t.error, e?.message ?? t.unknownError);
-      setExportState({ phase: 'error', error: e?.message });
+      setSendState({ phase: 'error', error: e?.message });
+    }
+  }
+
+  async function handleExportItem(route: WatchRoute, index: number) {
+    if (exportingIndex !== null) return;
+    setExportingIndex(index);
+    try {
+      await exportSingleRouteToGpx(route);
+    } catch (e: any) {
+      Alert.alert(t.error, e?.message ?? t.unknownError);
+    } finally {
+      setExportingIndex(null);
     }
   }
 
   return (
     <ScrollView style={styles.root} contentContainerStyle={styles.content}>
 
-      {/* ── Send route to watch ── */}
-      <Section title={t.routeSendSection} description={t.sendRouteConfirmMsg}>
-        <Button
-          label={t.sendRoute}
-          variant="filled"
-          loading={sendBusy}
-          disabled={anyBusy}
-          onPress={handleSendRoute}
-        />
-        {sendBusy && <StatusLine text={sendStatusMessage(sendState)} />}
-      </Section>
+      {/* ── Import a route ── */}
+      <Card style={{ width: '100%' }}>
+        <Text style={styles.cardTitle}>{t.routeSendSection}</Text>
+        <Button label={t.routeIdle} variant="filled" loading={picking} disabled={picking || sendBusy} onPress={handlePick} style={{ marginTop: v3Spacing.small }} />
 
-      {/* ── Read routes/waypoints from watch, export to GPX ── */}
-      <Section title={t.routeExportSection} description={t.routeExportDesc}>
-        <Button
-          label={t.routeExportBtn}
-          variant="filled"
-          loading={exportBusy}
-          disabled={anyBusy}
-          onPress={handleExportNav}
-        />
-        {exportBusy && (
-          <StatusLine
-            text={exportState.phase === 'connecting' ? t.connecting : t.routeExportReading}
-          />
+        {pending && (
+          <View style={{ marginTop: v3Spacing.medium, gap: v3Spacing.small }}>
+            <TrackPreview points={pending.points.map(p => ({ lat: p.lat, lon: p.lon }))} />
+            <Text style={styles.itemName}>{pending.name}</Text>
+            <Text style={styles.itemStats}>
+              {t.routeStats(formatDist(pending.distanceM), pending.points.length, pending.ascentM, pending.descentM)}
+            </Text>
+            <View style={styles.row}>
+              <Button label={t.routeUploadBtn} variant="filled" loading={sendBusy} disabled={sendBusy} onPress={handleUpload} />
+              <Button label={t.routeDiscardBtn} variant="text" grow={false} disabled={sendBusy} onPress={() => setPending(null)} />
+            </View>
+            {sendBusy && <StatusLine text={sendState.phase === 'connecting' ? t.connecting : t.routeWritingMsg} />}
+          </View>
         )}
-      </Section>
+      </Card>
+
+      {/* ── On the watch ── */}
+      <Card style={{ width: '100%' }}>
+        <Text style={styles.cardTitle}>{t.routeOnWatchSection}</Text>
+
+        {onWatchLoading && (
+          <StatusLine text={t.routeOnWatchReading} />
+        )}
+        {!onWatchLoading && onWatchError && (
+          <Text style={[styles.itemStats, { color: theme.error, marginTop: v3Spacing.small }]}>
+            {t.routeOnWatchError(onWatchError)}
+          </Text>
+        )}
+        {!onWatchLoading && !onWatchError && onWatch && onWatch.length === 0 && (
+          <Text style={[styles.itemStats, { marginTop: v3Spacing.small }]}>{t.routeOnWatchEmpty}</Text>
+        )}
+
+        {!onWatchLoading && onWatch && onWatch.map((route, i) => (
+          <View key={`${route.name}-${i}`} style={i > 0 ? styles.onWatchItem : { marginTop: v3Spacing.medium, gap: v3Spacing.small }}>
+            {route.points.length > 1 && <TrackPreview points={route.points.map(p => ({ lat: p.latitude, lon: p.longitude }))} height={120} />}
+            <View style={styles.row}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.itemName}>{route.name}</Text>
+                <Text style={styles.itemStats}>
+                  {t.routeStats(formatDist(route.distanceM), route.points.length, route.ascentM, route.descentM)}
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={styles.exportBtn}
+                disabled={exportingIndex !== null}
+                onPress={() => handleExportItem(route, i)}
+              >
+                <Text style={styles.exportBtnText}>
+                  {exportingIndex === i ? '…' : t.routeItemExportBtn}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ))}
+      </Card>
 
     </ScrollView>
   );
 }
 
-function sendStatusMessage(s: SendRouteState): string {
-  switch (s.phase) {
-    case 'idle':       return t.routeIdle;
-    case 'picking':    return t.routePickingMsg;
-    case 'parsing':    return t.routeParsingMsg;
-    case 'connecting': return t.connecting;
-    case 'writing':    return t.routeWritingMsg;
-    case 'done':       return t.routeDoneMsg(s.routeName ?? '', s.pointCount ?? 0, s.waypointCount ?? 0);
-    case 'error':      return s.error ?? t.error;
-    default:           return '';
-  }
-}
-
 const createStyles = (t: ReturnType<typeof useV3Theme>) => StyleSheet.create({
   root: { flex: 1, backgroundColor: t.background },
-  content: { padding: 20 },
+  content: { padding: v3Spacing.medium, gap: v3Spacing.medium },
+  cardTitle: { fontSize: v3Type.heading, fontWeight: '700', color: t.text },
+  row: { flexDirection: 'row', alignItems: 'center', gap: v3Spacing.small },
+  itemName: { fontSize: v3Type.bodyLarge, fontWeight: '700', color: t.text },
+  itemStats: { fontSize: v3Type.label, color: t.mutedText, marginTop: 2 },
+  onWatchItem: { marginTop: v3Spacing.large, paddingTop: v3Spacing.medium, borderTopWidth: 1, borderTopColor: t.mutedText + '22', gap: v3Spacing.small },
+  exportBtn: {
+    paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8,
+    backgroundColor: t.primary + '1F', borderWidth: 1, borderColor: t.primary,
+  },
+  exportBtnText: { color: t.primary, fontWeight: '600', fontSize: v3Type.label },
 });

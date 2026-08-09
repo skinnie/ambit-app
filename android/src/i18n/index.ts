@@ -273,6 +273,17 @@ const fr = {
     '"Sync now" sur la montre au bon moment (voir la fenêtre suivante).',
   sendRouteBleBtn:    'Envoyer (Bluetooth)',
   routeExportBleBtn:  'Exporter (Bluetooth)',
+  // v3.0 UI port - real "On the watch" list (RoutesPage.qml parity, 2026-08-09)
+  routeOnWatchSection: 'Sur la montre',
+  routeOnWatchReading: 'Lecture des routes sur la montre…',
+  routeOnWatchEmpty: 'Aucune route sur la montre.',
+  routeOnWatchError: (msg: string) => `Impossible de lire les routes : ${msg}`,
+  routeStats: (dist: string, points: number, ascent: number, descent: number) =>
+    `${dist} · ${points} points · D+ ${ascent} m · D- ${descent} m`,
+  routeItemExportBtn: 'Exporter',
+  routeUploadBtn: 'Envoyer sur la montre',
+  routeRehearseBtn: 'Simuler (sans écrire)',
+  routeDiscardBtn: 'Annuler',
   bleScanning:        'Recherche de la montre…',
   bleConnecting:      'Connexion Bluetooth…',
   bleSyncNowTitle:    'Prêt à synchroniser',
@@ -313,6 +324,14 @@ const fr = {
   poiImportWriting: (done: number, total: number) => `Envoi des POI… (${done}/${total})`,
   poiImportedTitle: 'POI importés',
   poiImportedMsg: (n: number) => `${n} POI${n !== 1 ? 's' : ''} envoyé${n !== 1 ? 's' : ''} à la montre.`,
+  // v3.0 UI port - real "On the watch" list + real import preview (PoisPage.qml parity)
+  poiOnWatchSection: 'Sur la montre',
+  poiOnWatchReading: 'Lecture des POI sur la montre…',
+  poiOnWatchEmpty: 'Aucun POI sur la montre.',
+  poiOnWatchError: (msg: string) => `Impossible de lire les POI : ${msg}`,
+  poiItemExportBtn: 'Exporter',
+  poiItemAddBtn: 'Ajouter',
+  poiCoords: (lat: number, lon: number) => `${lat.toFixed(5)}, ${lon.toFixed(5)}`,
 
   // SettingsScreen — Ambit3 Settings (2026-08-08)
   ambitSettingsSection: 'Réglages de la montre',
@@ -428,7 +447,20 @@ const fr = {
 
   // BackupScreen (v2.3.2 beta) — Ambit firmware backup
   backupButton:      'Backup',
-  backupScreenTitle: 'Backup firmware',
+  backupScreenTitle: 'Backup',
+  // v3.0 UI port - real "Backup & Restore" card (BackupPage.qml parity, 2026-08-09).
+  // Restore itself is deferred - see NavBackupService.ts's own header comment on why.
+  backupNavSection: 'Sauvegarde de la navigation',
+  backupNavDesc: 'Couvre les routes et les POI ensemble (toute la base de navigation de la montre).',
+  backupNavCreateBtn: 'Créer une sauvegarde',
+  backupNavWorking: 'Sauvegarde en cours…',
+  backupNavDone: 'Sauvegarde créée.',
+  backupExistingSection: 'Sauvegardes existantes',
+  backupExistingEmpty: 'Aucune pour le moment.',
+  backupShareBtn: 'Partager',
+  backupRestoreUnavailable:
+    'La restauration nécessite une fonction native pas encore construite sur Android - ' +
+    'ces sauvegardes sont pour l\'instant en lecture seule (utilisez le bureau pour restaurer).',
   backupWarning:
     "⚠️ Sauvegarde uniquement : ce fichier ne peut PAS être réinstallé sur la montre depuis " +
     "cette app. Pour mettre à jour le firmware, utilisez l'app officielle Suunto ou SuuntoLink.",
@@ -683,6 +715,17 @@ const en: typeof fr = {
     'the right moment (see the next prompt).',
   sendRouteBleBtn:    'Send (Bluetooth)',
   routeExportBleBtn:  'Export (Bluetooth)',
+  // v3.0 UI port - real "On the watch" list (RoutesPage.qml parity, 2026-08-09)
+  routeOnWatchSection: 'On the watch',
+  routeOnWatchReading: 'Reading routes off the watch...',
+  routeOnWatchEmpty: 'No routes on the watch.',
+  routeOnWatchError: (msg: string) => `Couldn't read routes: ${msg}`,
+  routeStats: (dist: string, points: number, ascent: number, descent: number) =>
+    `${dist} · ${points} points · ascent ${ascent} m · descent ${descent} m`,
+  routeItemExportBtn: 'Export',
+  routeUploadBtn: 'Upload to watch',
+  routeRehearseBtn: 'Rehearse (no write)',
+  routeDiscardBtn: 'Discard',
   bleScanning:        'Scanning for the watch…',
   bleConnecting:      'Connecting over Bluetooth…',
   bleSyncNowTitle:    'Ready to sync',
@@ -723,6 +766,14 @@ const en: typeof fr = {
   poiImportWriting: (done: number, total: number) => `Sending POIs… (${done}/${total})`,
   poiImportedTitle: 'POIs imported',
   poiImportedMsg: (n: number) => `${n} POI${n !== 1 ? 's' : ''} sent to the watch.`,
+  // v3.0 UI port - real "On the watch" list + real import preview (PoisPage.qml parity)
+  poiOnWatchSection: 'On the watch',
+  poiOnWatchReading: 'Reading POIs off the watch...',
+  poiOnWatchEmpty: 'No POIs on the watch.',
+  poiOnWatchError: (msg: string) => `Couldn't read POIs: ${msg}`,
+  poiItemExportBtn: 'Export',
+  poiItemAddBtn: 'Add',
+  poiCoords: (lat: number, lon: number) => `${lat.toFixed(5)}, ${lon.toFixed(5)}`,
 
   // SettingsScreen — Ambit3 Settings (2026-08-08)
   ambitSettingsSection: 'Watch settings',
@@ -835,7 +886,20 @@ const en: typeof fr = {
 
   // BackupScreen (v2.3.2 beta) — Ambit firmware backup
   backupButton:      'Backup',
-  backupScreenTitle: 'Firmware backup',
+  backupScreenTitle: 'Backup',
+  // v3.0 UI port - real "Backup & Restore" card (BackupPage.qml parity, 2026-08-09).
+  // Restore itself is deferred - see NavBackupService.ts's own header comment on why.
+  backupNavSection: 'Navigation backup',
+  backupNavDesc: 'Covers Routes and POIs together (the watch\'s whole navigation database).',
+  backupNavCreateBtn: 'Create backup now',
+  backupNavWorking: 'Working…',
+  backupNavDone: 'Backup created.',
+  backupExistingSection: 'Existing backups',
+  backupExistingEmpty: 'None yet.',
+  backupShareBtn: 'Share',
+  backupRestoreUnavailable:
+    'Restore needs a native capability not built on Android yet - these backups are ' +
+    'read-only for now (use the desktop app to restore).',
   backupWarning:
     "⚠️ Backup only: this file CANNOT be flashed back onto the watch from this app. " +
     "To update the firmware, use the official Suunto app or SuuntoLink.",
