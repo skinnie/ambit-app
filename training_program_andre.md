@@ -2003,3 +2003,29 @@ simple-mode AST form, 354 official/hidden-source. Rich real interval corpus (Pyr
 remaining ~785 hit archive.org rate-limiting; harvester is resumable to fill them after a
 cooldown. Confirms no guidance/planned-move data exists publicly (authenticated-only). Corpus is
 directly usable for path 3 (compile via community compiler -> install via workout_install.py).
+
+## Finding 38: guided-workout Source schema = workout.py's schema, confirmed against real Movescount ground truth (2026-08-09)
+
+André pointed at marguslt's gists. `9e00a590...`/power_workout_template.json is a REAL Movescount
+guidance-workout Source, and `4bb9a9dc...`/rule_template.json is the Rule wrapper. Findings:
+
+- A guided workout's authoring format is `{name, workoutDescription, steps[]}`, each step
+  `{duration:{durationName, value}, target:{targetName, valueRange:{min,max}}, text,
+  type:{typeName: warmup|interval|recovery|cooldown|repeatStart{value:N}|repeatEnd}}`. This is
+  BYTE-FOR-BYTE the schema `tools/workout.py` already implements - the real power-intervals JSON
+  round-trips through `workout.py --print-source` to valid App-Zone source (8x repeat unrolled
+  into PHASE branches with alarmBeep/light on transitions). Saved as
+  `reference/movescount_workouts/power_intervals.example.json`.
+- The wrapper: this JSON is base64'd into a Rule's `Source`, `Category/Type:"guidance"`,
+  `OutputFormat:"onedecimal"`; the server compiled Source->Binary. From marguslt's own notebook
+  (gist 45285960...), rules split by `Type`: `generic`(=app) vs `guidance`(=workout), both are
+  IAMRULE binaries on the SAME VM version (0.08). `Category` is a separate App-Zone grouping
+  label. cell 5 builds the SuuntoLink app list from `Type==generic` only (workouts excluded).
+
+Net for B: the AUTHORING half is fully in hand - real Movescount schema == workout.py, feeding
+the live community compiler + the corrected workout_install.py. That produces a working
+structured workout with per-segment target-range beep guidance, as a pinned app. What is NOT
+reproduced is the native browsable WORKOUT-menu + segment graph: that needs the guidance-TYPE
+IAMRULE binary the dead server compiled (or confirmation the community compiler can emit one) AND
+the on-device rendering that lists a guidance rule in the WORKOUT menu with the graph. The one
+missing ground-truth artifact is a real guidance `Binary` (the gists carry Source, not Binary).
