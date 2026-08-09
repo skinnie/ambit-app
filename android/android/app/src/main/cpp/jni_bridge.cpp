@@ -777,6 +777,55 @@ Java_com_ambitsyncmodern_usb_AmbitUsbModule_nativeAmbitReadSettingsRaw(
 }
 
 /**
+ * nativeAmbitReadPersonalSettings
+ *
+ * Ambit 1 / Ambit 2 family (USB-only — these have no Bluetooth). Unlike the Ambit3/Kailash
+ * SBEM sml.DeviceSettings (0x1100) path above, the older watches answer the legacy
+ * personal-settings command, which libambit already parses into ambit_personal_settings_t
+ * (device_driver_ambit.c / personal.c, from openambit). We surface the user-facing fields
+ * as JSON; TS maps them to the same settings UI (AmbitPersonalSettingsReader.ts).
+ *
+ * READ-ONLY on purpose: libambit implements no personal-settings *write* (only the unused
+ * 0x0b01 command id exists), and this project won't invent an unverified whole-blob write
+ * to a 2012 watch — see the "prove it, don't brick it" rule this settings code already
+ * follows for Ambit3. Null on failure.
+ */
+JNIEXPORT jstring JNICALL
+Java_com_ambitsyncmodern_usb_AmbitUsbModule_nativeAmbitReadPersonalSettings(
+        JNIEnv *env, jobject /* thiz */)
+{
+    if (!g_device) { LOGE("nativeAmbitReadPersonalSettings: Not connected"); return nullptr; }
+
+    ambit_personal_settings_t *ps = libambit_personal_settings_alloc();
+    if (!ps) return nullptr;
+    int ret = libambit_personal_settings_get(g_device, ps);
+    if (ret != 0) {
+        LOGE("libambit_personal_settings_get failed: %d", ret);
+        libambit_personal_settings_free(ps);
+        return nullptr;
+    }
+    std::ostringstream json;
+    json << "{"
+         << "\"date_format\":"            << (int)ps->date_format           << ","
+         << "\"tones\":"                  << (int)ps->tones_mode            << ","
+         << "\"gps_position_format\":"    << (int)ps->gps_position_format   << ","
+         << "\"button_lock_sport_mode\":" << (int)ps->sportmode_button_lock << ","
+         << "\"button_lock_time_mode\":"  << (int)ps->timemode_button_lock  << ","
+         << "\"units_mode\":"             << (int)ps->units_mode            << ","
+         << "\"language\":"               << (int)ps->language              << ","
+         << "\"time_format\":"            << (int)ps->time_format           << ","
+         << "\"gps_time_keeping\":"       << (int)ps->sync_time_w_gps       << ","
+         << "\"backlight_mode\":"         << (int)ps->backlight_mode        << ","
+         << "\"backlight_brightness\":"   << (int)ps->backlight_brightness  << ","
+         << "\"display_dark\":"           << (int)ps->display_is_negative   << ","
+         << "\"alti_baro_mode\":"         << (int)ps->alti_baro_mode        << ","
+         << "\"storm_alarm\":"            << (int)ps->storm_alarm
+         << "}";
+    libambit_personal_settings_free(ps);
+    return env->NewStringUTF(json.str().c_str());
+}
+
+/**
  * nativeAmbitWriteSettingsRaw
  *
  * Real, hardware-confirmed 2026-08-08 (see ambit3_write_settings_raw()'s own comment in

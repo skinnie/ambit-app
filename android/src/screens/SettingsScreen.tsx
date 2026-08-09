@@ -32,6 +32,14 @@ const THEME_OPTIONS: { mode: ThemeMode; icon: IconName; label: () => string }[] 
   { mode: 'system', icon: 'auto', label: () => t.themeSystem },
 ];
 
+// Static, non-editable display of a settings value — used for the read-only Ambit 1/2 rows.
+function readOnlyValue(row: DecodedSetting): string {
+  if (row.kind === 'enum') return row.choices?.find(c => c.value === row.value)?.label ?? String(row.value);
+  if (row.kind === 'bool') return row.value === 1 ? 'On' : 'Off';
+  if (row.kind === 'coord') return row.value.toFixed(6);
+  return String(row.value);
+}
+
 export default function SettingsScreen() {
   const theme = useTheme();
   const styles = createStyles(theme);
@@ -60,6 +68,9 @@ export default function SettingsScreen() {
   // this section adaptively — "Suunto Kailash Settings" etc. — instead of a hardcoded
   // "Ambit3". Empty until the settings read connects and identifies the watch.
   const [ambitDeviceName, setAmbitDeviceName] = useState<string>('');
+  // Ambit 1/2 family: settings are read-only (no write in libambit), so the rows render
+  // their value statically and the write controls are hidden.
+  const [ambitReadOnly, setAmbitReadOnly] = useState(false);
   const [ambitSettingsPhase, setAmbitSettingsPhase] =
     useState<'idle' | 'connecting' | 'reading' | 'done' | 'error'>('idle');
   const [ambitSettingsError, setAmbitSettingsError] = useState<string | undefined>();
@@ -82,6 +93,7 @@ export default function SettingsScreen() {
       }
       if (s.fields) setAmbitSettingsFields(s.fields);
       if (s.deviceName) setAmbitDeviceName(s.deviceName);
+      setAmbitReadOnly(!!s.readOnly);
       setAmbitSettingsError(s.error);
     });
   }
@@ -262,6 +274,7 @@ export default function SettingsScreen() {
           </Text>
         </View>
         <Text style={styles.sectionDesc}>{t.ambitSettingsDesc}</Text>
+        {ambitReadOnly && <Text style={styles.sectionDesc}>{t.ambitSettingsReadOnly}</Text>}
 
         {!ambitSettings && ambitSettingsPhase !== 'connecting' && ambitSettingsPhase !== 'reading' && (
           <Button label={t.ambitSettingsReadBtn} icon="sync" onPress={handleReadAmbitSettings} style={{ marginTop: 10 }} />
@@ -291,6 +304,11 @@ export default function SettingsScreen() {
             <View key={row.key} style={styles.ambitSettingRow}>
               <Text style={styles.ambitSettingLabel}>{label}</Text>
 
+              {ambitReadOnly && (
+                <Text style={styles.ambitSettingValueRO}>{readOnlyValue(row)}</Text>
+              )}
+
+              {!ambitReadOnly && (<>
               {row.kind === 'bool' && (
                 <Switch
                   value={row.value === 1}
@@ -363,6 +381,7 @@ export default function SettingsScreen() {
                   </TouchableOpacity>
                 </View>
               )}
+              </>)}
 
               {busy && <ActivityIndicator size="small" color="#00e5ff" style={{ marginLeft: 8 }} />}
             </View>
@@ -576,6 +595,8 @@ const createStyles = (t: ReturnType<typeof useTheme>) => StyleSheet.create({
     marginTop: 14,
   },
   ambitSettingLabel: { color: '#fff', fontSize: 14, flex: 1, marginRight: 10 },
+  // Read-only (Ambit 1/2) value display, right-aligned where the control would be.
+  ambitSettingValueRO: { color: '#9fb3d1', fontSize: 14, fontWeight: '600', textAlign: 'right' },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, flexShrink: 1, justifyContent: 'flex-end' },
   chip: {
     paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8,

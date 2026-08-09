@@ -96,6 +96,7 @@ class AmbitUsbModule(private val reactContext: ReactApplicationContext) :
     private external fun nativeAmbitReadDeviceHistoryRaw(): String?
     private external fun nativeAmbitReadDeviceLogRaw(): String?
     private external fun nativeAmbitReadSettingsRaw(): String?
+    private external fun nativeAmbitReadPersonalSettings(): String?
     private external fun nativeAmbitWriteSettingsRaw(data: ByteArray): Boolean
     private external fun nativeAmbitReadCustomModesRaw(): String?
     private external fun nativeAmbitWriteCustomModesRaw(data: ByteArray): Boolean
@@ -629,6 +630,25 @@ class AmbitUsbModule(private val reactContext: ReactApplicationContext) :
                 else promise.reject("SETTINGS_READ_FAILED", "Failed to read settings (see logcat AmbitJNI)")
             } catch (e: Exception) {
                 promise.reject("SETTINGS_READ_ERROR", e.message ?: "Unknown error")
+            }
+        }
+    }
+
+    // Ambit 1 / Ambit 2 family (USB-only): the legacy personal-settings read, returned as
+    // JSON (see nativeAmbitReadPersonalSettings / AmbitPersonalSettingsReader.ts). Read-only.
+    @ReactMethod
+    fun readPersonalSettings(promise: Promise) {
+        if (!jniLoaded) {
+            promise.reject("JNI_NOT_LOADED", "Native library unavailable")
+            return
+        }
+        executor.execute {
+            try {
+                val json = nativeAmbitReadPersonalSettings()
+                if (json != null) promise.resolve(json)
+                else promise.reject("PERSONAL_SETTINGS_READ_FAILED", "Failed to read personal settings (see logcat AmbitJNI)")
+            } catch (e: Exception) {
+                promise.reject("PERSONAL_SETTINGS_READ_ERROR", e.message ?: "Unknown error")
             }
         }
     }

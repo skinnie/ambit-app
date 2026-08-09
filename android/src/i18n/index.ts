@@ -296,6 +296,7 @@ const fr = {
   ambitSettingsReadBtn: 'Lire les réglages',
   ambitSettingsRefreshBtn: 'Actualiser',
   ambitSettingsReading: 'Lecture des réglages…',
+  ambitSettingsReadOnly: 'Lecture seule pour le moment — les réglages sont affichés mais leur modification n\'est pas encore prise en charge pour ce modèle.',
 
   // SportModesScreen — Ambit3 CustomModes (2026-08-08), Ambit3-only, pas disponible sur Kailash
   sportModesButton:      'MODES SPORT',
@@ -671,6 +672,7 @@ const en: typeof fr = {
   ambitSettingsReadBtn: 'Read Settings',
   ambitSettingsRefreshBtn: 'Refresh',
   ambitSettingsReading: 'Reading settings...',
+  ambitSettingsReadOnly: 'Read-only for now — settings are shown but changing them isn\'t supported yet for this model.',
 
   // SportModesScreen — Ambit3 CustomModes (2026-08-08), Ambit3-only, not available on Kailash
   sportModesButton:      'SPORT MODES',

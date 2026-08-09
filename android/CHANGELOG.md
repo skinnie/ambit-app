@@ -3,6 +3,25 @@
 All notable changes to the AmbitApp Android app (fork of `guiguoz/opensportsync`) are
 recorded here, newest first.
 
+## 2.5.15 (2026-08-09)
+
+Settings for the whole Ambit family, and a tidier settings screen.
+
+- **Ambit 1 / Ambit 2 settings (read-only).** These 2012-era watches (Ambit, Ambit2,
+  Ambit2 S, Ambit2 R — USB-only) use the legacy `personal_settings` mechanism, not the
+  Ambit3/Kailash SBEM one. The app now reads and displays their settings (units, formats,
+  backlight, tones, GPS format, language, alti/baro, etc.) via libambit's existing
+  `personal_settings_get`, decoded with labels from openambit and the Movescount emulator
+  schema (`assets/`). Read-only for now — there is no verified write path for these, and we
+  won't invent an unverified whole-blob write to a 2012 watch.
+- **Traverse / Traverse Alpha settings are read-only too.** They read fine with the Ambit3
+  table (same openambit driver), but aren't editable yet — they have model-specific features
+  (POD/backlight differences, Alpha shot-detection) still to map from a real descriptor.
+- **Settings screen: Watch Settings card moved up** to right after Appearance, and its title
+  is **device-name-adaptive** — "Suunto Kailash Settings", "Suunto Ambit 2 Settings", etc.,
+  from the connected watch, instead of a hardcoded "Ambit3".
+- Saved the Movescount emulator (`assets/Movescount_Emu/`) as a settings-schema reference.
+
 ## 2.5.13 (2026-08-09)
 
 Kailash activity export over Bluetooth, plus BLE device-info fixes and a responsive

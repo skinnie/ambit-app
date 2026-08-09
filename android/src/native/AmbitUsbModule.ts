@@ -189,6 +189,16 @@ export function readSettingsRaw(): Promise<string> {
 }
 
 /**
+ * Ambit 1 / Ambit 2 family (USB-only). The legacy personal-settings read (a fixed struct,
+ * not the Ambit3/Kailash SBEM 0x1100), returned as a JSON string of field -> raw value.
+ * Decoding/labelling happens in TS (AmbitPersonalSettingsReader.ts). Read-only — libambit
+ * implements no write for these. The watch must already be connected.
+ */
+export function readPersonalSettings(): Promise<string> {
+  return NativeAmbit.readPersonalSettings();
+}
+
+/**
  * Real, hardware-confirmed 2026-08-08: writes a full sml.DeviceSettings blob back via
  * 0x1101 - André confirmed on a real connected Ambit3's own screen that this exact
  * mechanism visibly switched the display Light -> Dark. `dataBase64` must be the *entire*
