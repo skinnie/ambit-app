@@ -102,22 +102,36 @@ export function TrackPreview({
       ))}
       <Svg width={mosaic.contentWidth} height={mosaic.contentHeight} style={StyleSheet.absoluteFill}>
         {hasSinglePoint ? (
+          // Real, 2026-08-10 ("POI: make the marker of a color better visible") - desktop
+          // already solved this exact complaint once (MapView.qml's own header comment:
+          // "change the color of POI point to be more visible... a plain Theme.error glyph
+          // (red) could sit right on top of OSM's own red/orange road cartography with
+          // almost no contrast; a white halo behind Theme.primary stays visible over any
+          // tile color, not just some of them"). Same real fix here: a white disc (visible
+          // against any tile color) with a primary-colored ring and center dot, instead of
+          // a flat primary-colored dot that could blend into a similarly-toned tile.
           <>
-            <Circle cx={projected[0].x} cy={projected[0].y} r={16} fill={theme.primary} opacity={0.3} />
-            <Circle cx={projected[0].x} cy={projected[0].y} r={9} fill={theme.primary} stroke="#ffffff" strokeWidth={2} />
+            <Circle cx={projected[0].x} cy={projected[0].y} r={16} fill={theme.primary} opacity={0.18} />
+            <Circle cx={projected[0].x} cy={projected[0].y} r={10} fill="#ffffff" stroke={theme.primary} strokeWidth={2.5} />
+            <Circle cx={projected[0].x} cy={projected[0].y} r={4} fill={theme.primary} />
           </>
         ) : (
           <>
-            {/* White halo underneath for contrast - same real technique MapView.qml's own
-                header comment documents ("that teal blends into OSM/CyclOSM's own
-                parks-and-water palette"), needed even more here at thumbnail scale. */}
+            {/* Real, 2026-08-10 ("choose a better color for the route, one that remains
+                visible but not aggressive, and the trace a bit more thicker") - was a
+                hardcoded, unthemed bright red (#ff2200); desktop's own MapView.qml draws
+                its track polyline in Theme.primary with a white halo underneath (same
+                header comment as the marker above), which is inherently the "visible, not
+                aggressive" color this app already picked on purpose - reusing it here
+                instead of a second, disconnected hardcoded color. Both strokes thickened
+                slightly per the same request. */}
             <Polyline
               points={projected.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ')}
-              fill="none" stroke="#ffffff" strokeWidth={5.5} strokeLinecap="round" strokeLinejoin="round"
+              fill="none" stroke="#ffffff" strokeWidth={6.5} strokeLinecap="round" strokeLinejoin="round"
             />
             <Polyline
               points={projected.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ')}
-              fill="none" stroke="#ff2200" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round"
+              fill="none" stroke={theme.primary} strokeWidth={4} strokeLinecap="round" strokeLinejoin="round"
             />
           </>
         )}

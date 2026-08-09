@@ -461,6 +461,12 @@ export default function HomeScreen() {
         <View style={styles.deviceFlowLogo}>
           <Logo size={Math.round(56 * deviceFlowScale)} />
           <Badge label={`v${APP_VERSION}`} />
+          {/* Real, 2026-08-10 ("under the icon put AmbitApp and a funny quote... even for
+              the logo") - the very first thing shown on launch, while the app is still
+              looking for the watch. */}
+          {phase === 'searching' && (
+            <Text style={[styles.deviceFlowTagline, { color: theme.mutedText }]}>{t.homeTagline}</Text>
+          )}
         </View>
         {phase === 'searching' ? (
           <>
@@ -878,6 +884,11 @@ function createStyles(t: ReturnType<typeof useV3Theme>) {
     deviceFlowLogo: {
       alignItems: 'center',
       gap: 10,
+    },
+    deviceFlowTagline: {
+      fontSize: 12.5,
+      fontStyle: 'italic',
+      textAlign: 'center',
     },
     header: {
       alignItems: 'center',

@@ -56,7 +56,13 @@ function formatDist(m: number) {
 
 // ─── Carte Leaflet ────────────────────────────────────────────────────────────
 
-function buildLeafletHtml(provider: MapProvider): string {
+// Real, 2026-08-10 ("choose a better color for the route, one that remains visible but not
+// aggressive, and the trace a bit more thicker") - was a hardcoded, unthemed bright red
+// (#ff2200) with an unrelated hardcoded blue (#3498db) for the replay position marker.
+// desktop's own MapView.qml draws its track in Theme.primary with a white halo underneath
+// (same real fix TrackPreview.tsx's own header comment documents) - reused here for both
+// the track and the replay marker instead of two more one-off hardcoded colors.
+function buildLeafletHtml(provider: MapProvider, trackColor: string): string {
   return `<!DOCTYPE html>
 <html><head>
   <meta charset="utf-8"/>
@@ -83,7 +89,7 @@ function buildLeafletHtml(provider: MapProvider): string {
   };
   
   var playerIcon = L.divIcon({ className: '',
-      html: '<div style="width:18px;height:18px;background:#3498db;border:3px solid #fff;border-radius:50%;box-shadow:0 0 8px rgba(0,0,0,.6);"></div>',
+      html: '<div style="width:18px;height:18px;background:${trackColor};border:3px solid #fff;border-radius:50%;box-shadow:0 0 8px rgba(0,0,0,.6);"></div>',
       iconAnchor: [9, 9] });
 
   window.Replay = {
@@ -114,7 +120,7 @@ function buildLeafletHtml(provider: MapProvider): string {
       if (window.Replay.marker) map.removeLayer(window.Replay.marker);
 
       if (lls.length > 0) {
-        line = L.polyline(lls, { color: '#ff2200', weight: 4, opacity: 0.9 }).addTo(map);
+        line = L.polyline(lls, { color: '${trackColor}', weight: 5, opacity: 0.95 }).addTo(map);
         startMarker = L.marker(lls[0], { icon: dot('#2ecc71') }).addTo(map);
         endMarker = L.marker(lls[lls.length - 1], { icon: dot('#e74c3c') }).addTo(map);
         map.fitBounds(line.getBounds(), { padding: [30, 30] });
@@ -251,7 +257,7 @@ export default function MapScreen() {
   // itself (see onMessage's MAP_PROVIDER_CHANGE) writes back to the same storage.
   const [mapProvider, setMapProviderState] = useState<MapProvider>('ign');
   useEffect(() => { getMapProvider().then(setMapProviderState); }, []);
-  const leafletHtml = useMemo(() => buildLeafletHtml(mapProvider), [mapProvider]);
+  const leafletHtml = useMemo(() => buildLeafletHtml(mapProvider, theme.primary), [mapProvider, theme.primary]);
 
   useEffect(() => {
     readGpxFile(activity.gpx_path)
