@@ -169,9 +169,11 @@ def new_display(type_key):
     }
 
 
-# SuuntoLink's gap between its touch write and its commit write, in seconds. Measured at
-# 2, 3, 2 and 2 seconds across the four edits in running2fromcreateandthen1to7 - i.e. just
-# how long it took, not a specified interval. We wait the shortest observed value.
+# Floor for the gap between the touch write and the commit write, in seconds. SuuntoLink's
+# own gap measures 2, 3, 2 and 2 seconds across the four edits in
+# running2fromcreateandthen1to7 - but it is elapsed work, not a wait: between the two writes
+# it re-reads the settings (0x1100), the memory map (0x0b21, 33 times) and a slice of flash
+# (0x0b17). So we do the same re-read and only pad up to this floor if we finished sooner.
 STAMP_GAP_SECONDS = 2
 
 
@@ -443,12 +445,23 @@ def main():
                   commit=True)
 
     if staged:
-        # Touch write: same structure, Timestamp1 moved on. Then SuuntoLink's own pause.
+        # Touch write, then the commit write. The ~2s between SuuntoLink's two writes is not
+        # a sleep - between them it re-reads the settings, the memory map (33 times) and a
+        # slice of flash, and the gap is just how long that took. Andre's observation is that
+        # the watch drops back to its sports main screen after a save, so the watch is very
+        # likely reloading its mode list in that window; pacing off real traffic the way
+        # SuuntoLink does adapts to however long that takes on slower hardware (the Ambit 1
+        # and 2 run this same format), where a fixed sleep would not. We keep the measured
+        # gap as a floor, never as the whole story.
         if not args.json:
-            print(f"\n  touch write ({len(touch_body)} bytes), then {STAMP_GAP_SECONDS}s, "
-                  f"then the commit write - matching SuuntoLink")
+            print(f"\n  touch write ({len(touch_body)} bytes), then re-read the watch the "
+                  f"way SuuntoLink does, then the commit write")
         send(touch_body)
-        time.sleep(STAMP_GAP_SECONDS)
+        started = time.monotonic()
+        read_memory_map(link)
+        remaining = STAMP_GAP_SECONDS - (time.monotonic() - started)
+        if remaining > 0:
+            time.sleep(remaining)
     send(body)
 
     # Confirm by reading the region back. The first read can disagree with what we sent even
