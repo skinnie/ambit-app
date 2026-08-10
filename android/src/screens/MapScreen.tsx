@@ -18,6 +18,7 @@ import { useV3Theme } from '../theme/v3';
 import { getMapProvider, setMapProvider, MapProvider } from '../services/MapProviderService';
 import { mapTileLayersJs } from '../services/MapHtml';
 import { TRACK_COLOR } from '../services/MapTile';
+import { TILE_CACHE_DIR_URI, downloadRegion, DownloadRegionProgress } from '../services/TileCache';
 import Icon from '../components/ui/Icon';
 
 type Route = RouteProp<RootStackParamList, 'Map'>;
@@ -64,20 +65,26 @@ function formatDist(m: number) {
 // desktop's own MapView.qml draws its track in Theme.primary with a white halo underneath
 // (same real fix TrackPreview.tsx's own header comment documents) - reused here for both
 // the track and the replay marker instead of two more one-off hardcoded colors.
+// Real, 2026-08-10 ("let's go for the offline maps solution") - leaflet.js/leaflet.css
+// (+ its default marker images) are now vendored under android/app/src/main/assets/leaflet/
+// instead of fetched from unpkg.com on every map load: a real offline map needs the map
+// library itself available with no network, not just the tile images. WebView's baseUrl
+// below (file:///android_asset/) is what makes both this file:// script/link tag AND
+// leaflet.css's own relative `images/marker-*.png` references resolve correctly.
 function buildLeafletHtml(provider: MapProvider, trackColor: string): string {
   return `<!DOCTYPE html>
 <html><head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <link rel="stylesheet" href="leaflet/leaflet.css"/>
+  <script src="leaflet/leaflet.js"></script>
   <style>* { margin:0; padding:0; } html,body,#map { width:100%; height:100%; }</style>
 </head><body>
 <div id="map"></div>
 <script>
   var map = L.map('map', { zoomControl: false });
 
-  ${mapTileLayersJs(provider)}
+  ${mapTileLayersJs(provider, TILE_CACHE_DIR_URI)}
 
   var line = null;
   var startMarker = null;
@@ -241,6 +248,7 @@ export default function MapScreen() {
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState<DownloadRegionProgress | null>(null);
 
   // ── Replay State
   const webViewRef = useRef<WebView>(null);
@@ -390,6 +398,36 @@ export default function MapScreen() {
     isScrubbingRef.current = false;
     webViewRef.current?.injectJavaScript(`window.Replay.seek(${currentReplayVal}); true;`);
   };
+
+  // ─── Offline map download ───
+  // Real, 2026-08-10 ("let's go for the offline maps solution") - z13-16: wide enough to
+  // still see the surrounding area at the low end, close enough to read trail detail at the
+  // high end, the same practical range general-purpose hiking map apps default an offline
+  // download to. Re-running this after it already succeeded is cheap (TileCache.ts's own
+  // ensureTileCached() is a no-op past the first RNFS.exists() check per tile).
+  const OFFLINE_ZOOMS = [13, 14, 15, 16];
+
+  async function handleDownloadOffline() {
+    if (downloadProgress && downloadProgress.done < downloadProgress.total) return;
+    setDownloadProgress({ done: 0, total: 0, failed: 0 });
+    try {
+      const result = await downloadRegion(
+        mapProvider,
+        points.map(p => ({ lat: p.latitude, lon: p.longitude })),
+        OFFLINE_ZOOMS,
+        setDownloadProgress,
+      );
+      if (result.failed > 0) {
+        Alert.alert(t.offlineMapTitle, t.offlineMapPartial(result.total - result.failed, result.total));
+      } else {
+        Alert.alert(t.offlineMapTitle, t.offlineMapDone(result.total));
+      }
+    } catch (e: any) {
+      Alert.alert(t.offlineMapTitle, e?.message ?? String(e));
+    } finally {
+      setTimeout(() => setDownloadProgress(null), 1500);
+    }
+  }
 
   // ─── Exports ───
 
@@ -600,11 +638,18 @@ export default function MapScreen() {
       <WebView
         ref={webViewRef}
         style={styles.map}
-        source={{ html: leafletHtml }}
-        originWhitelist={['about:', 'data:']}
+        // baseUrl: android_asset - real, 2026-08-10 (offline maps) - resolves the vendored
+        // leaflet/leaflet.js|css <script>/<link> tags above, and is what makes file://
+        // access to TileCache.ts's own cache directory (an unrelated app-private path, not
+        // under android_asset) actually permitted - Android WebView only allows file://
+        // sub-resource loads when the page's own origin is file:// too.
+        source={{ html: leafletHtml, baseUrl: 'file:///android_asset/' }}
+        originWhitelist={['about:', 'data:', 'file:*']}
         javaScriptEnabled
         domStorageEnabled={false}
         mixedContentMode="never"
+        allowFileAccess
+        allowFileAccessFromFileURLs
         // Real, 2026-08-09 - same real requirement desktop's own main.cpp comment documents:
         // tile.openstreetmap.org's usage policy (operations.osmfoundation.org/policies/tiles/)
         // requires a real, identifying User-Agent on every tile request, or it gets treated as
@@ -628,6 +673,19 @@ export default function MapScreen() {
           <StatChip styles={styles} label={t.avgSpeed} value={formatSpeed(activity.duration_s, stats.totalDistance)} />
         </View>
       </View>
+
+      {/* ── Bouton téléchargement hors-ligne ── */}
+      <TouchableOpacity
+        style={[styles.offlineFab, downloadProgress && styles.btnDisabled]}
+        onPress={handleDownloadOffline}
+        disabled={!!downloadProgress}
+      >
+        <Text style={styles.exportFabText}>
+          {downloadProgress
+            ? (downloadProgress.total > 0 ? `${Math.round((downloadProgress.done / downloadProgress.total) * 100)}%` : '…')
+            : '⬇'}
+        </Text>
+      </TouchableOpacity>
 
       {/* ── Bouton export flottant ── */}
       <TouchableOpacity
@@ -746,6 +804,22 @@ function createStyles(t: ReturnType<typeof useV3Theme>) {
       position: 'absolute',
       bottom: 188,
       right: 16,
+      width: 48,
+      height: 48,
+      borderRadius: 24,
+      backgroundColor: t.primary + '1F',
+      borderColor: t.primary,
+      borderWidth: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    // Real, 2026-08-10 (offline maps) - same pill as exportFab, placed just to its left
+    // (76 = 16 + 48 + 12, exportFab's own right offset + width + a real gap) rather than
+    // stacking vertically, so it can't collide with exportMenu popping up above exportFab.
+    offlineFab: {
+      position: 'absolute',
+      bottom: 188,
+      right: 76,
       width: 48,
       height: 48,
       borderRadius: 24,

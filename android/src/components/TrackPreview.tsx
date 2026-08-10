@@ -22,7 +22,7 @@ import { t } from '../i18n';
 // just a plain placeholder that measures itself; the real mosaic (which needs that width to
 // pick a zoom/scale) renders on the next pass.
 export function TrackPreview({
-  points, height = 100, markerOnly = false, variableHeight = false,
+  points, height = 100, markerOnly = false, variableHeight = false, multiMarker = false,
 }: {
   points: { lat: number; lon: number }[];
   height?: number;
@@ -32,6 +32,12 @@ export function TrackPreview({
   // uniform grid/list where a consistent cell size matters more than showing the shape at
   // 100% - RouteScreen's own on-watch list is the one real opt-in.
   variableHeight?: boolean;
+  // Real, 2026-08-10 ("desktop version has more functions... like the map with locations")
+  // - Kailash's visited-places list is a set of independent points, not a connected track;
+  // the existing hasMultiPoint path (below) always draws a polyline through every point in
+  // array order, which would draw nonsense lines between unrelated cities. This mode fits
+  // the same bounding box but draws each point as its own marker instead, no polyline.
+  multiMarker?: boolean;
 }) {
   const theme = useV3Theme();
   const [provider, setProvider] = useState<MapProvider>('ign');
@@ -55,14 +61,15 @@ export function TrackPreview({
     Number.isFinite(p.lon) && p.lon >= -180 && p.lon <= 180
   );
 
-  const hasMultiPoint = !markerOnly && validPoints.length >= 2;
-  const hasSinglePoint = (markerOnly || validPoints.length === 1) && validPoints.length >= 1;
+  const hasMultiMarker = multiMarker && validPoints.length >= 1;
+  const hasMultiPoint = !markerOnly && !multiMarker && validPoints.length >= 2;
+  const hasSinglePoint = !multiMarker && (markerOnly || validPoints.length === 1) && validPoints.length >= 1;
 
   // Real, 2026-08-10 ("for data without gps data, please do a nice mappyish image saying no
   // data, soft color to not hurt the rest") - was a flat, empty box; a real placeholder now,
   // the same map-shaped visual language (rounded card, a faint terrain-line glyph) instead
   // of just nothing.
-  if (!hasMultiPoint && !hasSinglePoint) {
+  if (!hasMultiPoint && !hasSinglePoint && !hasMultiMarker) {
     return (
       <View style={[styles.box, styles.noDataBox, { height, backgroundColor: theme.background }]}>
         <Svg width={30} height={30} viewBox="0 0 24 24">
@@ -87,6 +94,8 @@ export function TrackPreview({
 
   const mosaic: TileMosaic = hasSinglePoint
     ? centeredPointMosaic(validPoints[0].lat, validPoints[0].lon, boxWidth, height, 15)
+    : hasMultiMarker && validPoints.length === 1
+    ? centeredPointMosaic(validPoints[0].lat, validPoints[0].lon, boxWidth, height, 6)
     : fitBoundsMosaic(validPoints, boxWidth, variableHeight ? {} : { targetHeight: height });
 
   const projected = validPoints.map(p => mosaic.project(p.lat, p.lon));
@@ -101,7 +110,15 @@ export function TrackPreview({
         />
       ))}
       <Svg width={mosaic.contentWidth} height={mosaic.contentHeight} style={StyleSheet.absoluteFill}>
-        {hasSinglePoint ? (
+        {hasMultiMarker ? (
+          projected.map((p, i) => (
+            <React.Fragment key={i}>
+              <Circle cx={p.x} cy={p.y} r={12} fill={TRACK_COLOR} opacity={0.18} />
+              <Circle cx={p.x} cy={p.y} r={7} fill="#ffffff" stroke={TRACK_COLOR} strokeWidth={2} />
+              <Circle cx={p.x} cy={p.y} r={3} fill={TRACK_COLOR} />
+            </React.Fragment>
+          ))
+        ) : hasSinglePoint ? (
           // Real, 2026-08-10 ("POI: make the marker of a color better visible", then "it is
           // grey, not very visible" once theme.primary turned out to be Android's own muted
           // slate grey) - a white disc (visible against any tile color) with a TRACK_COLOR

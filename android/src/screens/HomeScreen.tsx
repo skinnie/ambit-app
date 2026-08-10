@@ -12,6 +12,7 @@ import {
   connect as ambitConnect, disconnect as ambitDisconnect, getDeviceInfo, AmbitDeviceInfo,
   wasLaunchedViaUsbAttach, onUsbAttached, detectAttachedDeviceType, AttachedDeviceType,
   readDeviceHistoryRaw, readDeviceLogRaw, setBleTransportActive, saveToDownloads,
+  setDateTime,
 } from '../native/AmbitUsbModule';
 import RNFS from 'react-native-fs';
 import { scanAndConnect as bleScanAndConnect } from '../native/AmbitBleModule';
@@ -32,6 +33,7 @@ import { ActionTile, Badge, Button, Chip, Logo, StatusLine } from '../components
 import { useV3Theme } from '../theme/v3';
 import { Card } from '../components/ui/Card';
 import { WeatherCard } from '../components/WeatherCard';
+import { TrackPreview } from '../components/TrackPreview';
 import { NavShell, NavShellItem } from '../navigation/NavShell';
 
 // Real, 2026-08-08: Kailash ("Hoopoe") answers the same USB init + 0x0000 device-info
@@ -103,6 +105,24 @@ export default function HomeScreen() {
   const syncBusy    = sync.phase    !== 'idle' && sync.phase    !== 'done' && sync.phase    !== 'error';
   const orbitalBusy = orbital.phase !== 'idle' && orbital.phase !== 'done' && orbital.phase  !== 'error';
   const isBusy = syncBusy || orbitalBusy || garminSyncBusy;
+
+  // Real, 2026-08-10 - see AmbitUsbModule.ts's own setDateTime() comment for the mechanism
+  // (cable Ambit3's proven 0x0300/0x0302 pair, or Kailash's real BLE-only 0x1201 pushes).
+  // No status persists across screens - a one-shot "did it work" line is enough here.
+  const [timeSyncBusy, setTimeSyncBusy] = useState(false);
+  const [timeSyncMsg, setTimeSyncMsg] = useState<string | null>(null);
+  const handleSyncTime = useCallback(async () => {
+    setTimeSyncBusy(true);
+    setTimeSyncMsg(null);
+    try {
+      await setDateTime();
+      setTimeSyncMsg(t.homeTimeSyncOk);
+    } catch (e: any) {
+      setTimeSyncMsg(t.homeTimeSyncFailed(e?.message ?? String(e)));
+    } finally {
+      setTimeSyncBusy(false);
+    }
+  }, [t]);
 
   // ── Connecting flow (v2.3.2 beta) ────────────────────────────────────────
   const [phase, setPhase] = useState<ConnPhase>('searching');
@@ -644,6 +664,22 @@ export default function HomeScreen() {
                 watchdog/sync-provider choice - not a new signal invented for this label. */}
             <Chip icon={bleConnected ? 'link' : 'check'} label={t.homeConnVia(bleConnected ? t.homeConnViaBle : t.homeConnViaUsb)} />
           </View>
+          {/* Real, 2026-08-10 - gated off for a cable-connected Kailash: that path's real
+              mechanism is still unconfirmed (see PROJECT task "Capture kailashtimesyncmenu"),
+              while cable Ambit3 (existing 0x0300/0x0302) and BLE Kailash (this session's new
+              0x1201 finding) are both real, evidenced paths. */}
+          {(!isKailash(ambitInfo) || bleConnected) && (
+            <TouchableOpacity
+              style={styles.timeSyncRow}
+              disabled={timeSyncBusy}
+              onPress={handleSyncTime}
+            >
+              <Icon name="sync" size={14} color={theme.primary} />
+              <Text style={[styles.timeSyncText, { color: theme.primary }]}>
+                {timeSyncBusy ? t.connecting : (timeSyncMsg ?? t.homeSyncTimeButton)}
+              </Text>
+            </TouchableOpacity>
+          )}
         </Card>
       )}
 
@@ -675,6 +711,21 @@ export default function HomeScreen() {
               {t.homeKailashLogbookLabel} {kailashHistory.sessions.length}
             </Text>
           )}
+        </Card>
+      )}
+
+      {/* ── Kailash visited-places world map - real, 2026-08-10 ("desktop version has more
+          functions that were not passed to the android version, like for example the map
+          with locations, can you implement it please?"). Ports desktop HomePage.qml's own
+          MapView(markers: KailashService.visitedPlaces) - multiMarker mode (TrackPreview.tsx's
+          own header comment) so each visited place gets its own dot instead of a nonsense
+          polyline connecting unrelated cities in array order. ── */}
+      {deviceType === 'ambit' && isKailash(ambitInfo) && kailashHistory && kailashHistory.visitedPlaces.length > 0 && (
+        <Card style={[roomy ? styles.deviceCardRoomy : styles.deviceCardCol, styles.deviceCardInner]}>
+          <Text style={[styles.deviceName, v3TextStyle]}>
+            {t.homeKailashPlacesTitle(kailashHistory.visitedPlaces.length)}
+          </Text>
+          <TrackPreview points={kailashHistory.visitedPlaces} multiMarker height={160} />
         </Card>
       )}
 
@@ -961,6 +1012,17 @@ function createStyles(t: ReturnType<typeof useV3Theme>) {
       justifyContent: 'center',
       gap: 14,
       marginTop: 8,
+    },
+    timeSyncRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
+      marginTop: 10,
+    },
+    timeSyncText: {
+      fontSize: 12,
+      fontWeight: '600',
     },
     actionsRow: {
       flexDirection: 'row',

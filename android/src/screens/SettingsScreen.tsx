@@ -25,6 +25,7 @@ import {
   getMapProvider, setMapProvider, MapProvider, MAP_PROVIDER_LABELS,
 } from '../services/MapProviderService';
 import { detectAttachedDeviceType } from '../native/AmbitUsbModule';
+import { getTileCacheSizeBytes, clearTileCache } from '../services/TileCache';
 import { t } from '../i18n';
 import { APP_VERSION } from '../config/version';
 import { useV3Theme } from '../theme/v3';
@@ -40,6 +41,11 @@ const MAP_PROVIDER_OPTIONS: { provider: MapProvider; label: () => string }[] = [
   { provider: 'osm',     label: () => t.mapProviderOsmLabel },
   { provider: 'cyclosm', label: () => t.mapProviderCyclosmLabel },
 ];
+
+function formatCacheSize(bytes: number): string {
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 const THEME_OPTIONS: { mode: ThemeMode; icon: IconName; label: () => string }[] = [
   { mode: 'light',  icon: 'sun',  label: () => t.themeLight },
@@ -79,6 +85,22 @@ export default function SettingsScreen() {
   const [openConnection, setOpenConnection] = useState<'strava' | 'livelox' | 'runalyze' | 'intervals' | null>(null);
 
   const [mapProvider, setMapProviderState] = useState<MapProvider>('ign');
+  const [tileCacheBytes, setTileCacheBytes] = useState<number | null>(null);
+  const [clearingCache, setClearingCache] = useState(false);
+
+  useFocusEffect(useCallback(() => {
+    getTileCacheSizeBytes().then(setTileCacheBytes).catch(() => setTileCacheBytes(0));
+  }, []));
+
+  async function handleClearTileCache() {
+    setClearingCache(true);
+    try {
+      await clearTileCache();
+      setTileCacheBytes(0);
+    } finally {
+      setClearingCache(false);
+    }
+  }
 
   // Real, 2026-08-08 ("Settings on ambit 3 - if they are already cracked to be changed by
   // cable, we will need to build a UI for it"). Not auto-loaded on focus like the API
@@ -610,6 +632,25 @@ export default function SettingsScreen() {
             </TouchableOpacity>
           ))}
         </View>
+        {/* Real, 2026-08-10 ("let's go for the offline maps solution") - TileCache.ts's own
+            cache (route/activity map tiles saved for offline use via MapScreen.tsx's own
+            download button) is unbounded until cleared manually - a simple size readout +
+            clear action here, the same "let the user manage it" pattern this project uses
+            for the GPX/exports cache directories elsewhere, not automatic eviction. */}
+        <View style={styles.cacheRow}>
+          <Text style={styles.sectionDesc}>
+            {t.offlineMapCacheSize(tileCacheBytes === null ? '…' : formatCacheSize(tileCacheBytes))}
+          </Text>
+          <Button
+            label={t.offlineMapClearCache}
+            variant="outline"
+            tone="alert"
+            grow={false}
+            loading={clearingCache}
+            disabled={!tileCacheBytes}
+            onPress={handleClearTileCache}
+          />
+        </View>
       </View>
 
       {/* ── About / disclaimer ── */}
@@ -657,6 +698,7 @@ const createStyles = (t: ReturnType<typeof useV3Theme>) => StyleSheet.create({
   sectionDesc: { fontSize: 13, color: t.mutedText, marginBottom: 6, lineHeight: 19 },
   link: { color: t.text, fontWeight: '600' },
   row: { flexDirection: 'row', gap: 10, marginTop: 12 },
+  cacheRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10, gap: 10 },
   creditsHeading: {
     fontSize: 13, fontWeight: '700', color: t.text,
     marginTop: 16, paddingTop: 12, borderTopWidth: 1, borderTopColor: t.mutedText + '33',
