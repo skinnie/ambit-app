@@ -161,6 +161,20 @@ KAILASH_SETTINGS = {
     # for every scalar field in this table.
     "home_latitude": "HomeLocation.Latitude",
     "home_longitude": "HomeLocation.Longitude",
+    # Real, 2026-08-10: entry 0x15, enum 0=GPS / 1=GPS+Glonass. READ-ONLY on purpose -
+    # it looks like the watch's GNSS selector and demonstrably is NOT.
+    #
+    # Tested directly on André's Kailash: with the watch's own "GPS & GLONASS" menu ON the
+    # field read 0, with it OFF the field read 0, and a byte-comparison of the two 152-byte
+    # settings blobs across that toggle showed 40 entries in, 40 out, ZERO bytes changed
+    # anywhere. The watch does not store its GNSS choice here. Writing 1 does change the
+    # field and a re-read confirms the field - but that is NOT evidence the receiver
+    # changed, a claim made and corrected the same day.
+    #
+    # Exposed because it is genuinely readable and part of the schema, but a UI must never
+    # offer it as a GLONASS switch. Wherever the watch keeps its real GNSS setting, it is
+    # not in the 0x1100 blob and has not been found yet.
+    "enabled_navigation_systems": "EnabledNavigationSystems",
     # NOTE: Kailash's clock (sml.DeviceSettings.Time.TimeISO8601, entry 0x34) is NOT
     # written through this table/write_one() - a `device_time` entry lived here briefly
     # based on a since-disproven hypothesis (that it went through this same 0x1101
@@ -174,6 +188,10 @@ KAILASH_SETTINGS = {
 # (`PI*x/(10^7*180)` - radians for on-device math; dividing by 1e7 alone gives plain
 # decimal degrees, the useful value for a human/UI). Not applied generically - no other
 # curated field here has a <MOD> tag yet - just named explicitly for these two.
+# Kailash keys that are readable but must never be offered as editable - see each one's own
+# note in KAILASH_SETTINGS for the evidence.
+KAILASH_READ_ONLY = {"enabled_navigation_systems"}
+
 _DEGREES_X1E7_KEYS = {"home_latitude", "home_longitude"}
 
 
@@ -622,8 +640,8 @@ def read_all(payload, descriptor, product_id=None):
         # min/max here are the ranges SuuntoLink's own UI enforces, which are much
         # tighter than the raw integer width describe_field() derives (backlight
         # brightness is 5..100, not 0..255).
-        writable = (product_id == KAILASH_PRODUCT_ID
-                    or key in AMBIT3_KEY_TEMPLATE)
+        writable = (key not in KAILASH_READ_ONLY) if product_id == KAILASH_PRODUCT_ID \
+            else (key in AMBIT3_KEY_TEMPLATE)
         if product_id != KAILASH_PRODUCT_ID and _display_range(key) is not None:
             desc = dict(desc)
             desc["min"], desc["max"] = _display_range(key)
@@ -1001,103 +1019,101 @@ def write_one(link, descriptor, key, new_value, product_id=None):
     # Real, 2026-08-10 - the Ambit3 family goes through SuuntoLink's own per-screen
     # template (see AMBIT3_WRITE_TEMPLATES for why that matters: the old path below
     # echoed the watch's entire settings blob back, BLE bond keys included, on every
-    # single write). Kailash keeps the full-blob path unchanged: HomeLocation (a GROUP
-    # member) was worked out and proven against it, and there are no Kailash write
-    # captures to derive templates from, so switching it on a guess would trade a
-    # known-working path for an unproven one. That stays open until a real 7R capture
-    # exists. (Kailash's clock does NOT go through this function at all - see
-    # KAILASH_SETTINGS's own note and tools/set_time.py.)
+    # single write).
     if product_id != KAILASH_PRODUCT_ID:
         return _write_via_template(link, schema, key, field, raw_new_value, before)
 
+    # Kailash gets the SINGLE-ENTRY write - not a template, and no longer the full blob.
+    #
+    # Real, 2026-08-10, and evidenced from two directions. The 7R iOS app never sends
+    # 0x1101 at all: every settings change it makes is a single-entry SBEM push over
+    # 0x1201, 17 bytes, one field per message (decoded from
+    # assets/APK/kailash/kailash7rsettingschange.pklg - 54 of them, covering backlight
+    # mode/brightness, storm alarm, tones, time format and HomeLocation). That is the
+    # shape Suunto themselves use for this watch.
+    #
+    # Whether the CABLE's own 0x1101 would accept the same shape was the open question,
+    # since no vendor app sends 0x1101 to a Kailash ever. Tested live on André's own
+    # watch that day: a 17-byte single-entry payload (prefix + SBEM0102 + one entry)
+    # flipped Display.Invert both ways, and a full before/after comparison of the 296-byte
+    # read showed 41 entries in, 41 entries out, ZERO other entries changed, and the
+    # 147-byte WhitelistedBleDevices bond record byte-identical. So the watch merges a
+    # partial payload rather than treating it as the complete settings set - the risk that
+    # made this worth testing rather than assuming.
+    #
+    # The win is the same one the Ambit3 templates bought: the old full-blob echo
+    # re-transmitted the paired phone's IdentityResolvingKey/EncodingKey on every single
+    # settings change. A single-entry write is 17 bytes against 296 and contains no
+    # WhitelistedBleDevices entry at all.
+    #
+    # A GROUP member (HomeLocation.Latitude/Longitude, entry 0x36) still needs its whole
+    # group record rebuilt and sent as that one entry - handled below by patching the
+    # group's own bytes and emitting just that entry.
+    return _write_single_entry(link, schema, key, field, raw_new_value, before,
+                                group_id, member_offset)
+
+
+def _write_single_entry(link, schema, key, field, raw_new_value, before,
+                         group_id, member_offset):
+    """Kailash's own write: one entry, nothing else. See the block comment above for the
+    evidence. Mirrors _write_via_template()'s contract (confirm by re-read, report in
+    display units) so both watches behave identically to a caller."""
     entry_id = group_id if group_id is not None else field.fid
-    off = head + 8
-    entry_start = None
-    entry_len = None
-    while off + 2 <= len(before):
-        eid, length = before[off], before[off + 1]
-        off += 2
-        if length == 0xFF:
-            length, = struct.unpack_from("<I", before, off)
-            off += 4
-        if eid == entry_id:
-            entry_start = off
-            entry_len = length
-            break
-        off += length
+    entry_start, entry_len = _locate_entry(before, entry_id)
     if entry_start is None:
         return {"ok": False, "error": f"entry 0x{entry_id:02x} ({field.path}) not in "
                                        "this watch's current settings reply"}
+    current = before[entry_start:entry_start + entry_len]
 
-    if group_id is not None and entry_len != group_size:
-        return {"ok": False, "error": f"{field.path}'s group entry is {entry_len} bytes, "
-                                       f"expected exactly {group_size} (one record) - "
-                                       "writing a multi-record group isn't supported"}
-
-    field_off = entry_start + member_offset
-
-    # Real, 2026-08-10 ("Kailash time-sync doesn't take effect over cable") - the real
-    # working mechanism turned out to be this exact 0x1101 settings-write path, not the
-    # standalone date/time commands (see set_time.py's own docstring for the full story:
-    # SuuntoLink's own log shows `NspEndDevice::setSmlData` immediately preceding a real
-    # `EmuDevice::setDateAndTime succeeded`, and the schema confirms
-    # sml.DeviceSettings.Time.TimeISO8601, a utf8 field - the one type this function never
-    # supported before, since every previously-curated field is fixed-size numeric).
-    # utf8 fields are NUL-terminated and their on-wire entry_len doesn't change here (no
-    # blob restructuring needed) - the new string must fit within the watch's own current
-    # entry_len, NUL-padded if shorter; a real, hard error (not silent truncation) if it's
-    # longer, since truncating a date/time string would write plausible-looking garbage.
-    if is_text:
-        if not isinstance(new_value, str):
-            return {"ok": False, "error": f"{key} expects a text value"}
-        previous_raw = before[field_off:field_off + entry_len].split(b"\x00", 1)[0].decode("utf8", "replace")
-        encoded = new_value.encode("utf8") + b"\x00"
-        if len(encoded) > entry_len:
-            return {"ok": False, "error": f"{key}={new_value!r} is {len(encoded)} bytes, "
-                                           f"this watch's own field is only {entry_len} bytes"}
-        packed = encoded.ljust(entry_len, b"\x00")
-        modified = bytearray(before)
-        modified[field_off:field_off + entry_len] = packed
+    if group_id is not None:
+        group_size = sum(schema.fields[m].size for m in schema.groups[group_id])
+        if entry_len != group_size:
+            return {"ok": False, "error": f"{field.path}'s group entry is {entry_len} "
+                                           f"bytes, expected exactly {group_size} (one "
+                                           "record) - writing a multi-record group isn't "
+                                           "supported"}
+        previous = struct.unpack_from(field.fmt, current, member_offset)[0]
+        patched = bytearray(current)
+        patched[member_offset:member_offset + field.size] = \
+            struct.pack(field.fmt, raw_new_value)
+        patched = bytes(patched)
     else:
-        previous_raw = struct.unpack_from(field.fmt, before, field_off)[0]
-        packed = struct.pack(field.fmt, raw_new_value)
-        modified = bytearray(before)
-        modified[field_off:field_off + field.size] = packed
-    link.command(CMD_SETTINGS_WRITE, bytes(modified))
+        try:
+            patched = _field_bytes(field, raw_new_value, current)
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc)}
+        previous = _decode_field(field, current)
+
+    prefix = before[:before.find(sbem_schema.MAGIC)]
+    payload = prefix + sbem_schema.MAGIC + _encode_entry(entry_id, patched)
+    link.command(CMD_SETTINGS_WRITE, payload)
 
     after = link.command(CMD_SETTINGS_READ, b"\0\0\0\0")
-    if is_text:
-        confirmed_raw = after[field_off:field_off + entry_len].split(b"\x00", 1)[0].decode("utf8", "replace") \
-            if len(after) >= field_off + entry_len else None
-        return {
-            "ok": confirmed_raw == new_value,
-            "path": field.path,
-            "previous_value": previous_raw,
-            "requested_value": new_value,
-            "confirmed_value": confirmed_raw,
-        }
+    start, length = _locate_entry(after, entry_id)
+    if start is None:
+        confirmed = None
+    elif group_id is not None:
+        confirmed = struct.unpack_from(field.fmt, after, start + member_offset)[0]
+    else:
+        confirmed = _decode_field(field, after[start:start + length])
 
-    # Real bug, found 2026-08-08 while verifying this exact new field: `>` here is an
-    # off-by-one - a field occupying the very last bytes of the reply (home_longitude
-    # does, real payload observed 2026-08-08) has field_off + field.size == len(after)
-    # exactly, so the old `>` check always treated a perfectly good, in-bounds re-read as
-    # "too short" and silently reported confirmed_value=None / ok=False even though the
-    # write actually succeeded - a false negative on every prior field only by luck of
-    # never sitting last. Needs `>=`.
-    confirmed_raw = struct.unpack_from(field.fmt, after, field_off)[0] \
-        if len(after) >= field_off + field.size else None
+    if confirmed is None:
+        ok = False
+    elif field.base.startswith("float"):
+        ok = struct.pack(field.fmt, raw_new_value) == struct.pack(field.fmt, confirmed)
+    else:
+        ok = confirmed == raw_new_value
 
     scale = 10 ** 7 if key in _DEGREES_X1E7_KEYS else 1
-    previous = previous_raw / scale if scale != 1 else previous_raw
-    confirmed = (confirmed_raw / scale if scale != 1 else confirmed_raw) \
-        if confirmed_raw is not None else None
-
     return {
-        "ok": confirmed_raw == raw_new_value,
+        "ok": ok,
         "path": field.path,
-        "previous_value": previous,
-        "requested_value": new_value,
-        "confirmed_value": confirmed,
+        "template": "single-entry",
+        "previous_value": previous / scale if scale != 1 else previous,
+        "requested_value": raw_new_value / scale if scale != 1 else raw_new_value,
+        "confirmed_value": (confirmed / scale if scale != 1 else confirmed)
+                            if confirmed is not None else None,
+        "omitted_fields": [],
     }
 
 

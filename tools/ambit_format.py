@@ -12,6 +12,12 @@ import struct
 WAYPOINT_BASE, WAYPOINT_REGION_SIZE = 0x005000, 16384
 ROUTE_BASE, ROUTE_REGION_SIZE = 0x14C080, 130000
 SGEE_BASE, SGEE_REGION_SIZE = 0x0704E0, 140000
+# Real, 2026-08-10, read off a connected Kailash's own 0x0b21 reply (assets/pcap/
+# kailashactivity carries the same map): a second, separate orbital-data region that the
+# Ambit3 family does not have at all. Address/size are the Kailash's own; read_memory_map()
+# resolves them live per device rather than trusting these, since no other GLONASS-capable
+# watch (Traverse, Traverse Alpha, Ambit3 Vertical) has been read yet.
+GLONASS_SGEE_BASE, GLONASS_SGEE_REGION_SIZE = 0x1339E0, 100000
 TRAINING_PROGRAM_BASE, TRAINING_PROGRAM_REGION_SIZE = 0x001000, 3072
 APPS_BASE, APPS_REGION_SIZE = 0x0927C0, 200000
 CUSTOM_MODES_BASE, CUSTOM_MODES_REGION_SIZE = 0x002000, 12288
@@ -26,6 +32,16 @@ REGIONS = {
     WAYPOINT_BASE: ("Waypoints", WAYPOINT_REGION_SIZE, HASH_PADDED),
     ROUTE_BASE: ("Routes", ROUTE_REGION_SIZE, HASH_PADDED),
     SGEE_BASE: ("GpsSGEE", SGEE_REGION_SIZE, HASH_WRITTEN),
+    # UNVERIFIED hash mode, 2026-08-10: WRITTEN by direct analogy with GpsSGEE, which this
+    # region matches in every respect that can be checked without writing it - same
+    # length-prefixed blob shape, and the two source files (gpsorbit/binary and
+    # glonassorbit/binary) share a byte-identical 12-byte header (magic 62 12 37 09,
+    # version 7f 01, big-endian year + month + day). No capture of a real GlonassSGEE write
+    # exists anywhere: SuuntoLink's own Devices.xml gates the GLONASS download to exactly
+    # three devices (Ambit3 Vertical, Traverse, Traverse Alpha) and Kailash is not one of
+    # them, so this region has never been written on André's watch - read back as 4096/4096
+    # bytes of 0xff, i.e. erased flash.
+    GLONASS_SGEE_BASE: ("GlonassSGEE", GLONASS_SGEE_REGION_SIZE, HASH_WRITTEN),
     # UNVERIFIED, 2026-08-05: no capture in this project touches TrainingProgram, so neither
     # its presence here nor WRITTEN as its hash mode is confirmed against real bytes - it's an
     # inference from the format being self-describing (an item count in its own header), the

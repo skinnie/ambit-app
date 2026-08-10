@@ -48,11 +48,11 @@ def decode_orbit_head(head):
     }
 
 
-def run_status(verbose):
+def run_status(verbose, product_id=None):
     """Real, read-only device access (like exercise_log.py's own "read-only" mode) -
     dry_run=False so 0x0b15 actually reaches the watch, but nothing is ever written in this
     path; build_sgee()/send_plan() are never called here."""
-    link = Link(dry_run=False, verbose=verbose)
+    link = Link(dry_run=False, verbose=verbose, product_id=product_id)
     link.open()
     link.command(CMD_DEVICE_INFO, b"\x02\x48\x03\x00")
     head = link.command(CMD_GPS_ORBIT_HEAD, b"")
@@ -76,11 +76,35 @@ def build_sgee(path):
     separate 0x0b15 freshness check at all - see the head bytes this action prints before
     writing). Point this at whatever fresh file you have; this function does not fetch one.
     """
+    return build_sgee_for_region(path, F.SGEE_BASE, F.SGEE_REGION_SIZE, "GpsSGEE")
+
+
+# Real, 2026-08-10: the same length-prefixed blob, into whichever orbital region is being
+# filled. GLONASS lives in its own separate region (`GlonassSGEE`) that only some watches
+# declare - Kailash does, the Ambit3 family does not - so the caller resolves the base and
+# size from the WATCH's own 0x0b21 reply and passes them in, rather than this function
+# assuming either.
+#
+# Both source files come from the same service and share a byte-identical 12-byte header
+# (magic `62 12 37 09`, version `7f 01`, big-endian year, month, day), so the framing is
+# identical: `[u32 LE length][raw file]`. Confirmed against real bytes on both sides - the
+# watch's own GpsSGEE region begins `28 1b 01 00` = 72488 followed verbatim by
+# gpsorbit.bin, and the `kailashactivity` capture wrote 72020 bytes whose leading u32 is
+# 72016 (= length + 4).
+def build_sgee_for_region(path, base, region_size, label):
     data = pathlib.Path(path).read_bytes()
     blob = len(data).to_bytes(4, "little") + data
+    # Hard bounds check BEFORE anything is planned, never a trusting write: this project
+    # has already had one real out-of-bounds flash write from a computed offset that was
+    # never checked against the declared region size.
+    if len(blob) > region_size:
+        raise SystemExit(
+            f"{label}: {path} is {len(data)} bytes, which with its 4-byte length prefix "
+            f"needs {len(blob)} - the watch declares only {region_size} bytes for this "
+            "region. Refusing to write past the end of it.")
     flash = FlashImage()
-    flash.write(F.SGEE_BASE, blob)
-    layout = [("GpsSGEE data", F.SGEE_BASE, blob), ("tail", F.SGEE_BASE, None)]
+    flash.write(base, blob)
+    layout = [(f"{label} data", base, blob), ("tail", base, None)]
     return flash, layout
 
 
@@ -139,10 +163,22 @@ def main():
     ap.add_argument("--compare", metavar="CAPTURE",
                      help="checks the simulated payloads against a capture")
     ap.add_argument("--verbose", action="store_true", help="logs every 64-byte report")
+    ap.add_argument("--device", metavar="NAME",
+                     help="same as write_nav.py's own --device - which watch to open when "
+                          "more than one is connected (e.g. 'kailash'). Required in "
+                          "practice for --glonass, since the Ambit3 family has no such "
+                          "region and both watches may be plugged in at once.")
+    ap.add_argument("--glonass", action="store_true",
+                     help="write the file to the watch's GlonassSGEE region instead of "
+                          "GpsSGEE - only for a watch that declares one (Kailash does, the "
+                          "Ambit3 family does not). Pair with glonassorbit/binary, not "
+                          "gpsorbit/binary.")
     args = ap.parse_args()
 
+    from write_nav import resolve_product_id as _rpid
+    product_id = _rpid(args.device) if args.device else None
     if args.status:
-        result = run_status(args.verbose)
+        result = run_status(args.verbose, product_id)
         if args.json:
             print(json.dumps(result))
         elif result["valid"]:
@@ -154,7 +190,7 @@ def main():
     if not args.file:
         ap.error("file is required unless --status is given")
 
-    link = Link(dry_run=not args.write, verbose=args.verbose)
+    link = Link(dry_run=not args.write, verbose=args.verbose, product_id=product_id)
     if args.write:
         print("!! REAL WRITE requested")
         link.open()
@@ -166,9 +202,30 @@ def main():
         head = link.command(CMD_GPS_ORBIT_HEAD, b"")
         print(f"  current orbit-data status (0x0b15, {len(head)} B): {head.hex()}"
               "  (structure decoded in sgee_andre.md)")
-    check_memory_map(read_memory_map(link))
+    found = read_memory_map(link)
+    check_memory_map(found)
 
-    flash, layout = build_sgee(args.file)
+    # Which region, and - importantly - at the address THIS watch declares rather than a
+    # constant. A watch that does not declare the region at all is refused outright: that
+    # is the whole Ambit3-vs-Kailash difference, and guessing an address for a region the
+    # firmware never mentioned is exactly how a write lands somewhere it should not.
+    label = "GlonassSGEE" if args.glonass else "GpsSGEE"
+    if label not in found:
+        print(f"\n  this watch does not declare a {label} region in its own memory map "
+              f"(it lists: {', '.join(sorted(found)) or 'nothing'}).")
+        if args.glonass:
+            print("  GLONASS orbital data has nowhere to go on this device - refusing.")
+        return 1
+    base, region_size = found[label]
+    # Be honest about where these numbers came from: in dry-run read_memory_map() hands
+    # back the REFERENCE table (F.REGIONS), not the watch - the giveaway is that it lists
+    # TrainingProgram/Apps/CustomModes, which a Kailash reports as 0xffffffff. Only a real
+    # run has actually asked the device.
+    source = "as declared by this watch" if not link.dry_run \
+        else "REFERENCE values - dry-run never queried the watch"
+    print(f"  target region {label} at 0x{base:06x}, {region_size} bytes ({source})")
+
+    flash, layout = build_sgee_for_region(args.file, base, region_size, label)
     send_plan(link, flash, layout, commit=False)
 
     total = sum(len(payload) for _, payload, _ in link.sent)

@@ -619,7 +619,9 @@ def read_memory_map(link):
 
     reply = link.command(CMD_MEMORY_MAP, b"\0\0\0\0")
     found = {}
-    for match in re.finditer(rb"(Waypoints|Routes|GpsSGEE)\x00", reply):
+    # GlonassSGEE added 2026-08-10 - Kailash declares it, the Ambit3 family does not, so a
+    # watch without it simply yields no entry here (callers must not assume it exists).
+    for match in re.finditer(rb"(Waypoints|Routes|GpsSGEE|GlonassSGEE)\x00", reply):
         cursor = match.end()
         end = reply.index(b"\0", cursor)          # hash in hexadecimal
         start, size = struct.unpack("<II", reply[end + 1:end + 9])
