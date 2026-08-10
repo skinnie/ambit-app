@@ -20,7 +20,23 @@ Rectangle {
 
     implicitHeight: 44
     radius: Theme.radiusSmall
-    color: selected ? Theme.primary : (hoverHandler.hovered ? Theme.card : "transparent")
+    // Real bug, found 2026-08-10 (André: "when I pass the mouse on the left buttons there
+    // is like a shadow that flickers... too fast the flicker but too slow to disappear so
+    // sometimes when I pass between 2 buttons I have 2 shadows").
+    //
+    // The unhovered state used to be the literal "transparent", which in Qt is #00000000 -
+    // BLACK at zero alpha. The Behavior below then interpolated Theme.card -> transparent
+    // black, so every fade passed through semi-transparent black and the row visibly
+    // darkened on its way in and out. That is the "shadow": quick going in (the pointer is
+    // arriving), but the full 120 ms fade-out runs after the pointer has already left, so
+    // it lingers - and moving between two rows runs one fade-out and one fade-in at once,
+    // which is why there were two.
+    //
+    // Fading to the SAME colour at zero alpha keeps the whole interpolation on one hue, so
+    // it just dissolves. Theme.card rather than Theme.background because that is what it
+    // fades from; with matching r/g/b only the alpha actually changes.
+    readonly property color _hoverClear: Qt.rgba(Theme.card.r, Theme.card.g, Theme.card.b, 0)
+    color: selected ? Theme.primary : (hoverHandler.hovered ? Theme.card : _hoverClear)
     // AMBITAPP_SPEC.md's own Design Language lists "Subtle animations" as a real
     // requirement - real, 2026-08-09 ("general desktop polish pass"): before this, every
     // color in the app (hover, selection, theme changes) snapped instantly with zero
