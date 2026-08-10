@@ -50,6 +50,20 @@ class DeviceService : public QObject
     // rather than adding a separate rehearse step this app doesn't otherwise expose for it).
     Q_PROPERTY(bool gpsOrbitBusy READ gpsOrbitBusy NOTIFY gpsOrbitChanged)
     Q_PROPERTY(QString gpsOrbitStatusText READ gpsOrbitStatusText NOTIFY gpsOrbitChanged)
+    // Real, 2026-08-10 (sgee_andre.md's "GLONASS on the Kailash"). `glonassSupported` is
+    // answered by the WATCH - sgee.py's glonass_status() reports whether this device
+    // declares a GlonassSGEE region at all - never by a model list, which is exactly the
+    // mistake Suunto's own Devices.xml makes (three models hardcoded; the Kailash, which
+    // has both the receiver and the region, was left off and has therefore never received
+    // GLONASS ephemeris from any Suunto software). The UI shows the option only when this
+    // is true.
+    Q_PROPERTY(bool glonassSupported READ glonassSupported NOTIFY gpsOrbitChanged)
+    // App preference, NOT a field on the watch: when true we send GPS ephemeris only and
+    // skip GLONASS. Persisted with QSettings, and passed to the backend as `gps_only` on
+    // every update. Default false - the whole point is that we send both where the device
+    // supports it.
+    Q_PROPERTY(bool ephemerisGpsOnly READ ephemerisGpsOnly WRITE setEphemerisGpsOnly
+               NOTIFY ephemerisGpsOnlyChanged)
 
     // Real, 2026-08-10 ("I connected the kailash via usb... it didn't sync time... is this
     // function implemented in our app? if not implement it"). Same one-tap, always-real-write
@@ -82,6 +96,9 @@ public:
 
     bool gpsOrbitBusy() const { return m_gpsOrbitBusy; }
     QString gpsOrbitStatusText() const { return m_gpsOrbitStatusText; }
+    bool glonassSupported() const { return m_glonassSupported; }
+    bool ephemerisGpsOnly() const { return m_ephemerisGpsOnly; }
+    void setEphemerisGpsOnly(bool value);
 
     // Downloads fresh orbital data and writes it to the watch in one call (POST
     // /api/agps/update, confirm:true) - a real watch write, not a rehearsal; the backend's
@@ -122,6 +139,7 @@ signals:
     void lastErrorChanged();
     void deviceInfoChanged();
     void gpsOrbitChanged();
+    void ephemerisGpsOnlyChanged();
     void timeSyncChanged();
     void timezonesChanged();
 
@@ -139,6 +157,8 @@ private:
     int m_batteryPercent = -1;
 
     bool m_gpsOrbitBusy = false;
+    bool m_glonassSupported = false;
+    bool m_ephemerisGpsOnly = false;
     QString m_gpsOrbitStatusText;
 
     bool m_timeSyncBusy = false;

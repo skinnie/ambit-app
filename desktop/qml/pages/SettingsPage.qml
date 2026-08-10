@@ -249,6 +249,81 @@ Flickable {
                     text: SettingsWriteService.lastError
                 }
 
+                // --- Orbital data - real, 2026-08-10 (André: "let's enable by default for
+                // traverse, traverse and kailash. on kailash settings, give the option to
+                // disable it, name it ephemeris gps only with a little i that shows").
+                //
+                // Shown only when the WATCH itself declares a GlonassSGEE region
+                // (DeviceService.glonassSupported, answered by sgee.py's glonass_status),
+                // never from a model list - Suunto's own Devices.xml hardcodes three
+                // models and forgot the Kailash, which is why that watch has never had
+                // GLONASS ephemeris from any Suunto software.
+                //
+                // This is an APP preference, not a field on the watch, which is why it
+                // sits in its own titled group rather than among the real device settings
+                // the Repeater below renders from the watch's own blob.
+                Column {
+                    id: orbitalGroup
+                    width: parent.width
+                    spacing: Theme.spacingSmall
+                    visible: DeviceService.glonassSupported
+                    property bool infoOpen: false
+
+                    Text {
+                        text: qsTr("Orbital data")
+                        color: Theme.mutedText
+                        font.bold: true
+                        font.pixelSize: Theme.fontSizeLabel
+                        topPadding: Theme.spacingSmall
+                    }
+
+                    Row {
+                        spacing: Theme.spacingSmall
+                        RoundedCheckBox {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: qsTr("Ephemeris GPS only")
+                            checked: DeviceService.ephemerisGpsOnly
+                            onToggled: DeviceService.ephemerisGpsOnly = checked
+                        }
+                        // The "little i" - tap to expand, tap again to collapse. Not a hover
+                        // tooltip: hover doesn't exist on Android, and this same pattern has
+                        // to work identically there.
+                        Rectangle {
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: 18; height: 18; radius: 9
+                            color: "transparent"
+                            border.width: 1
+                            border.color: orbitalGroup.infoOpen ? Theme.primary : Theme.mutedText
+                            Text {
+                                anchors.centerIn: parent
+                                text: "i"
+                                font.pixelSize: Theme.fontSizeCaption
+                                font.bold: true
+                                color: orbitalGroup.infoOpen ? Theme.primary : Theme.mutedText
+                            }
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: orbitalGroup.infoOpen = !orbitalGroup.infoOpen
+                            }
+                        }
+                    }
+
+                    Text {
+                        visible: orbitalGroup.infoOpen
+                        width: parent.width
+                        wrapMode: Text.WordWrap
+                        color: Theme.mutedText
+                        font.pixelSize: Theme.fontSizeCaption
+                        text: qsTr("This watch can also use GLONASS satellites, and has its " +
+                                    "own storage for their orbital data. Suunto's software " +
+                                    "never sends it to this model, so those satellites start " +
+                                    "cold every time. AmbitApp sends both GPS and GLONASS " +
+                                    "orbital data, which can speed up getting a fix. Tick " +
+                                    "this to send GPS only.")
+                    }
+                }
+
                 Repeater {
                     model: [
                         { screen: "general",  title: qsTr("General settings") },

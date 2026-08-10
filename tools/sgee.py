@@ -22,7 +22,7 @@ import sys
 import ambit_format as F
 from ambit_pcap import FlashImage, messages
 from write_nav import (CMD_DATA_TAIL, CMD_DATA_WRITE, CMD_DEVICE_INFO, Link,
-                        check_memory_map, read_memory_map, send_plan)
+                        check_memory_map, read_flash, read_memory_map, send_plan)
 
 CMD_GPS_ORBIT_HEAD = 0x0B15
 
@@ -48,6 +48,37 @@ def decode_orbit_head(head):
     }
 
 
+def glonass_status(link):
+    """The GLONASS region's own state, read from flash.
+
+    Real, 2026-08-10: there is no GLONASS equivalent of the 0x0b15 orbit-status query -
+    that command reports the GPS region only. But the generation date is carried inside the
+    ephemeris file's own header, and the region stores `[u32 LE length][raw file]`, so the
+    date sits at region offset 10..13 as big-endian year, month, day (confirmed against
+    both source files and against real region content on a Kailash). That makes the same
+    freshness question answerable without any new command.
+
+    Returns {"supported": False} for a watch that declares no GlonassSGEE region at all
+    (the whole Ambit3 family) - not an error, just a device without the feature."""
+    found = read_memory_map(link)
+    if "GlonassSGEE" not in found:
+        return {"supported": False}
+    base, size = found["GlonassSGEE"]
+    head = read_flash(link, base, 16, "GlonassSGEE")
+    if all(b == 0xFF for b in head):
+        # Erased flash - never written. The normal state on any watch Suunto ships, since
+        # its own Devices.xml never lists this model for the GLONASS download.
+        return {"supported": True, "valid": False, "address": base, "region_size": size}
+    length = int.from_bytes(head[:4], "little")
+    year = int.from_bytes(head[10:12], "big")
+    month, day = head[12], head[13]
+    if not (2000 <= year <= 2100 and 1 <= month <= 12 and 1 <= day <= 31):
+        return {"supported": True, "valid": False, "address": base, "region_size": size,
+                "note": "region is not erased but its header does not decode as a date"}
+    return {"supported": True, "valid": True, "address": base, "region_size": size,
+            "bytes": length, "date": f"{year:04d}-{month:02d}-{day:02d}"}
+
+
 def run_status(verbose, product_id=None):
     """Real, read-only device access (like exercise_log.py's own "read-only" mode) -
     dry_run=False so 0x0b15 actually reaches the watch, but nothing is ever written in this
@@ -56,7 +87,11 @@ def run_status(verbose, product_id=None):
     link.open()
     link.command(CMD_DEVICE_INFO, b"\x02\x48\x03\x00")
     head = link.command(CMD_GPS_ORBIT_HEAD, b"")
-    return decode_orbit_head(head)
+    status = decode_orbit_head(head)
+    # GLONASS rides along in the same status call so a caller (the desktop backend) learns
+    # in one round trip both whether this watch supports it and whether it is stale.
+    status["glonass"] = glonass_status(link)
+    return status
 
 
 def build_sgee(path):

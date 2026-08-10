@@ -64,6 +64,14 @@ FIRMWARE_DIR = BACKUP_DIR / "firmware"
 # Confirmed live and fully unauthenticated, 2026-08-05 (sgee_andre.md) - no AppKey/account
 # needed, unlike the rest of that host's API surface.
 GPS_ORBIT_URL = "https://devices.suunto-operations.com/devices/gpsorbit/binary"
+# Real, 2026-08-10 (sgee_andre.md's "GLONASS on the Kailash"): the same service serves
+# GLONASS ephemeris, equally unauthenticated, and SuuntoLink's own movescount.js downloads
+# BOTH for the SGEE format. Suunto only ever WRITES it to three models because Devices.xml
+# lists three - a hardcoded allowlist that forgot the Kailash, which has both a GLONASS
+# receiver and its own GlonassSGEE region. We deliberately do not copy that pattern: the
+# watch is asked whether it declares the region (see sgee.py's glonass_status()), so any
+# device that supports it gets the data, including ones this project has never seen.
+GLONASS_ORBIT_URL = "https://devices.suunto-operations.com/devices/glonassorbit/binary"
 
 
 # ThreadingHTTPServer gives every incoming request its own thread, and the QML app fires
@@ -389,6 +397,11 @@ class Handler(BaseHTTPRequestHandler):
            confirmed, same rehearsal-first pattern as routes.
         """
         confirm = bool(body.get("confirm", False))
+        # Real, 2026-08-10 (André: "on kailash settings, give the option to disable it,
+        # name it ephemeris gps only"). An APP preference, not a field on the watch - the
+        # UI owns and persists it and passes it here; nothing about it is stored on the
+        # device. Default false, i.e. we send GLONASS too wherever the watch supports it.
+        gps_only = bool(body.get("gps_only", False))
 
         code, out, err = run_tool("sgee.py", ["--status", "--json"])
         watch_status = self._parse_last_json_line(out)
@@ -398,44 +411,72 @@ class Handler(BaseHTTPRequestHandler):
                 "raw_output": out, "stderr": err})
             return
 
-        if watch_status.get("valid"):
-            watch_dt = datetime.strptime(
-                f"{watch_status['date']} {watch_status['time']}", "%Y-%m-%d %H:%M:%S"
-            ).replace(tzinfo=timezone.utc)
-            age = datetime.now(timezone.utc) - watch_dt
-            if age.total_seconds() < 86400:
-                self._send_json(200, {
-                    "ok": True, "skipped": True, "reason": "No update needed",
-                    "watch_date": watch_status["date"]})
-                return
+        def fresh(date_str, time_str="00:00:00"):
+            """Under a day old? Same rule for both constellations."""
+            try:
+                dt = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M:%S") \
+                    .replace(tzinfo=timezone.utc)
+            except (TypeError, ValueError):
+                return False
+            return (datetime.now(timezone.utc) - dt).total_seconds() < 86400
 
-        try:
-            with urllib.request.urlopen(GPS_ORBIT_URL, timeout=30) as resp:
-                data = resp.read()
-        except urllib.error.URLError as e:
-            # Offline (or the server's unreachable) - not this backend's error, just
-            # nothing more it can do; report what's already known from the watch itself.
-            self._send_json(200, {
-                "ok": True, "wrote": False, "offline": True,
-                "watch_date": watch_status.get("date"),
-                "watch_valid": watch_status.get("valid", False),
-                "error": f"couldn't reach the orbital data server: {e}"})
-            return
+        def fetch_and_write(url, extra_args):
+            """Download one ephemeris file and hand it to sgee.py. Returns a small result
+            dict; never raises for an offline network, which is a real state rather than an
+            error (see this method's own docstring)."""
+            try:
+                with urllib.request.urlopen(url, timeout=30) as resp:
+                    data = resp.read()
+            except urllib.error.URLError as e:
+                return {"wrote": False, "offline": True,
+                        "error": f"couldn't reach the orbital data server: {e}"}
+            with tempfile.NamedTemporaryFile("wb", suffix=".bin", delete=False) as f:
+                f.write(data)
+                bin_path = f.name
+            try:
+                args = [bin_path] + list(extra_args)
+                if confirm:
+                    args.append("--write")
+                code, out, err = run_tool("sgee.py", args)
+            finally:
+                Path(bin_path).unlink(missing_ok=True)
+            return {"ok": code == 0, "wrote": confirm and code == 0,
+                    "fetched_bytes": len(data), "raw_output": out, "stderr": err}
 
-        with tempfile.NamedTemporaryFile("wb", suffix=".bin", delete=False) as f:
-            f.write(data)
-            bin_path = f.name
-        try:
-            args = [bin_path]
-            if confirm:
-                args.append("--write")
-            code, out, err = run_tool("sgee.py", args)
-        finally:
-            Path(bin_path).unlink(missing_ok=True)
+        result = {"ok": True, "watch_date": watch_status.get("date"),
+                  "watch_valid": watch_status.get("valid", False)}
 
-        self._send_json(200 if code == 0 else 502, {
-            "ok": code == 0, "wrote": confirm and code == 0,
-            "fetched_bytes": len(data), "raw_output": out, "stderr": err})
+        # --- GPS ---
+        if watch_status.get("valid") and fresh(watch_status.get("date"),
+                                                watch_status.get("time", "00:00:00")):
+            result["gps"] = {"skipped": True, "reason": "No update needed",
+                             "watch_date": watch_status.get("date")}
+        else:
+            result["gps"] = fetch_and_write(GPS_ORBIT_URL, [])
+
+        # --- GLONASS ---
+        # Capability comes from the WATCH (does it declare a GlonassSGEE region), never
+        # from a model list - see GLONASS_ORBIT_URL's own comment. Note there is no 0x0b15
+        # equivalent for GLONASS, so freshness is read out of the region's own header.
+        glo = watch_status.get("glonass") or {}
+        if not glo.get("supported"):
+            result["glonass"] = {"supported": False}
+        elif gps_only:
+            result["glonass"] = {"supported": True, "skipped": True,
+                                 "reason": "Ephemeris GPS only is on"}
+        elif glo.get("valid") and fresh(glo.get("date")):
+            result["glonass"] = {"supported": True, "skipped": True,
+                                 "reason": "No update needed",
+                                 "watch_date": glo.get("date")}
+        else:
+            result["glonass"] = {"supported": True, **fetch_and_write(
+                GLONASS_ORBIT_URL, ["--glonass"])}
+
+        failed = [k for k in ("gps", "glonass")
+                  if result[k].get("ok") is False]
+        result["ok"] = not failed
+        result["wrote"] = any(result[k].get("wrote") for k in ("gps", "glonass"))
+        self._send_json(200 if not failed else 502, result)
 
     def _handle_backups_list(self):
         """Every backup made so far - just a directory listing, real prefixes `nav --save`/

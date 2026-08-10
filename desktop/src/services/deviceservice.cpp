@@ -7,6 +7,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QNetworkReply>
+#include <QSettings>
 #include <QStandardPaths>
 #include <QTextStream>
 #include <QTimeZone>
@@ -15,6 +16,8 @@ static const QString kBackendBase = QStringLiteral("http://127.0.0.1:8766");
 
 DeviceService::DeviceService(QObject *parent) : QObject(parent)
 {
+    // Restore the persisted "Ephemeris GPS only" choice on launch.
+    m_ephemerisGpsOnly = QSettings().value(QStringLiteral("ephemeris/gpsOnly"), false).toBool();
     m_pollTimer.setSingleShot(true);
     connect(&m_pollTimer, &QTimer::timeout, this, &DeviceService::refresh);
 
@@ -125,6 +128,17 @@ void DeviceService::fetchDeviceInfo()
     });
 }
 
+void DeviceService::setEphemerisGpsOnly(bool value)
+{
+    if (m_ephemerisGpsOnly == value)
+        return;
+    m_ephemerisGpsOnly = value;
+    // Same QSettings mechanism ConnectionsService already uses for credentials - one bool
+    // needs no new service class.
+    QSettings().setValue(QStringLiteral("ephemeris/gpsOnly"), value);
+    emit ephemerisGpsOnlyChanged();
+}
+
 void DeviceService::updateGpsOrbit()
 {
     m_gpsOrbitBusy = true;
@@ -134,7 +148,10 @@ void DeviceService::updateGpsOrbit()
     QNetworkRequest request(backendUrl(QStringLiteral("/api/agps/update")));
     request.setHeader(QNetworkRequest::ContentTypeHeader,
                        QStringLiteral("application/json"));
-    const QByteArray body = QByteArrayLiteral(R"({"confirm": true})");
+    QJsonObject bodyObj;
+    bodyObj.insert(QStringLiteral("confirm"), true);
+    bodyObj.insert(QStringLiteral("gps_only"), m_ephemerisGpsOnly);
+    const QByteArray body = QJsonDocument(bodyObj).toJson(QJsonDocument::Compact);
     QNetworkReply *reply = m_network.post(request, body);
     connect(reply, &QNetworkReply::finished, this, [this, reply] {
         reply->deleteLater();
@@ -186,6 +203,9 @@ void DeviceService::checkGpsOrbitStatus()
         m_gpsOrbitStatusText = obj.value(QStringLiteral("valid")).toBool()
             ? QStringLiteral("%1 - tap to update").arg(obj.value(QStringLiteral("date")).toString())
             : QStringLiteral("No data yet - tap to update");
+        // Asked of the watch, not assumed from its model - see the header's own comment.
+        m_glonassSupported = obj.value(QStringLiteral("glonass")).toObject()
+            .value(QStringLiteral("supported")).toBool();
         emit gpsOrbitChanged();
     });
 }
