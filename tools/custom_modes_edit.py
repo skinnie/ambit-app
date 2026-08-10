@@ -144,19 +144,26 @@ def find_mode(decoded, name):
 
 
 def new_display(type_key):
-    """A fresh display of `type_key`, rows empty.
+    """A fresh display of `type_key`, pre-filled the way SuuntoLink pre-fills one.
 
-    Row count comes from the type (sport_mode.js getNumRows). Each row is a DISP_FIELD whose
-    Index is its position - the watch names them Top/Center/Bottom - with Type 0 and no
-    shortcuts, i.e. "nothing selected yet", the same empty state SuuntoLink's own
-    defaultDisplay() starts from before its fields are filled in."""
+    A new display is NOT born empty. Every display SuuntoLink added in
+    `running2fromcreateandthen1to7` (saves 1, 4, 7, 19 - one per type) came out carrying the
+    same per-template defaults `_DEFAULT_ROWS` already holds for retyping: 1-row Distance;
+    2-row Distance + a Duration bottom; 3-row Distance, Speed and a Duration bottom; graph
+    the 6/32/5 triple. An empty display is not a state the watch is ever given, so we do not
+    invent one.
+
+    Row count comes from the type (sport_mode.js getNumRows) and each row's Index is its
+    position - the watch names them Top/Center/Bottom."""
     tpl, rows, _sym = DISPLAY_TYPES[type_key]
+    defaults = _DEFAULT_ROWS[type_key]
     return {
         "Template": tpl,
         "TemplateName": DISPLAY_TYPES[type_key][2],
         "Type": USER_DISPLAY_TYPE,
         "Fields": [{"Index": i, "IndexName": ROW_NAMES[i] if i < 3 else f"Row{i}",
-                    "Type": 0, "Shortcuts": []} for i in range(rows)],
+                    "Type": defaults[i][0], "Shortcuts": list(defaults[i][1])}
+                   for i in range(rows)],
     }
 
 
