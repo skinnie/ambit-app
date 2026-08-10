@@ -71,17 +71,11 @@ Flickable {
     // codepoints from Google's own repo and regenerating that font, a real but separate
     // undertaking not worth bundling into this pass. A renamed/custom mode not in this
     // table falls back to Theme.primary rather than guessing.
-    readonly property var _sportBadgeColors: ({
-        "Cycling": Theme.warning,
-        "Indoor training": Theme.error,
-        "Pool swimming": Theme.primary,
-        "Run a route": Theme.accent,
-        "Running": Theme.accent,
-        "Trekking": Theme.success,
-        "Walk": Theme.success,
-    })
+    // Superseded 2026-08-10 by ActivityTypes (keyed on activityId, 84 real activities with
+    // Suunto's own category colours). Kept only as a fallback for a caller that has a name
+    // but no id; the badge itself no longer uses it.
     function sportBadgeColor(name) {
-        return _sportBadgeColors[name] || Theme.primary
+        return Theme.primary
     }
 
     // Real, 2026-08-09 - maps a real display's own template/field-count (custom_modes.py's
@@ -199,11 +193,16 @@ Flickable {
                         anchors.verticalCenter: parent.verticalCenter
                         spacing: Theme.spacingMedium
 
-                        Rectangle {
-                            width: 44; height: 44; radius: 22
-                            color: root.sportBadgeColor(modeCard.modelData.name)
+                        // Real, 2026-08-10: colour AND symbol both come from the mode's own
+                        // activityId (ActivityTypes, generated from
+                        // assets/activity_types.json), not from its English name - the name
+                        // is free text the owner can rename, and no other language matched
+                        // the old lookup table at all.
+                        ActivityBadge {
+                            activityId: modeCard.modelData.activityId !== undefined
+                                ? modeCard.modelData.activityId : -1
+                            size: 44
                             anchors.verticalCenter: parent.verticalCenter
-                            Icon { anchors.centerIn: parent; glyph: Icons.sportModes; size: 22; color: Theme.card }
                         }
 
                         Column {

@@ -42,6 +42,9 @@ set_source_files_properties(qml/DeviceCapabilities.qml PROPERTIES
 set_source_files_properties(qml/Icons.qml PROPERTIES
     QT_QML_SINGLETON_TYPE true
 )
+set_source_files_properties(qml/ActivityTypes.qml PROPERTIES
+    QT_QML_SINGLETON_TYPE true
+)
 set_source_files_properties(qml/viewmodels/HomeViewModel.qml PROPERTIES
     QT_QML_SINGLETON_TYPE true
 )
@@ -67,6 +70,7 @@ qt_add_qml_module(ambitapp
         qml/FeatureFlags.qml
         qml/DeviceCapabilities.qml
         qml/Icons.qml
+        qml/ActivityTypes.qml
         qml/components/Card.qml
         qml/components/Icon.qml
         qml/components/RoundedComboBox.qml
@@ -76,6 +80,7 @@ qt_add_qml_module(ambitapp
         qml/components/RoundedCheckBox.qml
         qml/components/RoundedRadioButton.qml
         qml/components/RoundedSwitch.qml
+        qml/components/ActivityBadge.qml
         qml/components/WatchFacePreview.qml
         qml/components/DataPickerDialog.qml
         qml/components/NavItem.qml
