@@ -43,7 +43,14 @@ Flickable {
         return -1
     }
     property int currentDisplayIndex: 0
-    onSelectedModeNameChanged: currentDisplayIndex = 0
+    // Staged edits belong to the mode they were made on, but they only get a mode name at
+    // save time - so switching modes with edits pending would apply mode A's changes to
+    // mode B. Dropping them here is the safe reading: nothing has been sent to the watch,
+    // and silently retargeting them would be the one outcome nobody wants.
+    onSelectedModeNameChanged: {
+        currentDisplayIndex = 0
+        root.pendingEdits = []
+    }
 
     // Real, confirmed bits only - see custom_modes_andre.md's "Resolves hrbelt_and_pods"
     // section. Bit 0x0004 is deliberately absent: confirmed present on the reference
@@ -76,6 +83,48 @@ Flickable {
     // but no id; the badge itself no longer uses it.
     function sportBadgeColor(name) {
         return Theme.primary
+    }
+
+    // --- staged display edits (items 6 and 7) -------------------------------------------
+    // The watch has no per-field command for sport modes: every save rewrites the whole
+    // ~7.5 KB CustomModes region. So edits are staged here and written ONCE on Save, the
+    // way SuuntoLink does - writing per click would cost a full region write per click.
+    // Each entry is exactly what the backend expects:
+    //   {op:"add", type:"3-row"} | {op:"remove", display:N}
+    //   {op:"setType", display:N, type:"graph"} | {op:"setRow", display:N, row:"Bottom", values:[...]}
+    property var pendingEdits: []
+    readonly property bool hasPendingEdits: pendingEdits.length > 0
+    readonly property var displayTypes: [
+        { key: "3-row", label: qsTr("3 data fields") },
+        { key: "2-row", label: qsTr("2 data fields") },
+        { key: "1-row", label: qsTr("1 data field") },
+        { key: "graph", label: qsTr("Graph") }
+    ]
+
+    function stageEdit(edit) {
+        const next = pendingEdits.slice();
+        next.push(edit);
+        pendingEdits = next;
+    }
+    function discardEdits() { pendingEdits = [] }
+    function saveEdits() {
+        if (!hasPendingEdits || !root.selectedModeName)
+            return;
+        CustomModesService.applyDisplayEdits(root.selectedModeName, pendingEdits);
+        pendingEdits = [];
+    }
+    // How many editable displays the mode has right now, plus whatever adds/removes are
+    // staged - so the 8 limit and the "can I remove this" checks reflect what Save would
+    // actually produce, not just what is on the watch.
+    function stagedDisplayCount() {
+        const mode = CustomModesService.modes.find(m => m.name === root.selectedModeName);
+        let n = mode && mode.displays
+            ? mode.displays.filter(d => !d.isBuiltIn).length : 0;
+        for (const e of pendingEdits) {
+            if (e.op === "add") n++;
+            else if (e.op === "remove") n--;
+        }
+        return n;
     }
 
     // Real, 2026-08-09 - maps a real display's own template/field-count (custom_modes.py's
@@ -249,11 +298,58 @@ Flickable {
     }
 
     // ============================= DETAIL VIEW ==============================
+    // Unsaved-changes bar. Sits above the detail view so it is impossible to miss - the
+    // whole point of staging is that nothing reaches the watch until Save, so the state has
+    // to be visible rather than implied.
+    Card {
+        id: pendingBar
+        visible: root.hasPendingEdits && !HomeViewModel.isKailash && root.selectedMode
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.top: parent.top
+        anchors.topMargin: Theme.spacingSmall
+        width: 560
+        z: 10
+        Row {
+            width: parent.width
+            spacing: Theme.spacingMedium
+            Column {
+                width: parent.width - 240
+                anchors.verticalCenter: parent.verticalCenter
+                Text {
+                    text: qsTr("%1 unsaved change(s)").arg(root.pendingEdits.length)
+                    color: Theme.text
+                    font.bold: true
+                    font.pixelSize: Theme.fontSizeBody
+                }
+                Text {
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    text: qsTr("Nothing has been sent to the watch yet. Saving rewrites this "
+                                + "mode's displays in one go.")
+                    color: Theme.mutedText
+                    font.pixelSize: Theme.fontSizeCaption
+                }
+            }
+            RoundedButton {
+                anchors.verticalCenter: parent.verticalCenter
+                text: qsTr("Discard")
+                enabled: !CustomModesService.writingMode
+                onClicked: root.discardEdits()
+            }
+            RoundedButton {
+                anchors.verticalCenter: parent.verticalCenter
+                text: CustomModesService.writingMode ? qsTr("Saving...") : qsTr("Save to watch")
+                enabled: !CustomModesService.writingMode
+                onClicked: root.saveEdits()
+            }
+        }
+    }
+
     Column {
         id: detailColumn
         visible: !HomeViewModel.isKailash && root.selectedMode
         anchors.horizontalCenter: parent.horizontalCenter
-        anchors.top: parent.top
+        anchors.top: root.hasPendingEdits ? pendingBar.bottom : parent.top
         anchors.topMargin: Theme.spacingLarge
         width: 560
         spacing: Theme.spacingMedium
@@ -570,6 +666,61 @@ Flickable {
                                     "so its data isn't editable here.")
                         color: Theme.mutedText
                         font.pixelSize: Theme.fontSizeCaption
+                    }
+
+                    // --- display type (item 7) ------------------------------------
+                    Row {
+                        visible: currentScreenColumn.current && !currentScreenColumn.current.isBuiltIn
+                        spacing: Theme.spacingSmall
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: qsTr("Type")
+                            color: Theme.mutedText
+                            font.pixelSize: Theme.fontSizeBody
+                        }
+                        Repeater {
+                            model: root.displayTypes
+                            delegate: RoundedButton {
+                                required property var modelData
+                                text: modelData.label
+                                enabled: !CustomModesService.writingMode
+                                onClicked: root.stageEdit({
+                                    "op": "setType",
+                                    "display": root.currentDisplayIndex,
+                                    "type": modelData.key
+                                })
+                            }
+                        }
+                    }
+
+                    // --- add / remove a display (item 6) ---------------------------------
+                    Row {
+                        spacing: Theme.spacingSmall
+                        RoundedButton {
+                            text: qsTr("Add display")
+                            // SuuntoLink's own getMaxDisplays() for this watch family is 8;
+                            // counted against the staged result, not just what is on the
+                            // watch, so two staged adds cannot overshoot.
+                            enabled: root.stagedDisplayCount() < 8 && !CustomModesService.writingMode
+                            onClicked: root.stageEdit({ "op": "add", "type": "3-row" })
+                        }
+                        RoundedButton {
+                            text: qsTr("Remove this display")
+                            enabled: currentScreenColumn.current
+                                && !currentScreenColumn.current.isBuiltIn
+                                && root.stagedDisplayCount() > 1
+                                && !CustomModesService.writingMode
+                            onClicked: root.stageEdit({
+                                "op": "remove",
+                                "display": root.currentDisplayIndex
+                            })
+                        }
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: qsTr("%1 of 8 displays").arg(root.stagedDisplayCount())
+                            color: Theme.mutedText
+                            font.pixelSize: Theme.fontSizeCaption
+                        }
                     }
 
                     Repeater {

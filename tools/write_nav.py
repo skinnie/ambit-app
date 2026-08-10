@@ -621,7 +621,11 @@ def read_memory_map(link):
     found = {}
     # GlonassSGEE added 2026-08-10 - Kailash declares it, the Ambit3 family does not, so a
     # watch without it simply yields no entry here (callers must not assume it exists).
-    for match in re.finditer(rb"(Waypoints|Routes|GpsSGEE|GlonassSGEE)\x00", reply):
+    # CustomModes/Apps added 2026-08-10 for the sport-mode display editor - it resolves the
+    # region from the watch rather than trusting F.CUSTOM_MODES_BASE, the same discipline
+    # the GLONASS work used. A watch without a region simply yields no entry (Kailash has no
+    # CustomModes at all), which callers must handle rather than assume.
+    for match in re.finditer(rb"(Waypoints|Routes|GpsSGEE|GlonassSGEE|CustomModes|Apps)\x00", reply):
         cursor = match.end()
         end = reply.index(b"\0", cursor)          # hash in hexadecimal
         start, size = struct.unpack("<II", reply[end + 1:end + 9])

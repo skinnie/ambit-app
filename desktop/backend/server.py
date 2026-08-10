@@ -234,6 +234,8 @@ class Handler(BaseHTTPRequestHandler):
             self._handle_customodes_field(body)
         elif self.path == "/api/customodes/display-field":
             self._handle_customodes_display_field(body)
+        elif self.path == "/api/customodes/displays":
+            self._handle_customodes_displays(body)
         elif self.path == "/api/apps/install":
             self._handle_apps_install(body)
         elif self.path == "/api/pois":
@@ -808,6 +810,39 @@ class Handler(BaseHTTPRequestHandler):
                                    f"{CATALOG_DIR} - run tools/extract_apps_catalog.py first"})
             return
         self._send_json(200, {"ok": True, "results": results})
+
+    def _handle_customodes_displays(self, body):
+        """POST /api/customodes/displays - structural display edits, applied as ONE write.
+
+        Body: {"mode": "Running", "edits": [...], "confirm": bool}. `edits` is the staged
+        list the UI has built up - add/remove a display, change its type, set a row's values
+        - and they are applied in order and written once. That is deliberate: the watch has
+        no "change one field" command for sport modes, so every save rewrites the whole
+        ~7.5 KB region. Writing per click would mean a full region write per click; staging
+        and saving once is also what SuuntoLink does.
+
+        Without confirm:true this is a rehearsal - tools/custom_modes_edit.py is dry-run by
+        default and reports what would change, same rehearsal-first pattern as routes and
+        settings. The tool additionally refuses any real write unless it can first reproduce
+        the watch's CURRENT region byte-for-byte (see its own docstring).
+        """
+        mode = (body or {}).get("mode")
+        edits = (body or {}).get("edits")
+        if not mode or not isinstance(edits, list) or not edits:
+            self._send_json(400, {"ok": False,
+                                   "error": "need a mode name and a non-empty edits list"})
+            return
+        args = ["--mode", mode, "--edits", json.dumps(edits), "--json"]
+        if (body or {}).get("confirm"):
+            args.append("--write")
+        code, out, err = run_tool("custom_modes_edit.py", args)
+        parsed = self._parse_last_json_line(out)
+        if parsed is None:
+            self._send_json(502, {"ok": False,
+                                   "error": "custom_modes_edit.py produced no JSON",
+                                   "raw_output": out, "stderr": err})
+            return
+        self._send_json(200 if parsed.get("ok") else 502, parsed)
 
     def _handle_apps_install(self, body):
         """POST /api/apps/install. Body: {"mode": int, "display": int, "field": int,

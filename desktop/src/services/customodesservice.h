@@ -63,6 +63,14 @@ public:
     // what actually selects the rendered content for the common case (see this class's
     // own header comment). `index` is left unchanged by this call on purpose - a UI
     // shouldn't need to touch it given what's now known.
+    // Real, 2026-08-10 (items 6/7/10): structural display edits - add/remove a display,
+    // change its type, set a row's values - applied as ONE region write. `edits` is the
+    // list the UI has staged; the watch has no per-field command for sport modes, so every
+    // save rewrites the whole ~7.5 KB region and writing per click would cost a full write
+    // per click. Staging and saving once is also what SuuntoLink does. The tool behind this
+    // refuses any write unless it can first reproduce the watch's current region byte-for-
+    // byte (tools/custom_modes_edit.py).
+    Q_INVOKABLE void applyDisplayEdits(const QString &mode, const QVariantList &edits);
     Q_INVOKABLE void writeDisplayField(const QString &mode, int display, int field,
                                         const QString &newType);
 
@@ -72,6 +80,7 @@ signals:
     void fieldTypesChanged();
     void lastErrorChanged();
     void writingModeChanged();
+    void displayEditsApplied(bool ok);
 
 private:
     QNetworkAccessManager m_network;

@@ -206,6 +206,41 @@ void CustomModesService::writeField(const QString &mode, const QVariantMap &fiel
     });
 }
 
+void CustomModesService::applyDisplayEdits(const QString &mode, const QVariantList &edits)
+{
+    if (edits.isEmpty())
+        return;
+    setWritingMode(mode);
+
+    QNetworkRequest request(backendUrl(QStringLiteral("/api/customodes/displays")));
+    request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
+    QJsonObject body;
+    body[QStringLiteral("mode")] = mode;
+    body[QStringLiteral("edits")] = QJsonArray::fromVariantList(edits);
+    body[QStringLiteral("confirm")] = true;
+
+    QNetworkReply *reply = m_network.post(request, QJsonDocument(body).toJson(QJsonDocument::Compact));
+    connect(reply, &QNetworkReply::finished, this, [this, reply, mode] {
+        reply->deleteLater();
+        if (m_writingMode == mode)
+            setWritingMode(QString());
+
+        const auto obj = QJsonDocument::fromJson(reply->readAll()).object();
+        const bool writeOk = (reply->error() == QNetworkReply::NoError)
+            && obj.value(QStringLiteral("ok")).toBool();
+        if (!writeOk) {
+            setLastError(reply->error() != QNetworkReply::NoError
+                ? QStringLiteral("POST /api/customodes/displays: %1").arg(reply->errorString())
+                : QStringLiteral("POST /api/customodes/displays: %1").arg(
+                    obj.value(QStringLiteral("error")).toString(QStringLiteral("write not confirmed"))));
+        } else {
+            setLastError(QString());
+        }
+        emit displayEditsApplied(writeOk);
+        refresh();
+    });
+}
+
 void CustomModesService::writeDisplayField(const QString &mode, int display, int field,
                                             const QString &newType)
 {

@@ -252,6 +252,31 @@ def apply_edits(mode, args):
     return done
 
 
+
+def apply_batch(mode, edits):
+    """Apply a list of {"op": ...} edits in order. Same code path as the single-edit flags,
+    so there is one implementation of each operation, not two."""
+    import types as _types
+    done = []
+    for e in edits:
+        op = e.get("op")
+        args = _types.SimpleNamespace(add_display=None, remove_display=None,
+                                       set_type=None, set_row=None)
+        if op == "add":
+            args.add_display = e["type"]
+        elif op == "remove":
+            args.remove_display = int(e["display"])
+        elif op == "setType":
+            args.set_type = (str(e["display"]), e["type"])
+        elif op == "setRow":
+            args.set_row = (str(e["display"]), e["row"],
+                            ",".join(str(v) for v in e["values"]))
+        else:
+            raise SystemExit(f"unknown edit op {op!r}")
+        done += apply_edits(mode, args)
+    return done
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--device", metavar="NAME", help="which watch, when more than one is connected")
@@ -263,6 +288,15 @@ def main():
     ap.add_argument("--set-row", nargs=3, metavar=("N", "ROW", "IDS"),
                      help="set display N's ROW (Top/Center/Bottom) to a comma-separated "
                           "list of field type ids, at most 5")
+    ap.add_argument("--edits", metavar="JSON",
+                     help="a JSON list of edits applied in order and written ONCE, e.g. "
+                          "'[{\"op\":\"add\",\"type\":\"3-row\"},"
+                          "{\"op\":\"setRow\",\"display\":0,\"row\":\"Bottom\","
+                          "\"values\":[88,87]}]'. This is what the desktop app sends: the "
+                          "UI stages edits and saves once, the way SuuntoLink does, so a "
+                          "session of changes costs one full-region write instead of one "
+                          "per click.")
+    ap.add_argument("--json", action="store_true", help="machine-readable result")
     ap.add_argument("--write", action="store_true", help="actually write; without this "
                                                           "nothing is sent")
     ap.add_argument("--verbose", action="store_true")
@@ -291,16 +325,23 @@ def main():
             f"(region {len(region)} bytes, rebuilt {len(rebuilt)})")
 
     mode = find_mode(decoded, args.mode)
-    if not any([args.add_display, args.remove_display is not None, args.set_type, args.set_row]):
+    if not any([args.add_display, args.remove_display is not None, args.set_type,
+                args.set_row, args.edits]):
         show(mode)
         return 0
 
-    print("before:")
-    show(mode)
-    changes = apply_edits(mode, args)
-    print("\nafter:")
-    show(mode)
-    print("\n" + "\n".join("  * " + c for c in changes))
+    if not args.json:
+        print("before:")
+        show(mode)
+    if args.edits:
+        import json as _json
+        changes = apply_batch(mode, _json.loads(args.edits))
+    else:
+        changes = apply_edits(mode, args)
+    if not args.json:
+        print("\nafter:")
+        show(mode)
+        print("\n" + "\n".join("  * " + c for c in changes))
 
     body = custom_modes_write.build_custom_modes_body(
         decoded, format_type=decoded.get("format_type", 2))
@@ -309,8 +350,13 @@ def main():
                           f"only {size} - refusing to write past the end of it")
 
     if not args.write:
-        print(f"\ndry-run: {len(body)} bytes would be written to CustomModes "
-              f"(was {len(rebuilt)}) - pass --write to send it")
+        if args.json:
+            import json as _json
+            print(_json.dumps({"ok": True, "wrote": False, "changes": changes,
+                               "bytes": len(body), "wasBytes": len(rebuilt)}))
+        else:
+            print(f"\ndry-run: {len(body)} bytes would be written to CustomModes "
+                  f"(was {len(rebuilt)}) - pass --write to send it")
         return 0
 
     from ambit_pcap import FlashImage
@@ -319,7 +365,15 @@ def main():
     send_plan(link, flash, [("CustomModes", base, body), ("tail", base, None)], commit=True)
 
     after = read_flash(link, base, size, label="CustomModes")
-    if after[:len(body)] == body:
+    confirmed = after[:len(body)] == body
+    if args.json:
+        import json as _json
+        print(_json.dumps({"ok": confirmed, "wrote": confirmed, "changes": changes,
+                           "bytes": len(body),
+                           "error": None if confirmed else
+                                    "the region read back does not match what was sent"}))
+        return 0 if confirmed else 1
+    if confirmed:
         print(f"\nwritten and confirmed by re-read ({len(body)} bytes)")
         return 0
     print("\nWRITE DID NOT CONFIRM: the region read back does not match what was sent")
