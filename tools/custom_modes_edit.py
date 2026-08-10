@@ -26,6 +26,7 @@ makes a sport mode unusable.
 
 import argparse
 import sys
+import time
 
 import ambit_format as F
 import custom_modes
@@ -371,19 +372,42 @@ def main():
     flash.write(base, body)
     send_plan(link, flash, [("CustomModes", base, body), ("tail", base, None)], commit=True)
 
-    after = read_flash(link, base, size, label="CustomModes")
-    confirmed = after[:len(body)] == body
+    # Confirm by reading the region back. The first read can disagree with what we sent even
+    # though the write landed - seen once on real hardware, where an immediate re-read
+    # mismatched but a second, independent read came back byte-identical to `body`. So a
+    # single disagreement is not evidence of a bad write; read again before saying so, and
+    # report WHERE it differs rather than just that it did, since "did not confirm" on a
+    # flash region is alarming enough to deserve detail.
+    confirmed = False
+    detail = ""
+    for attempt in range(2):
+        if attempt:
+            time.sleep(1.0)
+        after = read_flash(link, base, size, label="CustomModes")
+        if after[:len(body)] == body:
+            confirmed = True
+            break
+        first = next((i for i, (a, b) in enumerate(zip(after, body)) if a != b), None)
+        detail = (f"read back {len(after)} bytes for {len(body)} sent"
+                  + (f"; first difference at offset {first}"
+                     f" (watch {after[first]:#04x}, sent {body[first]:#04x})"
+                     if first is not None else "; the reply is shorter than what was sent"))
+
     if args.json:
         import json as _json
         print(_json.dumps({"ok": confirmed, "wrote": confirmed, "changes": changes,
                            "bytes": len(body),
                            "error": None if confirmed else
-                                    "the region read back does not match what was sent"}))
+                                    "the region read back does not match what was sent: "
+                                    + detail}))
         return 0 if confirmed else 1
     if confirmed:
         print(f"\nwritten and confirmed by re-read ({len(body)} bytes)")
         return 0
     print("\nWRITE DID NOT CONFIRM: the region read back does not match what was sent")
+    print(f"  {detail}")
+    print("  Read the region with custom_modes.py before writing again - the watch may hold "
+          "a partially written mode list.")
     return 1
 
 
