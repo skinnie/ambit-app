@@ -112,6 +112,17 @@ FIELD_TYPES = {
     0x0048: "FT_SPORT_LAP_AVGSPEED", 0x004A: "FT_BIKE_POWER_AVG", 0x004C: "FT_BIKE_POWER_10S",
     0x004E: "FT_BIKE_POWER_LAP", 0x0050: "FT_BIKE_POWER_LAP_MAX", 0x0052: "FT_SWIM_STYLE",
     0x0054: "FT_SWIM_STROKES", 0x0056: "FT_SWIM_PACE", 0x0058: "FT_SWIM_AVG_PACE",
+    # Real, 2026-08-10, NOT from libkomposti (its 68 FT_ names are all already here -
+    # these two are simply absent from it). Named from André's own side-by-side of a
+    # real Openwater swim mode against SuuntoLink: the watch's display 1 decodes as
+    # Top=0x47, Center=0x46, Bottom=shortcuts[0x58, 0x57], and SuuntoLink shows that
+    # same screen as "current activity distance / current activity duration / average
+    # swim pace + average stroke rate". 0x46 and 0x48 were already known as
+    # FT_SPORT_LAP_STOPWATCH/AVGSPEED - which is what SuuntoLink labels "Current
+    # activity duration"/"avg speed" in its Multisport category - so 0x47 sitting
+    # between them as "current activity distance" fits both the observation and the
+    # numbering. 0x57 likewise sits between FT_SWIM_PACE and FT_SWIM_AVG_PACE.
+    0x0047: "FT_SPORT_LAP_DISTANCE", 0x0057: "FT_SWIM_AVG_STROKE_RATE",
     0x005A: "FT_SWIM_LAP_DISTANCE", 0x005C: "FT_SWIM_LAP_RATE", 0x005E: "FT_SWIM_LAP_SWOLF",
     0x0060: "FT_SWIM_POOL_STROKES", 0x0062: "FT_SWIM_POOL_PACE", 0x0064: "FT_SWIM_INT_TIME",
     0x0066: "FT_SWIM_INT_STROKES", 0x0068: "FT_SWIM_INT_PACE", 0x006A: "FT_SWIM_REST_TIME",
@@ -177,7 +188,12 @@ FIELD_TYPE_LABELS = {
     "FT_BIKE_POWER_AVG": "Bike Power (average)", "FT_BIKE_POWER_10S": "Bike Power (10s average)",
     "FT_BIKE_POWER_LAP": "Bike Power (lap average)", "FT_BIKE_POWER_LAP_MAX": "Bike Power (lap max)",
     "FT_SWIM_STYLE": "Swim Style", "FT_SWIM_STROKES": "Swim Strokes", "FT_SWIM_PACE": "Swim Pace",
-    "FT_SWIM_AVG_PACE": "Swim Pace (average)", "FT_SWIM_LAP_DISTANCE": "Swim Lap Distance",
+    "FT_SWIM_AVG_PACE": "Swim Pace (average)",
+    "FT_SWIM_AVG_STROKE_RATE": "Stroke Rate (average)",
+    # SuuntoLink groups the FT_SPORT_LAP_* family under "Multisport" and words them
+    # "Current activity ..." - matched here so our UI reads the same as the app the
+    # owner already knows.
+    "FT_SPORT_LAP_DISTANCE": "Current Activity Distance", "FT_SWIM_LAP_DISTANCE": "Swim Lap Distance",
     "FT_SWIM_LAP_RATE": "Swim Stroke Rate", "FT_SWIM_LAP_SWOLF": "Swim SWOLF",
     "FT_SWIM_POOL_STROKES": "Pool Swim Strokes", "FT_SWIM_POOL_PACE": "Pool Swim Pace",
     "FT_SWIM_INT_TIME": "Swim Interval Time", "FT_SWIM_INT_STROKES": "Swim Interval Strokes",
@@ -573,6 +589,47 @@ def system_tail_length(display_templates):
     return 0
 
 
+# Real, 2026-08-10 (André, item 11: "on ambit 3, open water swim, screen 1 I see 1 0x0047,
+# 2 lap stopwatch, 3 shortcut, for the same sport on suunto link I see ... 3 I have two
+# screens/datas average swim pace and average stroke rate").
+#
+# A row is NOT one value. Each DISP_FIELD carries a base Type plus a `Shortcuts` list, and
+# when the base Type is 0 the row's real content IS that list - up to 5 values the wearer
+# steps through with a button press (automatically only when the mode's own autoscroll is
+# on). Confirmed two ways: across all 111 CustomModes saves in
+# `assets/pcap/running2fromcreateandthen1to7` every shortcut-carrying row has base Type 0
+# (29/29), and SuuntoLink's own sport_mode.js `defaultDisplay()` models exactly this - Top
+# and Center carry a single value while Bottom carries a nested `Fields` LIST.
+#
+# This function used to emit only the base Type, so a row like Openwater swim's
+# `Shortcuts=[88, 87]` (FT_SWIM_AVG_PACE + average stroke rate) rendered as one meaningless
+# value and the extra content vanished. `values` below is what the row actually shows, in
+# order, whichever form it takes.
+_ROW_LABELS = ("Top", "Center", "Bottom")   # sport_mode.js FieldId
+
+
+def _field_to_json(f):
+    def label(t):
+        return field_type_label(FIELD_TYPES.get(t, f"0x{t:04x}"))
+    shortcuts = list(f.get("Shortcuts") or [])
+    base = f["Type"]
+    values = [{"type": t, "label": label(t)} for t in shortcuts] if base == 0 and shortcuts \
+        else [{"type": base, "label": label(base)}]
+    idx = f.get("Index")
+    return {
+        "indexName": f["IndexName"],
+        "rowLabel": _ROW_LABELS[idx] if isinstance(idx, int) and idx < len(_ROW_LABELS) else None,
+        "type": base,
+        "typeLabel": label(base),
+        "shortcuts": shortcuts,
+        # What the row really displays: the shortcut list when the base type is 0, else the
+        # single base value. A UI should render this and ignore `type` unless it needs the
+        # raw encoding.
+        "values": values,
+        "isMultiValue": len(values) > 1,
+    }
+
+
 def _displays_to_json(displays):
     """One mode's own real Displays list, JSON-shaped - `index` stays the raw 0-based
     position (writeDisplayField's own addressing needs this unchanged), `screenNumber` is
@@ -591,12 +648,7 @@ def _displays_to_json(displays):
             "isBuiltIn": is_built_in,
             "template": disp["TemplateName"],
             "templateLabel": field_type_label(disp["TemplateName"]),
-            "fields": [
-                {"indexName": f["IndexName"], "type": f["Type"],
-                 "typeLabel": field_type_label(
-                     FIELD_TYPES.get(f["Type"], f"0x{f['Type']:04x}"))}
-                for f in disp["Fields"]
-            ],
+            "fields": [_field_to_json(f) for f in disp["Fields"]],
         })
     return out
 

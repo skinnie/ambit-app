@@ -293,3 +293,24 @@ after roughly one to a few weeks - same freshness logic as GPS, above):
 `sgee.py` refuses outright on a watch that declares no `GlonassSGEE` region rather than
 guessing an address, and hard-bounds-checks the file against the size THAT WATCH declares
 before planning a single byte.
+
+### The 7R app does not write orbital data over BLE (2026-08-10)
+
+Tested deliberately rather than inferred from silence. The Kailash's `GpsSGEE` was written
+with a genuinely old file (2026-07-31, ten days stale - the watch reports the date embedded
+in the file itself, so `0x0b15` answered honestly), then the 7R iOS app was opened fresh and
+allowed to sync, with PacketLogger capturing
+(`assets/APK/kailash/Untitled 3 - (null).pklg`).
+
+Result: **46 NSP messages, zero `0x0b16` data writes, and not even a `0x0b15` orbit-status
+query.** Only device info, `0x1100` settings reads, `0x1201` pushes and log headers. André
+confirmed the app displayed its "updating orbital data" message during that very session,
+and again after closing and reopening it.
+
+So that message does not correspond to a watch transfer - the app is doing something else
+with it (most plausibly fetching to the phone or refreshing its own cache). The tell is that
+it never asks the watch how fresh its data is; anything about to update would check first.
+
+Consequence, and the reason this is not worth chasing further: our own cable path
+(`sgee.py`, GPS and GLONASS) is the only mechanism that demonstrably puts orbital data on
+this watch at all, and the only one that has ever written GLONASS. Keeping it.
