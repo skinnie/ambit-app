@@ -107,8 +107,17 @@ def build_mode(mode):
         meta = mode["AppMeta"]
         body += tag(0x1FF, struct.pack("<II", meta["Timestamp1"], meta["Timestamp2"]))
 
-    displays_body = b"".join(build_display(d) for d in mode["Displays"])
-    body += tag(EXERCISE_MODES_DISPLAYS, displays_body)
+    # Real bug, found 2026-08-10 by tools/custom_modes_roundtrip.py against SuuntoLink's own
+    # writes: this tag was emitted unconditionally, so a mode with NO displays got an empty
+    # 4-byte DISPLAYS header that SuuntoLink never writes. It shows up the instant a sport
+    # mode is created and before its first display is added - save 0 of
+    # `running2fromcreateandthen1to7` (and of `ambit3addsports`) rebuilt 4 bytes too long
+    # and diverged at the region's own length field. Guarded the same way RULES already was.
+    # Directly relevant to add/remove-display support: emptying a mode would otherwise write
+    # a region that does not match what the watch is ever given.
+    if mode["Displays"]:
+        displays_body = b"".join(build_display(d) for d in mode["Displays"])
+        body += tag(EXERCISE_MODES_DISPLAYS, displays_body)
 
     if mode.get("Rules"):
         rules_body = b"".join(tag(EXERCISE_MODES_RULE, build_rule(r)) for r in mode["Rules"])
