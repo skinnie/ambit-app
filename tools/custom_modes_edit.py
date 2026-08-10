@@ -325,12 +325,25 @@ def main():
     # --- the safety rule ---------------------------------------------------------------
     rebuilt = custom_modes_write.build_custom_modes_body(
         decoded, format_type=decoded.get("format_type", 2))
-    if region[:len(rebuilt)] != rebuilt or any(b != 0xFF for b in region[len(rebuilt):]):
+    # Only the body has to match. What lies past it deliberately does NOT: flash is not
+    # erased before a write, so any write that SHRINKS the mode list (removing a display)
+    # leaves the tail of the longer previous version sitting behind the new end. Observed
+    # on hardware - after adding two displays to Running and removing them again, the first
+    # 8428 bytes were byte-identical to the pre-test backup and 53 stale bytes trailed it.
+    # Those bytes are unreachable: the parser walks the tag tree and stops at its end, which
+    # is exactly why the watch and SuuntoLink both read the region back correctly. Requiring
+    # 0xFF there would make the tool refuse to write to any watch we had ever shrunk a mode
+    # on - a false alarm about our own previous, correct write.
+    if region[:len(rebuilt)] != rebuilt:
         raise SystemExit(
             "REFUSING TO WRITE: this watch's own CustomModes region does not survive a "
             "decode/re-encode unchanged, so a modified version cannot be trusted either. "
             "Run tools/custom_modes_roundtrip.py and fix the encoder before editing. "
             f"(region {len(region)} bytes, rebuilt {len(rebuilt)})")
+    stale = sum(1 for b in region[len(rebuilt):] if b != 0xFF)
+    if stale and args.verbose:
+        print(f"  ({stale} stale bytes past the end of the mode list, left by an earlier "
+              f"longer version - unreachable, the watch stops at the tag tree's end)")
 
     mode = find_mode(decoded, args.mode)
     if not any([args.add_display, args.remove_display is not None, args.set_type,
