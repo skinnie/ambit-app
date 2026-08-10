@@ -447,12 +447,15 @@ def main():
     if staged:
         # Touch write, then the commit write. The ~2s between SuuntoLink's two writes is not
         # a sleep - between them it re-reads the settings, the memory map (33 times) and a
-        # slice of flash, and the gap is just how long that took. Andre's observation is that
-        # the watch drops back to its sports main screen after a save, so the watch is very
-        # likely reloading its mode list in that window; pacing off real traffic the way
-        # SuuntoLink does adapts to however long that takes on slower hardware (the Ambit 1
-        # and 2 run this same format), where a fixed sleep would not. We keep the measured
-        # gap as a floor, never as the whole story.
+        # slice of flash, and the gap is just how long that took. So we do the same re-read
+        # rather than sleeping: whatever that gap is really for, pacing off real traffic
+        # tracks it on hardware we cannot test (the Ambit 1 and 2 run this same format) where
+        # a fixed sleep would not. We keep the measured gap only as a floor.
+        #
+        # What the gap is FOR remains unknown. A watch-side reload was considered and has no
+        # evidence: the watch only serves USB from watch mode, so nothing on its display can
+        # be observed mid-write, and the "returns to the sports screen" behaviour Andre
+        # described is SuuntoLink's own window, not the watch's.
         if not args.json:
             print(f"\n  touch write ({len(touch_body)} bytes), then re-read the watch the "
                   f"way SuuntoLink does, then the commit write")
