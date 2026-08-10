@@ -28,8 +28,13 @@ class SettingsWriteService : public QObject
     // _handle_settings_read()/_handle_settings_write() comments). Set from QML before
     // calling refresh()/writeSetting() based on HomeViewModel.isKailash.
     Q_PROPERTY(QString device READ device WRITE setDevice NOTIFY deviceChanged)
-    // Each entry: {key, path, kind ("bool"/"enum"/"number"/"raw"), value, choices
-    // ([[intValue, label], ...] for "enum"), min, max (for "number")}. Kailash or a smaller
+    // Each entry: {key, path, kind ("bool"/"enum"/"number"/"text"/"raw"), value, choices
+    // ([{value, label}, ...] for "enum" - converted here from the tool's own [[value,
+    // label], ...] pairs), min, max (for "number"), writable (false for a field on no real
+    // SuuntoLink screen, e.g. display_contrast - show it, offer no editor) and screen
+    // ("general"/"units"/"personal", or null - which of SuuntoLink's own settings screens
+    // it belongs to, so a UI can group the ~34 Ambit3 fields the way the watch's owner
+    // already knows them). Kailash or a smaller
     // schema than Ambit3's own may legitimately be missing some of these (per-entry "ok"
     // dropped, not surfaced as a whole-list failure) - filtered out here rather than shown
     // as broken rows.

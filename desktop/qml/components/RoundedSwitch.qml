@@ -22,7 +22,17 @@ Switch {
         x: root.leftPadding
         y: root.topPadding + (root.availableHeight - height) / 2
         radius: height / 2  // a true pill, not Basic style's own modest corner-round
-        color: root.checked ? Theme.primary : Theme.background
+        // Real, 2026-08-10 (André: "on the on off sliders when off it is barely visible in
+        // dark mode") - the off state was Theme.background, which in dark mode sits against
+        // an already-dark Theme.card with almost no contrast, so an off switch effectively
+        // disappeared. Exactly the same root cause as the "the contour of the buttons when
+        // not selected...they are black...not that visible" fix already applied across the
+        // Rounded* family (RoundedButton/RoundedComboBox/RoundedRadioButton all took
+        // Theme.mutedText borders); this component was simply missed at the time. Fill with
+        // Theme.card and give it the same muted border so the pill is always visible.
+        color: root.checked ? Theme.primary : Theme.card
+        border.width: root.checked ? 0 : 1
+        border.color: Theme.mutedText
         Behavior on color { ColorAnimation { duration: 120; easing.type: Easing.OutCubic } }
 
         Rectangle {
@@ -31,7 +41,10 @@ Switch {
             width: 16
             height: 16
             radius: 8  // circular handle
-            color: Theme.card
+            // Follows the track: on Theme.primary the light Theme.card handle reads well,
+            // but against the new Theme.card off-track it would vanish - so the off handle
+            // takes the same Theme.mutedText the border does.
+            color: root.checked ? Theme.card : Theme.mutedText
             Behavior on x { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
         }
     }

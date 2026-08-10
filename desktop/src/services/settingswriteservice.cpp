@@ -77,13 +77,17 @@ void SettingsWriteService::refresh()
             if (!entry.value(QStringLiteral("ok")).toBool())
                 continue;  // not present in this watch's own schema - not an error to show
 
-            QVariantMap row;
+            // Real bug, hit twice on 2026-08-10: this used to copy a hardcoded allowlist of
+            // six field names, so every new piece of metadata settings_write.py started
+            // reporting was silently dropped on the floor here - first `writable`/`screen`
+            // (which collapsed SettingsPage's whole grouping into "Other"), then `label`/
+            // `control`/`unit`/`decimals` (which left the page rendering auto-capitalised
+            // key names and the wrong control for every field). Copy the entry wholesale
+            // instead: the tool is the single source of what a row carries, and a UI that
+            // doesn't recognise a key simply ignores it. `choices` is the one field that
+            // still needs converting - see below.
+            QVariantMap row = entry.toVariantMap();
             row[QStringLiteral("key")] = it.key();
-            row[QStringLiteral("path")] = entry.value(QStringLiteral("path")).toString();
-            row[QStringLiteral("kind")] = entry.value(QStringLiteral("kind")).toString();
-            row[QStringLiteral("value")] = entry.value(QStringLiteral("value")).toVariant();
-            row[QStringLiteral("min")] = entry.value(QStringLiteral("min")).toVariant();
-            row[QStringLiteral("max")] = entry.value(QStringLiteral("max")).toVariant();
 
             QVariantList choices;
             for (const auto &c : entry.value(QStringLiteral("choices")).toArray()) {

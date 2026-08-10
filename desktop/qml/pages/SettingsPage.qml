@@ -274,164 +274,268 @@ Flickable {
 
                         Repeater {
                     model: screenGroup.rows
-                    delegate: Row {
+                    // Real, 2026-08-10 (André: "everything visual you can inspire on suunto
+                    // link... it is what the watch shows"). SuuntoLink puts the field name
+                    // ABOVE its control, stacks 2-3 choices as vertical radio buttons, uses a
+                    // checkbox for a standalone boolean and a dropdown only for a long list -
+                    // so that is what this renders, driven by the `control` hint
+                    // settings_write.py now reports (AMBIT3_DISPLAY) rather than by guessing
+                    // from the raw type. A device with no display metadata (Kailash) falls
+                    // back to the old kind-based rendering, unchanged.
+                    delegate: Column {
+                        id: settingRow
                         width: parent.width
-                        spacing: Theme.spacingSmall
+                        spacing: 4
+                        bottomPadding: Theme.spacingSmall
 
-                        // "display_dark" -> "Display dark" - a light label formatter, not a
-                        // second name table to keep in sync with settings_write.py's own.
+                        readonly property var item: modelData
+                        readonly property bool editable: item.writable !== false
+                        readonly property bool busy: SettingsWriteService.writingKey === item.key
+                        readonly property string unitSuffix: item.unit ? item.unit : ""
+                        readonly property var choices: item.choices ? item.choices : []
+                        readonly property bool hasRange:
+                            item.min !== undefined && item.min !== null
+                            && item.max !== undefined && item.max !== null
+                        readonly property bool isHomeCoord:
+                            item.path.endsWith("HomeLocation.Latitude")
+                            || item.path.endsWith("HomeLocation.Longitude")
+                        // SuuntoLink's own field name where we have it; otherwise the old
+                        // "display_dark" -> "Display dark" formatter, still used for Kailash.
                         readonly property string label: {
-                            const parts = modelData.key.split("_");
+                            if (item.label)
+                                return item.label;
+                            const parts = item.key.split("_");
                             parts[0] = parts[0].charAt(0).toUpperCase() + parts[0].slice(1);
                             return parts.join(" ");
                         }
-                        readonly property bool hasRange:
-                            modelData.min !== undefined && modelData.min !== null
-                            && modelData.max !== undefined && modelData.max !== null
-                        // Real, 2026-08-10: a field SuuntoLink itself never writes has no
-                        // editor here either. display_contrast is the real case - entry
-                        // 0x1f is in the watch's own settings reply and in SuuntoLink's
-                        // generic ServiceAdapter.xml, but appears in none of the 134
-                        // captured writes, and it is changed on the watch itself. Showing
-                        // it read-only keeps the information without inventing a write
-                        // path this project has no reference implementation for.
-                        readonly property bool editable: modelData.writable !== false
-                        // Real, 2026-08-08, Kailash only - HomeLocation.Latitude/Longitude
-                        // (entry 0x36, a GROUP - see settings_write.py's own KAILASH_SETTINGS
-                        // comment and the ambit_app_kailash_home_location_field memory).
-                        // describe_field() reports these as a plain "number" with no min/max
-                        // (like compass_declination), but unlike that field these ARE meant
-                        // to be editable - keyed off `path` since `kind` alone can't tell
-                        // them apart from compass_declination's own read-only display.
-                        readonly property bool isHomeCoord:
-                            modelData.path.endsWith("HomeLocation.Latitude")
-                            || modelData.path.endsWith("HomeLocation.Longitude")
-
-                        Text {
-                            width: 170
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: parent.label
-                            color: Theme.text
-                            font.pixelSize: Theme.fontSizeBody
+                        readonly property string control: {
+                            if (item.control)
+                                return item.control;
+                            if (item.kind === "bool") return "checkbox";
+                            if (item.kind === "enum") return "dropdown";
+                            if (item.kind === "text") return "text";
+                            if (item.kind === "number")
+                                return isHomeCoord ? "coord" : (hasRange ? "slider" : "readonly");
+                            return "readonly";
                         }
 
-                        RoundedSwitch {
-                            visible: modelData.kind === "bool" && parent.editable
-                            anchors.verticalCenter: parent.verticalCenter
-                            checked: modelData.value === 1 || modelData.value === true
-                            enabled: SettingsWriteService.writingKey !== modelData.key
-                            onToggled: SettingsWriteService.writeSetting(modelData.key, checked ? 1 : 0)
+                        function commit(v) { SettingsWriteService.writeSetting(item.key, v) }
+
+                        Row {
+                            spacing: Theme.spacingSmall
+                            Text {
+                                text: settingRow.label
+                                color: Theme.text
+                                font.pixelSize: Theme.fontSizeBody
+                                font.bold: true
+                            }
+                            Text {
+                                visible: settingRow.busy
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: qsTr("saving...")
+                                color: Theme.mutedText
+                                font.pixelSize: Theme.fontSizeCaption
+                                font.italic: true
+                            }
+                        }
+
+                        // --- radio: SuuntoLink stacks its 2-3 choices vertically ---
+                        Column {
+                            visible: settingRow.control === "radio" && settingRow.editable
+                            spacing: 0
+                            Repeater {
+                                model: settingRow.choices
+                                delegate: RoundedRadioButton {
+                                    // autoExclusive:false + onClicked, never a `checked`
+                                    // binding fighting QQC2's own exclusivity - the same
+                                    // pattern every other exclusive choice on this page uses.
+                                    autoExclusive: false
+                                    checked: modelData.value === settingRow.item.value
+                                    text: modelData.label
+                                    enabled: !settingRow.busy
+                                    onClicked: settingRow.commit(modelData.value)
+                                }
+                            }
+                        }
+
+                        RoundedCheckBox {
+                            visible: settingRow.control === "checkbox" && settingRow.editable
+                            checked: settingRow.item.value === 1 || settingRow.item.value === true
+                            enabled: !settingRow.busy
+                            onToggled: settingRow.commit(checked ? 1 : 0)
                         }
 
                         RoundedComboBox {
-                            visible: modelData.kind === "enum" && parent.editable
-                            width: 220
-                            model: modelData.choices
+                            visible: settingRow.control === "dropdown" && settingRow.editable
+                            width: 260
+                            model: settingRow.choices
                             textRole: "label"
                             valueRole: "value"
-                            enabled: SettingsWriteService.writingKey !== modelData.key
+                            enabled: !settingRow.busy
                             currentIndex: {
-                                for (let i = 0; i < modelData.choices.length; i++) {
-                                    if (modelData.choices[i].value === modelData.value) return i;
+                                for (let i = 0; i < settingRow.choices.length; i++) {
+                                    if (settingRow.choices[i].value === settingRow.item.value)
+                                        return i;
                                 }
                                 return -1;
                             }
-                            onActivated: SettingsWriteService.writeSetting(modelData.key, currentValue)
+                            onActivated: settingRow.commit(currentValue)
                         }
 
                         Row {
-                            visible: modelData.kind === "number" && parent.hasRange && parent.editable
+                            visible: settingRow.control === "slider" && settingRow.editable
                             spacing: 8
                             RoundedSlider {
                                 anchors.verticalCenter: parent.verticalCenter
-                                width: 160
-                                from: modelData.min
-                                // Real screenshot range for brightness/contrast is 0-100%
-                                // even though the schema's own uint8 type allows up to
-                                // 255 - clamped to the range SuuntoLink itself exposes.
-                                to: Math.min(modelData.max, 100)
-                                value: modelData.value
-                                enabled: SettingsWriteService.writingKey !== modelData.key
-                                onMoved: SettingsWriteService.writeSetting(modelData.key, Math.round(value))
+                                width: 200
+                                from: settingRow.item.min
+                                to: settingRow.item.max
+                                value: settingRow.item.value
+                                enabled: !settingRow.busy
+                                onMoved: settingRow.commit(Math.round(value))
                             }
                             Text {
                                 anchors.verticalCenter: parent.verticalCenter
-                                text: modelData.value
+                                text: settingRow.item.value + " " + settingRow.unitSuffix
                                 color: Theme.mutedText
                                 font.pixelSize: Theme.fontSizeLabel
                             }
                         }
 
-                        // A "number" field with no confirmed min/max (compass_declination) -
-                        // shown, not editable, rather than guessing at a sensible slider range.
-                        Text {
-                            visible: (modelData.kind === "number" && !parent.hasRange && !parent.isHomeCoord)
-                                     || !parent.editable
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: modelData.value
-                            color: Theme.mutedText
-                            font.pixelSize: Theme.fontSizeBody
+                        // --- number / year / text: typed, then committed with Set, so a
+                        // half-typed value is never sent to the watch ---
+                        Row {
+                            visible: (settingRow.control === "number"
+                                      || settingRow.control === "year"
+                                      || settingRow.control === "text") && settingRow.editable
+                            spacing: 8
+                            RoundedTextField {
+                                id: valueField
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: settingRow.control === "text" ? 140 : 90
+                                text: String(settingRow.item.value)
+                                enabled: !settingRow.busy
+                            }
+                            Text {
+                                visible: settingRow.unitSuffix.length > 0
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: settingRow.unitSuffix
+                                color: Theme.mutedText
+                                font.pixelSize: Theme.fontSizeBody
+                            }
+                            RoundedButton {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: qsTr("Set")
+                                enabled: !settingRow.busy
+                                onClicked: {
+                                    if (settingRow.control === "text") {
+                                        settingRow.commit(valueField.text);
+                                        return;
+                                    }
+                                    const parsed = parseFloat(valueField.text);
+                                    if (isNaN(parsed)) return;
+                                    settingRow.commit(parsed);
+                                }
+                            }
                         }
 
-                        // HomeLocation.Latitude/Longitude - free-text degrees input rather
-                        // than a slider (no sensible min/max range for a GPS coordinate) or
-                        // a stepper (needs a leading "-" and sub-degree precision a +-N
-                        // button can't offer). Matches the Weather "Manual location" editor's
-                        // own TextField+Button pattern further down this same page.
+                        // --- compass declination: SuuntoLink's own "Use compass declination"
+                        // checkbox, then a West/East choice and a 0-90 magnitude. On the wire
+                        // this is ONE signed float32 in radians with East positive, and Off is
+                        // simply 0.0 - there is no separate enable flag in the schema at all
+                        // (checked: the descriptor has exactly one declination field, and every
+                        // read before the first write in `ambit3declination` shows 0.0). The
+                        // tool converts degrees<->radians, so this only deals in degrees.
+                        Column {
+                            id: declRow
+                            visible: settingRow.control === "declination"
+                            spacing: 4
+                            property bool useDecl: settingRow.item.value !== 0
+                            property bool west: settingRow.item.value < 0
+                            function send() {
+                                if (!useDecl) { settingRow.commit(0); return; }
+                                const mag = Math.abs(parseFloat(declField.text));
+                                if (isNaN(mag)) return;
+                                settingRow.commit(west ? -mag : mag);
+                            }
+                            RoundedCheckBox {
+                                text: qsTr("Use compass declination")
+                                checked: declRow.useDecl
+                                enabled: !settingRow.busy
+                                onToggled: { declRow.useDecl = checked; if (!checked) declRow.send(); }
+                            }
+                            Row {
+                                visible: declRow.useDecl
+                                spacing: 8
+                                RoundedRadioButton {
+                                    autoExclusive: false
+                                    text: qsTr("West")
+                                    checked: declRow.west
+                                    enabled: !settingRow.busy
+                                    onClicked: { declRow.west = true; declRow.send(); }
+                                }
+                                RoundedRadioButton {
+                                    autoExclusive: false
+                                    text: qsTr("East")
+                                    checked: !declRow.west
+                                    enabled: !settingRow.busy
+                                    onClicked: { declRow.west = false; declRow.send(); }
+                                }
+                                RoundedTextField {
+                                    id: declField
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: 70
+                                    text: Math.abs(settingRow.item.value).toFixed(1)
+                                    enabled: !settingRow.busy
+                                }
+                                Text {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    text: "°"
+                                    color: Theme.mutedText
+                                    font.pixelSize: Theme.fontSizeBody
+                                }
+                                RoundedButton {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    text: qsTr("Set")
+                                    enabled: !settingRow.busy
+                                    onClicked: declRow.send()
+                                }
+                            }
+                        }
+
+                        // Kailash's HomeLocation - free-text degrees, no sensible slider range.
                         Row {
-                            visible: modelData.kind === "number" && !parent.hasRange && parent.isHomeCoord && parent.editable
+                            visible: settingRow.control === "coord"
                             spacing: 8
                             RoundedTextField {
                                 id: coordField
                                 anchors.verticalCenter: parent.verticalCenter
                                 width: 110
-                                text: modelData.value.toFixed(6)
-                                enabled: SettingsWriteService.writingKey !== modelData.key
+                                text: settingRow.item.value.toFixed(6)
+                                enabled: !settingRow.busy
                             }
                             RoundedButton {
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: qsTr("Set")
-                                enabled: SettingsWriteService.writingKey !== modelData.key
+                                enabled: !settingRow.busy
                                 onClicked: {
                                     const parsed = parseFloat(coordField.text);
                                     if (isNaN(parsed)) return;
-                                    SettingsWriteService.writeSetting(modelData.key, parsed);
+                                    settingRow.commit(parsed);
                                 }
                             }
                         }
 
-                        // A utf8 field - the Ambit3's own birth_date ("YYYY-01-01"; only
-                        // the year is ever meaningful, SuuntoLink writes 01-01 for month
-                        // and day) and Kailash's device_time. Same TextField+Button shape
-                        // as the coordinate editor above rather than a free-typing binding,
-                        // so a half-typed date is never sent.
-                        Row {
-                            visible: modelData.kind === "text" && parent.editable
-                            spacing: 8
-                            RoundedTextField {
-                                id: textField
-                                anchors.verticalCenter: parent.verticalCenter
-                                width: 130
-                                text: modelData.value
-                                enabled: SettingsWriteService.writingKey !== modelData.key
-                            }
-                            RoundedButton {
-                                anchors.verticalCenter: parent.verticalCenter
-                                text: qsTr("Set")
-                                enabled: SettingsWriteService.writingKey !== modelData.key
-                                onClicked: SettingsWriteService.writeSetting(modelData.key, textField.text)
-                            }
-                        }
-
+                        // Read-only: a field on no real SuuntoLink screen (display_contrast),
+                        // or a number with no confirmed range to build an editor from.
                         Text {
-                            visible: SettingsWriteService.writingKey === modelData.key
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: qsTr("saving...")
+                            visible: settingRow.control === "readonly" || !settingRow.editable
+                            text: settingRow.item.value + (settingRow.unitSuffix.length
+                                                           ? " " + settingRow.unitSuffix : "")
                             color: Theme.mutedText
-                            font.pixelSize: Theme.fontSizeCaption
-                            font.italic: true
+                            font.pixelSize: Theme.fontSizeBody
                         }
-                            }
+                    }
                         }
                     }
                 }

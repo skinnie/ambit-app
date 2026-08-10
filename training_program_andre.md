@@ -2290,3 +2290,53 @@ pins engine slot 0). Two consequences:
 Cleanup note: Indoor training carries stale cruft from prior sessions (the field[1] Type=51). A
 true "restore Indoor" should target a pristine factory Indoor, not CustomModes_before_workout_exp
 (which already has this leftover). Need an older/pristine backup or rebuild the mode clean.
+
+## Finding 48: SuuntoLink itself DISABLES the training program on its first settings write (2026-08-10)
+
+Found while auditing the Ambit3 settings-write path against the 2026-08-10 USBPcap captures
+(see `tools/settings_write.py`'s own `AMBIT3_WRITE_TEMPLATES`). Not a settings bug - a real,
+repeatable lead on why planned moves keep going quiet.
+
+**The observation.** Across all 117 captured SuuntoLink `0x1101` settings writes,
+`sml.DeviceSettings.Sports.Plans.Source` (entry 0x2c, `Settings.UseTrainingProgram` in
+SuuntoLink's own ServiceAdapter.xml: "Training plan source, 0 - off, 1 - Manual from
+MovesCount") changed **without the user touching it** in 4 of them:
+
+| capture | change |
+|---|---|
+| `ambit3declination` | Plans.Source 1 -> 0 |
+| `ambit3full` | Plans.Source 1 -> 0 |
+| `ambit3languageenglishtoportuguese` | Plans.Source 1 -> 0 |
+| `ambit3stormalarmfromofftoon` | Plans.Source 1 -> 0 |
+
+Always `1 -> 0`, never the reverse, and in every case it is the **first `0x1101` write after
+SuuntoLink connects**. Later writes in the same session leave it at 0 - because by then it has
+already been flattened. Verified per-session, e.g. `ambit3languageenglishtoportuguese`:
+write #1 clobbers 1 -> 0, write #2 sees 0 -> 0.
+
+**What it means.** `Plans.Source` rides in EVERY one of SuuntoLink's per-screen write templates
+(general/units/personal), the same way the `Pods` group does - it is part of the common tail,
+not a control on any settings screen. So SuuntoLink does not read the watch's value and preserve
+it; it fills that slot from its own model, which post-Movescount is always 0. Consequence for
+real use: **install a training program, then change ANY general setting in SuuntoLink -
+language, storm alarm, declination, anything - and planned moves are silently switched off.**
+This is the same class of clobber as the cable-resync overwrite (see the
+`ambit_app_suuntolink_clobber` memory), reached through a different door.
+
+**Why this is a lead, not just a warning.** The flag is real, live, and writable - the watch
+still honours a `Plans.Source` slot and SuuntoLink still ships code that sets it. That is
+evidence the firmware side of planned moves was never removed, only its Movescount feed. Two
+things worth trying next:
+  1. Set `Plans.Source = 1` via our own write (`settings_write.py --set plans_source=1 --write`)
+     immediately AFTER installing a TrainingProgram pmem region, and check whether the watch
+     surfaces a "Today" target. Findings 29-30 suspected the refresh is app-triggered; this is
+     the app-side trigger SuuntoLink itself uses, now isolated.
+  2. Watch for the reverse (`0 -> 1`) in any capture where a training program was actually
+     pushed - none exists yet. A capture of Movescount-era SuuntoLink doing this would show the
+     complete enable sequence.
+
+**Our own writes do NOT clobber it.** `build_write_payload()` copies every non-edited field
+verbatim from a fresh `0x1100` read, so `Plans.Source` keeps whatever the watch holds. That
+behaviour fell out of matching SuuntoLink's payload SHAPE while declining to copy its habit of
+filling slots from a stale local model - a real advantage over SuuntoLink for anyone running a
+training program.

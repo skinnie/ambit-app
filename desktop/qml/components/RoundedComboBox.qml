@@ -67,10 +67,25 @@ ComboBox {
         width: root.popup.width
         highlighted: root.highlightedIndex === index
         contentItem: Text {
-            // Works for both existing call sites: a plain string-list model (this file's own
-            // new timezone picker, no textRole set) and an object-list model with textRole
-            // (SettingsPage.qml's own usages, e.g. textRole: "label").
-            text: root.textRole ? model[root.textRole] : modelData
+            // Real bug, found 2026-08-10 (André: "the drop down menus don't show values")
+            // - this was `model[root.textRole]`, and the comment above it claimed to work
+            // for both call sites while only the string-list one had ever been looked at
+            // live. For a variant-list model (which is exactly what SettingsWriteService
+            // hands over: a QVariantList of {value, label} maps) the delegate exposes the
+            // row as `modelData`, not `model`, so `model["label"]` was undefined and every
+            // popup row rendered BLANK. The closed box looked right the whole time because
+            // it uses root.displayText, which ComboBox resolves internally from textRole -
+            // so the values were always read correctly off the watch; only the open
+            // popup's labels were missing. Tries modelData first (variant/object list),
+            // falls back to model (a real QML ListModel, where modelData is undefined).
+            text: {
+                if (!root.textRole)
+                    return modelData;
+                if (modelData !== undefined && modelData !== null
+                        && modelData[root.textRole] !== undefined)
+                    return modelData[root.textRole];
+                return model[root.textRole];
+            }
             color: Theme.text
             font.pixelSize: Theme.fontSizeBody
             elide: Text.ElideRight

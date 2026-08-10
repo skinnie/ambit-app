@@ -32,7 +32,9 @@ JSON-friendly shape (enum choices, or a numeric range) for a UI to render generi
 """
 
 import argparse
+import datetime
 import json
+import math
 import re
 import struct
 import sys
@@ -272,14 +274,190 @@ AMBIT3_KEY_TEMPLATE = {
 # an Ambit3 accepts - that file's `max="15"` on GpsPositionFormat is exactly what let
 # SuuntoLink write an out-of-range `SWEREF 99 TM` at this watch and strand the field.
 # Values are the RAW on-wire integers, matching read_all()'s own reported value.
-AMBIT3_RANGES = {
-    "body_height": (89, 241),        # cm
-    "body_weight": (3000, 25000),    # kg * 100
-    "max_hr": (30, 240),             # bpm
-    "rest_hr": (30, 240),            # bpm
-    "activity_level": (10, 100),     # activity class * 10
-    "backlight_brightness": (5, 100),
+# ======================= how SuuntoLink itself presents each field =======================
+#
+# Real, 2026-08-10, André: "suunto link does because it is what the watch shows. everything
+# visual you can inspire on suunto link". SuuntoLink's presentation is not arbitrary vendor
+# styling - it mirrors what the Ambit3's own screen shows, so matching it keeps this app
+# agreeing with the hardware in front of the user. Sourced from the real screenshots in
+# `assets/pcap/screens/` (general ambit3 settings/, ambit3 Personal setttings/, ambit3
+# screens sports modes Unit settings/) and the label tables in SuuntoLink's own
+# ServiceAdapter.xml.
+#
+# This lives here, not in the QML, so the desktop and Android UIs render identically off
+# one table instead of drifting apart (PROJECT_RULES rule 2, cross-platform).
+#
+# `scale`/`unit`/`decimals` turn the raw on-wire integer into what the watch displays:
+# Personal.Weight is 7500 on the wire and "75,0 kg" on screen, ActivityLevel is 50 and
+# "5.0". `control` is what SuuntoLink uses: radio buttons for 2-3 choices, a checkbox for a
+# standalone boolean, a dropdown only for a long list.
+AMBIT3_DISPLAY = {
+    # --- General settings ---
+    "language":               {"label": "Language", "control": "dropdown"},
+    "backlight_mode":         {"label": "Backlight mode", "control": "dropdown"},
+    "backlight_brightness":   {"label": "Backlight brightness", "control": "slider", "unit": "%"},
+    "display_dark":           {"label": "Display", "control": "radio",
+                               "bool_labels": ["Light", "Dark"]},
+    "tones":                  {"label": "Tones", "control": "radio"},
+    "button_lock_time_mode":  {"label": "Button lock, time mode", "control": "radio"},
+    "button_lock_sport_mode": {"label": "Button lock, sport mode", "control": "radio"},
+    "gps_time_keeping":       {"label": "GPS time keeping", "control": "radio"},
+    "storm_alarm":            {"label": "Storm alarm", "control": "checkbox"},
+    "gps_position_format":    {"label": "GPS position format", "control": "dropdown"},
+    "units_orientation":      {"label": "Orientation", "control": "radio"},
+    "alti_baro_profile":      {"label": "Alti-baro profile", "control": "radio"},
+    "compass_declination":    {"label": "Compass declination", "control": "declination",
+                               "unit": "°", "decimals": 1},
+    # --- Unit settings ---
+    "units_mode":             {"label": "Units", "control": "radio"},
+    "height_unit":            {"label": "Height", "control": "radio"},
+    "weight_unit":            {"label": "Weight", "control": "radio"},
+    "distance_unit":          {"label": "Distance", "control": "radio"},
+    "temperature_unit":       {"label": "Temperature", "control": "radio"},
+    "air_pressure_unit":      {"label": "Air pressure", "control": "radio"},
+    "altitude_unit":          {"label": "Altitude", "control": "radio"},
+    "vertical_speed_unit":    {"label": "Vertical speed", "control": "radio"},
+    "compass_unit":           {"label": "Compass", "control": "radio"},
+    "heartrate_unit":         {"label": "Heart rate", "control": "radio"},
+    "date_format":            {"label": "Date", "control": "radio"},
+    "time_format":            {"label": "Time", "control": "radio"},
+    # --- Personal settings ---
+    "gender":                 {"label": "Gender", "control": "radio"},
+    "birth_date":             {"label": "Birth year", "control": "year"},
+    "body_height":            {"label": "Height", "control": "number", "unit": "cm"},
+    "body_weight":            {"label": "Weight", "control": "number", "unit": "kg",
+                               "scale": 100, "decimals": 1},
+    "max_hr":                 {"label": "Max heart rate", "control": "number", "unit": "bpm"},
+    "rest_hr":                {"label": "Rest heart rate", "control": "number", "unit": "bpm"},
+    "activity_level":         {"label": "Activity class", "control": "dropdown",
+                               "scale": 10, "decimals": 1, "step": 1.0},
+    # --- Not on any SuuntoLink settings screen ---
+    "display_contrast":       {"label": "Display contrast", "control": "readonly"},
+    # Real: Settings.UseTrainingProgram, "Training plan source (0 - off, 1 - Manual from
+    # MovesCount)" per ServiceAdapter.xml's own comment. It rides in EVERY write template
+    # (like Pods) because it is part of the common tail, not because it is a General
+    # Settings control - SuuntoLink shows it on no settings screen at all; it is set by the
+    # planned-moves/training-program feature. Kept visible and writable (the
+    # training_program work uses it - see training_program_andre.md Findings 29-30) but out
+    # of "general", where it only appeared because that was the template it rides in.
+    "plans_source":           {"label": "Use training program", "control": "radio"},
 }
+
+# Where SuuntoLink's own label for a choice differs from the firmware descriptor's. The
+# descriptor stays the authority on which values are LEGAL (see _validate_new_value); this
+# only changes how they are shown. Keyed by the same schema-path suffix as AMBIT3_SETTINGS.
+AMBIT3_CHOICE_LABELS = {
+    "Time.GPSTimeKeeping": {0: "On", 1: "Off"},        # descriptor says "true"/"false"
+    "Units.Orientation":   {0: "Heading up", 1: "North up"},  # descriptor: "HeadingUp"/"Orientation"
+    "Units.Temperature":   {0: "°C", 1: "°F"},
+    "Units.Distance":      {0: "km", 1: "miles"},
+    "Date.Format":         {0: "DD.MM.", 1: "MM/DD"},
+    "Time.Format":         {0: "24 hours", 1: "12 hours"},
+    "AltiBaro.Profile":    {0: "Alti", 1: "Baro", 2: "Automatic"},
+    # All confirmed verbatim from a real screenshot of SuuntoLink's own dropdown, open:
+    # `assets/pcap/screens/Screenshot 2026-08-10 at 12.54.30.png`. Worth noting how far
+    # these drift from the descriptor's own labels - "dm"/"dms" are shown as the actual
+    # coordinate patterns, and NZTM2000 gains a country prefix - which is exactly why these
+    # are read off a screenshot rather than derived from the schema.
+    #
+    # That screenshot also shows a 16th entry, "Swedish (SWEREF 99 TM)" (value 15), which
+    # this watch's own descriptor stops short of - it enumerates 0..14. It is deliberately
+    # NOT listed here: this table only renames values the descriptor already declares, so
+    # an unknown value can never gain a friendly label and slip past _validate_new_value().
+    # Writing 15 is what stranded André's watch on 2026-08-10 and forced a factory reset.
+    "GpsPositionFormat":   {0: "WGS84 Hd.d°",
+                            1: "WGS84 Hd°m.m'",
+                            2: "WGS84 Hd°m's.s",
+                            14: "New Zealand (NZTM2000)"},
+}
+
+# Expressed in the unit the USER sees, not the raw on-wire one, and checked against the
+# value actually typed before any conversion - checking a converted value against a
+# display range would be checking the wrong number. Android's own AmbitSettingsReader/
+# Writer already speak display units via their per-field `scale`, so doing the conversion
+# here (rather than in each UI) is what keeps the desktop and Android sides from drifting.
+AMBIT3_RANGES = {
+    "body_height": (89, 241),          # cm
+    "body_weight": (30.0, 250.0),      # kg   (wire: kg * 100)
+    "max_hr": (30, 240),               # bpm
+    "rest_hr": (30, 240),              # bpm
+    "activity_level": (1.0, 10.0),     # activity class (wire: * 10)
+    "backlight_brightness": (5, 100),  # %
+}
+
+# Two fields whose useful value is not the raw on-wire one, converted symmetrically in
+# read_all() and write_one() so a UI (and --set) always speaks the human unit:
+#
+#   compass_declination - float32 RADIANS on the wire, degrees everywhere else. Confirmed
+#     exactly against two real captures: 0.20943952 rad = +12.0000 deg (the capture named
+#     `ambit3declinationeast12`) and -0.27925268 rad = -16.0000 deg. East is POSITIVE on
+#     the wire. Note this is the opposite of Movescount's own internal sign, which
+#     ServiceAdapter.xml flags in shouty capitals ("in MC east is negative and west
+#     positive !!!") and undoes with its `converter="complement"` - we talk to the watch
+#     directly, so the wire convention is the one that applies and no complement is taken.
+#     SIGN CONFIRMED 2026-08-10 by an explicit, labelled capture pair rather than inference:
+#     `uscompassdeclinationwest90` writes -1.5707964 rad (-90.0 deg) and
+#     `usecompassdeclinationeast90` writes +1.5707964 rad (+90.0 deg). West negative, East
+#     positive, +-90 deg the real limit in both directions.
+#
+#     "Off" is simply 0.0 - there is no separate enable flag anywhere in the schema.
+#     Confirmed both ways: `compassdeclinationeasttodisable` (unticking the box) and
+#     `usecompassdeclination_goestowest0` (leaving the box ticked, picking West, but
+#     entering 0) both write exactly 00 00 00 00. So SuuntoLink's own UI treats a chosen
+#     direction with a zero magnitude as disabled, which is why the checkbox state is
+#     derived from `value != 0` rather than stored anywhere.
+#   birth_date - "YYYY-01-01" on the wire, a plain year in the UI. SuuntoLink only ever
+#     edits the year (its own field shows "1973"); month and day are always 01-01 and were
+#     never real data.
+_DEGREES_FROM_RADIANS_KEYS = {"compass_declination"}
+_YEAR_KEYS = {"birth_date"}
+
+# Ranges for those two, expressed in the DISPLAY unit rather than the raw one, so they are
+# checked against what the user actually typed. Declination is SuuntoLink's own +-90.0
+# degrees at 0.1 steps; the birth year's upper bound is the current year, which André
+# confirmed 2026-08-10 is what SuuntoLink's own UI enforces (not ServiceAdapter.xml's
+# generic max="2050").
+AMBIT3_DISPLAY_RANGES = {
+    "compass_declination": (-90.0, 90.0),
+    "birth_date": (1900, None),  # None = current year, resolved at call time
+}
+
+
+def _display_range(key):
+    """The range for `key` in display units, from either table, or None."""
+    bounds = AMBIT3_DISPLAY_RANGES.get(key, AMBIT3_RANGES.get(key))
+    if bounds is None:
+        return None
+    low, high = bounds
+    if high is None:
+        high = datetime.date.today().year
+    return low, high
+
+
+def _to_display(key, value):
+    """Raw on-wire value -> the unit a human reads."""
+    if value is None:
+        return None
+    if key in _DEGREES_FROM_RADIANS_KEYS:
+        return round(math.degrees(value), 1)
+    if key in _YEAR_KEYS:
+        return int(str(value).split("-")[0])
+    scale = (AMBIT3_DISPLAY.get(key) or {}).get("scale")
+    if scale:
+        return round(value / scale, (AMBIT3_DISPLAY[key].get("decimals") or 0))
+    return value
+
+
+def _from_display(key, value):
+    """The inverse - what a UI/--set hands in, back to the raw on-wire value."""
+    if key in _DEGREES_FROM_RADIANS_KEYS:
+        return math.radians(float(value))
+    if key in _YEAR_KEYS:
+        return "%04d-01-01" % int(value)
+    scale = (AMBIT3_DISPLAY.get(key) or {}).get("scale")
+    if scale:
+        return round(float(value) * scale)
+    return value
 
 
 def settings_table(product_id):
@@ -423,6 +601,8 @@ def read_all(payload, descriptor, product_id=None):
             desc = {"kind": desc["kind"]}
         if key in _DEGREES_X1E7_KEYS and value is not None:
             value = value / 10 ** 7
+        if product_id != KAILASH_PRODUCT_ID:
+            value = _to_display(key, value)
         # Real, 2026-08-10: tell a UI what it may actually offer, instead of leaving it
         # to guess from `kind`. `writable` is false for a field on no real SuuntoLink
         # screen (display_contrast), so the UI shows the value without an editor rather
@@ -432,9 +612,9 @@ def read_all(payload, descriptor, product_id=None):
         # brightness is 5..100, not 0..255).
         writable = (product_id == KAILASH_PRODUCT_ID
                     or key in AMBIT3_KEY_TEMPLATE)
-        if key in AMBIT3_RANGES and product_id != KAILASH_PRODUCT_ID:
+        if product_id != KAILASH_PRODUCT_ID and _display_range(key) is not None:
             desc = dict(desc)
-            desc["min"], desc["max"] = AMBIT3_RANGES[key]
+            desc["min"], desc["max"] = _display_range(key)
         elif not writable:
             # No editor will be shown, so don't hand a UI a range to build one from -
             # describe_field()'s own is the raw integer width (0..255 for
@@ -448,8 +628,36 @@ def read_all(payload, descriptor, product_id=None):
         screen = AMBIT3_KEY_TEMPLATE.get(key) if product_id != KAILASH_PRODUCT_ID else None
         if screen == "units_mode":
             screen = "units"
-        out[key] = {"ok": True, "value": value, "path": field.path,
-                    "writable": writable, "screen": screen, **desc}
+        # plans_source rides in every write template, so AMBIT3_KEY_TEMPLATE puts it in
+        # "general" - but it is on none of SuuntoLink's own settings screens (see its own
+        # AMBIT3_DISPLAY comment). Keep it out of the three real screens.
+        if key == "plans_source":
+            screen = None
+
+        entry = {"ok": True, "value": value, "path": field.path,
+                 "writable": writable, "screen": screen, **desc}
+
+        # SuuntoLink's own presentation for this field (label, control type, unit and
+        # scaling) - see AMBIT3_DISPLAY. Kailash keeps the generic rendering: its own 7R
+        # app groups and labels differently and none of it has been checked against a real
+        # screenshot the way the Ambit3's has.
+        if product_id != KAILASH_PRODUCT_ID:
+            display = AMBIT3_DISPLAY.get(key)
+            if display:
+                entry.update({k: v for k, v in display.items()
+                              if k not in ("bool_labels", "scale")})
+                if display.get("bool_labels") and entry.get("kind") == "bool":
+                    # A bool SuuntoLink renders as a two-way choice (Display: Light/Dark)
+                    # rather than an on/off switch - hand the UI real choices so it can.
+                    entry["kind"] = "enum"
+                    entry["choices"] = [[i, lbl] for i, lbl
+                                        in enumerate(display["bool_labels"])]
+            if entry.get("kind") == "enum":
+                overrides = AMBIT3_CHOICE_LABELS.get(suffix)
+                if overrides:
+                    entry["choices"] = [[v, overrides.get(v, lbl)]
+                                        for v, lbl in entry["choices"]]
+        out[key] = entry
     return {"ok": True, "settings": out}
 
 
@@ -612,10 +820,10 @@ def _validate_new_value(schema, key, field, raw_new_value):
                 f"allows for {field.path} - legal values: {sorted(values)}")
     if field.base == "bool" and raw_new_value not in (0, 1):
         return f"{key}={raw_new_value} is not a boolean (0 or 1) for {field.path}"
-    bounds = AMBIT3_RANGES.get(key)
-    if bounds is not None and not (bounds[0] <= raw_new_value <= bounds[1]):
-        return (f"{key}={raw_new_value} is outside the range SuuntoLink's own UI "
-                f"enforces for {field.path}: {bounds[0]}..{bounds[1]}")
+    # Numeric ranges are NOT checked here: AMBIT3_RANGES is in display units and the
+    # caller has already checked the typed value against _display_range() before
+    # converting. Re-testing the converted raw value against a display range would be
+    # comparing 7500 against 30..250.
     return None
 
 
@@ -642,6 +850,21 @@ def _decode_field(field, data):
 def _write_via_template(link, schema, key, field, raw_new_value, before):
     """SuuntoLink's own write path: send only the template of the screen this field lives
     on, values taken from `before`, this one field patched. See AMBIT3_WRITE_TEMPLATES."""
+    # Fields whose UI unit differs from the wire's are validated in the unit the caller
+    # actually typed (degrees, a year), then converted - checking a converted value against
+    # a display range would be checking the wrong number.
+    display_bounds = _display_range(key)
+    if display_bounds is not None:
+        try:
+            typed = float(raw_new_value)
+        except (TypeError, ValueError):
+            return {"ok": False, "error": f"{key} expects a number, got {raw_new_value!r}"}
+        if not (display_bounds[0] <= typed <= display_bounds[1]):
+            return {"ok": False, "error": f"{key}={raw_new_value} is outside the range "
+                                           f"SuuntoLink's own UI enforces for {field.path}: "
+                                           f"{display_bounds[0]}..{display_bounds[1]}"}
+    raw_new_value = _from_display(key, raw_new_value)
+
     problem = _validate_new_value(schema, key, field, raw_new_value)
     if problem:
         return {"ok": False, "error": problem}
@@ -686,13 +909,28 @@ def _write_via_template(link, schema, key, field, raw_new_value, before):
     confirmed = _decode_field(field, after[start:start + length]) \
         if start is not None else None
 
+    # Real precision pitfall, the same one already documented for Kailash's HomeLocation:
+    # a float32 field cannot hold the float64 the conversion produces, so comparing the
+    # read-back against `raw_new_value` directly reports ok:false on a write that landed
+    # exactly as precisely as the format allows. math.radians(12.0) is 0.20943951023931953
+    # as a float64 but 0.20943951606750488 once it has been through float32 - the value the
+    # watch echoes back. Compare on the same encoded bytes both sides actually went through.
+    if confirmed is None:
+        ok = False
+    elif field.base.startswith("float"):
+        ok = struct.pack(field.fmt, raw_new_value) == struct.pack(field.fmt, confirmed)
+    else:
+        ok = confirmed == raw_new_value
+
     return {
-        "ok": confirmed == (raw_new_value if field.base != "utf8" else raw_new_value),
+        "ok": ok,
         "path": field.path,
         "template": template_name,
-        "previous_value": previous,
-        "requested_value": raw_new_value,
-        "confirmed_value": confirmed,
+        # Reported in the unit the caller speaks (degrees, a year), symmetric with
+        # read_all()'s own values, so a UI never has to know the wire encoding.
+        "previous_value": _to_display(key, previous),
+        "requested_value": _to_display(key, raw_new_value),
+        "confirmed_value": _to_display(key, confirmed),
         "omitted_fields": sorted(set(omitted_all)),
     }
 
@@ -892,7 +1130,11 @@ def main():
         # field (Kailash's `device_time`, and now the Ambit3's `birth_date`) went through
         # int() here and raised ValueError before write_one()'s own text path could ever
         # run - so that path was unreachable from the CLI it was written for.
-        if field is not None and field.base == "utf8":
+        if key in _YEAR_KEYS:
+            new_value = int(raw_value)          # a year, converted to "YYYY-01-01" on write
+        elif key in _DEGREES_FROM_RADIANS_KEYS:
+            new_value = float(raw_value)        # degrees, converted to radians on write
+        elif field is not None and field.base == "utf8":
             new_value = raw_value
         else:
             new_value = float(raw_value) if is_float else int(raw_value)
