@@ -930,15 +930,36 @@ def _write_via_template(link, schema, key, field, raw_new_value, before):
         sequence.append("units")
 
     omitted_all = []
+    source = before
     for name in sequence:
         patches = [(field.fid, 0, patched)] if name == template_name else []
         try:
             payload, omitted = build_write_payload(
-                schema, before, AMBIT3_WRITE_TEMPLATES[name], patches)
+                schema, source, AMBIT3_WRITE_TEMPLATES[name], patches)
         except (KeyError, ValueError) as exc:
             return {"ok": False, "error": str(exc)}
         omitted_all += omitted
         link.command(CMD_SETTINGS_WRITE, payload)
+        # Real bug, found 2026-08-10 from André's own `advancedtometric` capture. The two
+        # writes of a units change must NOT both be built from the same read.
+        #
+        # Setting Units.Mode to Metric or Imperial makes THE WATCH normalise all seven
+        # unit-system fields itself (Distance/Altitude/Temperature/Weight/AirPressure/
+        # Height/VerticalSpeed). In that capture the units were written as imperial
+        # (1111111) while in Advanced, the mode was then set to Metric, and the very next
+        # read came back 0000000 - the watch had reset them, nobody wrote it. SuuntoLink
+        # re-reads at that point and its follow-up block simply echoes the new state.
+        #
+        # Building the block from the pre-change read instead would write the OLD units
+        # straight back on top of the watch's normalisation, leaving Units.Mode and the
+        # individual units disagreeing - the exact inconsistency this pairing exists to
+        # avoid. So re-read between the two.
+        #
+        # Only the four fields that are not unit-system concepts (Date.Format, Time.Format,
+        # Units.Compass, Units.Heartrate) stay put across a mode change, and they remain
+        # editable in every mode, not just Advanced (André, 2026-08-10).
+        if name != sequence[-1]:
+            source = link.command(CMD_SETTINGS_READ, b"\0\0\0\0")
 
     after = link.command(CMD_SETTINGS_READ, b"\0\0\0\0")
     start, length = _locate_entry(after, field.fid)
