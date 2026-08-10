@@ -57,7 +57,7 @@ Flickable {
                                 "are future, not part of this mechanism.")
                 }
 
-                Button {
+                RoundedButton {
                     text: BackupService.loading ? qsTr("Working…") : qsTr("Create backup now")
                     enabled: !BackupService.loading
                     onClicked: BackupService.createBackup()
@@ -108,11 +108,11 @@ Flickable {
                             // own result text below, which was Rehearse's whole purpose;
                             // being able to actually see the saved files is the more useful
                             // second action here.
-                            Button {
+                            RoundedButton {
                                 text: qsTr("Open backup folder")
                                 onClicked: LocalFileService.openFolder(LocalFileService.backupsLocation)
                             }
-                            Button {
+                            RoundedButton {
                                 text: qsTr("Restore")
                                 onClicked: BackupService.restoreBackup(modelData.prefix, true)
                             }
@@ -164,12 +164,12 @@ Flickable {
 
                 Row {
                     spacing: Theme.spacingSmall
-                    Button {
+                    RoundedButton {
                         text: BackupService.firmwareLoading ? qsTr("Working…") : qsTr("Check again")
                         enabled: !BackupService.firmwareLoading
                         onClicked: BackupService.checkFirmware()
                     }
-                    Button {
+                    RoundedButton {
                         text: qsTr("Download for backup")
                         enabled: !BackupService.firmwareLoading && BackupService.firmwareCheckOk
                         onClicked: BackupService.downloadFirmware()
@@ -219,7 +219,7 @@ Flickable {
                 // Backup and restore" - still opens the folder-choose dialog first (a real
                 // difference from Suunto's own fixed ~/AmbitAppBackups location), just
                 // worded the same way.
-                Button {
+                RoundedButton {
                     text: GarminService.backingUp ? qsTr("Working…") : qsTr("Create backup now")
                     enabled: !GarminService.backingUp
                     onClicked: garminBackupDialog.open()

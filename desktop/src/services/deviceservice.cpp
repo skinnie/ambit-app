@@ -3,11 +3,13 @@
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QNetworkReply>
 #include <QStandardPaths>
 #include <QTextStream>
+#include <QTimeZone>
 
 static const QString kBackendBase = QStringLiteral("http://127.0.0.1:8766");
 
@@ -186,4 +188,76 @@ void DeviceService::checkGpsOrbitStatus()
             : QStringLiteral("No data yet - tap to update");
         emit gpsOrbitChanged();
     });
+}
+
+void DeviceService::syncTime(const QString &timezone)
+{
+    m_timeSyncBusy = true;
+    m_timeSyncStatusText = QStringLiteral("Syncing...");
+    emit timeSyncChanged();
+
+    QNetworkRequest request(backendUrl(QStringLiteral("/api/time/sync")));
+    request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
+    QJsonObject bodyObj;
+    if (!timezone.isEmpty()) {
+        bodyObj.insert(QStringLiteral("timezone"), timezone);
+    }
+    QNetworkReply *reply = m_network.post(request, QJsonDocument(bodyObj).toJson());
+    connect(reply, &QNetworkReply::finished, this, [this, reply] {
+        reply->deleteLater();
+        m_timeSyncBusy = false;
+
+        const auto obj = QJsonDocument::fromJson(reply->readAll()).object();
+        if (reply->error() != QNetworkReply::NoError && obj.isEmpty()) {
+            m_timeSyncStatusText =
+                QStringLiteral("Couldn't reach the backend: %1").arg(reply->errorString());
+            emit timeSyncChanged();
+            return;
+        }
+
+        if (!obj.value(QStringLiteral("ok")).toBool()) {
+            m_timeSyncStatusText = QStringLiteral("Failed: %1")
+                .arg(obj.value(QStringLiteral("error")).toString());
+        } else {
+            m_timeSyncStatusText = QStringLiteral("Synced to %1")
+                .arg(obj.value(QStringLiteral("time")).toString());
+        }
+        emit timeSyncChanged();
+    });
+}
+
+void DeviceService::fetchTimezones()
+{
+    if (!m_timezones.isEmpty()) {
+        return;  // already fetched this session - zoneinfo's own list never changes at runtime
+    }
+    QNetworkReply *reply =
+        m_network.get(QNetworkRequest(backendUrl(QStringLiteral("/api/time/zones"))));
+    connect(reply, &QNetworkReply::finished, this, [this, reply] {
+        reply->deleteLater();
+        const auto obj = QJsonDocument::fromJson(reply->readAll()).object();
+        if (reply->error() != QNetworkReply::NoError || !obj.value(QStringLiteral("ok")).toBool()) {
+            return;
+        }
+        QStringList zones;
+        for (const auto &v : obj.value(QStringLiteral("zones")).toArray()) {
+            zones << v.toString();
+        }
+        m_timezones = zones;
+        emit timezonesChanged();
+    });
+}
+
+QString DeviceService::currentTimeInZone(const QString &timezone) const
+{
+    const QTimeZone tz(timezone.toUtf8());
+    if (!tz.isValid()) {
+        return QString();
+    }
+    // Real, 2026-08-10 ("it shows the date and that makes the hour no visible") - this is
+    // shown inline next to a long zone name in a fixed-width dropdown row (HomePage.qml's
+    // own tzCombo delegate); the full date+seconds this originally returned pushed the
+    // actually-useful hour:minute off the visible edge. Just the time - picking a timezone
+    // to compare "what hour is it there" doesn't need today's date repeated 599 times.
+    return QDateTime::currentDateTime(tz).toString(QStringLiteral("HH:mm"));
 }

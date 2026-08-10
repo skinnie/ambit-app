@@ -22,7 +22,14 @@ Button {
         color: root.checked ? Theme.primary
             : ((root.pressed || root.hovered) ? Theme.background : Theme.card)
         border.width: root.checked ? 0 : 1
-        border.color: Theme.background
+        // Real, 2026-08-10 ("the contour of the buttons when not selected...they are
+        // black...not that visible") - Theme.background is the darkest color in the whole
+        // dark palette, so a border drawn in it all but disappears against Theme.card (this
+        // button's own idle fill) or the page behind it. WatchFacePreview.qml's own
+        // selected/unselected border already established the right pattern for this exact
+        // case (Theme.mutedText, real contrast in both themes) - this was the one place
+        // that didn't follow it, not a new color invented here.
+        border.color: Theme.mutedText
         Behavior on color { ColorAnimation { duration: 120; easing.type: Easing.OutCubic } }
     }
 

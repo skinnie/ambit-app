@@ -41,6 +41,51 @@ Flickable {
         // same thing.
         spacing: Theme.spacingLarge
 
+        // --- Appearance - real, 2026-08-10 ("on desktop mode, put the menu on settings for
+        // dark mode/system"). Theme.qml's own header comment anticipated exactly this back
+        // when `override`/isDark were first built - this is that control, finally wired up.
+        // Same RadioButton pattern (autoExclusive:false + onClicked, not checked bindings
+        // fighting QQC2's own exclusivity - see the real bug that caused further down in
+        // the Maps card) as every other exclusive-choice control on this page. ---
+        Card {
+            width: parent.width
+            Column {
+                width: parent.width
+                spacing: Theme.spacingSmall
+                Row {
+                    spacing: Theme.spacingSmall
+                    Icon { glyph: Icons.weatherSunny; size: 20; color: Theme.text; anchors.verticalCenter: parent.verticalCenter }
+                    Text { text: qsTr("Appearance"); font.bold: true; font.pixelSize: Theme.fontSizeBodyLarge; color: Theme.text; anchors.verticalCenter: parent.verticalCenter }
+                }
+                Text {
+                    text: qsTr("Choose light or dark, or follow your system setting.")
+                    color: Theme.mutedText
+                    font.pixelSize: Theme.fontSizeBody
+                }
+                Row {
+                    spacing: Theme.spacingSmall
+                    RoundedRadioButton {
+                        autoExclusive: false
+                        checked: Theme.override === "light"
+                        text: qsTr("Light")
+                        onClicked: Theme.override = "light"
+                    }
+                    RoundedRadioButton {
+                        autoExclusive: false
+                        checked: Theme.override === "dark"
+                        text: qsTr("Dark")
+                        onClicked: Theme.override = "dark"
+                    }
+                    RoundedRadioButton {
+                        autoExclusive: false
+                        checked: Theme.override === "system"
+                        text: qsTr("System")
+                        onClicked: Theme.override = "system"
+                    }
+                }
+            }
+        }
+
         // --- General - Suunto-specific (it's reporting the Python backend bridge's own
         // status, which Garmin support has nothing to do with - GarminService talks
         // directly to a mounted filesystem, no backend involved at all). Real, 2026-08-08:
@@ -150,8 +195,25 @@ Flickable {
             width: parent.width
             visible: !HomeViewModel.isGarmin
             Column {
+                id: settingsColumn
                 width: parent.width
                 spacing: Theme.spacingMedium
+
+                // Real, 2026-08-10: the curated table grew from 18 to 34 fields once the
+                // Unit and Personal screens were covered, and one flat run of 34 rows is
+                // not a settings screen anyone can use. settings_write.py now reports the
+                // `screen` each field lives on - the same three SuuntoLink itself groups
+                // them into, which is the grouping the watch's owner already knows - so
+                // the grouping needs no second table here to drift out of sync. Fields
+                // with no screen (Kailash's whole table, and display_contrast) fall into
+                // "other" and are still shown.
+                function rowsForScreen(name) {
+                    const out = [];
+                    for (const s of SettingsWriteService.settings) {
+                        if ((s.screen ? s.screen : "other") === name) out.push(s);
+                    }
+                    return out;
+                }
 
                 Row {
                     spacing: Theme.spacingSmall
@@ -188,7 +250,30 @@ Flickable {
                 }
 
                 Repeater {
-                    model: SettingsWriteService.settings
+                    model: [
+                        { screen: "general",  title: qsTr("General settings") },
+                        { screen: "units",    title: qsTr("Unit settings") },
+                        { screen: "personal", title: qsTr("Personal settings") },
+                        { screen: "other",    title: qsTr("Other") }
+                    ]
+                    delegate: Column {
+                        id: screenGroup
+                        width: parent.width
+                        spacing: Theme.spacingSmall
+                        readonly property var rows: settingsColumn.rowsForScreen(modelData.screen)
+                        readonly property string groupTitle: modelData.title
+                        visible: rows.length > 0
+
+                        Text {
+                            text: screenGroup.groupTitle
+                            color: Theme.mutedText
+                            font.bold: true
+                            font.pixelSize: Theme.fontSizeLabel
+                            topPadding: Theme.spacingSmall
+                        }
+
+                        Repeater {
+                    model: screenGroup.rows
                     delegate: Row {
                         width: parent.width
                         spacing: Theme.spacingSmall
@@ -203,6 +288,14 @@ Flickable {
                         readonly property bool hasRange:
                             modelData.min !== undefined && modelData.min !== null
                             && modelData.max !== undefined && modelData.max !== null
+                        // Real, 2026-08-10: a field SuuntoLink itself never writes has no
+                        // editor here either. display_contrast is the real case - entry
+                        // 0x1f is in the watch's own settings reply and in SuuntoLink's
+                        // generic ServiceAdapter.xml, but appears in none of the 134
+                        // captured writes, and it is changed on the watch itself. Showing
+                        // it read-only keeps the information without inventing a write
+                        // path this project has no reference implementation for.
+                        readonly property bool editable: modelData.writable !== false
                         // Real, 2026-08-08, Kailash only - HomeLocation.Latitude/Longitude
                         // (entry 0x36, a GROUP - see settings_write.py's own KAILASH_SETTINGS
                         // comment and the ambit_app_kailash_home_location_field memory).
@@ -223,7 +316,7 @@ Flickable {
                         }
 
                         RoundedSwitch {
-                            visible: modelData.kind === "bool"
+                            visible: modelData.kind === "bool" && parent.editable
                             anchors.verticalCenter: parent.verticalCenter
                             checked: modelData.value === 1 || modelData.value === true
                             enabled: SettingsWriteService.writingKey !== modelData.key
@@ -231,7 +324,7 @@ Flickable {
                         }
 
                         RoundedComboBox {
-                            visible: modelData.kind === "enum"
+                            visible: modelData.kind === "enum" && parent.editable
                             width: 220
                             model: modelData.choices
                             textRole: "label"
@@ -247,7 +340,7 @@ Flickable {
                         }
 
                         Row {
-                            visible: modelData.kind === "number" && parent.hasRange
+                            visible: modelData.kind === "number" && parent.hasRange && parent.editable
                             spacing: 8
                             RoundedSlider {
                                 anchors.verticalCenter: parent.verticalCenter
@@ -272,7 +365,8 @@ Flickable {
                         // A "number" field with no confirmed min/max (compass_declination) -
                         // shown, not editable, rather than guessing at a sensible slider range.
                         Text {
-                            visible: modelData.kind === "number" && !parent.hasRange && !parent.isHomeCoord
+                            visible: (modelData.kind === "number" && !parent.hasRange && !parent.isHomeCoord)
+                                     || !parent.editable
                             anchors.verticalCenter: parent.verticalCenter
                             text: modelData.value
                             color: Theme.mutedText
@@ -285,7 +379,7 @@ Flickable {
                         // button can't offer). Matches the Weather "Manual location" editor's
                         // own TextField+Button pattern further down this same page.
                         Row {
-                            visible: modelData.kind === "number" && !parent.hasRange && parent.isHomeCoord
+                            visible: modelData.kind === "number" && !parent.hasRange && parent.isHomeCoord && parent.editable
                             spacing: 8
                             RoundedTextField {
                                 id: coordField
@@ -306,6 +400,29 @@ Flickable {
                             }
                         }
 
+                        // A utf8 field - the Ambit3's own birth_date ("YYYY-01-01"; only
+                        // the year is ever meaningful, SuuntoLink writes 01-01 for month
+                        // and day) and Kailash's device_time. Same TextField+Button shape
+                        // as the coordinate editor above rather than a free-typing binding,
+                        // so a half-typed date is never sent.
+                        Row {
+                            visible: modelData.kind === "text" && parent.editable
+                            spacing: 8
+                            RoundedTextField {
+                                id: textField
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 130
+                                text: modelData.value
+                                enabled: SettingsWriteService.writingKey !== modelData.key
+                            }
+                            RoundedButton {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: qsTr("Set")
+                                enabled: SettingsWriteService.writingKey !== modelData.key
+                                onClicked: SettingsWriteService.writeSetting(modelData.key, textField.text)
+                            }
+                        }
+
                         Text {
                             visible: SettingsWriteService.writingKey === modelData.key
                             anchors.verticalCenter: parent.verticalCenter
@@ -313,6 +430,8 @@ Flickable {
                             color: Theme.mutedText
                             font.pixelSize: Theme.fontSizeCaption
                             font.italic: true
+                        }
+                            }
                         }
                     }
                 }
@@ -613,13 +732,13 @@ Flickable {
                     // (which also fires from binding evaluation, not just clicks) - real bug,
                     // 2026-08-07, likely also the cause of the earlier "clicks for CyclOSM
                     // don't do anything" report.
-                    RadioButton {
+                    RoundedRadioButton {
                         autoExclusive: false
                         checked: MapService.provider === "osm"
                         text: qsTr("OpenStreetMap (standard)")
                         onClicked: MapService.provider = "osm"
                     }
-                    RadioButton {
+                    RoundedRadioButton {
                         autoExclusive: false
                         checked: MapService.provider === "cyclosm"
                         text: qsTr("CyclOSM (cycling-focused)")
@@ -654,12 +773,12 @@ Flickable {
                     // WeatherService.detectLocationFromIp() on startup, not refresh()) - this
                     // radio just reflects/re-triggers that, matching HomeViewModel's own
                     // startup call rather than owning the decision itself.
-                    RadioButton {
+                    RoundedRadioButton {
                         checked: true
                         text: qsTr("This computer (IP-based)")
                         onCheckedChanged: if (checked) WeatherService.detectLocationFromIp()
                     }
-                    RadioButton { text: qsTr("Manual") }
+                    RoundedRadioButton { text: qsTr("Manual") }
                 }
 
                 Row {

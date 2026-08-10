@@ -18,7 +18,10 @@ CheckBox {
         radius: Theme.radiusSmall
         color: root.checked ? Theme.primary : Theme.card
         border.width: 1
-        border.color: root.checked ? Theme.primary : Theme.background
+        // Real, 2026-08-10 ("the contour of the buttons when not selected...they are
+        // black...not that visible") - see RoundedButton.qml's own comment on this same
+        // fix across the Rounded* family.
+        border.color: root.checked ? Theme.primary : Theme.mutedText
         Behavior on color { ColorAnimation { duration: 120; easing.type: Easing.OutCubic } }
 
         // No plain bare-checkmark glyph exists in this app's own subset font (see

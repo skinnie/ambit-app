@@ -25,7 +25,10 @@ ComboBox {
         radius: Theme.radiusCard
         color: Theme.card
         border.width: 1
-        border.color: root.activeFocus ? Theme.primary : Theme.background
+        // Real, 2026-08-10 ("the contour of the buttons when not selected...they are
+        // black...not that visible") - see RoundedButton.qml's own comment on this same
+        // fix across the Rounded* family.
+        border.color: root.activeFocus ? Theme.primary : Theme.mutedText
         Behavior on border.color { ColorAnimation { duration: 120; easing.type: Easing.OutCubic } }
     }
 
@@ -47,6 +50,34 @@ ComboBox {
         radius: Theme.radiusCard
         color: Theme.card
         border.width: 1
-        border.color: Theme.background
+        // Real, 2026-08-10 ("the contour of the buttons when not selected...they are
+        // black...not that visible") - see RoundedButton.qml's own comment on this same
+        // fix across the Rounded* family.
+        border.color: Theme.mutedText
+    }
+
+    // Real, 2026-08-10 ("I tested the other timezone and it shows the list, but the
+    // letters are difficult to read, the grey is a little soft") - this file's own header
+    // comment originally left the popup's delegate as "the platform default" on purpose
+    // (couldn't be visually verified without a live tester); now confirmed live that the
+    // Basic style's own default delegate text pulls an OS-palette grey, not Theme.text -
+    // the same root cause as every other Rounded* fix tonight, just not caught until a
+    // long (599-entry) list made it obvious.
+    delegate: ItemDelegate {
+        width: root.popup.width
+        highlighted: root.highlightedIndex === index
+        contentItem: Text {
+            // Works for both existing call sites: a plain string-list model (this file's own
+            // new timezone picker, no textRole set) and an object-list model with textRole
+            // (SettingsPage.qml's own usages, e.g. textRole: "label").
+            text: root.textRole ? model[root.textRole] : modelData
+            color: Theme.text
+            font.pixelSize: Theme.fontSizeBody
+            elide: Text.ElideRight
+            verticalAlignment: Text.AlignVCenter
+        }
+        background: Rectangle {
+            color: highlighted ? Theme.primary + "26" : "transparent"
+        }
     }
 }

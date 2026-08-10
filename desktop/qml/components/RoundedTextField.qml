@@ -24,7 +24,10 @@ TextField {
         radius: Theme.radiusSmall
         color: Theme.card
         border.width: root.activeFocus ? 2 : 1
-        border.color: root.activeFocus ? Theme.primary : Theme.background
+        // Real, 2026-08-10 ("the contour of the buttons when not selected...they are
+        // black...not that visible") - see RoundedButton.qml's own comment on this same
+        // fix across the Rounded* family.
+        border.color: root.activeFocus ? Theme.primary : Theme.mutedText
         Behavior on border.color { ColorAnimation { duration: 120; easing.type: Easing.OutCubic } }
     }
 }

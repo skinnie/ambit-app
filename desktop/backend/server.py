@@ -45,6 +45,7 @@ import urllib.request
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from zoneinfo import available_timezones
 
 TOOLS_DIR = Path(__file__).resolve().parent.parent.parent / "tools"
 PYTHON = sys.executable
@@ -190,6 +191,8 @@ class Handler(BaseHTTPRequestHandler):
             self._handle_apps_read()
         elif self.path.startswith("/api/apps/catalog"):
             self._handle_apps_catalog()
+        elif self.path == "/api/time/zones":
+            self._handle_time_zones()
         else:
             self.send_response(404)
             self.end_headers()
@@ -215,6 +218,8 @@ class Handler(BaseHTTPRequestHandler):
             self._handle_restore(body)
         elif self.path == "/api/settings":
             self._handle_settings_write(body)
+        elif self.path == "/api/time/sync":
+            self._handle_time_sync(body)
         elif self.path == "/api/customodes/rename":
             self._handle_customodes_rename(body)
         elif self.path == "/api/customodes/field":
@@ -576,6 +581,32 @@ class Handler(BaseHTTPRequestHandler):
                                    "no parseable JSON", "raw_output": out, "stderr": err})
             return
         self._send_json(200 if info.get("ok") else 502, info)
+
+    def _handle_time_sync(self, body):
+        """POST /api/time/sync. Body: {} (this device's own local time) or
+        {"timezone": "Area/City"} (a real IANA name, from /api/time/zones - "from a
+        different timezone", real 2026-08-10 request). No rehearsal step here unlike every
+        other write in this backend - set_time.py's own docstring explains why (two plain,
+        always-safe clock-set commands, no flash/PMEM involved) - this always sends --write
+        for real."""
+        args = ["--write", "--json"]
+        tz = body.get("timezone")
+        if tz:
+            args += ["--timezone", tz]
+        code, out, err = run_tool("set_time.py", args)
+        info = self._parse_last_json_line(out)
+        if info is None:
+            self._send_json(502, {"ok": False, "error": "set_time.py --json produced "
+                                   "no parseable JSON", "raw_output": out, "stderr": err})
+            return
+        self._send_json(200 if info.get("ok") else 502, info)
+
+    def _handle_time_zones(self):
+        """GET /api/time/zones - the real IANA tz database names, from Python's own bundled
+        zoneinfo (no network fetch, no separate data file - see set_time.py's own docstring
+        on why this is genuinely offline already, not a scoped-down version of an online
+        list)."""
+        self._send_json(200, {"ok": True, "zones": sorted(available_timezones())})
 
     def _handle_customodes_read(self):
         """GET /api/customodes - Ambit3's real sport modes (CustomModes flash region),

@@ -32,9 +32,16 @@ from PIL import Image, ImageDraw
 SIZE = 1024
 OUT_DIR = Path(__file__).resolve().parent.parent.parent / "desktop" / "packaging"
 
-# Same deep-teal/white pairing as tools/packaging/make_icon.py's own BG - this project's
-# real, already-established icon background, not invented fresh here.
-BG = (13, 58, 51, 255)
+# Real, 2026-08-10 ("logo for the app is green, please do it grey") - was the deep-teal
+# pairing tools/packaging/make_icon.py's own BG still uses; this project moved off that teal
+# onto a slate grey for both platforms' own in-app primary color already tonight (Android's
+# v3.ts, desktop's Theme.qml _darkPrimary/_darkAccent) - this is that same grey (Android's
+# v3Light.primary #475569), not a new color invented for the icon specifically. A window/
+# taskbar icon is one static OS-level asset (most window managers cache it at window
+# creation and don't live-update it from in-app state), so this is the one grey variant,
+# not a light/dark pair switched at runtime - a real, deliberate scope line, not an
+# oversight.
+BG = (71, 85, 105, 255)
 MOUNTAIN = (255, 255, 255, 255)
 
 # android/src/components/ui/Icon.tsx's own real "mountain" path, in its native 24x24

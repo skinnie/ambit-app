@@ -1,10 +1,12 @@
 pragma Singleton
 import QtQuick
+import Qt.labs.settings
 
 // Every color used anywhere in the app comes from here - AMBITAPP_SPEC.md's own rule
-// ("Never hardcode colors... Future themes should require zero UI changes"). A future
-// "Settings -> theme" control just needs to set `Theme.override` to "light"/"dark"/"system";
-// nothing else in the UI should ever change.
+// ("Never hardcode colors... Future themes should require zero UI changes"). The "future
+// Settings -> theme control" this file's own comment anticipated is real now
+// (SettingsPage.qml's own Appearance card) - it just sets `Theme.override` to
+// "light"/"dark"/"system"; nothing else in the UI needed to change.
 //
 // Palette notes: teal primary/accent carried over from this project's other recent work
 // (the packaging download page, the app icon - tools/packaging/make_icon.py) so AmbitApp has
@@ -12,9 +14,27 @@ import QtQuick
 QtObject {
     id: root
 
-    // "system" follows Qt.styleHints.colorScheme; a Settings toggle can set "light"/"dark"
-    // directly to override it, without any other file needing to know that happened.
-    property string override: "system"
+    // Real, 2026-08-10 ("on desktop mode, put the menu on settings for dark mode/system") -
+    // Qt.labs.settings persists this the same real way ConnectionsService.h's own QSettings
+    // already persists credentials (same underlying mechanism, just declared in QML instead
+    // of C++ - no new service class needed for one string). `override` is a plain alias
+    // onto the persisted value, so every existing reader of Theme.override (isDark below,
+    // and everything derived from it) picks up a saved choice automatically on next launch,
+    // with no other file needing to know persistence is involved at all.
+    property alias override: settingsId.themeOverride
+    // Real, 2026-08-10 (verifying the Appearance card actually compiles, per its own
+    // adjacent comment above) - two real issues here, found live: (1) QtObject has no
+    // default property, so a bare `Settings { ... }` child (implicitly assigned to a
+    // default property the way it would be under Item) failed with "Cannot assign to
+    // non-existent default property" - fixed by declaring it as an explicit named
+    // property instead of an implicit child. (2) `property alias X: settings.field` needs
+    // a real `id:`, not just a property name - fixed by giving the nested object its own
+    // id (settingsId) instead of relying on the property name (settingsObj) alone.
+    property Settings settingsObj: Settings {
+        id: settingsId
+        category: "appearance"
+        property string themeOverride: "system"
+    }
 
     readonly property bool isDark: {
         if (override === "light") return false;
@@ -38,9 +58,17 @@ QtObject {
     // are each checked on this ground independently, per this project's own design practice)
     readonly property color _darkBackground: "#14171C"
     readonly property color _darkCard: "#1B1F27"
-    readonly property color _darkPrimary: "#57C9B3"
+    // Real, 2026-08-10 ("desktop version in dark mode still has the cyan color like the
+    // android version had, can you use the same scheme of colors we did for the android
+    // (grey)") - primary/accent were still the original teal (#57C9B3/#7CD6C4) this whole
+    // palette's own header comment credits as this project's shared identity; Android's own
+    // v3.ts moved off that same teal onto a slate grey deliberately (its own 2026-08-09
+    // header comment: "why we have this cyano blue? ... change to a nicer grey" - a real,
+    // explicit choice, not a bug). These two values are that same grey, so both platforms'
+    // dark mode match again - light mode wasn't part of this request, left as-is.
+    readonly property color _darkPrimary: "#9CA3AF"
     readonly property color _darkSecondary: "#9AA3AF"
-    readonly property color _darkAccent: "#7CD6C4"
+    readonly property color _darkAccent: "#CBD5E1"
     readonly property color _darkSuccess: "#4CAF6D"
     readonly property color _darkWarning: "#E0A73B"
     readonly property color _darkError: "#E0655A"

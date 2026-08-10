@@ -51,6 +51,17 @@ class DeviceService : public QObject
     Q_PROPERTY(bool gpsOrbitBusy READ gpsOrbitBusy NOTIFY gpsOrbitChanged)
     Q_PROPERTY(QString gpsOrbitStatusText READ gpsOrbitStatusText NOTIFY gpsOrbitChanged)
 
+    // Real, 2026-08-10 ("I connected the kailash via usb... it didn't sync time... is this
+    // function implemented in our app? if not implement it"). Same one-tap, always-real-write
+    // shape as updateGpsOrbit() above (tools/set_time.py's own docstring explains why no
+    // rehearsal step is needed here, unlike settings/route writes) - POST /api/time/sync.
+    Q_PROPERTY(bool timeSyncBusy READ timeSyncBusy NOTIFY timeSyncChanged)
+    Q_PROPERTY(QString timeSyncStatusText READ timeSyncStatusText NOTIFY timeSyncChanged)
+    // GET /api/time/zones (the real IANA names, offline - see set_time.py's own docstring) -
+    // fetched lazily on first menu open, not on every Home load like deviceInfo/gpsOrbit,
+    // since most syncTime() taps use "from device" and never need this list at all.
+    Q_PROPERTY(QStringList timezones READ timezones NOTIFY timezonesChanged)
+
 public:
     explicit DeviceService(QObject *parent = nullptr);
 
@@ -85,12 +96,34 @@ public:
     // the whole point of it being separate from updateGpsOrbit() rather than folded into it.
     Q_INVOKABLE void checkGpsOrbitStatus();
 
+    bool timeSyncBusy() const { return m_timeSyncBusy; }
+    QString timeSyncStatusText() const { return m_timeSyncStatusText; }
+    QStringList timezones() const { return m_timezones; }
+
+    // Sets the watch's clock. Empty timezone (the default) means "this computer's own
+    // current local time"; a real IANA name (from timezones() below) means "the current
+    // time in that timezone instead" - the menu's own two options, real 2026-08-10
+    // ("a button to sync time... 'from device' 'from different timezone'").
+    Q_INVOKABLE void syncTime(const QString &timezone = QString());
+
+    // Real, 2026-08-10 ("when you show the timezone can you show what time is there now?") -
+    // a live preview of the real current time in a candidate zone, before committing to
+    // sync to it. Pure client-side QDateTime/QTimeZone math (the same real IANA database
+    // zoneinfo/set_time.py already uses) - no backend round trip needed for this one.
+    Q_INVOKABLE QString currentTimeInZone(const QString &timezone) const;
+
+    // Populates timezones() from the backend (GET /api/time/zones) - call once when the
+    // "from a different timezone" option is opened, not eagerly.
+    Q_INVOKABLE void fetchTimezones();
+
 signals:
     void loadingChanged();
     void backendReachableChanged();
     void lastErrorChanged();
     void deviceInfoChanged();
     void gpsOrbitChanged();
+    void timeSyncChanged();
+    void timezonesChanged();
 
 private:
     QNetworkAccessManager m_network;
@@ -107,6 +140,10 @@ private:
 
     bool m_gpsOrbitBusy = false;
     QString m_gpsOrbitStatusText;
+
+    bool m_timeSyncBusy = false;
+    QString m_timeSyncStatusText;
+    QStringList m_timezones;
 
     // Auto-refresh, real request 2026-08-08 ("if watch is connected don't refresh, if not
     // connected refresh with a 1 second interval, remove the refresh button"). Superseded

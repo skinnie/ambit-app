@@ -74,6 +74,7 @@ qt_add_qml_module(ambitapp
         qml/components/RoundedSlider.qml
         qml/components/RoundedTextField.qml
         qml/components/RoundedCheckBox.qml
+        qml/components/RoundedRadioButton.qml
         qml/components/RoundedSwitch.qml
         qml/components/WatchFacePreview.qml
         qml/components/DataPickerDialog.qml

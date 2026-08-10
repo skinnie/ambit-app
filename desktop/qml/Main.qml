@@ -11,6 +11,13 @@ ApplicationWindow {
     width: 1200
     height: 800
     title: qsTr("AmbitApp")
+    // Real, 2026-08-10 ("To recall: implement logo on desktop mode") - verified live:
+    // ApplicationWindow has no `icon` property in this Qt build (6.12 - confirmed against
+    // QtQuick.Templates' own plugins.qmltypes, not just a typo here), so this QML-side
+    // attempt failed to even load ("Cannot assign to non-existent property icon"). Not
+    // needed anyway - main.cpp's own QGuiApplication::setWindowIcon() (see its header
+    // comment) already sets the same packaging/icon.png application-wide, which covers the
+    // taskbar/dock entry AND every window's own icon, this one included.
     color: Theme.background
     // Real, 2026-08-09 ("general desktop polish pass") - without this, toggling
     // Settings' light/dark override snapped every color in the app instantly; this is the
