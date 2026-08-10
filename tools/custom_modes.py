@@ -122,6 +122,17 @@ FIELD_TYPES = {
     # activity duration"/"avg speed" in its Multisport category - so 0x47 sitting
     # between them as "current activity distance" fits both the observation and the
     # numbering. 0x57 likewise sits between FT_SWIM_PACE and FT_SWIM_AVG_PACE.
+    # Rule-engine slots 3 and 4 do NOT continue the 0x33-0x35 run - they resume at 0x6B/0x6C,
+    # and each slot has a companion field at 0x6D + slot used as a graph display's second
+    # field. Both proven on Andre's real Running2 (5 installed apps, Rules 0..4 = the Apps
+    # region order: Beers burned off / Downhills Counter / Real time EPOC / Sleep Monitor /
+    # Current incline). Its graph display 1 is (0x34, 0x6E, 5) and graph display 3 is
+    # (0x6B, 0x70, 5); Andre independently named those two screens as the Downhills Counter
+    # (slot 1) and Sleep Monitor (slot 3) apps, so 0x6B = slot 3 and the companions are
+    # 0x6D + slot (1 -> 0x6E, 3 -> 0x70). The unseen members 0x6D/0x6F/0x71 follow the same
+    # rule but have not been observed on hardware yet.
+    0x006B: "FT_RULE_ENGINE_3", 0x006C: "FT_RULE_ENGINE_4",
+    0x006E: "FT_RULE_ENGINE_1_GRAPH", 0x0070: "FT_RULE_ENGINE_3_GRAPH",
     0x0047: "FT_SPORT_LAP_DISTANCE", 0x0057: "FT_SWIM_AVG_STROKE_RATE",
     0x005A: "FT_SWIM_LAP_DISTANCE", 0x005C: "FT_SWIM_LAP_RATE", 0x005E: "FT_SWIM_LAP_SWOLF",
     0x0060: "FT_SWIM_POOL_STROKES", 0x0062: "FT_SWIM_POOL_PACE", 0x0064: "FT_SWIM_INT_TIME",
@@ -177,7 +188,11 @@ FIELD_TYPE_LABELS = {
     "FT_PACE": "Pace", "FT_AVG_PACE": "Pace (average)", "FT_RECOVERY_TIME": "Recovery Time",
     "FT_TE": "Training Effect", "FT_EXERCISE_ALTI_GRAPH": "Altitude Graph (exercise)",
     "FT_RULE_ENGINE_0": "Suunto App Slot 1", "FT_RULE_ENGINE_1": "Suunto App Slot 2",
-    "FT_RULE_ENGINE_2": "Suunto App Slot 3", "FT_STOPWATCH_ABC": "Stopwatch",
+    "FT_RULE_ENGINE_2": "Suunto App Slot 3",
+    "FT_RULE_ENGINE_3": "Suunto App Slot 4", "FT_RULE_ENGINE_4": "Suunto App Slot 5",
+    "FT_RULE_ENGINE_1_GRAPH": "Suunto App Slot 2 (graph)",
+    "FT_RULE_ENGINE_3_GRAPH": "Suunto App Slot 4 (graph)",
+    "FT_STOPWATCH_ABC": "Stopwatch",
     "FT_SW_ABC_LAP_TIME": "Stopwatch Lap Time", "FT_SW_ABC_LAP": "Stopwatch Lap",
     "FT_SW_TIME": "Stopwatch Time", "FT_DEVELOPER_TITLE": "Developer Title",
     "FT_TEXT_ADJUST": "Text Adjust", "FT_CALIBRATED_DISTANCE": "Distance (calibrated)",
