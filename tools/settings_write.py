@@ -161,17 +161,13 @@ KAILASH_SETTINGS = {
     # for every scalar field in this table.
     "home_latitude": "HomeLocation.Latitude",
     "home_longitude": "HomeLocation.Longitude",
-    # Real, 2026-08-10 ("Kailash time-sync doesn't take effect over cable... crosscheck
-    # everything with the name kaylash") - the real mechanism, found in SuuntoLink's own
-    # log (assets/WIndows apps/Suuntolink/suuntoapp*.log): `NspEndDevice::setSmlData`
-    # fires immediately before a real `EmuDevice::setDateAndTime succeeded`, and Kailash's
-    # own schema descriptor confirms entry 0x34 sml.DeviceSettings.Time.TimeISO8601, a
-    # utf8 field - not the standalone date/time command pair this project used for the
-    # Ambit3 family (device_driver_common.c's date_time_set, ported to tools/set_time.py),
-    # which acks over Kailash's cable connection but never actually takes effect. This is
-    # the same 0x1101 settings-write mechanism already confirmed live for Home Location/
-    # backlight/etc. above - see write_one()'s own new utf8-field support.
-    "device_time": "Time.TimeISO8601",
+    # NOTE: Kailash's clock (sml.DeviceSettings.Time.TimeISO8601, entry 0x34) is NOT
+    # written through this table/write_one() - a `device_time` entry lived here briefly
+    # based on a since-disproven hypothesis (that it went through this same 0x1101
+    # whole-blob mechanism). Live testing showed the entry never appears in a normal
+    # 0x1100 read at all, on either transport - there's no existing blob slot to patch.
+    # The real mechanism (command 0x1201, single-entry SBEM0102 push) lives in
+    # tools/set_time.py's own build_kailash_time_push() instead.
 }
 
 # Real MOD conversion straight from the schema descriptor for these two fields
@@ -453,6 +449,22 @@ def _from_display(key, value):
     if key in _DEGREES_FROM_RADIANS_KEYS:
         return math.radians(float(value))
     if key in _YEAR_KEYS:
+        # Always "YYYY-01-01": this field holds a birth YEAR, and the -01-01 is filler.
+        #
+        # Tested against the real watch 2026-08-10 rather than assumed. A full date was
+        # written as an experiment - the payload was byte-correct (129 B personal template,
+        # b'1988-03-09\x00' replacing b'1988-01-01\x00', same 11 bytes) and the watch read
+        # back b'1988-01-01\x00' unchanged, so the day and month do not stick over the
+        # cable. André then checked the watch's own Personal menu, which shows only a year,
+        # matching SuuntoLink's own year-only field and its ServiceAdapter.xml
+        # `converter="dateYear"`. Accepting a "YYYY-MM-DD" here would therefore be offering
+        # a value that silently cannot take effect, so it is rejected outright instead.
+        text = str(value).strip()
+        if "-" in text:
+            raise ValueError(
+                f"{text!r}: this field stores a birth YEAR only - the watch keeps -01-01 "
+                "regardless of what day and month are written (tested 2026-08-10). "
+                "Pass just the year, e.g. 1988.")
         return "%04d-01-01" % int(value)
     scale = (AMBIT3_DISPLAY.get(key) or {}).get("scale")
     if scale:
@@ -558,9 +570,9 @@ def describe_field(field):
     if field.base in ("float32", "float64"):
         return {"kind": "number"}
     # Real, 2026-08-10: a utf8 field is editable text, not an opaque blob - reporting it
-    # as "raw" left a UI with nothing it could render for the Ambit3's own birth_date
-    # (and Kailash's device_time). Both are short fixed-length strings the watch stores
-    # NUL-padded; write_one() enforces the length.
+    # as "raw" left a UI with nothing it could render for the Ambit3's own birth_date, a
+    # short fixed-length string the watch stores NUL-padded; write_one() enforces the
+    # length.
     if field.base == "utf8":
         return {"kind": "text"}
     return {"kind": "raw"}
@@ -856,14 +868,20 @@ def _write_via_template(link, schema, key, field, raw_new_value, before):
     display_bounds = _display_range(key)
     if display_bounds is not None:
         try:
-            typed = float(raw_new_value)
+            # A birth date may arrive as a bare year or a full "YYYY-MM-DD" - the bound
+            # being checked is the year either way.
+            typed = float(str(raw_new_value).split("-")[0]) if key in _YEAR_KEYS \
+                else float(raw_new_value)
         except (TypeError, ValueError):
             return {"ok": False, "error": f"{key} expects a number, got {raw_new_value!r}"}
         if not (display_bounds[0] <= typed <= display_bounds[1]):
             return {"ok": False, "error": f"{key}={raw_new_value} is outside the range "
                                            f"SuuntoLink's own UI enforces for {field.path}: "
                                            f"{display_bounds[0]}..{display_bounds[1]}"}
-    raw_new_value = _from_display(key, raw_new_value)
+    try:
+        raw_new_value = _from_display(key, raw_new_value)
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)}
 
     problem = _validate_new_value(schema, key, field, raw_new_value)
     if problem:
@@ -983,11 +1001,12 @@ def write_one(link, descriptor, key, new_value, product_id=None):
     # Real, 2026-08-10 - the Ambit3 family goes through SuuntoLink's own per-screen
     # template (see AMBIT3_WRITE_TEMPLATES for why that matters: the old path below
     # echoed the watch's entire settings blob back, BLE bond keys included, on every
-    # single write). Kailash keeps the full-blob path unchanged: its own writes -
-    # HomeLocation as a GROUP member, device_time as utf8 - were worked out and proven
-    # against that path, and there are no Kailash write captures to derive templates
-    # from, so switching it on a guess would trade a known-working path for an unproven
-    # one. That stays open until a real 7R capture exists.
+    # single write). Kailash keeps the full-blob path unchanged: HomeLocation (a GROUP
+    # member) was worked out and proven against it, and there are no Kailash write
+    # captures to derive templates from, so switching it on a guess would trade a
+    # known-working path for an unproven one. That stays open until a real 7R capture
+    # exists. (Kailash's clock does NOT go through this function at all - see
+    # KAILASH_SETTINGS's own note and tools/set_time.py.)
     if product_id != KAILASH_PRODUCT_ID:
         return _write_via_template(link, schema, key, field, raw_new_value, before)
 
@@ -1125,13 +1144,23 @@ def main():
             return 0
         schema = sbem_schema.load(descriptor)
         field = _find_field(schema, table[key]) if key in table else None
-        is_float = (field and field.base.startswith("float")) or key in _DEGREES_X1E7_KEYS
-        # Real bug, found 2026-08-10 auditing this file against the captures: a utf8
-        # field (Kailash's `device_time`, and now the Ambit3's `birth_date`) went through
-        # int() here and raised ValueError before write_one()'s own text path could ever
-        # run - so that path was unreachable from the CLI it was written for.
+        # A scaled field is typed in its DISPLAY unit, which is fractional even though the
+        # wire value is an integer - "6.0" for activity class (raw 60), "87.5" for weight
+        # (raw 8750). int() on those raises, so they parse as float and _from_display()
+        # rounds to raw. Found 2026-08-10 by `--set activity_level=6.0` failing outright.
+        is_float = (field and field.base.startswith("float")) \
+            or key in _DEGREES_X1E7_KEYS or key in _DEGREES_FROM_RADIANS_KEYS \
+            or bool((AMBIT3_DISPLAY.get(key) or {}).get("scale"))
+        # Real bug, found 2026-08-10 while auditing this file: a utf8 field (the
+        # Ambit3's own `birth_date`) went through int() here and raised ValueError
+        # before write_one()'s own text path could ever run - so that path was
+        # unreachable from the CLI it was written for.
         if key in _YEAR_KEYS:
-            new_value = int(raw_value)          # a year, converted to "YYYY-01-01" on write
+            # A bare year, or a full "YYYY-MM-DD" left as text for _from_display() to keep
+            # verbatim - the watch's own Personal menu really does display the day and
+            # month (André, 2026-08-10), so a real birth date is worth storing even though
+            # SuuntoLink's own UI only ever edits the year.
+            new_value = raw_value if "-" in raw_value else int(raw_value)
         elif key in _DEGREES_FROM_RADIANS_KEYS:
             new_value = float(raw_value)        # degrees, converted to radians on write
         elif field is not None and field.base == "utf8":

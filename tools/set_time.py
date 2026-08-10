@@ -16,19 +16,29 @@ every other real write in this project's own tools/, not because this one is unu
 risky.
 
 **Kailash is a real, separate case, found the same night** ("still doesn't take effect on
-kailash", then real cross-referenced evidence in assets/pcap/*kailash* and
-assets/WIndows apps/Suuntolink/suuntoapp*.log): the raw 0x0300/0x0302 command pair above
-gets ack'd by a normally-running Kailash but never actually changes its clock - real
-captures show it only ever taking effect while the watch is in its USB bootloader, which
-this project's own standing rule puts off-limits to touch casually. The real, normal-mode
-mechanism SuuntoLink itself uses is different: its own log shows
-`NspEndDevice::setSmlData` firing immediately before a real `EmuDevice::setDateAndTime
-succeeded`, and Kailash's own schema descriptor confirms
-`sml.DeviceSettings.Time.TimeISO8601` (a real settings field, written through the same
-0x1101 mechanism already confirmed live for Home Location/backlight/etc. - see
-settings_write.py's own KAILASH_SETTINGS/write_one()). This tool detects Kailash by its
-real product ID and uses that path instead, transparently - callers don't need to know
-which watch is connected.
+kailash") and worked out over several rounds of real evidence, the last of which
+overturned the second-to-last: the raw 0x0300/0x0302 command pair above gets ack'd by a
+normally-running Kailash but never actually changes its clock (confirmed live, 2026-08-10:
+"I connected the kailash via usb... it didn't sync time"). A first hypothesis (built from
+assets/pcap/resumefirmwarekailash) blamed this on cable time-sync needing bootloader mode -
+wrong, per real correction ("kaylash doesn't flash firmware via 7r app and the app syncs
+time by bluetooth to the watch"). A second hypothesis (built from SuuntoLink's own log
+showing `NspEndDevice::setSmlData` right before `EmuDevice::setDateAndTime succeeded`,
+plus Kailash's schema confirming a `sml.DeviceSettings.Time.TimeISO8601` field) guessed
+this went through the generic 0x1101 whole-blob settings-write mechanism - also wrong: live
+testing showed that field never even appears in a normal 0x1100 settings read, on either
+transport, so there's no existing blob entry to patch.
+
+The REAL mechanism, found byte-exact across five separate real 7R-app BLE captures and
+then CONFIRMED IDENTICAL over cable in a real SuuntoLink capture
+(assets/pcap/kailashsynctimefrom12178july2024to10820261618, "sync time" menu, ~2s,
+matching what André saw live - no bootloader, no settings blob): a single-entry SBEM0102
+push sent via command 0x1201 (the same opcode "log_synced" ambit3_log_synced.c's own
+comment names, reused here for a single-entry push of a different field) - entry 0x34,
+a utf8 ISO8601 string *with* timezone offset (`"%Y-%m-%dT%H:%M:%S%z"`, e.g.
+"2026-08-08T17:20:22+0200"), NUL-terminated. This is what build_kailash_time_push() below
+builds; see device_driver_ambit3.c's own kailash_time_sync() for the Android/native
+mirror of this same real mechanism (same wire format, same evidence).
 
     ./tools/set_time.py            # dry-run: shows the exact bytes, sends nothing
     ./tools/set_time.py --write    # actually sets the watch's clock to this device's now
@@ -51,7 +61,10 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 CMD_TIME = 0x0300
 CMD_DATE = 0x0302
+CMD_KAILASH_TIME_PUSH = 0x1201  # "log_synced" opcode, reused for single-entry pushes
 KAILASH_PRODUCT_ID = 0x002A
+SBEM0102_MAGIC = b"SBEM0102"
+KAILASH_TIME_ENTRY_ID = 0x34  # sml.DeviceSettings.Time.TimeISO8601
 
 
 def build_date_payload(dt):
@@ -65,6 +78,17 @@ def build_time_payload(dt):
     # time_data: year u16 LE, month, day, hour, minute, then milliseconds-of-second u16 LE
     # (dt.second * 1000, matching the C driver's own `1000*tm->tm_sec` exactly).
     return struct.pack("<HBBBBH", dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second * 1000)
+
+
+def build_kailash_time_push(dt):
+    """The real command 0x1201 payload: 6-byte prefix (00 00 00 00 01 00, matching
+    sbem0102.c's own libambit_sbem0102_command_request() header byte-for-byte) + the
+    SBEM0102 magic + one entry (id 0x34, length, NUL-terminated ISO8601-with-offset
+    string) - see this file's own docstring for the evidence."""
+    encoded = dt.strftime("%Y-%m-%dT%H:%M:%S%z").encode("ascii") + b"\x00"
+    if len(encoded) >= 0xFF:
+        raise ValueError(f"ISO8601 string unexpectedly long ({len(encoded)} bytes)")
+    return bytes([0, 0, 0, 0, 1, 0]) + SBEM0102_MAGIC + bytes([KAILASH_TIME_ENTRY_ID, len(encoded)]) + encoded
 
 
 def main():
@@ -83,7 +107,10 @@ def main():
             print(json.dumps({"ok": False, "error": msg}) if args.json else f"FAILED: {msg}")
             return 1
     else:
-        now = datetime.now()
+        # .astimezone() with no args attaches the system's own local tzinfo (offset
+        # included) - needed for build_kailash_time_push()'s %z; datetime.now() alone
+        # is naive and would render an empty offset.
+        now = datetime.now().astimezone()
     date_payload = build_date_payload(now)
     time_payload = build_time_payload(now)
 
@@ -105,21 +132,7 @@ def main():
         label = link.open()
         is_kailash = link.device is not None and "Kailash" in (label or "")
         if is_kailash:
-            import settings_write
-            from write_nav import descriptor_for_product_id
-            # Real bug, caught here before ever reaching hardware: passing descriptor=None
-            # through to write_one() resolves via sbem_schema.load(None) ->
-            # default_descriptor(), which globs for *Ambit3's* reference firmware (2.4.17) -
-            # not Kailash's own schema. Exactly the bug descriptor_for_product_id()'s own
-            # docstring already documents (found 2026-08-08 for show_settings()); must
-            # resolve Kailash's real descriptor explicitly, same as settings_write.py's own
-            # main() does.
-            descriptor = descriptor_for_product_id(KAILASH_PRODUCT_ID)
-            result = settings_write.write_one(
-                link, descriptor, "device_time", now.strftime("%Y-%m-%dT%H:%M:%S"),
-                product_id=KAILASH_PRODUCT_ID)
-            if not result.get("ok"):
-                raise RuntimeError(result.get("error") or f"write not confirmed: {result}")
+            link.command(CMD_KAILASH_TIME_PUSH, build_kailash_time_push(now), quiet=args.json)
         else:
             link.command(CMD_DATE, date_payload, quiet=args.json)
             link.command(CMD_TIME, time_payload, quiet=args.json)

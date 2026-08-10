@@ -114,9 +114,30 @@ export default function HomeScreen() {
   const handleSyncTime = useCallback(async () => {
     setTimeSyncBusy(true);
     setTimeSyncMsg(null);
+    // Real, 2026-08-10 ("why it does that? doesn't make much sense... after error we
+    // should be able to try again") - USB isn't a persistent link in this app: every
+    // other USB operation (handleSync via SyncService.ts, connectFlow's own device-info/
+    // history read above) already does its own connect()-operate-disconnect() cycle
+    // rather than assuming one stays open, because connectFlow() itself disconnects
+    // right after the initial info/history read, before the user can tap anything.
+    // This button inherited neither half of that - it assumed a connection that was
+    // usually already gone by the time it was tappable, and failed the exact same way
+    // on every retry since nothing ever reconnected. BLE has no such gap (the link
+    // stays up until explicitly closed - see bleConnected's own comments), so only
+    // reconnect for the USB path.
+    const usingBle = bleConnectedRef.current;
     try {
-      await setDateTime();
-      setTimeSyncMsg(t.homeTimeSyncOk);
+      if (!usingBle) {
+        await ambitConnect();
+      }
+      try {
+        await setDateTime();
+        setTimeSyncMsg(t.homeTimeSyncOk);
+      } finally {
+        if (!usingBle) {
+          await ambitDisconnect().catch(() => {});
+        }
+      }
     } catch (e: any) {
       setTimeSyncMsg(t.homeTimeSyncFailed(e?.message ?? String(e)));
     } finally {
@@ -664,22 +685,21 @@ export default function HomeScreen() {
                 watchdog/sync-provider choice - not a new signal invented for this label. */}
             <Chip icon={bleConnected ? 'link' : 'check'} label={t.homeConnVia(bleConnected ? t.homeConnViaBle : t.homeConnViaUsb)} />
           </View>
-          {/* Real, 2026-08-10 - gated off for a cable-connected Kailash: that path's real
-              mechanism is still unconfirmed (see PROJECT task "Capture kailashtimesyncmenu"),
-              while cable Ambit3 (existing 0x0300/0x0302) and BLE Kailash (this session's new
-              0x1201 finding) are both real, evidenced paths. */}
-          {(!isKailash(ambitInfo) || bleConnected) && (
-            <TouchableOpacity
-              style={styles.timeSyncRow}
-              disabled={timeSyncBusy}
-              onPress={handleSyncTime}
-            >
-              <Icon name="sync" size={14} color={theme.primary} />
-              <Text style={[styles.timeSyncText, { color: theme.primary }]}>
-                {timeSyncBusy ? t.connecting : (timeSyncMsg ?? t.homeSyncTimeButton)}
-              </Text>
-            </TouchableOpacity>
-          )}
+          {/* Real, 2026-08-10 - was gated off for cable Kailash while that path was
+              unconfirmed; a real cable capture (kailashsynctimefrom...) then showed it's
+              the exact same 0x1201 mechanism as BLE, just without the second NextTime
+              push - no gating needed, device_driver_ambit3.c's date_time_set() dispatches
+              correctly on either transport now. */}
+          <TouchableOpacity
+            style={styles.timeSyncRow}
+            disabled={timeSyncBusy}
+            onPress={handleSyncTime}
+          >
+            <Icon name="sync" size={14} color={theme.primary} />
+            <Text style={[styles.timeSyncText, { color: theme.primary }]}>
+              {timeSyncBusy ? t.connecting : (timeSyncMsg ?? t.homeSyncTimeButton)}
+            </Text>
+          </TouchableOpacity>
         </Card>
       )}
 

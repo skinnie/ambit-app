@@ -968,24 +968,33 @@ static int log_synced(ambit_object_t *object, ambit_log_entry_t *log_entry)
 }
 
 /**
- * Kailash-over-BLE clock write.
+ * Kailash clock write - real, hardware-confirmed on BOTH transports.
  *
- * Real finding, 2026-08-10: neither the cable's plain 0x0300/0x0302 pair (still
- * unconfirmed in normal mode over cable - see tools/set_time.py's own docstring)
- * nor the generic 0x1101 whole-blob settings write apply here - Kailash's
- * Time.TimeISO8601 entry (id 0x34) never even appears in a 0x1100 settings read,
- * on either transport. The real mechanism, found byte-exact and identical across
- * five separate real 7R-app BLE captures (kailashpair.pklg, kailashsethome.pklg,
- * kaylashactivity04km.pklg, kaylashactivity1.8km.pklg, kailash7rpair.btsnoop):
- * two independent single-entry SBEM0102 pushes sent via command 0x1201 (the same
+ * Real finding, 2026-08-10: neither the cable's plain 0x0300/0x0302 pair nor
+ * the generic 0x1101 whole-blob settings write apply here - Kailash's
+ * Time.TimeISO8601 entry (id 0x34) never even appears in a 0x1100 settings
+ * read, on either transport. The real mechanism, first found byte-exact and
+ * identical across five separate real 7R-app BLE captures (kailashpair.pklg,
+ * kailashsethome.pklg, kaylashactivity04km.pklg, kaylashactivity1.8km.pklg,
+ * kailash7rpair.btsnoop), then CONFIRMED IDENTICAL over cable too (real
+ * SuuntoLink capture kailashsynctimefrom12178july2024to10820261618 - same
+ * command, same entry id, same "+0200"-style ISO8601 string, byte-exact):
+ * a single-entry SBEM0102 push sent via command 0x1201 (the same
  * opcode/wire-shape log_synced() above already uses for its own single-entry
- * push) - first entry 0x34 (utf8 ISO8601 string *with* timezone offset, e.g.
- * "2026-08-08T17:20:22+0200", NUL-terminated), then entry 0x48
- * (sml.DeviceLog.NextTime, always seen as a single 0x00 byte in every real
- * capture - purpose unconfirmed, replicated here only for byte-fidelity with
- * what the real app does, not because it's known to be required).
+ * push) of entry 0x34 (utf8 ISO8601 string *with* timezone offset, e.g.
+ * "2026-08-08T17:20:22+0200", NUL-terminated). The real BLE captures also
+ * always sent a second push of entry 0x48 (sml.DeviceLog.NextTime, a single
+ * 0x00 byte) right after - the real cable capture does NOT, confirming it's
+ * unrelated to the clock write itself; still replicated here for BLE only,
+ * non-fatal if rejected.
+ *
+ * Earlier in this same investigation a bootloader-mode-only hypothesis was
+ * drawn from a single capture (resumefirmwarekailash) that happened to enter
+ * firmware mode right before a plain 0x0300/0x0302 pair - that pair was
+ * always a red herring; Kailash's real clock write never touches firmware or
+ * a mode transition on either transport.
  */
-static int kailash_ble_time_sync(ambit_object_t *object, struct tm *tm)
+static int kailash_time_sync(ambit_object_t *object, struct tm *tm)
 {
     libambit_sbem0102_data_t send_data_object, reply_data_object;
     char iso8601[32];
@@ -998,27 +1007,27 @@ static int kailash_ble_time_sync(ambit_object_t *object, struct tm *tm)
     // gmtime_r(), for tm_gmtoff to be populated.
     strftime(iso8601, sizeof(iso8601), "%Y-%m-%dT%H:%M:%S%z", tm);
 
-    LOG_INFO("Kailash BLE time sync: %s", iso8601);
+    LOG_INFO("Kailash time sync: %s", iso8601);
 
     libambit_sbem0102_data_init(&send_data_object);
     libambit_sbem0102_data_init(&reply_data_object);
     libambit_sbem0102_data_add(&send_data_object, 0x34, (uint8_t*)iso8601, (uint8_t)(strlen(iso8601) + 1));
     if (libambit_sbem0102_command_request(&object->driver_data->sbem0102, ambit_command_ambit3_log_synced, &send_data_object, &reply_data_object) != 0) {
-        LOG_WARNING("Kailash BLE time sync: failed to write Time.TimeISO8601");
+        LOG_WARNING("Kailash time sync: failed to write Time.TimeISO8601");
         ret = -1;
     }
     libambit_sbem0102_data_free(&send_data_object);
     libambit_sbem0102_data_free(&reply_data_object);
 
-    if (ret == 0) {
+    if (ret == 0 && object->transport == AMBIT_TRANSPORT_BLE) {
         libambit_sbem0102_data_init(&send_data_object);
         libambit_sbem0102_data_init(&reply_data_object);
         libambit_sbem0102_data_add(&send_data_object, 0x48, &next_time, sizeof(next_time));
         // Real capture behavior only, not required for the clock write itself -
         // don't fail the whole sync if this second, still-unexplained push is
-        // rejected.
+        // rejected. Cable's own real capture never sends this at all.
         if (libambit_sbem0102_command_request(&object->driver_data->sbem0102, ambit_command_ambit3_log_synced, &send_data_object, &reply_data_object) != 0) {
-            LOG_WARNING("Kailash BLE time sync: NextTime push failed (non-fatal)");
+            LOG_WARNING("Kailash time sync: NextTime push failed (non-fatal)");
         }
         libambit_sbem0102_data_free(&send_data_object);
         libambit_sbem0102_data_free(&reply_data_object);
@@ -1028,10 +1037,11 @@ static int kailash_ble_time_sync(ambit_object_t *object, struct tm *tm)
 }
 
 /**
- * date_time_set dispatch: Kailash only ever accepts its clock being set over
- * BLE via kailash_ble_time_sync() above (see that function's own comment for
- * the evidence) - every other Ambit3-family device/transport combination keeps
- * using the shared, MovesLink-confirmed 0x0300/0x0302 pair unchanged.
+ * date_time_set dispatch: Kailash only ever accepts its clock being set via
+ * kailash_time_sync() above (see that function's own comment for the
+ * evidence - now confirmed identical on BOTH USB and BLE) - every other
+ * Ambit3-family device keeps using the shared, MovesLink-confirmed
+ * 0x0300/0x0302 pair unchanged.
  *
  * Real bug, caught live 2026-08-10 ("libambit_protocol_command_ble: watch
  * returned errFlags for command 0x0302" - the write silently fell through to
@@ -1039,17 +1049,17 @@ static int kailash_ble_time_sync(ambit_object_t *object, struct tm *tm)
  * AmbitBleModule.kt's own guessProductId() has no real product id to read (the
  * BLE hello payload carries no such field) and picks 0x001c ("Ambit3 Sport")
  * for every non-Traverse Ambit3-family device, Kailash included - identical to
- * a real Ambit3, so the 0x2a check above never matched. What IS reliable is
- * device_info.model, set directly from the hello payload's own model string
- * (protocol_ble.c) - "Hoopoe" is Kailash's real internal codename, seen
- * byte-exact in every real capture ("486f6f706f6500..." decoded).
+ * a real Ambit3. What IS reliable on both transports is device_info.model,
+ * set directly from the device_info/hello reply's own model string
+ * (libambit.c for USB, protocol_ble.c for BLE) - "Hoopoe" is Kailash's real
+ * internal codename, seen byte-exact in every real capture on both
+ * ("486f6f706f6500..." decoded).
  */
 static int date_time_set(ambit_object_t *object, struct tm *tm)
 {
-    if (object->transport == AMBIT_TRANSPORT_BLE &&
-        object->device_info.model != NULL &&
+    if (object->device_info.model != NULL &&
         strcmp(object->device_info.model, "Hoopoe") == 0) {
-        return kailash_ble_time_sync(object, tm);
+        return kailash_time_sync(object, tm);
     }
     return libambit_device_driver_date_time_set(object, tm);
 }
