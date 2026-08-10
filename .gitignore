@@ -61,3 +61,6 @@ desktop/*.exitcode
 # potentially carrying real personal route data - never meant to be versioned.
 *-routes.bin
 *-waypoints.bin
+
+# Generated stub so SuuntoLink JS can be required outside Electron (gen_sportmode_rows.js).
+/tools/.node_shim/
