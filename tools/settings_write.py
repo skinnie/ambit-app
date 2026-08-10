@@ -90,9 +90,27 @@ AMBIT3_SETTINGS = {
     # Unit and Personal screens had no coverage at all.
     "alti_baro_profile": "AltiBaro.Profile",
     "units_orientation": "Units.Orientation",
-    # Unit settings. Every one of these only actually applies when units_mode is
-    # Advanced - Metric/Imperial force them all to follow the master switch, which is
-    # why SuuntoLink re-sends the whole resolved block right after changing the mode.
+    # Unit settings, and they split into two groups that behave differently. Established
+    # 2026-08-11 across all seven unit captures (metric.DD.MM.24h.bpm.Degrees,
+    # metrictoimperial, imperialDD.MM24.bpmdegrees, imperialchangingback..., advancedtometric,
+    # advancedtometricmaintaining, metricafter), with no counterexample:
+    #
+    #   THE SEVEN unit-system fields - AirPressure, Altitude, Distance, Height, Temperature,
+    #   VerticalSpeed, Weight - do follow the master switch. Every captured write with
+    #   Units.Mode=0 has them all 0, every write with Mode=1 has them all 1. Only under
+    #   Advanced (Mode=2) do they take a free mix.
+    #
+    #   THE FOUR format fields - Date.Format, Time.Format, Units.Compass, Units.Heartrate -
+    #   do NOT. They appear in both states under all three modes (Mode=1 with 1111 in
+    #   metrictoimperial and with 0000 in imperialDD.MM24.bpmdegrees; Mode=0 with 1111 in
+    #   advancedtometric and 0000 in metricafter). Setting one does not flip the watch to
+    #   Advanced either.
+    #
+    # So "Advanced" is a starting point in SuuntoLink's dropdown, not a permission level:
+    # date, time, heart rate and compass are editable in Metric and Imperial too (André,
+    # 2026-08-10, confirmed on the wire 2026-08-11). A UI that greys those four out unless
+    # Advanced is selected would be wrong. What a UI CAN usefully say is that editing one of
+    # the seven while in Metric or Imperial will not stick.
     "air_pressure_unit": "Units.AirPressure",
     "altitude_unit": "Units.Altitude",
     "compass_unit": "Units.Compass",
@@ -835,6 +853,41 @@ def _locate_entry(payload, entry_id):
     return None, None
 
 
+# The seven unit-system fields the master switch owns whenever it is Metric or Imperial.
+# The four format fields (date_format, time_format, compass_unit, heartrate_unit) are
+# deliberately NOT here - they are free in every mode. See the AMBIT3_SETTINGS comment.
+_MODE_OWNED_UNITS = ("air_pressure_unit", "altitude_unit", "distance_unit", "height_unit",
+                     "temperature_unit", "vertical_speed_unit", "weight_unit")
+_UNITS_MODE_NAMES = {0: "Metric", 1: "Imperial", 2: "Advanced"}
+
+
+def _refuse_forced_unit(schema, key, before):
+    """Why writing this unit would be a no-op right now, or None if it is fine.
+
+    Under Metric or Imperial the watch owns the seven unit-system fields: every captured
+    write with Units.Mode=0 has them all metric and every write with Mode=1 has them all
+    imperial, and the watch normalises them itself on a mode change (see the read-back in
+    `advancedtometric`). So setting one individually while in Metric or Imperial does not
+    stick - the value would be silently overwritten rather than rejected, which is the worst
+    kind of failure to hand a user. Refuse it and say what to do instead."""
+    if key not in _MODE_OWNED_UNITS:
+        return None
+    try:
+        mode_field = _find_field(schema, AMBIT3_SETTINGS["units_mode"])
+    except KeyError:
+        return None
+    start, length = _locate_entry(before, mode_field.fid)
+    if start is None:
+        return None
+    mode = _decode_field(mode_field, before[start:start + length])
+    if mode in (None, 2):                      # Advanced - the seven are free
+        return None
+    return (f"{key} cannot be set while units_mode is {_UNITS_MODE_NAMES.get(mode, mode)}: "
+            f"the watch forces all seven unit-system fields to follow the mode, so this "
+            f"write would be silently undone. Set units_mode=2 (Advanced) first, or change "
+            f"units_mode itself.")
+
+
 def _validate_new_value(schema, key, field, raw_new_value):
     """Refuse - never clamp - a value this watch's own descriptor doesn't allow, or one
     outside the range SuuntoLink's own UI enforces.
@@ -1037,6 +1090,10 @@ def write_one(link, descriptor, key, new_value, product_id=None):
     if head < 0:
         return {"ok": False, "error": "no SBEM0102 payload in the read-back"}
 
+    refusal = _refuse_forced_unit(schema, key, before)
+    if refusal:
+        return {"ok": False, "error": refusal}
+
     # Real, 2026-08-10 - the Ambit3 family goes through SuuntoLink's own per-screen
     # template (see AMBIT3_WRITE_TEMPLATES for why that matters: the old path below
     # echoed the watch's entire settings blob back, BLE bond keys included, on every
@@ -1173,12 +1230,17 @@ def main():
             payload = link.command(CMD_SETTINGS_READ, b"\0\0\0\0")
             current = read_all(payload, descriptor, product_id)
             info = current.get("settings", {}).get(key)
-            msg = {"ok": True, "dry_run": True, "key": key,
-                   "current": info, "would_write": raw_value}
+            # The dry run is where someone checks whether a write is worth making, so it
+            # has to surface the same refusal the real write would hit - otherwise it
+            # cheerfully reports "would write 1" for a value the watch will overwrite.
+            blocked = _refuse_forced_unit(sbem_schema.load(descriptor), key, payload)
+            msg = {"ok": not blocked, "dry_run": True, "key": key,
+                   "current": info, "would_write": raw_value, "error": blocked}
             print(json.dumps(msg)) if args.json else print(
+                f"[dry-run] {key}: {blocked}" if blocked else
                 f"[dry-run] {key}: current={info}, would write {raw_value!r} "
                 f"(pass --write to actually send it)")
-            return 0
+            return 1 if blocked else 0
         schema = sbem_schema.load(descriptor)
         field = _find_field(schema, table[key]) if key in table else None
         # A scaled field is typed in its DISPLAY unit, which is fractional even though the
