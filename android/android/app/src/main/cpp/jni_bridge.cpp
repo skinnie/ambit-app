@@ -860,6 +860,34 @@ Java_com_ambitsyncmodern_usb_AmbitUsbModule_nativeAmbitWriteSettingsRaw(
 }
 
 /**
+ * nativeAmbitSetDateTime
+ *
+ * Real, 2026-08-10 ("I connected the kailash via usb... it didn't sync time... is this
+ * function implemented in our app?"). Writes the phone's own current local time to the
+ * watch. Dispatch by watch/transport (Kailash BLE vs. everything else) happens inside
+ * libambit itself (device_driver_ambit3.c's date_time_set()) - this JNI layer only builds
+ * a real localtime() struct tm (tm_gmtoff/tm_zone populated, required for the Kailash path's
+ * own %z rendering) and calls the transport-agnostic libambit_date_time_set().
+ */
+JNIEXPORT jboolean JNICALL
+Java_com_ambitsyncmodern_usb_AmbitUsbModule_nativeAmbitSetDateTime(
+        JNIEnv *env, jobject /* thiz */)
+{
+    if (!g_device) { LOGE("nativeAmbitSetDateTime: Not connected"); return JNI_FALSE; }
+
+    time_t now = time(nullptr);
+    struct tm tmv;
+    localtime_r(&now, &tmv);
+
+    int ret = libambit_date_time_set(g_device, &tmv);
+    if (ret != 0) {
+        LOGE("libambit_date_time_set failed: %d", ret);
+        return JNI_FALSE;
+    }
+    return JNI_TRUE;
+}
+
+/**
  * nativeAmbitReadCustomModesRaw
  *
  * Real, 2026-08-08 ("This weekend we will full debug the two watches and built the apps").

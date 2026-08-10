@@ -22,6 +22,7 @@
 #include "protocol.h"
 #include "libambit_int.h"
 #include "crc16.h"
+#include "debug.h"
 
 #include "hidapi/hidapi.h"
 
@@ -156,8 +157,16 @@ int libambit_protocol_command(ambit_object_t *object, uint16_t command, uint8_t 
     }
 
     // Retrieve reply packets
-    if (protocol_read_packet(object, buf) == 0 &&
-        msg->MP == 0x5d && le16toh(msg->sequence) == object->sequence_no) {
+    int first_read_ret = protocol_read_packet(object, buf);
+    int first_reply_ok = (first_read_ret == 0 && msg->MP == 0x5d
+                           && le16toh(msg->sequence) == object->sequence_no);
+    if (command == ambit_command_log_read) {
+        LOG_INFO("kailash-debug: 0x0b17 first reply packet: rp_ret=%d UId=0x%02x MP=0x%02x "
+                 "seq=%u (want %u) payload_len=%u parts=%u",
+                 first_read_ret, buf[0], msg->MP, le16toh(msg->sequence), object->sequence_no,
+                 le32toh(msg->payload_len), le16toh(msg->parts_seq));
+    }
+    if (first_reply_ok) {
         reply_data_len = le32toh(msg->payload_len);
         dataoffset = 0;
         packet_payload_len = fmin(42, reply_data_len);
@@ -181,7 +190,19 @@ int libambit_protocol_command(ambit_object_t *object, uint16_t command, uint8_t 
                 reply_data_len -= packet_payload_len;
             }
             else {
+                /* Real, 2026-08-10: freeing here without nulling *reply_data left callers
+                 * (e.g. ambit3_read_flash_region's own retry/warning path, which always
+                 * frees `reply` whether this call succeeded or not) holding a dangling
+                 * pointer to memory already freed right here - a double free, caught live by
+                 * Scudo ("invalid chunk state when deallocating") on a real Kailash TrackLog
+                 * read after ~26,000 clean packets, once one transient USB packet finally
+                 * dropped mid-reply. Not Kailash-specific: any multi-packet reply (any large
+                 * flash region, any device) hitting this same rare mid-transfer failure would
+                 * have hit the identical crash - just never happened to get exercised hard
+                 * enough before. libambit_protocol_free() already no-ops on NULL, so this is
+                 * the complete fix, not a partial one. */
                 libambit_protocol_free(*reply_data);
+                *reply_data = NULL;
 
                 ret = -1;
             }

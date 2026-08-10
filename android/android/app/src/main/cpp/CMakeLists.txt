@@ -59,4 +59,7 @@ target_include_directories(ambit PUBLIC libambit libambit/hidapi ${SHARED_LIBAMB
 # le16toh/le32toh sont dans <endian.h> sur Android/Bionic
 # libambit desktop les obtenait via glibc; on force-include ici
 target_compile_options(ambit PRIVATE -include endian.h)
+# Kailash crash investigation: debug.c now routes LOG_INFO/WARNING/ERROR through
+# __android_log_vprint instead of the original (invisible on Android) fprintf.
+target_compile_definitions(ambit PRIVATE DEBUG_PRINT_INFO DEBUG_PRINT_WARNING DEBUG_PRINT_ERROR)
 target_link_libraries(appmodules ambit)

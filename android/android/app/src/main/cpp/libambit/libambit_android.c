@@ -9,6 +9,7 @@
 #include "libambit_int.h"
 #include "device_support.h"
 #include "device_driver.h"
+#include "debug.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -96,11 +97,15 @@ ambit_object_t *libambit_new_from_fd(int fd, int ep_in, int ep_out,
      * mirrors it for the Android fd-based path. Non-fatal if it fails: we
      * just fall back to the previous (zeroed fw_version) behavior.
      */
+    /* kailash-debug: bracketing device_info_get()/driver->init() calls to find which of
+     * these two a real crash survives past - see libambit.c's own checkpoint logging. */
     device_info_get(object, &object->device_info); /* non-fatal on failure */
+    LOG_INFO("kailash-debug: device_info_get() returned to libambit_new_from_fd, about to call driver->init");
 
     if (object->driver->init != NULL) {
         object->driver->init(object, known->driver_param);
     }
+    LOG_INFO("kailash-debug: driver->init() returned, about to set nonblocking + return object");
     hid_set_nonblocking(object->handle, 1); /* keep non-blocking (protocol.c polls) */
 
     return object;

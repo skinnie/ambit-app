@@ -98,6 +98,7 @@ class AmbitUsbModule(private val reactContext: ReactApplicationContext) :
     private external fun nativeAmbitReadSettingsRaw(): String?
     private external fun nativeAmbitReadPersonalSettings(): String?
     private external fun nativeAmbitWriteSettingsRaw(data: ByteArray): Boolean
+    private external fun nativeAmbitSetDateTime(): Boolean
     private external fun nativeAmbitReadCustomModesRaw(): String?
     private external fun nativeAmbitWriteCustomModesRaw(data: ByteArray): Boolean
     private external fun nativeAmbitDisconnect()
@@ -673,6 +674,31 @@ class AmbitUsbModule(private val reactContext: ReactApplicationContext) :
                 else promise.reject("SETTINGS_WRITE_FAILED", "Failed to write settings (see logcat AmbitJNI)")
             } catch (e: Exception) {
                 promise.reject("SETTINGS_WRITE_ERROR", e.message ?: "Unknown error")
+            }
+        }
+    }
+
+    // Real, 2026-08-10 ("I connected the kailash via usb... it didn't sync time... is this
+    // function implemented in our app? if not implement it"). Writes the phone's own current
+    // local time to the watch - for a cable-connected Ambit3-family watch this is the plain,
+    // MovesLink-confirmed 0x0300/0x0302 pair; for a BLE-connected Kailash it's a different,
+    // real mechanism found in the 7R app's own BLE captures (single-entry SBEM0102 pushes via
+    // command 0x1201 - see device_driver_ambit3.c's kailash_ble_time_sync() for the full
+    // evidence). Which path runs is decided inside libambit itself (date_time_set()'s own
+    // transport/product_id check), not here.
+    @ReactMethod
+    fun setDateTime(promise: Promise) {
+        if (!jniLoaded) {
+            promise.reject("JNI_NOT_LOADED", "Native library unavailable")
+            return
+        }
+        executor.execute {
+            try {
+                val ok = nativeAmbitSetDateTime()
+                if (ok) promise.resolve(true)
+                else promise.reject("TIME_SYNC_FAILED", "Failed to set watch clock (see logcat AmbitJNI)")
+            } catch (e: Exception) {
+                promise.reject("TIME_SYNC_ERROR", e.message ?: "Unknown error")
             }
         }
     }

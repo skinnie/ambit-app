@@ -23,48 +23,37 @@
 
 #include <stdarg.h>
 #include <stdio.h>
+#include <android/log.h>
 
 /*
- * Local variables
+ * This Android build of libambit has no stdout/stderr attached to logcat,
+ * so the original fprintf-based implementation was silently invisible.
+ * Route through __android_log_vprint instead (tag "libambit").
  */
-static char debug_err_text[] = "ERROR";
-static char debug_warn_text[] = "WARNING";
-static char debug_info_text[] = "INFO";
-
 void debug_printf(debug_level_t level, const char *file, int line, const char *func, const char *fmt, ...)
 {
-    FILE *output;
-    const char *leveltxt;
+    android_LogPriority prio;
+    char prefixed[512];
     va_list ap;
 
     if (level == debug_level_err) {
-        output = stderr;
-        leveltxt = debug_err_text;
+        prio = ANDROID_LOG_ERROR;
     }
     else if (level == debug_level_warn) {
-        output = stderr;
-        leveltxt = debug_warn_text;
+        prio = ANDROID_LOG_WARN;
     }
     else {
-        output = stdout;
-        leveltxt = debug_info_text;
+        prio = ANDROID_LOG_INFO;
     }
 
-    fprintf(output, "libambit %s: ", leveltxt);
 #ifdef DEBUG_PRINT_FILE_LINE
-    fprintf(output, "%s:%d ", file, line);
+    snprintf(prefixed, sizeof(prefixed), "%s:%d %s(): %s", file, line, func, fmt);
 #else
-    // Remove compiler warning
-    file = NULL;
-    line = 0;
+    (void)file; (void)line;
+    snprintf(prefixed, sizeof(prefixed), "%s(): %s", func, fmt);
 #endif
-    fprintf(output, "%s(): ", func);
 
     va_start(ap, fmt);
-    vfprintf(output, fmt, ap);
+    __android_log_vprint(prio, "libambit", prefixed, ap);
     va_end(ap);
-
-    fprintf(output, "\n");
-
-    fflush(output);
 }

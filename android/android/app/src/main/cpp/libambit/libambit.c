@@ -607,7 +607,17 @@ int device_info_get(ambit_object_t *object, ambit_device_info_t *info)
      * flag at all (see protocol_ble.c) — use 0 there, the only variant implemented. */
     uint8_t legacy_format = (object->transport == AMBIT_TRANSPORT_BLE) ? 0 : 1;
 
+    // Real, 2026-08-10 - checkpoint logging added specifically to pinpoint a real crash
+    // that survives the safest byte-level analysis of a real captured Kailash device_info
+    // reply (checked against tools/write_nav.py's own live exchange: 48 bytes, model
+    // "Hoopoe", real serial, fw 02 00 05 00 - all comfortably within what this function's
+    // own parsing expects). The tombstone only resolves to "libambit_new_from_fd+305"
+    // through 2 unresolved inlined frames, no exact line - these checkpoints are the direct
+    // replacement for that missing line number: whichever LOG_INFO below is the LAST one to
+    // reach logcat before the next SIGABRT is the real crash site.
+    LOG_INFO("kailash-debug: about to call libambit_protocol_command");
     if (libambit_protocol_command(object, ambit_command_device_info, komposti_version, sizeof(uint8_t)*4, &reply_data, &replylen, legacy_format) == 0) {
+        LOG_INFO("kailash-debug: protocol_command returned 0, replylen=%zu reply_data=%p", replylen, (void*)reply_data);
         /* model(16) + serial(16) + fw_version(4) + hw_version(4) = 40 bytes minimum.
          * Not previously checked — harmless over USB where the reply is always this
          * shape, but BLE's reply length isn't guaranteed the same way, and reading
@@ -620,22 +630,31 @@ int device_info_get(ambit_object_t *object, ambit_device_info_t *info)
         if (info != NULL) {
             const char *p = (char *)reply_data;
 
+            LOG_INFO("kailash-debug: about to utf8memconv model");
             info->model  = utf8memconv(p, LIBAMBIT_MODEL_LENGTH, NULL);
+            LOG_INFO("kailash-debug: model parsed = %s", info->model ? info->model : "(null)");
             p += LIBAMBIT_MODEL_LENGTH;
+            LOG_INFO("kailash-debug: about to utf8memconv serial");
             info->serial = utf8memconv(p, LIBAMBIT_SERIAL_LENGTH, NULL);
+            LOG_INFO("kailash-debug: serial parsed = %s", info->serial ? info->serial : "(null)");
             p += LIBAMBIT_SERIAL_LENGTH;
+            LOG_INFO("kailash-debug: about to memcpy fw/hw version");
             memcpy(info->fw_version, p, 4);
             memcpy(info->hw_version, p + 4, 4);
+            LOG_INFO("kailash-debug: fw/hw version copied ok");
         }
         ret = 0;
+        LOG_INFO("kailash-debug: device_info main block done, ret=0");
     }
     else {
         LOG_WARNING("Failed to device info");
     }
 
+    LOG_INFO("kailash-debug: about to free reply_data and memset compact_serial");
     libambit_protocol_free(reply_data);
 
     memset(info->compact_serial, 0, sizeof(info->compact_serial));
+    LOG_INFO("kailash-debug: compact_serial memset done, fw_version=%d.%d checking quirk gate", info->fw_version[0], info->fw_version[1]);
 
     // Real bug, found live crashing on a real connected Kailash (2026-08-09, "tablet works
     // ok with ambit 3 but not kailash"): ambit_command_ambit3_get_compact_serial is a real
@@ -673,6 +692,7 @@ int device_info_get(ambit_object_t *object, ambit_device_info_t *info)
         libambit_protocol_free(reply_data);
     }
 
+    LOG_INFO("kailash-debug: device_info_get returning ret=%d", ret);
     return ret;
 }
 

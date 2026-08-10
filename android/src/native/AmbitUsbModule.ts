@@ -222,6 +222,17 @@ export function readCustomModesRaw(): Promise<string> {
 }
 
 /**
+ * Writes the phone's own current local time to the connected watch. Real, 2026-08-10 - see
+ * AmbitUsbModule.kt's own setDateTime() comment for the full story: which underlying
+ * mechanism actually runs (cable's plain date/time pair vs. Kailash BLE's real 0x1201
+ * single-entry SBEM0102 pushes, found byte-exact in the real 7R app's own BLE captures) is
+ * decided natively, not here - this function is transport/watch-agnostic on purpose.
+ */
+export function setDateTime(): Promise<boolean> {
+  return NativeAmbit.setDateTime();
+}
+
+/**
  * Real mechanism, NOT yet hardware-confirmed on Android specifically - see
  * ambit3_write_custom_modes_raw()'s own comment in device_driver_ambit3.c for exactly what
  * is and isn't proven (the desktop side of this same write mechanism is fully confirmed
