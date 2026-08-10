@@ -220,7 +220,7 @@ Flickable {
                                 // not the built-in system screens - matches SuuntoLink's
                                 // own real reported counts exactly (see that module's
                                 // system_tail_length() docstring).
-                                text: qsTr("%1 screen(s)").arg(
+                                text: qsTr("%1 display(s)").arg(
                                     modeCard.modelData.displays.filter(d => !d.isBuiltIn).length)
                                 color: Theme.mutedText
                                 font.pixelSize: Theme.fontSizeCaption
@@ -531,7 +531,7 @@ Flickable {
                                     horizontalAlignment: Text.AlignHCenter
                                     text: filmItem.modelData.isBuiltIn
                                         ? qsTr("Built-in")
-                                        : qsTr("Screen %1").arg(filmItem.modelData.screenNumber)
+                                        : qsTr("Display %1").arg(filmItem.modelData.screenNumber)
                                     color: Theme.mutedText
                                     font.pixelSize: Theme.fontSizeCaption
                                 }
@@ -556,7 +556,7 @@ Flickable {
                         text: currentScreenColumn.current
                             ? (currentScreenColumn.current.isBuiltIn
                                ? qsTr("Built-in: %1").arg(currentScreenColumn.current.templateLabel)
-                               : qsTr("Screen %1").arg(currentScreenColumn.current.screenNumber))
+                               : qsTr("Display %1").arg(currentScreenColumn.current.screenNumber))
                             : ""
                         font.bold: true
                         color: Theme.text
@@ -565,7 +565,7 @@ Flickable {
                         visible: currentScreenColumn.current && currentScreenColumn.current.isBuiltIn
                         width: parent.width
                         wrapMode: Text.WordWrap
-                        text: qsTr("A built-in watch screen (Compass, Navigation, Map, " +
+                        text: qsTr("A built-in watch display (Compass, Navigation, Map, " +
                                     "etc.) - not one of your own configurable displays, " +
                                     "so its data isn't editable here.")
                         color: Theme.mutedText
@@ -582,18 +582,46 @@ Flickable {
                             width: parent.width
                             spacing: Theme.spacingSmall
 
+                            // Real, 2026-08-10 (André, item 11). A row is named
+                            // Top/Center/Bottom on the watch (sport_mode.js FieldId), not
+                            // numbered - and it can hold SEVERAL values, which
+                            // custom_modes.py now reports as `values`. Showing only
+                            // `typeLabel` hid every extra value: Openwater swim's bottom row
+                            // carries both Swim Pace (average) and Stroke Rate (average) and
+                            // rendered as one meaningless entry.
                             Text {
-                                width: 24
+                                width: 56
                                 anchors.verticalCenter: parent.verticalCenter
-                                text: qsTr("%1.").arg(fieldRow.index + 1)
+                                text: fieldRow.modelData.rowLabel
+                                    ? fieldRow.modelData.rowLabel
+                                    : qsTr("%1.").arg(fieldRow.index + 1)
                                 color: Theme.mutedText
                                 font.pixelSize: Theme.fontSizeBody
                             }
-                            Text {
+                            Column {
                                 anchors.verticalCenter: parent.verticalCenter
-                                text: fieldRow.modelData.typeLabel
-                                color: Theme.text
-                                font.pixelSize: Theme.fontSizeBody
+                                spacing: 1
+                                Repeater {
+                                    model: fieldRow.modelData.values
+                                        ? fieldRow.modelData.values
+                                        : [{ "label": fieldRow.modelData.typeLabel }]
+                                    delegate: Text {
+                                        required property var modelData
+                                        text: modelData.label
+                                        color: Theme.text
+                                        font.pixelSize: Theme.fontSizeBody
+                                    }
+                                }
+                                // Only the bottom row can hold more than one value, and the
+                                // wearer steps through them with a button - automatically
+                                // only when the mode's own autoscroll is on (André).
+                                Text {
+                                    visible: fieldRow.modelData.isMultiValue === true
+                                    text: qsTr("%1 values - press to step through")
+                                        .arg(fieldRow.modelData.values.length)
+                                    color: Theme.mutedText
+                                    font.pixelSize: Theme.fontSizeCaption
+                                }
                             }
                             Item { width: 1; height: 1 }
                             RoundedButton {
