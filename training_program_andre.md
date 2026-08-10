@@ -2380,3 +2380,23 @@ rule-engine field ids do not stop at 0x33-0x35, they resume at 0x6B/0x6C (Suunto
 and 5), and each slot has a companion graph field at 0x6D + slot. A graph display is uniformly
 (value, that value's graph, bottom row) - identical shape whether the value is an app slot or
 an ordinary variable, which is why SuuntoLink's UI only asks for one choice.
+
+**Correction to Finding 49, same day:** the "preserve the timestamp" conclusion above was
+reversed, on André's push ("still you don't think we should do like suunto link? so we match
+perfectly?"). Two things changed the answer. First, APP_META turned out not to be a general
+"last changed" date at all - it is *app* metadata, present only on modes with Suunto Apps
+installed (on André's watch, only Running2, which has 5). So for the nine app-less modes we
+already matched SuuntoLink perfectly by leaving them alone, and the question only ever
+concerned modes with apps. Second, the argument for preserving was to keep a fingerprint
+distinguishing our writes from SuuntoLink's - insurance against a clobber that this very
+finding had just disproved. Trading fidelity for insurance against a non-risk was the wrong
+trade.
+
+So we now stamp it exactly as SuuntoLink does, including the two-write staging: touch write
+(Timestamp1 = now, structure unchanged), a two-second pause, then the commit write
+(Timestamp2 = now, carrying the edit). André's reading of why it is two writes rather than
+one: touch-then-commit is what you design for old flash that might lose power mid-write, and
+this format also serves the Ambit 1 and 2 - so the shape may be load-bearing on hardware we
+cannot test. Reproduced literally rather than collapsed. Validated with no normalisation:
+replaying SuuntoLink's own touch/commit pair reproduces BOTH regions byte-exact, 0 differing
+bytes. `--no-stamp` opts out.
