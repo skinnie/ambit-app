@@ -38,3 +38,21 @@ reverse-engineering here would have been possible, or would have taken far longe
 
 If anyone belongs on this list and isn't here, that's an omission to fix, not a judgment -
 say so and it'll be corrected.
+
+## Activity icons
+
+The sport-mode badges are keyed on each mode's own `activityId`, using the activity table in
+`assets/activity_types.json` (84 activity ids with their names and Suunto's own category
+colours, read out of SuuntoLink's `activity.js` - factual mapping, not artwork).
+
+**77 of the 84 symbols are our own drawings**, made for this app in a 24x24 box and
+deliberately not traced from anyone's font.
+
+**7 are taken from Suunto's own icon font** (`suunto_icon.woff`, shipped inside SuuntoLink) -
+Boxing, Frisbee, Horseback riding, Indoor rowing, Racquet ball, Scuba diving and Squash.
+Those seven are equipment shapes we could not draw legibly at 22px after three attempts, and
+André chose to use Suunto's rather than ship icons that did not read. They remain Suunto Oy's
+artwork; this project claims no rights over them and is not affiliated with or endorsed by
+Suunto Oy. If that ever becomes a problem, they can be swapped for the generic "Unspecified
+sport" star with no code change - just edit those seven entries in
+`assets/activity_types.json` and re-run `tools/gen_activity_qml.py`.

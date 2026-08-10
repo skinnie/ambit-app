@@ -23,6 +23,13 @@ tools/packaging/error*.jpg
 #  - Microsoft redistributable DLLs
 #  - pcap captures: they carry the watch serial number and personal POIs (home)
 assets/
+# ...but the top-level assets/ holds one file we authored ourselves: the activity table
+# (84 ids, names, colours, one SVG symbol each) that tools/gen_activity_qml.py generates
+# desktop/qml/ActivityTypes.qml from. Rooted patterns so nested assets/ dirs elsewhere in
+# the tree (desktop/assets, android/.../assets) keep their blanket ignore.
+!/assets/
+/assets/*
+!/assets/activity_types.json
 full-assets/
 # Flash-region dumps from the watch — carry the watch serial number; never commit.
 backups/
@@ -53,3 +60,9 @@ desktop/*.exitcode
 # potentially carrying real personal route data - never meant to be versioned.
 *-routes.bin
 *-waypoints.bin
+
+# ...except our own activity table: 84 activity ids with names, colours and one SVG symbol
+# each. This is a source file we authored (see tools/gen_activity_qml.py, which generates
+# desktop/qml/ActivityTypes.qml from it, and CREDITS.md for the seven Suunto-derived
+# symbols) - not one of the large vendor dumps the blanket assets/ rule exists for.
+!assets/activity_types.json
