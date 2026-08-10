@@ -25,6 +25,7 @@ makes a sport mode unusable.
 """
 
 import argparse
+import copy
 import sys
 import time
 
@@ -168,6 +169,47 @@ def new_display(type_key):
     }
 
 
+# SuuntoLink's gap between its touch write and its commit write, in seconds. Measured at
+# 2, 3, 2 and 2 seconds across the four edits in running2fromcreateandthen1to7 - i.e. just
+# how long it took, not a specified interval. We wait the shortest observed value.
+STAMP_GAP_SECONDS = 2
+
+
+def stamp_plan(pristine, edited, mode_name, now=None):
+    """How SuuntoLink stages a save on a mode that carries APP_META, or None if it doesn't.
+
+    EXERCISE_MODES_APP_META is *app* metadata: it exists only on modes with Suunto Apps
+    installed. On Andre's watch only Running2 has it (5 apps); the other nine modes have none
+    and SuuntoLink never adds one, even though it rewrites every mode on every save. So for an
+    app-less mode there is nothing to stage and this returns None - leaving the region alone is
+    already byte-identical to what SuuntoLink would do.
+
+    For a mode that HAS it, SuuntoLink saves in two full-region writes about two seconds apart
+    (running2fromcreateandthen1to7, saves 3+4, 6+7, 9+10):
+
+        write 1 - Timestamp1 = now, structure UNCHANGED   ("touch")
+        write 2 - Timestamp2 = now, structure CHANGED     ("commit")
+
+    Andre's read of it: a touch-then-commit shape is what you design for old flash that might
+    lose power mid-write, and this format has to serve Ambit 1 and 2 as well. We reproduce it
+    literally rather than collapsing it into one write, because we do not know what reads
+    these stamps, and the only implementation known to work does it this way.
+
+    Returns (touch_structure, commit_structure); both are complete decoded regions ready to
+    encode."""
+    target = find_mode(edited, mode_name)
+    if not isinstance(target.get("AppMeta"), dict):
+        return None
+    now = int(time.time() if now is None else now)
+
+    touch = pristine
+    find_mode(touch, mode_name)["AppMeta"]["Timestamp1"] = now
+    # The commit write keeps the Timestamp1 the touch just wrote, and moves Timestamp2 on.
+    target["AppMeta"]["Timestamp1"] = now
+    target["AppMeta"]["Timestamp2"] = now + STAMP_GAP_SECONDS
+    return touch, edited
+
+
 def max_displays(variant):
     """SuuntoLink's own getMaxDisplays() answer. 8 for the Ambit3 family and Kailash, 4 for
     Traverse/Traverse Alpha (custom_modes._MAX_DISPLAYS_BY_VARIANT already carries this)."""
@@ -307,6 +349,10 @@ def main():
     ap.add_argument("--json", action="store_true", help="machine-readable result")
     ap.add_argument("--write", action="store_true", help="actually write; without this "
                                                           "nothing is sent")
+    ap.add_argument("--no-stamp", action="store_true",
+                     help="do not touch APP_META. Only affects modes that have Suunto Apps "
+                          "installed - app-less modes carry no APP_META and are unaffected "
+                          "either way. Default is to stamp it exactly as SuuntoLink does.")
     ap.add_argument("--verbose", action="store_true")
     args = ap.parse_args()
 
@@ -351,6 +397,9 @@ def main():
         show(mode)
         return 0
 
+    # The pre-edit structure, kept for the APP_META touch write below (see stamp_plan).
+    pristine = copy.deepcopy(decoded)
+
     if not args.json:
         print("before:")
         show(mode)
@@ -359,13 +408,18 @@ def main():
         changes = apply_batch(mode, _json.loads(args.edits))
     else:
         changes = apply_edits(mode, args)
+    fmt = decoded.get("format_type", 2)
+    staged = None if args.no_stamp else stamp_plan(pristine, decoded, args.mode)
+    if staged:
+        touch_body = custom_modes_write.build_custom_modes_body(staged[0], format_type=fmt)
+        changes.append("stamped APP_META the way SuuntoLink does (touch write, then commit)")
+
     if not args.json:
         print("\nafter:")
         show(mode)
         print("\n" + "\n".join("  * " + c for c in changes))
 
-    body = custom_modes_write.build_custom_modes_body(
-        decoded, format_type=decoded.get("format_type", 2))
+    body = custom_modes_write.build_custom_modes_body(decoded, format_type=fmt)
     if len(body) > size:
         raise SystemExit(f"the edited region is {len(body)} bytes and this watch declares "
                           f"only {size} - refusing to write past the end of it")
@@ -381,9 +435,21 @@ def main():
         return 0
 
     from ambit_pcap import FlashImage
-    flash = FlashImage()
-    flash.write(base, body)
-    send_plan(link, flash, [("CustomModes", base, body), ("tail", base, None)], commit=True)
+
+    def send(payload):
+        flash = FlashImage()
+        flash.write(base, payload)
+        send_plan(link, flash, [("CustomModes", base, payload), ("tail", base, None)],
+                  commit=True)
+
+    if staged:
+        # Touch write: same structure, Timestamp1 moved on. Then SuuntoLink's own pause.
+        if not args.json:
+            print(f"\n  touch write ({len(touch_body)} bytes), then {STAMP_GAP_SECONDS}s, "
+                  f"then the commit write - matching SuuntoLink")
+        send(touch_body)
+        time.sleep(STAMP_GAP_SECONDS)
+    send(body)
 
     # Confirm by reading the region back. The first read can disagree with what we sent even
     # though the write landed - seen once on real hardware, where an immediate re-read
