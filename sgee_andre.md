@@ -164,12 +164,11 @@ consecutive days, not done here.
   the same split - André caught the inconsistency).
 - A live, free, unauthenticated data source exists and was confirmed working today:
   `https://devices.suunto-operations.com/devices/gpsorbit/binary` (and `glonassorbit/binary`).
-- GLONASS data's placement within `GpsSGEE` is not determined, and that's expected rather than
-  a gap: per André, only Traverse, Traverse Alpha and Ambit3 Vertical have a GLONASS receiver
-  at all - the Ambit3 Peak this project verifies against doesn't, which is exactly why the real
-  capture never wrote a GLONASS blob (nothing to write it for). Not a missing case for *this*
-  watch; would need one of those three models on hand to reverse-engineer for real, not guessed
-  at from `glonassorbit/binary`'s existence alone.
+- ~~GLONASS data's placement within `GpsSGEE` is not determined, and that's expected rather
+  than a gap: per André, only Traverse, Traverse Alpha and Ambit3 Vertical have a GLONASS
+  receiver at all...~~ **SUPERSEDED 2026-08-10 - see "GLONASS on the Kailash" below.** The
+  premise was incomplete: the Kailash has a GLONASS receiver too, its own separate
+  `GlonassSGEE` region, and had never received a single byte of GLONASS ephemeris.
 - The `0x0b15` orbit-status query is now fully decoded, confirmed against a live example this
   project generated itself, not just seen once in a capture. The same generation-date
   structure is also readable directly in the ephemeris file's own header, confirmed against
@@ -186,3 +185,111 @@ This closes the AGPS/orbital sync investigation: write mechanism built and byte-
 verified, a live free data source found and confirmed working, a full round trip proven on
 real hardware, and the refresh/staleness question answered with a real mechanism rather than
 a guess.
+
+---
+
+## GLONASS on the Kailash (2026-08-10)
+
+Supersedes the summary bullet above, whose premise ("only Traverse, Traverse Alpha and
+Ambit3 Vertical have a GLONASS receiver") was incomplete. The Kailash has one as well, and
+the whole path turned out to be reachable without guessing at anything.
+
+### What the watch declares
+
+Its own `0x0b21` memory map lists a region the Ambit3 family does not have at all:
+
+| region | address | size | state before this work |
+|---|---|---|---|
+| `GpsSGEE` | `0x0704e0` | 140,000 B | populated |
+| `GlonassSGEE` | `0x1339e0` | **100,000 B** | **`0xff` throughout - erased since manufacture** |
+
+Verified by reading the flash directly, not inferred from the region checksum: 4096/4096
+bytes came back `0xff`, exactly one distinct byte value. Its schema also carries entry
+`0x15 EnabledNavigationSystems` (`enum:0=GPS,1=GPS+Glonass`), which the Ambit3's descriptor
+has no equivalent of.
+
+### Why it was empty: a config allowlist, not a technical limit
+
+SuuntoLink has the whole GLONASS pipeline built. `movescount.js`'s
+`downloadGnssOrbitFiles()` fetches BOTH files for the SGEE format:
+
+```js
+case ExtendedEphemerisDataFormat.SGEE:
+  Promise.all([ downloadFile(serverUrl+'/devices/gpsorbit/binary?appkey=…',     'gpsorbit.bin'),
+                downloadFile(serverUrl+'/devices/glonassorbit/binary?appkey=…', 'gloorbit.bin') ])
+```
+
+and `active_device.js` passes both URIs down (`postSgee(Serial, GPSSGEEFileURI,
+GlonassSGEEFileURI)`). The gate is `Devices.xml`, which declares
+`<options><glonass><download/></glonass>` for exactly three devices - Ambit3 Vertical,
+Traverse, Traverse Alpha. **Kailash's entire option block is `<firmware><bootupdate>`.**
+
+Confirmed in live behaviour, not just config: a full SuuntoLink sync rewrote `GpsSGEE`
+(`0x0b15` went 08:05 -> 16:05 the same day) and never touched `GlonassSGEE`. So GPS orbit
+is NOT gated by that file - only GLONASS is, and Kailash was left off the list.
+
+Patching the live `Devices.xml` to add Kailash to that list does not work, and the reason is
+worth recording: **SuuntoLink restores `Devices.xml` on startup.** The patched file
+(318,850 B) was byte-identical to the original (318,789 B) again after the next launch, so
+`gloorbit.bin` was never downloaded. That is not evidence the gating is deeper than config -
+the config simply reverted before the app ever read it.
+
+### The format needed no reverse-engineering
+
+`gpsorbit/binary` and `glonassorbit/binary` share a byte-identical 12-byte header:
+
+```
+gpsorbit.bin      62 12 37 09  7f 01  07 ea 08 0a  00 00  a9 f0 de 82 …
+glonassorbit.bin  62 12 37 09  7f 01  07 ea 08 0a  00 00  a9 f2 33 a3 …
+                  └─ magic ─┘  └ver┘  └2026-08-10┘        └ payload ──┘
+```
+
+Same magic, same version, same big-endian year + month + day. And the region framing is the
+same one `GpsSGEE` already uses - `[u32 LE length][raw file]` - confirmed from both ends:
+the watch's own `GpsSGEE` begins `28 1b 01 00` (= 72,488) followed verbatim by
+`gpsorbit.bin`, and the `kailashactivity` capture wrote 72,020 bytes whose leading u32 is
+72,016 (= length + 4).
+
+Note the files regenerate through the day: 50,186 B and 49,950 B were both served on
+2026-08-10.
+
+### Written, and it persists
+
+`sgee.py --device kailash --glonass FILE --write` wrote 49,950 bytes (+4 prefix) to
+`0x1339e0`. Read-back matched the source file byte-for-byte, length prefix correct. **The
+first GLONASS ephemeris this watch has ever held**, by any software.
+
+Persistence, tested rather than assumed:
+
+- **Survives a SuuntoLink sync** - after a full Windows sync the region still read exactly
+  49,950 bytes, our own marker. SuuntoLink leaves it alone.
+- **Wiped by a firmware reset** - the reset erases it; the subsequent sync does not restore
+  it (nothing writes it).
+
+A 37-minute walk with GLONASS enabled and the data loaded produced a clean track: 73 points,
+median step 42 m at ~30 s sampling, no jumps >150 m, no gaps. That is the "no harm done"
+result. It is NOT evidence the data helped - that was a warm start (the watch had fixed
+minutes earlier), and extended ephemeris only pays off on a genuinely cold one.
+
+### `EnabledNavigationSystems` is NOT the GNSS switch
+
+Entry `0x15` looks like the obvious GLONASS toggle and demonstrably is not. With the watch's
+own "GPS & GLONASS" menu ON the field read 0; with it OFF it read 0; and a byte-comparison
+of the two 152-byte settings blobs across that toggle showed 40 entries in, 40 out, **zero
+bytes changed anywhere**. Writing 1 does change the field, and a re-read confirms the field -
+but that is not evidence the receiver changed, a claim made and corrected the same day. It is
+exposed read-only in `KAILASH_SETTINGS` with that note. Wherever the watch keeps its real
+GNSS setting, it is not in the `0x1100` blob and has not been found yet.
+
+### Practical upshot
+
+Re-write it every week or two (the file regenerates daily, and stale ephemeris stops helping
+after roughly one to a few weeks - same freshness logic as GPS, above):
+
+```
+./tools/sgee.py --device kailash --glonass gloorbit.bin --write
+```
+
+`sgee.py` refuses outright on a watch that declares no `GlonassSGEE` region rather than
+guessing an address, and hard-bounds-checks the file against the size THAT WATCH declares
+before planning a single byte.
