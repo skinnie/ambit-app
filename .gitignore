@@ -30,6 +30,7 @@ assets/
 !/assets/
 /assets/*
 !/assets/activity_types.json
+!/assets/sportmode_rows.json
 full-assets/
 # Flash-region dumps from the watch — carry the watch serial number; never commit.
 backups/
