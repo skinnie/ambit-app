@@ -2340,3 +2340,43 @@ verbatim from a fresh `0x1100` read, so `Plans.Source` keeps whatever the watch 
 behaviour fell out of matching SuuntoLink's payload SHAPE while declining to copy its habit of
 filling slots from a stale local model - a real advantage over SuuntoLink for anyone running a
 training program.
+
+## Finding 49: our sport-mode writes SURVIVE a SuuntoLink session - unlike routes (2026-08-11)
+
+First end-to-end hardware test of `tools/custom_modes_edit.py`, and it closes a question that
+has shadowed every write this project makes: does SuuntoLink undo us?
+
+For routes, it does - it pushes the cloud's record of what belongs on the watch and our
+imported routes vanish (see the clobber notes). Andre's instinct was that sport modes might
+behave the same way, and that the EXERCISE_MODES_APP_META "last changed" timestamp might be
+what decides it, since SuuntoLink stamps the wall clock there on every save and we preserve
+whatever was already stored.
+
+Test, on Andre's real Ambit3 Peak:
+
+1. We added a 3-row display to Running over USB (`--add-display 3-row --write`), leaving the
+   APP_META timestamp at its old value. Confirmed by re-read, and Andre confirmed it on the
+   watch: a 6th display showing Distance / Speed / Timer.
+2. Andre plugged the watch into SuuntoLink on his Mac and let it connect, without saving or
+   editing anything.
+3. SuuntoLink's UI showed **6 displays for Running, including ours**, with our exact field
+   defaults ("distance, speed, chrono").
+4. After unplugging, the display was **still on the watch**.
+
+So: SuuntoLink READS the sport modes off the watch rather than overwriting them from its own
+record, and it accepted a mode we wrote whose "last changed" date was stale. Two conclusions:
+
+- **Sport-mode writes stick.** The clobber that eats routes does not apply here. This is what
+  unblocks the row editor and app picker - it was pointless to build them if SuuntoLink
+  reverted every edit on the next cable sync.
+- **The APP_META timestamp is not a gatekeeper.** We keep preserving it rather than bumping it
+  to now. Preserving is the smaller change, and an un-bumped timestamp stays a reliable
+  fingerprint that a given write came from us and not from SuuntoLink - useful while the route
+  clobber is still unsolved. If a later experiment shows the timestamp matters for something
+  else, this is cheap to revisit.
+
+Also established in the same session, from Andre's Running2 (5 installed apps): the
+rule-engine field ids do not stop at 0x33-0x35, they resume at 0x6B/0x6C (Suunto App Slots 4
+and 5), and each slot has a companion graph field at 0x6D + slot. A graph display is uniformly
+(value, that value's graph, bottom row) - identical shape whether the value is an app slot or
+an ordinary variable, which is why SuuntoLink's UI only asks for one choice.
