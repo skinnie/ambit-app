@@ -60,9 +60,3 @@ desktop/*.exitcode
 # potentially carrying real personal route data - never meant to be versioned.
 *-routes.bin
 *-waypoints.bin
-
-# ...except our own activity table: 84 activity ids with names, colours and one SVG symbol
-# each. This is a source file we authored (see tools/gen_activity_qml.py, which generates
-# desktop/qml/ActivityTypes.qml from it, and CREDITS.md for the seven Suunto-derived
-# symbols) - not one of the large vendor dumps the blanket assets/ rule exists for.
-!assets/activity_types.json
