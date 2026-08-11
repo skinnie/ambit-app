@@ -19,10 +19,9 @@ import AmbitApp
 //     once, because the watch has no per-field command for sport modes - every save rewrites
 //     the whole region. A row edit staging itself the same way keeps one Save button
 //     meaning one write, which is also what SuuntoLink does.
-Dialog {
+ThemedDialog {
     id: root
     title: qsTr("Choose what to show in this row")
-    modal: true
     width: 460
     height: 600
     standardButtons: Dialog.Cancel | Dialog.Ok
@@ -39,6 +38,11 @@ Dialog {
     // save afterwards rebuild from a read taken before the install - see the Suunto Apps
     // section below.
     property bool hasPendingEdits: false
+    // Suunto Apps already installed on this mode. SuuntoLink's own getMaxSuuntoApps() for
+    // this watch family is 5, confirmed twice: from its module, and from André's Running2
+    // carrying exactly 5 rules referenced as field ids 51/52/53/107/108.
+    property int appCount: 0
+    readonly property int maxApps: 5
 
     // Field ids currently ticked, in the order chosen - the watch shows a multi-value row's
     // values in this order, so it is meaningful, not just a set.
@@ -182,10 +186,20 @@ Dialog {
                 width: parent.width
                 spacing: Theme.spacingSmall
                 Text {
-                    text: qsTr("Suunto Apps")
+                    text: qsTr("Suunto Apps (%1/%2)").arg(root.appCount).arg(root.maxApps)
                     font.bold: true
                     color: Theme.text
                     topPadding: Theme.spacingSmall
+                }
+                Text {
+                    visible: root.appCount >= root.maxApps
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    text: qsTr("This mode already has the maximum of %1 Suunto Apps. " +
+                                "Remove one on the watch before adding another.")
+                            .arg(root.maxApps)
+                    color: Theme.mutedText
+                    font.pixelSize: Theme.fontSizeCaption
                 }
                 Text {
                     visible: root.hasPendingEdits
@@ -200,7 +214,7 @@ Dialog {
                 RoundedTextField {
                     id: appSearchField
                     width: parent.width
-                    enabled: !root.hasPendingEdits
+                    enabled: !root.hasPendingEdits && root.appCount < root.maxApps
                     placeholderText: qsTr("Search Suunto Apps...")
                     onTextChanged: AppsService.searchCatalog(text, DeviceService.model, -1)
                 }
@@ -211,14 +225,28 @@ Dialog {
                     text: qsTr("Searching...")
                 }
                 Text {
+                    visible: !root.hasPendingEdits && root.appCount < root.maxApps
+                             && appSearchField.text.trim().length === 0
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    text: qsTr("Type to search the Suunto App catalogue.")
+                    color: Theme.mutedText
+                    font.pixelSize: Theme.fontSizeCaption
+                }
+                Text {
                     visible: !root.hasPendingEdits && !AppsService.searching
+                             && appSearchField.text.trim().length > 0
                              && AppsService.searchResults.length === 0
                     color: Theme.mutedText
                     font.pixelSize: Theme.fontSizeCaption
                     text: qsTr("No matching apps.")
                 }
                 Repeater {
-                    model: root.hasPendingEdits ? [] : AppsService.searchResults
+                    // Narrows as you type - André, item 6. Nothing is listed until there is
+                    // something to narrow BY: 13,104 apps rendered flat is not a menu.
+                    model: (root.hasPendingEdits || root.appCount >= root.maxApps
+                            || appSearchField.text.trim().length === 0)
+                           ? [] : AppsService.searchResults
                     delegate: Column {
                         id: appRow
                         required property var modelData

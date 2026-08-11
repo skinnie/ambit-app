@@ -74,6 +74,8 @@ qt_add_qml_module(ambitapp
         qml/components/Card.qml
         qml/components/ErrorBanner.qml
         qml/components/MapWindow.qml
+        qml/components/LayoutPickerDialog.qml
+        qml/components/ThemedDialog.qml
         qml/components/Icon.qml
         qml/components/RoundedComboBox.qml
         qml/components/RoundedButton.qml

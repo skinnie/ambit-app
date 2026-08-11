@@ -94,12 +94,6 @@ Flickable {
     //   {op:"setType", display:N, type:"graph"} | {op:"setRow", display:N, row:"Bottom", values:[...]}
     property var pendingEdits: []
     readonly property bool hasPendingEdits: pendingEdits.length > 0
-    readonly property var displayTypes: [
-        { key: "3-row", label: qsTr("3 data fields") },
-        { key: "2-row", label: qsTr("2 data fields") },
-        { key: "1-row", label: qsTr("1 data field") },
-        { key: "graph", label: qsTr("Graph") }
-    ]
 
     function stageEdit(edit) {
         const next = pendingEdits.slice();
@@ -113,18 +107,92 @@ Flickable {
         CustomModesService.applyDisplayEdits(root.selectedModeName, pendingEdits);
         pendingEdits = [];
     }
-    // How many editable displays the mode has right now, plus whatever adds/removes are
-    // staged - so the 8 limit and the "can I remove this" checks reflect what Save would
-    // actually produce, not just what is on the watch.
-    function stagedDisplayCount() {
-        const mode = CustomModesService.modes.find(m => m.name === root.selectedModeName);
-        let n = mode && mode.displays
-            ? mode.displays.filter(d => !d.isBuiltIn).length : 0;
+    // SuuntoLink's own getMaxDisplays() for this watch family.
+    readonly property int maxDisplays: 8
+
+    // The four layouts a display can take, with the template id the watch stores for each
+    // and the default rows the backend fills a new one with (custom_modes_edit._DEFAULT_ROWS,
+    // themselves taken from SuuntoLink's createDisplay()). Kept in step so the preview shows
+    // what Save will actually write, rather than an empty display that then fills itself in.
+    readonly property var displayTypes: [
+        { key: "3-row", label: qsTr("3 data fields"), templateId: 260, preview: "3rows",
+          rows: [["Top", [10]], ["Center", [11]], ["Bottom", [5]]] },
+        { key: "2-row", label: qsTr("2 data fields"), templateId: 261, preview: "2rows",
+          rows: [["Top", [10]], ["Center", [5]]] },
+        { key: "1-row", label: qsTr("1 data field"), templateId: 262, preview: "1row",
+          rows: [["Top", [10]]] },
+        { key: "graph",  label: qsTr("Graph"),        templateId: 257, preview: "graph",
+          rows: [["Top", [6]], ["Center", [32]], ["Bottom", [5]]] }
+    ]
+
+    function displayTypeByKey(key) {
+        return displayTypes.find(t => t.key === key) || displayTypes[0]
+    }
+    function displayTypeByTemplate(templateId) {
+        return displayTypes.find(t => t.templateId === templateId) || displayTypes[0]
+    }
+    function layoutTypeOf(display) {
+        return displayTypeByTemplate(display ? display.templateId : 260).preview
+    }
+    function layoutLabelOf(display) {
+        return displayTypeByTemplate(display ? display.templateId : 260).label
+    }
+
+    // A field id's own label, from the catalogue the backend already provides, so a staged
+    // change reads the same as one that came off the watch.
+    function fieldLabel(fieldId) {
+        const hit = CustomModesService.fieldTypes.find(f => f.value === fieldId)
+        return hit ? hit.label : "0x" + fieldId.toString(16)
+    }
+    function makeRows(spec) {
+        return spec.map(([rowLabel, ids]) => ({
+            rowLabel: rowLabel,
+            values: ids.map(id => ({ type: id, label: root.fieldLabel(id) })),
+            isMultiValue: ids.length > 1
+        }))
+    }
+
+    // The watch's displays with the pending edits applied - what Save would produce.
+    //
+    // Real bug this fixes (André, 2026-08-11): every control here used to render the WATCH's
+    // state, so a staged change was invisible. Choosing a layout appeared to do nothing,
+    // Remove emptied the row list but left the filmstrip showing the display, and Add did
+    // nothing visible at all. Projecting the edits means the screen and the write agree.
+    function stagedDisplays() {
+        const mode = CustomModesService.modes.find(m => m.name === root.selectedModeName)
+        let list = (mode && mode.displays ? mode.displays.filter(d => !d.isBuiltIn) : [])
+            .map(d => ({ templateId: d.templateId, fields: d.fields }))
+
         for (const e of pendingEdits) {
-            if (e.op === "add") n++;
-            else if (e.op === "remove") n--;
+            if (e.op === "add") {
+                const t = displayTypeByKey(e.type)
+                list.push({ templateId: t.templateId, fields: makeRows(t.rows) })
+            } else if (e.op === "remove") {
+                if (e.display >= 0 && e.display < list.length)
+                    list.splice(e.display, 1)
+            } else if (e.op === "setType") {
+                if (list[e.display]) {
+                    const t = displayTypeByKey(e.type)
+                    list[e.display] = { templateId: t.templateId, fields: makeRows(t.rows) }
+                }
+            } else if (e.op === "setRow") {
+                const disp = list[e.display]
+                if (disp) {
+                    const rows = disp.fields.slice()
+                    const at = rows.findIndex(r => (r.rowLabel || "").toUpperCase()
+                                                   === e.row.toUpperCase())
+                    if (at >= 0) {
+                        rows[at] = {
+                            rowLabel: rows[at].rowLabel,
+                            values: e.values.map(id => ({ type: id, label: root.fieldLabel(id) })),
+                            isMultiValue: e.values.length > 1
+                        }
+                        list[e.display] = { templateId: disp.templateId, fields: rows }
+                    }
+                }
+            }
         }
-        return n;
+        return list
     }
 
     // Real, 2026-08-09 - maps a real display's own template/field-count (custom_modes.py's
@@ -574,7 +642,18 @@ Flickable {
             }
         }
 
-        // --- Displays: real SuuntoLink-style watch-face filmstrip + per-row editing ---
+        // --- Displays -------------------------------------------------------------------
+        // Rewritten 2026-08-11 after André found five faults that were all one root cause:
+        // this section rendered the WATCH's displays while edits were staged elsewhere, so
+        // choosing a type changed nothing on screen, Remove deleted a row but left the
+        // filmstrip untouched, Add did nothing on an already-filled display, and Remove was
+        // greyed out on a display that had just been added. Everything below now renders
+        // `stagedDisplays()` - the watch's state with the pending edits applied - so what is
+        // on screen is exactly what Save would write.
+        //
+        // The layout picker replaces the old row of type buttons and the Add button, at
+        // André's suggestion and following SuuntoLink: click a display to change its layout,
+        // click the empty "+" slot to add one. Fewer controls, and the same gesture for both.
         Card {
             width: parent.width
             visible: root.selectedMode !== null
@@ -583,19 +662,19 @@ Flickable {
                 width: parent.width
                 spacing: Theme.spacingMedium
 
-                readonly property var displays: root.selectedMode ? root.selectedMode.displays : []
-                readonly property var realDisplays: displays.filter(d => !d.isBuiltIn)
+                readonly property var displays: root.stagedDisplays()
 
                 Text {
-                    text: qsTr("Displays (%1/8)").arg(displaysColumn.realDisplays.length)
+                    text: qsTr("Displays (%1/%2)").arg(displaysColumn.displays.length)
+                                                  .arg(root.maxDisplays)
                     font.bold: true
                     font.pixelSize: Theme.fontSizeBodyLarge
                     color: Theme.text
                 }
 
-                // Filmstrip - adapted from SuuntoLink's own one-at-a-time paging
-                // (assets/ambit3 pcap/v2/screens sports modes/8displaysmax.JPG) to a
-                // horizontal scroll, better suited to this app's own wide desktop layout.
+                // Filmstrip - only the user's own displays, never the built-in watch screens
+                // (Compass/Navigation/Map): those are not editable, do not count toward the
+                // limit, and showing them made the strip look like it held more than the max.
                 Flickable {
                     width: parent.width
                     height: 140
@@ -606,6 +685,7 @@ Flickable {
                     Row {
                         id: filmRow
                         spacing: Theme.spacingMedium
+
                         Repeater {
                             model: displaysColumn.displays
                             delegate: Column {
@@ -615,114 +695,106 @@ Flickable {
                                 spacing: 4
                                 WatchFacePreview {
                                     diameter: 100
-                                    layoutType: root.displayLayoutType(filmItem.modelData)
-                                    selected: index === root.currentDisplayIndex
-                                    TapHandler { onTapped: root.currentDisplayIndex = filmItem.index }
+                                    layoutType: root.layoutTypeOf(filmItem.modelData)
+                                    selected: filmItem.index === root.currentDisplayIndex
+                                    TapHandler {
+                                        onTapped: {
+                                            root.currentDisplayIndex = filmItem.index
+                                            layoutPicker.openFor(filmItem.index)
+                                        }
+                                    }
                                 }
                                 Text {
                                     width: 100
                                     horizontalAlignment: Text.AlignHCenter
-                                    text: filmItem.modelData.isBuiltIn
-                                        ? qsTr("Built-in")
-                                        : qsTr("Display %1").arg(filmItem.modelData.screenNumber)
-                                    color: Theme.mutedText
+                                    text: qsTr("Display %1").arg(filmItem.index + 1)
+                                    color: filmItem.index === root.currentDisplayIndex
+                                           ? Theme.text : Theme.mutedText
                                     font.pixelSize: Theme.fontSizeCaption
                                 }
+                            }
+                        }
+
+                        // The free slot. Clicking it asks for a layout and adds that display,
+                        // then selects it - so adding and choosing a layout are one gesture.
+                        Column {
+                            visible: displaysColumn.displays.length < root.maxDisplays
+                            spacing: 4
+                            Rectangle {
+                                width: 100
+                                height: 100
+                                radius: 50
+                                color: "transparent"
+                                border.width: 2
+                                border.color: Theme.mutedText
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "+"
+                                    color: Theme.mutedText
+                                    font.pixelSize: 34
+                                }
+                                TapHandler { onTapped: layoutPicker.openFor(-1) }
+                            }
+                            Text {
+                                width: 100
+                                horizontalAlignment: Text.AlignHCenter
+                                text: qsTr("Add display")
+                                color: Theme.mutedText
+                                font.pixelSize: Theme.fontSizeCaption
                             }
                         }
                     }
                 }
 
-                // Current screen's own detail - matches SuuntoLink's own "DISPLAY: N ROWS"
-                // list (display3rows_down5max.JPG): one row per field, each tappable to
-                // open the data picker below.
+                // The selected display's own rows.
                 Column {
                     id: currentScreenColumn
                     width: parent.width
                     spacing: Theme.spacingSmall
                     visible: displaysColumn.displays.length > root.currentDisplayIndex
+                             && root.currentDisplayIndex >= 0
 
-                    readonly property var current: visible ? displaysColumn.displays[root.currentDisplayIndex] : null
+                    readonly property var current: visible
+                        ? displaysColumn.displays[root.currentDisplayIndex] : null
 
-                    Text {
-                        visible: currentScreenColumn.current
-                        text: currentScreenColumn.current
-                            ? (currentScreenColumn.current.isBuiltIn
-                               ? qsTr("Built-in: %1").arg(currentScreenColumn.current.templateLabel)
-                               : qsTr("Display %1").arg(currentScreenColumn.current.screenNumber))
-                            : ""
-                        font.bold: true
-                        color: Theme.text
-                    }
-                    Text {
-                        visible: currentScreenColumn.current && currentScreenColumn.current.isBuiltIn
-                        width: parent.width
-                        wrapMode: Text.WordWrap
-                        text: qsTr("A built-in watch display (Compass, Navigation, Map, " +
-                                    "etc.) - not one of your own configurable displays, " +
-                                    "so its data isn't editable here.")
-                        color: Theme.mutedText
-                        font.pixelSize: Theme.fontSizeCaption
-                    }
-
-                    // --- display type (item 7) ------------------------------------
                     Row {
-                        visible: currentScreenColumn.current && !currentScreenColumn.current.isBuiltIn
+                        width: parent.width
                         spacing: Theme.spacingSmall
                         Text {
                             anchors.verticalCenter: parent.verticalCenter
-                            text: qsTr("Type")
-                            color: Theme.mutedText
-                            font.pixelSize: Theme.fontSizeBody
+                            text: currentScreenColumn.current
+                                ? qsTr("Display %1 - %2").arg(root.currentDisplayIndex + 1)
+                                    .arg(root.layoutLabelOf(currentScreenColumn.current))
+                                : ""
+                            font.bold: true
+                            color: Theme.text
                         }
-                        Repeater {
-                            model: root.displayTypes
-                            delegate: RoundedButton {
-                                required property var modelData
-                                text: modelData.label
-                                enabled: !CustomModesService.writingMode
-                                onClicked: root.stageEdit({
-                                    "op": "setType",
-                                    "display": root.currentDisplayIndex,
-                                    "type": modelData.key
-                                })
+                        RoundedButton {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: qsTr("Change layout")
+                            enabled: !CustomModesService.writingMode
+                            onClicked: layoutPicker.openFor(root.currentDisplayIndex)
+                        }
+                        RoundedButton {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: qsTr("Remove this display")
+                            // Available on any display, including one just added - the old
+                            // version greyed this out on a staged display, so a mistaken Add
+                            // could not be taken back without discarding everything.
+                            enabled: displaysColumn.displays.length > 1
+                                     && !CustomModesService.writingMode
+                            onClicked: {
+                                root.stageEdit({ "op": "remove",
+                                                 "display": root.currentDisplayIndex })
+                                if (root.currentDisplayIndex > 0)
+                                    root.currentDisplayIndex--
                             }
                         }
                     }
 
-                    // --- add / remove a display (item 6) ---------------------------------
-                    Row {
-                        spacing: Theme.spacingSmall
-                        RoundedButton {
-                            text: qsTr("Add display")
-                            // SuuntoLink's own getMaxDisplays() for this watch family is 8;
-                            // counted against the staged result, not just what is on the
-                            // watch, so two staged adds cannot overshoot.
-                            enabled: root.stagedDisplayCount() < 8 && !CustomModesService.writingMode
-                            onClicked: root.stageEdit({ "op": "add", "type": "3-row" })
-                        }
-                        RoundedButton {
-                            text: qsTr("Remove this display")
-                            enabled: currentScreenColumn.current
-                                && !currentScreenColumn.current.isBuiltIn
-                                && root.stagedDisplayCount() > 1
-                                && !CustomModesService.writingMode
-                            onClicked: root.stageEdit({
-                                "op": "remove",
-                                "display": root.currentDisplayIndex
-                            })
-                        }
-                        Text {
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: qsTr("%1 of 8 displays").arg(root.stagedDisplayCount())
-                            color: Theme.mutedText
-                            font.pixelSize: Theme.fontSizeCaption
-                        }
-                    }
-
                     Repeater {
-                        model: (currentScreenColumn.current && !currentScreenColumn.current.isBuiltIn)
-                            ? currentScreenColumn.current.fields : []
+                        model: currentScreenColumn.current
+                               ? currentScreenColumn.current.fields : []
                         delegate: Row {
                             id: fieldRow
                             required property var modelData
@@ -730,13 +802,6 @@ Flickable {
                             width: parent.width
                             spacing: Theme.spacingSmall
 
-                            // Real, 2026-08-10 (André, item 11). A row is named
-                            // Top/Center/Bottom on the watch (sport_mode.js FieldId), not
-                            // numbered - and it can hold SEVERAL values, which
-                            // custom_modes.py now reports as `values`. Showing only
-                            // `typeLabel` hid every extra value: Openwater swim's bottom row
-                            // carries both Swim Pace (average) and Stroke Rate (average) and
-                            // rendered as one meaningless entry.
                             Text {
                                 width: 56
                                 anchors.verticalCenter: parent.verticalCenter
@@ -760,9 +825,6 @@ Flickable {
                                         font.pixelSize: Theme.fontSizeBody
                                     }
                                 }
-                                // Only the bottom row can hold more than one value, and the
-                                // wearer steps through them with a button - automatically
-                                // only when the mode's own autoscroll is on (André).
                                 Text {
                                     visible: fieldRow.modelData.isMultiValue === true
                                     text: qsTr("%1 values - press to step through")
@@ -776,9 +838,6 @@ Flickable {
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: qsTr("Change")
                                 onClicked: {
-                                    // The picker needs the row's full context, not just
-                                    // which row: what may go on it depends on the mode's
-                                    // sport, the display's type and which row it is.
                                     dataPicker.displayIndex = root.currentDisplayIndex
                                     dataPicker.fieldIndex = fieldRow.index
                                     dataPicker.activityId = root.selectedMode
@@ -803,11 +862,55 @@ Flickable {
         }
     }
 
+    // Layout picker - one dialog for "change this display's layout" and "add a display",
+    // since André's design makes them the same gesture.
+    LayoutPickerDialog {
+        id: layoutPicker
+        types: root.displayTypes
+        currentTemplateId: {
+            const list = root.stagedDisplays()
+            const at = layoutPicker.displayIndex
+            return (at >= 0 && at < list.length) ? list[at].templateId : -1
+        }
+        anchors.centerIn: Overlay.overlay
+
+        onLayoutChosen: (displayIndex, typeKey) => {
+            if (displayIndex >= 0) {
+                root.stageEdit({ "op": "setType", "display": displayIndex, "type": typeKey })
+                root.currentDisplayIndex = displayIndex
+                return
+            }
+            // Adding. The ceiling is checked against the STAGED count, so two staged adds
+            // cannot overshoot it, and the message is the one André asked for.
+            if (root.stagedDisplays().length >= root.maxDisplays) {
+                maxDisplaysNotice.open()
+                return
+            }
+            root.stageEdit({ "op": "add", "type": typeKey })
+            root.currentDisplayIndex = root.stagedDisplays().length - 1
+        }
+    }
+
+    ThemedDialog {
+        id: maxDisplaysNotice
+        title: qsTr("Max 8 screens")
+        standardButtons: Dialog.Ok
+        anchors.centerIn: Overlay.overlay
+        contentItem: Text {
+            text: qsTr("This watch holds at most %1 displays per sport mode. " +
+                        "Remove one before adding another.").arg(root.maxDisplays)
+            wrapMode: Text.WordWrap
+            color: Theme.text
+            font.pixelSize: Theme.fontSizeBody
+        }
+    }
+
     DataPickerDialog {
         id: dataPicker
         modeName: root.selectedMode ? root.selectedMode.name : ""
         modeIndex: root.selectedModeIndex
         hasPendingEdits: root.hasPendingEdits
+        appCount: root.selectedMode ? (root.selectedMode.appCount || 0) : 0
         anchors.centerIn: Overlay.overlay
 
         // Staged, not written - one Save means one region write, the same as every other

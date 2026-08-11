@@ -246,7 +246,7 @@ FIELD_TYPES = {
 # the real enum name's own formatting for those instead of guessing new meaning.
 FIELD_TYPE_LABELS = {
     "FT_SHORTCUT": "Shortcut", "FT_TIME": "Time", "FT_TIME_SEC": "Time (with seconds)",
-    "FT_DATE": "Date", "FT_WEEKDAY": "Weekday", "FT_TIMER": "Timer", "FT_ALTI": "Altitude",
+    "FT_DATE": "Date", "FT_WEEKDAY": "Weekday", "FT_TIMER": "Chrono", "FT_ALTI": "Altitude",
     "FT_BARO": "Barometric Pressure", "FT_COMPASS": "Compass Heading",
     "FT_HEART_RATE_AVG": "Heart Rate (average)", "FT_DISTANCE": "Distance",
     "FT_VELOCITY": "Speed", "FT_AVGSPEED": "Speed (average)", "FT_TEMPERATURE": "Temperature",
@@ -812,6 +812,11 @@ def to_json(result):
         modes.append({
             "name": s.get("Name"),
             "activityId": s.get("ActivityID"),
+            # How many Suunto Apps this mode has installed. A UI needs it to enforce the
+            # per-mode ceiling SuuntoLink's own getMaxSuuntoApps() reports (5 for this watch
+            # family, confirmed from its module and independently by André's Running2 having
+            # exactly 5 rules referenced as field ids 51/52/53/107/108).
+            "appCount": len(mode.get("Rules") or []),
             "customModeId": s.get("CustomModeID"),
             "useHw": s.get("UseHw"),
             "altiBaroMode": s.get("AltiBaroMode"),

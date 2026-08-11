@@ -67,6 +67,7 @@ void CustomModesService::refresh()
             QVariantMap row;
             row[QStringLiteral("name")] = mode.value(QStringLiteral("name")).toString();
             row[QStringLiteral("activityId")] = mode.value(QStringLiteral("activityId")).toInt();
+            row[QStringLiteral("appCount")] = mode.value(QStringLiteral("appCount")).toInt();
             row[QStringLiteral("useHw")] = mode.value(QStringLiteral("useHw")).toInt();
             row[QStringLiteral("autolap")] = mode.value(QStringLiteral("autolap")).toInt();
             row[QStringLiteral("hrHigh")] = mode.value(QStringLiteral("hrHigh")).toInt();

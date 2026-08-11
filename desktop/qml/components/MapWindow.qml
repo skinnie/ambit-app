@@ -14,14 +14,13 @@ import AmbitApp
 // Panning moves MapView's own panX/panY rather than its latitude/longitude, so the track and
 // markers move with the tiles - see MapView's own comment on why that is the single right
 // place for it.
-Dialog {
+ThemedDialog {
     id: root
 
     property var trackPoints: []
     property var markers: []
     property string trackTitle: ""
 
-    modal: true
     title: trackTitle.length > 0 ? trackTitle : qsTr("Map")
     standardButtons: Dialog.Close
     width: Math.min(900, parent ? parent.width - Theme.spacingLarge * 2 : 900)
