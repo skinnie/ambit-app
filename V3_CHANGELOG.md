@@ -7,7 +7,47 @@ they land, on the way to what André/Vincent have been calling "V3": wireless sy
 
 ---
 
-## 2026-08-11: desktop BLE reaches the actual UI - written, NOT yet compiled/tested
+## 2026-08-11: Garmin eTrex manuals linked, new SUPPORTED_DEVICES.md - written, NOT yet compiled/tested
+
+- **Garmin manual links** (André added the two real eTrex guide PDFs to `manualslinks`):
+  `GarminService.model`/`GarminModule`'s model field is free text off the watch's own
+  `GarminDevice.xml` (e.g. "eTrex 30", "eTrex 32x"), not a codename, and Garmin's own manual
+  pages group several models under one guide each - so this matches by family ("22x"/"32x"
+  substring -> the eTrex22x-32x guide, everything else in the 10/20/30 generation -> the
+  eTrex_10_20x_30x guide) rather than an exact key. Desktop: `HomeViewModel.garminManualUrl`
+  + a new Manual field on the Garmin info row in `HomePage.qml`. Android:
+  `garminManualUrlFor()` in `config/manuals.ts` + a manual row on the Garmin device card in
+  `HomeScreen.tsx`.
+- **New `SUPPORTED_DEVICES.md`**: every device this project targets (all 11 Suunto
+  codenames + the two Garmin eTrex manual families), its manual link, and how the family
+  match works - one place to check instead of re-deriving it from `_modelNames`/
+  `manualslinks` each time.
+- **Not yet built or hardware-tested** - PROJECT_RULES.md rule 4 (never compile without
+  asking).
+
+## 2026-08-11: per-device manual links + Home info layout - written, NOT yet compiled/tested
+
+- **Device -> manual correlation**: new `manualslinks` at the repo root (Suunto's own
+  ns.suunto.com Userguides PDF per model), mapped onto this project's existing codename
+  table (`_modelNames` in `HomeViewModel.qml` / `SUUNTO_PID_NAMES` on Android) - one entry
+  per supported device (Ambit, Ambit2/S/R, Ambit3 Peak/Sport/Run/Vertical, Traverse,
+  Traverse Alpha, Kailash). Desktop: `HomeViewModel._manualUrls`/`manualUrl`. Android: new
+  `android/src/config/manuals.ts` (`manualUrlFor()`), same table.
+- **Desktop HomePage.qml**: the two Ambit3 info `Row`s became one `GridLayout` (André:
+  "move clock up, and put the manual next to hardware") - Clock moved up next to
+  Battery/Firmware, a new Manual link sits next to Hardware, GPS orbit kept its own row
+  rather than being dropped. Exact target screenshot (`Screenshot from 2026-08-11
+  19-48-07.png`) wasn't found on disk to check pixel-for-pixel - this is a reasonable
+  read of "move clock up"/"manual next to hardware" pending André's visual confirm.
+- **Android HomeScreen.tsx**: a "View manual (PDF)" row added to the Ambit device card,
+  next to the existing Sync time row (`homeManualLink` i18n key, EN+FR) - Android's info
+  card never had the desktop's Serial/Hardware/Clock row layout to begin with, so this is
+  parity on function (a manual link exists), not a pixel-identical port of the desktop
+  rearrangement.
+- **Not yet built or hardware-tested** - PROJECT_RULES.md rule 4 (never compile without
+  asking).
+
+## 2026-08-11: desktop BLE reaches the actual UI - CONFIRMED WORKING END TO END
 
 - **New "Connect via Bluetooth" button + passkey dialog on HomePage.qml**, backed by new
   `DeviceService` properties/methods (`connectBle()`/`disconnectBle()`/`submitBlePasskey()`,
@@ -18,8 +58,14 @@ they land, on the way to what André/Vincent have been calling "V3": wireless sy
   (used to, up to 25s) - a fresh pairing's passkey relay needs longer than that in the
   general case, so the client now polls status itself instead.
 - New `POST /api/ble/passkey` endpoint.
-- **Not yet built or hardware-tested** - PROJECT_RULES.md rule 4 (never compile without
-  asking). See `HANDOFF.md` Milestone 7 item 18.
+- **Built clean on the first try, then confirmed live**: André paired a fresh Ambit3
+  through the app's own dialog - screenshot shows `Suunto Ambit 3 Peak, Connected`,
+  battery 100%, firmware 2.4.17, hardware 70.2.17414, serial 1849100781. Three more real
+  bugs fixed along the way, found only by testing this live: a startup-timing race in
+  `/api/ble/connect`'s status reporting, an orphaned daemon process silently blocking new
+  connect attempts from binding the control socket, and a stale pairing-agent log message
+  still saying "NoInputNoOutput" after item 16 switched to "KeyboardDisplay". See
+  `HANDOFF.md` Milestone 7 item 18.
 
 ## 2026-08-11: desktop BLE - activity-log transport proven (first request of three)
 
