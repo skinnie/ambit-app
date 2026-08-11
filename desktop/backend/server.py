@@ -245,7 +245,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(200, {"ok": True})
         elif self.path == "/api/nav":
             self._handle_nav()
-        elif self.path == "/api/activities":
+        elif self.path == "/api/activities" or self.path.startswith("/api/activities?"):
             self._handle_activities()
         elif self.path == "/api/pois":
             self._handle_pois_read()
