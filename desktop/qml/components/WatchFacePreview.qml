@@ -62,8 +62,7 @@ Item {
                     // a small number.
                     Rectangle {
                         anchors.fill: parent
-                        anchors.margins: -2
-                        radius: 4
+                        radius: height / 2
                         visible: root.rowsClickable && rowHover.hovered
                         color: Theme.primary
                         opacity: 0.16
@@ -120,8 +119,7 @@ Item {
                 // The graph ZONE is the target for the graphed value, and it looks like one.
                 Rectangle {
                     anchors.fill: parent
-                    anchors.margins: -2
-                    radius: 4
+                    radius: height / 2
                     visible: root.rowsClickable && graphAreaHover.hovered
                     color: Theme.primary
                     opacity: 0.16
@@ -169,8 +167,7 @@ Item {
                 height: graphRowNumber.implicitHeight
                 Rectangle {
                     anchors.fill: parent
-                    anchors.margins: -2
-                    radius: 4
+                    radius: height / 2
                     visible: root.rowsClickable && graphHover.hovered
                     color: Theme.primary
                     opacity: 0.16

@@ -320,7 +320,69 @@ Flickable {
             context: qsTr("reading or writing sport modes")
         }
 
-        // A section header carrying its own usage, matching the Multisport one below -
+        // Multisport modes live in the SPORT_MODE slots rather than the exercise modes, and
+        // have no displays of their own: a multisport mode is an ORDERED list of other modes.
+        // Same shape as the sport modes below - a plain header carrying the usage, then one
+        // card per mode - at André's request, 2026-08-11: "make the multisport similar as sport
+        // modes, in a separate part from triathlon".
+        Row {
+            width: parent.width
+            spacing: Theme.spacingSmall
+            visible: root.deviceMaxMultisport > 0
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                text: qsTr("Multisport")
+                color: Theme.text
+                font.pixelSize: Theme.fontSizeBodyLarge
+                font.bold: true
+            }
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                text: qsTr("%1/%2 used").arg(CustomModesService.multisportModes.length)
+                                        .arg(root.deviceMaxMultisport)
+                color: CustomModesService.multisportModes.length >= root.deviceMaxMultisport
+                       ? Theme.error : Theme.mutedText
+                font.pixelSize: Theme.fontSizeBody
+            }
+        }
+
+        Repeater {
+            model: CustomModesService.multisportModes
+            delegate: Card {
+                id: msCard
+                required property var modelData
+                width: listColumn.width
+
+                Row {
+                    width: parent.width
+                    spacing: Theme.spacingMedium
+
+                    ActivityBadge {
+                        anchors.verticalCenter: parent.verticalCenter
+                        activityId: msCard.modelData.activityId
+                        size: 36
+                    }
+                    Column {
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: parent.width - 36 - Theme.spacingMedium * 2 - 20
+                        spacing: 2
+                        Text {
+                            text: msCard.modelData.name
+                            font.bold: true
+                            color: Theme.text
+                        }
+                        Text {
+                            text: qsTr("%1 sport modes").arg(msCard.modelData.legNames.length)
+                            color: Theme.mutedText
+                            font.pixelSize: Theme.fontSizeCaption
+                        }
+                    }
+                }
+            }
+        }
+
+
+        // A section header carrying its own usage, matching the Multisport one above -
         // André, 2026-08-11: "pass the sport modes 10/10 used to near all the sport
         // modes (similar to triathlon)". Both counts now sit with the list they count
         // instead of in a separate card away from either.
@@ -430,64 +492,6 @@ Flickable {
             }
         }
 
-        // the exercise modes, and have no displays of their own: a multisport mode is an
-        // ORDERED list of other modes, which the watch steps through on a long BACK|LAP
-        // press. Listed separately for that reason rather than mixed in above.
-        Card {
-            width: parent.width
-            visible: root.deviceMaxMultisport > 0
-            Column {
-                width: parent.width
-                spacing: Theme.spacingSmall
-
-                Row {
-                    width: parent.width
-                    spacing: Theme.spacingSmall
-                    Text {
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: qsTr("Multisport")
-                        color: Theme.text
-                        font.pixelSize: Theme.fontSizeBodyLarge
-                        font.bold: true
-                    }
-                    Text {
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: qsTr("%1/%2 used")
-                                .arg(CustomModesService.multisportModes.length)
-                                .arg(root.deviceMaxMultisport)
-                        color: Theme.mutedText
-                        font.pixelSize: Theme.fontSizeBody
-                    }
-                }
-
-                Repeater {
-                    model: CustomModesService.multisportModes
-                    delegate: Column {
-                        id: msRow
-                        required property var modelData
-                        width: parent.width
-                        spacing: 2
-
-                        Row {
-                            spacing: Theme.spacingSmall
-                            ActivityBadge {
-                                anchors.verticalCenter: parent.verticalCenter
-                                activityId: msRow.modelData.activityId
-                                size: 28
-                            }
-                            Text {
-                                anchors.verticalCenter: parent.verticalCenter
-                                text: msRow.modelData.name
-                                color: Theme.text
-                                font.pixelSize: Theme.fontSizeBody
-                                font.bold: true
-                            }
-                        }
-                    }
-                }
-
-            }
-        }
     }
 
     // ============================= DETAIL VIEW ==============================
@@ -1049,7 +1053,7 @@ Flickable {
                         Repeater {
                             model: currentScreenColumn.current
                                    ? currentScreenColumn.current.fields : []
-                            delegate: Rectangle {
+                            delegate: Item {
                                 id: valueLine
                                 required property var modelData
                                 required property int index
@@ -1066,9 +1070,24 @@ Flickable {
                                 width: parent.width
                                 height: hidden ? 0 : valueText.implicitHeight + 8
                                 visible: !hidden
-                                radius: 4
-                                color: lineHover.hovered ? Theme.card : "transparent"
-                                Behavior on color { ColorAnimation { duration: 120 } }
+
+                                // Background only - a SIBLING of the text, not its parent.
+                                // Fading the container would fade the label with it.
+                                //
+                                // Opacity rather than a colour swap: animating
+                                // transparent-to-card is what André saw flicker while
+                                // scrolling in light mode, where Theme.card is nearly the
+                                // page colour anyway. The green tint reads the same in both
+                                // themes and matches the watch face's own row highlight -
+                                // "in the display 1 the selection is a very nice green and
+                                // appears correctly".
+                                Rectangle {
+                                    anchors.fill: parent
+                                    radius: 6
+                                    color: Theme.primary
+                                    opacity: lineHover.hovered ? 0.16 : 0
+                                    Behavior on opacity { NumberAnimation { duration: 120 } }
+                                }
 
                                 Row {
                                     anchors.left: parent.left
@@ -1089,7 +1108,7 @@ Flickable {
                                         anchors.verticalCenter: parent.verticalCenter
                                         text: (valueLine.modelData.values || [])
                                                 .map(v => v.label).join(", ")
-                                        color: lineHover.hovered ? Theme.text : Theme.mutedText
+                                        color: Theme.text
                                         font.pixelSize: Theme.fontSizeBody
                                     }
                                 }
