@@ -152,14 +152,38 @@ FIELD_TYPES = {
     # His Running display 5 is a graph, and a graph stores (value, that value's graph,
     # bottom row) - one pick fills both fields. He picked Running performance.
     0x00AD: "FT_RUNNING_PERFORMANCE", 0x00B0: "FT_RUNNING_PERFORMANCE_GRAPH",
-    # WITHDRAWN 2026-08-11: 0x49/0x4b/0x4d/0x4f were briefly named as the bike-power block by
-    # lining our known 0x4a/0x4c/0x4e/0x50 up against SuuntoLink's own row order. The
-    # interleave was tidy and the captures fitted - but André then read 0x0043 off SuuntoLink
-    # as "Power", which the interleave has no room for. An observation beats a deduction, so
-    # all four are unnamed again until someone reads them off the UI. The lesson is the
-    # familiar one: a pattern that explains the evidence is not the same as evidence.
+    # The power fields, resolved by reading SuuntoLink (André, 2026-08-11) rather than by the
+    # interleave that was tried and withdrawn earlier the same day. His Cycling display 4 is
+    # stored as top 0x4A / centre 0x0043 / bottom [0x004B, 0x4C, 0x004D] and SuuntoLink shows
+    # it as average / Power / [Power 3s, Power 10s, Power 30s]. 0x4A and 0x4C are ids verified
+    # against SuuntoLink's own binary and both land where storage puts them, anchoring the
+    # other three.
+    #
+    # Worth recording what the withdrawn inference got right and wrong, because the shape
+    # recurs: the 3s/30s guesses were correct, and plain Power was not. The pattern was real
+    # but it did not extend as far as it appeared to - 0x0043 sits outside the run entirely,
+    # and 0x0049 turned out to be Current activity avg pace, not a power field at all.
+    0x0043: "FT_BIKE_POWER", 0x004B: "FT_BIKE_POWER_3S", 0x004D: "FT_BIKE_POWER_30S",
+    # 0x002E was the sole value on Run a route display 4's bottom row - no ordering ambiguity
+    # possible - and André read it as Lap time. 0x0049 then falls out by elimination: his
+    # Running display 3 bottom stores [0x47, 0x0049, 0x002E] and SuuntoLink lists that row as
+    # Lap time / Current activity distance / Current activity avg pace, so with 0x47 and
+    # 0x002E both known, only one name is left for 0x0049.
+    0x002E: "FT_LAP_TIME", 0x0049: "FT_SPORT_LAP_AVG_PACE",
+    # Sole values on the top and centre rows of his Run a route display 4.
+    0x002F: "FT_LAP_DISTANCE", 0x0030: "FT_LAP_AVG_PACE",
+    # Sole value on Pool swimming display 1's top row AND display 2's top row; André read
+    # both as Distance.
+    0x0053: "FT_SWIM_TOTAL_DISTANCE",
     0x006B: "FT_RULE_ENGINE_3", 0x006C: "FT_RULE_ENGINE_4",
     0x006E: "FT_RULE_ENGINE_1_GRAPH", 0x0070: "FT_RULE_ENGINE_3_GRAPH",
+    # UNCERTAIN, 2026-08-11: 0x57's name is a coin-flip and should not be trusted by a UI
+    # yet. André's Pool swimming display 2 bottom row stores [0x58, 0x0059, 0x57] and
+    # SuuntoLink shows it as {average swim pace, average stroke rate, average SWOLF}. 0x58 is
+    # verified as FT_SWIM_AVG_PACE, so the remaining two names belong to 0x0059 and 0x57 -
+    # but WHICH way round is unresolved, because SuuntoLink demonstrably does not always list
+    # a multi-value row in stored order (proven on Pool swimming display 1). 0x47 is
+    # unaffected; it was confirmed separately against a real Openwater swim screen.
     0x0047: "FT_SPORT_LAP_DISTANCE", 0x0057: "FT_SWIM_AVG_STROKE_RATE",
     0x005A: "FT_SWIM_LAP_DISTANCE", 0x005C: "FT_SWIM_LAP_RATE", 0x005E: "FT_SWIM_LAP_SWOLF",
     0x0060: "FT_SWIM_POOL_STROKES", 0x0062: "FT_SWIM_POOL_PACE", 0x0064: "FT_SWIM_INT_TIME",
@@ -217,7 +241,13 @@ FIELD_TYPE_LABELS = {
     "FT_RULE_ENGINE_0": "Suunto App Slot 1", "FT_RULE_ENGINE_1": "Suunto App Slot 2",
     "FT_RULE_ENGINE_2": "Suunto App Slot 3",
     "FT_VERTICAL_SPEED": "Vertical speed", "FT_ASCENT": "Ascent", "FT_DESCENT": "Descent",
-    "FT_LAP_NUMBER": "Lap number", "FT_RUNNING_PERFORMANCE": "Running performance",
+    "FT_LAP_NUMBER": "Lap number", "FT_LAP_TIME": "Lap time",
+    "FT_LAP_DISTANCE": "Lap distance", "FT_LAP_AVG_PACE": "Lap avg pace",
+    "FT_BIKE_POWER": "Power", "FT_BIKE_POWER_3S": "Power 3s",
+    "FT_BIKE_POWER_30S": "Power 30s",
+    "FT_SPORT_LAP_AVG_PACE": "Current activity avg pace",
+    "FT_SWIM_TOTAL_DISTANCE": "Distance",
+    "FT_RUNNING_PERFORMANCE": "Running performance",
     "FT_RUNNING_PERFORMANCE_GRAPH": "Running performance (graph)",
     "FT_RULE_ENGINE_3": "Suunto App Slot 4", "FT_RULE_ENGINE_4": "Suunto App Slot 5",
     "FT_RULE_ENGINE_1_GRAPH": "Suunto App Slot 2 (graph)",
