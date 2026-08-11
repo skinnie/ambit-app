@@ -5,7 +5,7 @@ import AmbitApp
 
 // Step 4: real device-hero layout. Step 5 adds real weather. Last Activity made real
 // 2026-08-07 once ActivityService actually worked - see its own card comment below.
-Flickable {
+PageFlickable {
     id: root
     contentWidth: width
     contentHeight: column.height + Theme.spacingLarge * 2

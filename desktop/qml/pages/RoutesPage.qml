@@ -7,7 +7,7 @@ import AmbitApp
 // Import/Upload flow. "Drag & Drop GPX" stays future per the spec itself; a file picker
 // covers Import GPX for real today. Export (real, 2026-08-07 - see RouteService's own header
 // comment) opens a real save dialog per route, defaulting to the Downloads folder.
-Flickable {
+PageFlickable {
     id: root
     contentWidth: width
     contentHeight: column.height + Theme.spacingLarge * 2

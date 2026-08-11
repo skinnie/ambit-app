@@ -22,7 +22,7 @@ import AmbitApp
 // alongside the existing field-type list. Adapted from SuuntoLink's own one-screen-at-a-
 // time mobile paging to a horizontal filmstrip - the same real information and actions,
 // fitted to this app's much wider desktop layout rather than a literal phone-screen clone.
-Flickable {
+PageFlickable {
     id: root
     contentWidth: width
     contentHeight: (root.selectedMode ? detailColumn.height : listColumn.height) + Theme.spacingLarge * 2

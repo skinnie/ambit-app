@@ -72,6 +72,7 @@ qt_add_qml_module(ambitapp
         qml/Icons.qml
         qml/ActivityTypes.qml
         qml/components/Card.qml
+        qml/components/PageFlickable.qml
         qml/components/ErrorBanner.qml
         qml/components/MapWindow.qml
         qml/components/LayoutPickerDialog.qml

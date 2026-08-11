@@ -81,7 +81,7 @@ ThemedDialog {
             rowChosen(displayIndex, rowName, selected)
     }
 
-    Flickable {
+    PageFlickable {
         anchors.fill: parent
         contentWidth: width
         contentHeight: contentColumn.height

@@ -9,7 +9,7 @@ import AmbitApp
 // (POI write isn't in this repo's tools/write_nav.py yet, confirmed separately as working
 // elsewhere - see HANDOFF.md's POI section) - the form itself, and the map preview, are
 // still real.
-Flickable {
+PageFlickable {
     id: root
     contentWidth: width
     contentHeight: column.height + Theme.spacingLarge * 2

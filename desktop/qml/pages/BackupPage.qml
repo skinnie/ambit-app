@@ -9,7 +9,7 @@ import AmbitApp
 // covered by this mechanism, which only ever touched routes/waypoints - not simulated.
 // Garmin backup (real, 2026-08-08) is a genuinely different, simpler mechanism - a plain
 // file copy, not this flash-region save/restore - see its own Card below.
-Flickable {
+PageFlickable {
     id: root
     contentWidth: width
     contentHeight: column.height + Theme.spacingLarge * 2

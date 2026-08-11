@@ -7,7 +7,7 @@ import AmbitApp
 // first actual UI consumer of WeatherService's own settable latitude/longitude (built in
 // Step 5 specifically so a location source could be swapped "without UI modifications" -
 // this is that promise being kept, not a new mechanism).
-Flickable {
+PageFlickable {
     id: root
     contentWidth: width
     contentHeight: column.height + Theme.spacingLarge * 2

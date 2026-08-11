@@ -8,7 +8,7 @@ import AmbitApp
 // tools/packaging/README.md) - this is just the launcher, matching IntervalsService's own
 // "launch the other real app" scope. Suunto-only (App-Zone compiling is an Ambit3 mechanism,
 // no Garmin equivalent), same as NavRail's own visibility rule for this entry.
-Flickable {
+PageFlickable {
     id: root
     contentWidth: width
     contentHeight: column.height + Theme.spacingLarge * 2
