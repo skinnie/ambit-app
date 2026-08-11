@@ -674,6 +674,18 @@ PageFlickable {
                     id: funFactCard
                     width: parent.width
                     visible: factText.length > 0
+                    // Bottom-aligned with the weather card - André, 2026-08-12, after
+                    // checking the edges: tops matched, bottoms were 16px off. The fact
+                    // card absorbs the difference (it's the flexible one - a stretched
+                    // stats card looked wrong, that was the rejected equal-height
+                    // experiment); natural height when stacked single-column or when
+                    // either neighbour is missing.
+                    height: column.twoColumn && thisYearCard.visible
+                            && WeatherService.hasFetchedOnce
+                        ? Math.max(implicitHeight,
+                                   weatherCard.height - thisYearCard.height
+                                   - Theme.spacingMedium)
+                        : implicitHeight
 
                     property string factText: ""
 
