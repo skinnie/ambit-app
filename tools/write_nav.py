@@ -186,9 +186,13 @@ class Link:
                         f"no {PRODUCT_IDS[self.product_id]} on the USB bus (looked only for "
                         f"product_id 0x{self.product_id:04x} - other Suunto watches may still "
                         "be connected). Check the cable and that `lsusb` lists it.")
+                # "Suunto watch", not "Ambit3": PRODUCT_IDS spans the whole supported
+                # family (Ambit/Ambit2/Ambit3/Traverse/Kailash), and André hit this
+                # message mid-watch-swap on 2026-08-12 reading it as "the app is still
+                # looking for the Ambit" while his Kailash was the one plugged in.
                 raise RuntimeError(
-                    "no Ambit3 on the USB bus. Check the cable, then that `lsusb` lists "
-                    "a device whose id starts with 1493:")
+                    "no supported Suunto watch on the USB bus. Check the cable, then "
+                    "that `lsusb` lists a device whose id starts with 1493:")
             failures = []
             for entry, label in found:
                 try:
@@ -201,7 +205,7 @@ class Link:
             if attempt < attempts:
                 time.sleep(delay_s)
         raise RuntimeError(
-            f"{len(failures)} Ambit3 on the USB bus, still not openable after {attempts} "
+            f"{len(failures)} Suunto watch(es) on the USB bus, still not openable after {attempts} "
             f"tries over {attempts * delay_s:.1f}s (past the usual reconnect race). "
             "Check with:\n"
             "    lsusb | grep 1493   # confirm the device and its bus/device numbers\n"
