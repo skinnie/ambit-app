@@ -240,13 +240,10 @@ Flickable {
                     text: qsTr("Reading settings off the watch...")
                 }
 
-                Text {
-                    visible: !SettingsWriteService.ok && SettingsWriteService.lastError.length > 0
+                ErrorBanner {
                     width: parent.width
-                    wrapMode: Text.WordWrap
-                    color: Theme.error
-                    font.pixelSize: Theme.fontSizeLabel
-                    text: SettingsWriteService.lastError
+                    detail: SettingsWriteService.ok ? "" : SettingsWriteService.lastError
+                    context: qsTr("reading or writing watch settings")
                 }
 
                 // --- Orbital data - real, 2026-08-10 (André: "let's enable by default for

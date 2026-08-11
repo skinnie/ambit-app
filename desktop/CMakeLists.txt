@@ -72,6 +72,7 @@ qt_add_qml_module(ambitapp
         qml/Icons.qml
         qml/ActivityTypes.qml
         qml/components/Card.qml
+        qml/components/ErrorBanner.qml
         qml/components/Icon.qml
         qml/components/RoundedComboBox.qml
         qml/components/RoundedButton.qml
@@ -110,6 +111,8 @@ qt_add_qml_module(ambitapp
     SOURCES
         src/services/deviceservice.h
         src/services/deviceservice.cpp
+        src/services/logservice.h
+        src/services/logservice.cpp
         src/services/weatherservice.h
         src/services/weatherservice.cpp
         src/services/activityservice.h

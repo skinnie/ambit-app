@@ -214,13 +214,10 @@ Flickable {
             text: qsTr("Reading sport modes off the watch...")
         }
 
-        Text {
-            visible: !CustomModesService.ok && CustomModesService.lastError.length > 0
+        ErrorBanner {
             width: parent.width
-            wrapMode: Text.WordWrap
-            color: Theme.error
-            font.pixelSize: Theme.fontSizeLabel
-            text: CustomModesService.lastError
+            detail: CustomModesService.ok ? "" : CustomModesService.lastError
+            context: qsTr("reading or writing sport modes")
         }
 
         Repeater {
