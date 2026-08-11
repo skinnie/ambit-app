@@ -73,7 +73,16 @@ QtObject {
     readonly property color _darkWarning: "#E0A73B"
     readonly property color _darkError: "#E0655A"
     readonly property color _darkText: "#E9EBEE"
-    readonly property color _darkMutedText: "#9AA3AF"
+    // Real, 2026-08-11 (André, S2: "on dark mode, POIs and Routes are grey, we already fight
+    // that on android app, we need a more visible color, without hurting the eyes"). Was
+    // #9AA3AF. That measures 6.5:1 against the dark card, which passes on paper - but this
+    // colour carries the CAPTION text (a route's "128.7 km · 852 points · ascent 530 m"),
+    // and at that size antialiasing drags the rendered pixels down to about L=151, well
+    // under what the number promises. Measured off a real dark-mode screenshot rather than
+    // computed. #B4BDC9 lifts it to 8.7:1 and stays a soft grey-blue rather than white, so
+    // nothing glares. The Android theme carries the SAME value (android/src/theme/v3.ts) -
+    // changed in both, per his "we need to mutualize on android and here".
+    readonly property color _darkMutedText: "#B4BDC9"
 
     readonly property color background: isDark ? _darkBackground : _lightBackground
     readonly property color card: isDark ? _darkCard : _lightCard

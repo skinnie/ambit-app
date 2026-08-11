@@ -364,7 +364,18 @@ AMBIT3_DISPLAY = {
     "activity_level":         {"label": "Activity class", "control": "dropdown",
                                "scale": 10, "decimals": 1, "step": 1.0},
     # --- Not on any SuuntoLink settings screen ---
-    "display_contrast":       {"label": "Display contrast", "control": "readonly"},
+    # Read-only, and checked again 2026-08-11 when André asked for a 5-100% slider. There is
+    # no write path to invent one from: the field appears in NONE of the 134 captured 0x1101
+    # writes, so no screen template carries it; SuuntoLink 4.1.15 has no contrast control at
+    # all (no TXT_*CONTRAST* string in its translations, and "Contrast" appears only in the
+    # generic ServiceAdapter.xml device schema, never in a UI file); and André himself said
+    # on 2026-08-09 that he believed contrast is only changed on the watch. Building a slider
+    # would mean guessing a template - the same class of guess that wrote GpsPositionFormat
+    # 15 and forced a factory reset. Shown with the note below instead, which tells the user
+    # where the setting actually lives.
+    "display_contrast":       {"label": "Display contrast", "control": "readonly",
+                               "note": "Changed on the watch itself: Settings > General > "
+                                       "Display > Contrast. No app can write it."},
     # Real: Settings.UseTrainingProgram, "Training plan source (0 - off, 1 - Manual from
     # MovesCount)" per ServiceAdapter.xml's own comment. It rides in EVERY write template
     # (like Pods) because it is part of the common tail, not because it is a General
@@ -378,6 +389,33 @@ AMBIT3_DISPLAY = {
 # Where SuuntoLink's own label for a choice differs from the firmware descriptor's. The
 # descriptor stays the authority on which values are LEGAL (see _validate_new_value); this
 # only changes how they are shown. Keyed by the same schema-path suffix as AMBIT3_SETTINGS.
+# Numeric fields SuuntoLink shows as a dropdown rather than a slider, with the exact values
+# it offers and its own wording. Values are in DISPLAY units (what the user sees and what
+# settings_write takes for a scaled field), not raw.
+#
+# Activity class: taken from SuuntoLink's own ui/activity_level.js and translations/en.json -
+# it offers 2..10 with half steps above 7 (TXT_ACTIVITY_CLASS_7_5_EXERCISE_LEVEL and
+# friends) and each value carries an exercise-per-week description. Note it does NOT offer 1,
+# even though this watch's descriptor allows it: the descriptor stays the authority on what
+# is legal, this table only decides what is offered. A watch already sitting on a value not
+# listed here keeps it visible - see the caller.
+AMBIT3_NUMERIC_CHOICES = {
+    "Personal.ActivityLevel": [
+        (2.0, "2 - less than 1 hour"),
+        (3.0, "3 - more than 1 hour"),
+        (4.0, "4 - under 30 minutes per week"),
+        (5.0, "5 - 30-60 minutes per week"),
+        (6.0, "6 - 1-3 hours per week"),
+        (7.0, "7 - over 3 hours per week"),
+        (7.5, "7.5 - 5-7 hours"),
+        (8.0, "8 - 7-9 hours"),
+        (8.5, "8.5 - 9-11 hours"),
+        (9.0, "9 - 11-13 hours"),
+        (9.5, "9.5 - 13-15 hours"),
+        (10.0, "10 - over 15 hours"),
+    ],
+}
+
 AMBIT3_CHOICE_LABELS = {
     "Time.GPSTimeKeeping": {0: "On", 1: "Off"},        # descriptor says "true"/"false"
     "Units.Orientation":   {0: "Heading up", 1: "North up"},  # descriptor: "HeadingUp"/"Orientation"
@@ -705,7 +743,48 @@ def read_all(payload, descriptor, product_id=None):
                 if overrides:
                     entry["choices"] = [[v, overrides.get(v, lbl)]
                                         for v, lbl in entry["choices"]]
+            # A numeric field SuuntoLink renders as a dropdown needs a list to show. Real
+            # bug, 2026-08-11 (André, S3): activity class came back control="dropdown",
+            # kind="number", min/max and NO choices - so the UI opened an empty menu. The
+            # values are in DISPLAY units, which is what the writer takes for a scaled
+            # field, and the UI commits the chosen value straight through.
+            if entry.get("control") == "dropdown" and not entry.get("choices"):
+                listed = AMBIT3_NUMERIC_CHOICES.get(suffix)
+                if listed:
+                    choices = [[v, lbl] for v, lbl in listed]
+                    # Never hide what the watch actually holds: if it is on a value
+                    # SuuntoLink does not offer, show that too rather than an empty box.
+                    current = entry.get("value")
+                    if current is not None and all(v != current for v, _ in choices):
+                        choices.append([current, str(current)])
+                        choices.sort(key=lambda pair: pair[0])
+                    entry["choices"] = choices
         out[key] = entry
+
+    # Real, 2026-08-11 (André, S1): the seven unit-system fields are NOT freely editable -
+    # under Metric or Imperial the watch owns them and overwrites anything set individually
+    # (established across all seven unit captures; see the AMBIT3_SETTINGS comment and
+    # _refuse_forced_unit). write_one() already refuses such a write; reporting them here as
+    # writable was the same claim in the opposite direction, and a UI built on it offered an
+    # edit that could not stick.
+    #
+    # Marked here rather than in each UI so the desktop app and the Android app get it from
+    # one place. The four format fields - date, time, heart rate, compass - are deliberately
+    # untouched: they are genuinely free in every mode.
+    mode_entry = out.get("units_mode")
+    if product_id != KAILASH_PRODUCT_ID and isinstance(mode_entry, dict):
+        mode = mode_entry.get("value")
+        if mode in (0, 1):
+            for key in _MODE_OWNED_UNITS:
+                entry = out.get(key)
+                if not isinstance(entry, dict) or not entry.get("ok", True):
+                    continue
+                entry["writable"] = False
+                entry["lockedBy"] = "units_mode"
+                entry["note"] = (
+                    f"Set by the {_UNITS_MODE_NAMES.get(mode, mode)} units mode. "
+                    f"Choose Advanced to set this one on its own.")
+
     return {"ok": True, "settings": out}
 
 

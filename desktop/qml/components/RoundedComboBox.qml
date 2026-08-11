@@ -91,7 +91,16 @@ ComboBox {
             elide: Text.ElideRight
             verticalAlignment: Text.AlignVCenter
         }
+        // Real bug, 2026-08-11 (André, S5): this was a square Rectangle filling the whole
+        // delegate, so on the FIRST and LAST rows its corners stuck out past the popup's own
+        // rounded border and the selection read as a rectangle pasted onto a rounded box.
+        // Rounding the highlight and insetting it by the border width keeps it inside the
+        // popup's shape on every row - no clipping or layer effect needed, which matters on
+        // this project's old hardware.
         background: Rectangle {
+            anchors.fill: parent
+            anchors.margins: 2
+            radius: Theme.radiusCard
             color: highlighted ? Theme.primary + "26" : "transparent"
         }
     }

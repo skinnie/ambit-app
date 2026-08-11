@@ -610,6 +610,21 @@ Flickable {
                             color: Theme.mutedText
                             font.pixelSize: Theme.fontSizeBody
                         }
+
+                        // Why a field is not editable, when the backend can say. A row that
+                        // is simply greyed out reads as broken; one that says the units mode
+                        // owns it, and how to take it back, reads as the watch's own rule -
+                        // which it is.
+                        Text {
+                            visible: !settingRow.editable
+                                     && settingRow.item.note !== undefined
+                                     && settingRow.item.note.length > 0
+                            width: parent.width
+                            wrapMode: Text.WordWrap
+                            text: settingRow.item.note ? settingRow.item.note : ""
+                            color: Theme.mutedText
+                            font.pixelSize: Theme.fontSizeCaption
+                        }
                     }
                         }
                     }

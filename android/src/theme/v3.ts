@@ -53,7 +53,11 @@ export const v3Dark: V3Colors = {
   warning:    '#E0A73B',
   error:      '#E0655A',
   text:       '#E9EBEE',
-  mutedText:  '#9AA3AF',
+  // 2026-08-11 (André, S2): was #9AA3AF, which measures 6.5:1 on the dark card but is the
+  // colour caption text uses - at that size antialiasing renders it noticeably dimmer than
+  // the number suggests. #B4BDC9 is 8.7:1 and still a soft grey-blue, not white. Kept
+  // identical to desktop/qml/Theme.qml's _darkMutedText on purpose.
+  mutedText:  '#B4BDC9',
 };
 
 // Theme.qml's spacingSmall/Medium/Large and radiusSmall/radiusCard, unchanged.
