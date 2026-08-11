@@ -85,8 +85,16 @@ PageFlickable {
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.top: parent.top
         anchors.topMargin: Theme.spacingLarge
-        width: 480
+        // 2026-08-11 designer pass (André: "act like a designer, audit this home page").
+        // The fixed 480px column left more than half of a 1200px window blank - a hero
+        // page on a desktop earns its width. First cut went to 940 and André's verdict
+        // was "too noisy"; 800 keeps the two-column row and the breathing room without
+        // the sprawl. Floored so a small window still gets the old single-column look.
+        width: Math.max(480, Math.min(parent.width - Theme.spacingLarge * 2, 800))
         spacing: Theme.spacingMedium
+        // Weather and This-year sit side by side only when both get a card of honest
+        // width; below that they stack, and nothing else changes.
+        readonly property bool twoColumn: width >= 760
 
         // Testing mode is deliberately loud: a sample watch that looks like a real one is
         // only useful if it can never be mistaken for one.
@@ -259,11 +267,39 @@ PageFlickable {
                     rowSpacing: Theme.spacingLarge
 
                     Column {
+                        Layout.fillWidth: true
                         spacing: 2
                         Text { text: qsTr("Battery"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
-                        Text { text: HomeViewModel.batteryText; color: Theme.text; font.pixelSize: Theme.fontSizeBody }
+                        Row {
+                            spacing: Theme.spacingSmall
+                            Text { text: HomeViewModel.batteryText; color: Theme.text; font.pixelSize: Theme.fontSizeBody }
+                            // 2026-08-11 designer pass: a number is read, a gauge is seen.
+                            // Green above 30%, amber to 15%, red below - the same instinct
+                            // every phone's status bar has already trained.
+                            Rectangle {
+                                visible: DeviceService.deviceInfoOk && DeviceService.batteryPercent >= 0
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 34; height: 8; radius: 4
+                                color: Theme.background
+                                border.width: 1
+                                border.color: Theme.mutedText
+                                Rectangle {
+                                    anchors.left: parent.left
+                                    anchors.top: parent.top
+                                    anchors.bottom: parent.bottom
+                                    anchors.margins: 1.5
+                                    radius: 3
+                                    width: Math.max(3, (parent.width - 3)
+                                                        * DeviceService.batteryPercent / 100)
+                                    color: DeviceService.batteryPercent > 30 ? Theme.success
+                                         : DeviceService.batteryPercent > 15 ? Theme.warning
+                                         : Theme.error
+                                }
+                            }
+                        }
                     }
                     Column {
+                        Layout.fillWidth: true
                         spacing: 2
                         Text { text: qsTr("Firmware"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
                         Text { text: HomeViewModel.firmwareText; color: Theme.text; font.pixelSize: Theme.fontSizeBody }
@@ -279,6 +315,7 @@ PageFlickable {
                     // watch just from loading this page.
                     Column {
                         Layout.preferredWidth: 110
+                        Layout.fillWidth: true
                         spacing: 2
                         Text { text: qsTr("GPS orbit"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
                         Text {
@@ -311,6 +348,7 @@ PageFlickable {
                     // step at all (always-safe clock set, unlike flash/PMEM writes).
                     Column {
                         Layout.preferredWidth: 110
+                        Layout.fillWidth: true
                         spacing: 2
                         Text { text: qsTr("Clock"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
                         Text {
@@ -354,11 +392,13 @@ PageFlickable {
                     }
 
                     Column {
+                        Layout.fillWidth: true
                         spacing: 2
                         Text { text: qsTr("Serial number"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
                         Text { text: HomeViewModel.serialText; color: Theme.text; font.pixelSize: Theme.fontSizeBody }
                     }
                     Column {
+                        Layout.fillWidth: true
                         spacing: 2
                         Text { text: qsTr("Hardware"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
                         Text { text: HomeViewModel.hardwareText; color: Theme.text; font.pixelSize: Theme.fontSizeBody }
@@ -376,6 +416,7 @@ PageFlickable {
                         // extra 30px only pushed Clock further right (André: "clock could
                         // be a bit closer").
                         Layout.preferredWidth: 110
+                        Layout.fillWidth: true
                         spacing: 2
                         Text { text: qsTr("Manual"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
                         Text {
@@ -466,8 +507,161 @@ PageFlickable {
             }
         }
 
-        // --- Weather (Step 5) - collapses to nothing on its own if unavailable ---
-        WeatherCard {}
+        // --- This year + Weather, side by side when the width is honest (2026-08-11
+        // designer pass). "This year" is the Totals page's headline numbers surfaced where
+        // they get seen every day - and a doorway to that page, which was invisible from
+        // Home before. Weather keeps its own card and all its own logic. ---
+        GridLayout {
+            width: parent.width
+            columns: column.twoColumn ? 2 : 1
+            columnSpacing: Theme.spacingMedium
+            rowSpacing: Theme.spacingMedium
+
+            // Wrapper Items, not bare Cards: both cards bind width to their parent, and a
+            // GridLayout parent would hand them the full grid width - an Item cell sized
+            // by the layout gives them an honest parent to fill.
+            Item {
+                id: thisYearCell
+                Layout.fillWidth: true
+                Layout.alignment: Qt.AlignTop
+                Layout.preferredWidth: 1  // equal shares; real width comes from fillWidth
+                implicitHeight: thisYearCard.height
+                visible: thisYearCard.activityCount > 0
+
+                Card {
+                    id: thisYearCard
+                    width: parent.width
+
+                    // Same per-device source rule as Last Activity below - the year is
+                    // whatever the newest activity's year is, matching TotalsPage's own
+                    // "most recent year with data" default rather than the wall clock, so
+                    // a January visit still shows last year's real story instead of zeros.
+                    readonly property var _activities: HomeViewModel.isKailash
+                        ? (KailashService.trackLogOk ? KailashService.trackLogActivities : [])
+                        : (HomeViewModel.isGarmin ? GarminService.activities
+                                                  : ActivityService.activities)
+                    readonly property int year: {
+                        let best = -1
+                        for (const a of _activities) {
+                            if (!a.startTime) continue
+                            const y = new Date(a.startTime).getFullYear()
+                            if (y > best) best = y
+                        }
+                        return best
+                    }
+                    readonly property int activityCount: {
+                        let n = 0
+                        for (const a of _activities)
+                            if (a.startTime && new Date(a.startTime).getFullYear() === year) n++
+                        return n
+                    }
+                    readonly property real yearMeters: {
+                        let m = 0
+                        for (const a of _activities)
+                            if (a.startTime && new Date(a.startTime).getFullYear() === year)
+                                m += (a.distanceMeters || 0)
+                        return m
+                    }
+                    readonly property real yearSeconds: {
+                        let s = 0
+                        for (const a of _activities)
+                            if (a.startTime && new Date(a.startTime).getFullYear() === year)
+                                s += (a.durationSeconds || 0)
+                        return s
+                    }
+
+                    HoverHandler { cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: NavBus.navigate("totals") }
+
+                    Column {
+                        width: parent.width
+                        spacing: Theme.spacingSmall
+
+                        Row {
+                            width: parent.width
+                            Text {
+                                text: qsTr("This year")
+                                font.bold: true
+                                color: Theme.text
+                            }
+                            Item { width: parent.width - childrenRect.width; height: 1 }
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: qsTr("Open Totals ›")
+                                color: Theme.primary
+                                font.pixelSize: Theme.fontSizeCaption
+                            }
+                        }
+
+                        Row {
+                            width: parent.width
+                            spacing: Theme.spacingLarge
+                            Column {
+                                spacing: 2
+                                Text { text: qsTr("Distance"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
+                                Text {
+                                    text: ActivityViewModel.formatDistance(thisYearCard.yearMeters)
+                                    color: Theme.text
+                                    font.bold: true
+                                    font.pixelSize: Theme.fontSizeBodyLarge
+                                }
+                            }
+                            Column {
+                                spacing: 2
+                                Text { text: qsTr("Time"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
+                                Text {
+                                    text: ActivityViewModel.formatDuration(thisYearCard.yearSeconds)
+                                    color: Theme.text
+                                    font.bold: true
+                                    font.pixelSize: Theme.fontSizeBodyLarge
+                                }
+                            }
+                            Column {
+                                spacing: 2
+                                Text { text: qsTr("Activities"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
+                                Text {
+                                    text: thisYearCard.activityCount
+                                    color: Theme.text
+                                    font.bold: true
+                                    font.pixelSize: Theme.fontSizeBodyLarge
+                                }
+                            }
+                        }
+
+                        // One TotalsFacts line as a teaser - the factual-playful voice of
+                        // the Totals page, previewed. distanceLines() puts the best-fitting
+                        // comparison first.
+                        Text {
+                            width: parent.width
+                            wrapMode: Text.WordWrap
+                            visible: thisYearCard.yearMeters > 0
+                            text: {
+                                const lines = TotalsFacts.distanceLines(thisYearCard.yearMeters)
+                                return lines.length > 0 ? lines[0] : ""
+                            }
+                            color: Theme.mutedText
+                            font.italic: true
+                            font.pixelSize: Theme.fontSizeCaption
+                        }
+                    }
+                }
+            }
+
+            Item {
+                Layout.fillWidth: true
+                Layout.alignment: Qt.AlignTop
+                Layout.preferredWidth: 1
+                implicitHeight: weatherCard.height
+                // The SERVICE state, deliberately not weatherCard.visible: a child's
+                // `visible` reads effective visibility, so once this wrapper hides, the
+                // card inside can never read true again and the pair deadlocks hidden -
+                // found live on 2026-08-11 when the weather card vanished from the
+                // redesigned Home.
+                visible: WeatherService.hasFetchedOnce
+
+                WeatherCard { id: weatherCard; width: parent.width }
+            }
+        }
 
         // --- Kailash travel history & activity-mode logbook - real, 2026-08-08 ("resumind:
         // 7r button, last city visit... if we could import this data which is on the watch
@@ -740,6 +934,18 @@ PageFlickable {
             visible: activityLoading || lastActivityColumn.activity !== null
                      || (!HomeViewModel.isGarmin && !HomeViewModel.isKailash
                          && ActivityService.lastError.length > 0)
+
+            // 2026-08-11 designer pass: this card was a dead end - the whole card now
+            // opens Activities, where the full list and the large map live.
+            HoverHandler {
+                enabled: lastActivityColumn.activity !== null
+                cursorShape: Qt.PointingHandCursor
+            }
+            TapHandler {
+                enabled: lastActivityColumn.activity !== null
+                onTapped: NavBus.navigate("activities")
+            }
+
             Column {
                 id: lastActivityColumn
                 width: parent.width
@@ -757,13 +963,16 @@ PageFlickable {
                           HomeViewModel.isGarmin ? GarminService.activities : ActivityService.activities)
 
                 Row {
+                    width: parent.width
                     spacing: Theme.spacingSmall
                     Text {
+                        id: lastActivityTitle
                         text: HomeViewModel.isKailash ? qsTr("Recent Track") : qsTr("Last Activity")
                         font.bold: true
                         color: Theme.text
                     }
                     Text {
+                        id: cachedTag
                         visible: !HomeViewModel.isGarmin && !HomeViewModel.isKailash
                                  && ActivityService.showingCachedData
                         anchors.verticalCenter: parent.verticalCenter
@@ -772,7 +981,22 @@ PageFlickable {
                         font.pixelSize: Theme.fontSizeCaption
                         color: Theme.mutedText
                     }
+                    Item {
+                        width: parent.width - lastActivityTitle.width - openActivities.width
+                               - (cachedTag.visible ? cachedTag.width + Theme.spacingSmall : 0)
+                               - Theme.spacingSmall * 2
+                        height: 1
+                    }
+                    Text {
+                        id: openActivities
+                        visible: lastActivityColumn.activity !== null
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: qsTr("Open Activities ›")
+                        color: Theme.primary
+                        font.pixelSize: Theme.fontSizeCaption
+                    }
                 }
+
 
                 Text {
                     visible: HomeViewModel.isGarmin ? GarminService.activitiesLoading
@@ -804,6 +1028,10 @@ PageFlickable {
                     text: KailashService.lastError
                 }
 
+                // No map here - André, 2026-08-11 designer pass, third round: "we don't
+                // need another map" (the full-width one was "too noisy", the thumbnail
+                // redundant with the Activities page a click away). Info only; the card
+                // itself is the doorway.
                 Row {
                     visible: !lastActivityCard.activityLoading && lastActivityColumn.activity !== null
                     width: parent.width

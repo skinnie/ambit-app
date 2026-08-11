@@ -92,6 +92,33 @@ Card {
                 }
             }
 
+            // Sun strip - see SunTimes.qml's own header for why this is the outdoorish
+            // fact worth a line here. Local maths off the same coordinates the forecast
+            // already uses; a timer nudges it so "left" doesn't fossilize on a page that
+            // stays open.
+            Row {
+                width: parent.width
+                spacing: Theme.spacingSmall
+
+                Icon { glyph: Icons.weatherSunny; size: 18; color: Theme.mutedText }
+                Text {
+                    id: sunStrip
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: parent.width - 18 - Theme.spacingSmall
+                    wrapMode: Text.WordWrap
+                    color: Theme.mutedText
+                    font.pixelSize: Theme.fontSizeLabel
+                    text: SunTimes.summary(WeatherService.latitude, WeatherService.longitude)
+                    visible: text.length > 0
+
+                    Timer {
+                        interval: 60000; running: true; repeat: true
+                        onTriggered: sunStrip.text = SunTimes.summary(
+                            WeatherService.latitude, WeatherService.longitude)
+                    }
+                }
+            }
+
             Row {
                 width: parent.width
                 spacing: Theme.spacingLarge

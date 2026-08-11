@@ -56,6 +56,17 @@ ApplicationWindow {
             height: parent.height
             currentPage: "home"
             onPageSelected: (pageId) => currentPage = pageId
+
+            // Pages navigating on their own (Home's Last Activity -> Activities, This
+            // year -> Totals) - see NavBus.qml's own header for why a bus and not a
+            // threaded callback.
+            Connections {
+                target: NavBus
+                function onNavigate(pageId) {
+                    if (pageId in window.pageSources)
+                        navRail.currentPage = pageId
+                }
+            }
         }
 
         Loader {
