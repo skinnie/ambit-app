@@ -11,9 +11,9 @@ import AmbitApp
 // longitude are still shown - you need them to sanity-check a coordinate someone gave you -
 // but they are now an output of pointing at a map rather than something to type blind.
 //
-// Deliberately its own dialog rather than reusing PoiPickerDialog: that one carries a name
-// field, because a POI without a name is useless, and the home location has no name at all.
-// The map interaction itself is identical, which is the part worth having consistent.
+// The POI add flow shares this exact map interaction (crosshair, drag-to-pick, search) but
+// lives inline on PoisPage rather than behind a dialog - André's call after using both. Home
+// stays a dialog because Settings is a long list; a map embedded mid-list would be lost.
 ThemedDialog {
     id: root
 

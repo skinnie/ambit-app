@@ -85,7 +85,6 @@ qt_add_qml_module(ambitapp
         qml/components/ThemedDialog.qml
         qml/components/ClockSyncDialog.qml
         qml/components/ActivityRow.qml
-        qml/components/PoiPickerDialog.qml
         qml/components/DemoDevicePicker.qml
         qml/components/LoadingPill.qml
         qml/WatchUnits.qml

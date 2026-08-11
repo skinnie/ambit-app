@@ -71,37 +71,149 @@ PageFlickable {
 
                 Text { text: qsTr("Add a POI"); font.bold: true; color: Theme.text }
 
+                // The whole picker lives right here, no dialog - André, 2026-08-11, after
+                // trying the button-plus-window version: "delete pick on a map ... and just
+                // put everything you had on the window that open, directly on POI screen".
+                // The content is the late PoiPickerDialog's, verbatim: instruction, name,
+                // search, coordinates, and the crosshair map with drag-to-pick - the same
+                // interaction as Settings' Kailash home picker, just not behind a click.
+                Text {
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    text: qsTr("Drag the map to put the POI under the crosshair, or click " +
+                                "a point. Scroll to zoom.")
+                    color: Theme.mutedText
+                    font.pixelSize: Theme.fontSizeBody
+                }
+
                 RoundedTextField {
                     id: poiNameField
                     width: parent.width
-                    placeholderText: qsTr("Name")
+                    placeholderText: qsTr("Name this POI")
                     onTextChanged: root.poiName = text
                 }
-                // A place, not two numbers - André, 2026-08-11: "on add a poi, please make
-                // it open a map and search location, like we did for home for kailash", then
-                // precisely: "just replicate what we did for home in kailash, one box, search
-                // on map" - so this is EXACTLY Settings' Kailash HomeLocation row, one button
-                // plus the chosen coordinates, no inline preview map (the first version kept
-                // one; he asked for it gone). Typing coordinates by hand still works - inside
-                // the picker, which has validated lat/lon fields of its own.
+
+                PlaceSearchBar {
+                    width: parent.width
+                    onPlaceChosen: (lat, lon) => {
+                        root.poiLat = lat
+                        root.poiLon = lon
+                        addMap.resetView()
+                    }
+                }
+
                 Row {
+                    width: parent.width
                     spacing: Theme.spacingSmall
-                    RoundedButton {
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: qsTr("Pick on a map")
-                        onClicked: {
-                            poiPicker.latitude = root.poiLat
-                            poiPicker.longitude = root.poiLon
-                            poiPicker.poiName = root.poiName
-                            poiPicker.open()
+                    RoundedTextField {
+                        width: (parent.width - Theme.spacingSmall) / 2
+                        placeholderText: qsTr("Latitude")
+                        text: root.poiLat.toFixed(6)
+                        onEditingFinished: {
+                            const v = parseFloat(text)
+                            if (!isNaN(v) && v >= -90 && v <= 90) {
+                                root.poiLat = v
+                                addMap.resetView()
+                            } else {
+                                text = root.poiLat.toFixed(6)
+                            }
                         }
                     }
-                    Text {
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: qsTr("%1, %2").arg(root.poiLat.toFixed(6))
-                              .arg(root.poiLon.toFixed(6))
-                        color: Theme.mutedText
-                        font.pixelSize: Theme.fontSizeLabel
+                    RoundedTextField {
+                        width: (parent.width - Theme.spacingSmall) / 2
+                        placeholderText: qsTr("Longitude")
+                        text: root.poiLon.toFixed(6)
+                        onEditingFinished: {
+                            const v = parseFloat(text)
+                            if (!isNaN(v) && v >= -180 && v <= 180) {
+                                root.poiLon = v
+                                addMap.resetView()
+                            } else {
+                                text = root.poiLon.toFixed(6)
+                            }
+                        }
+                    }
+                }
+
+                Item {
+                    width: parent.width
+                    height: 300
+
+                    MapView {
+                        id: addMap
+                        scrollZoom: true
+                        anchors.fill: parent
+                        clip: true
+                        latitude: root.poiLat
+                        longitude: root.poiLon
+                        zoomLevel: 15
+                        showMarker: true
+
+                        TapHandler {
+                            onTapped: (event) => {
+                                // Through the map's own inverse projection - the same maths
+                                // the tiles are drawn with.
+                                root.poiLat = addMap.latAtY(event.position.y)
+                                root.poiLon = addMap.lonAtX(event.position.x)
+                                addMap.resetView()
+                            }
+                        }
+                        DragHandler {
+                            id: addMapPanner
+                            target: null
+                            property real lastX: 0
+                            property real lastY: 0
+                            onActiveChanged: {
+                                if (active) {
+                                    lastX = centroid.position.x
+                                    lastY = centroid.position.y
+                                } else {
+                                    // Drag-to-pick, same as the Kailash home picker: on
+                                    // release, the point under the crosshair IS the choice.
+                                    root.poiLat = addMap.latAtY(addMap.height / 2)
+                                    root.poiLon = addMap.lonAtX(addMap.width / 2)
+                                    addMap.resetView()
+                                }
+                                addMap.userControlled = true
+                            }
+                            onCentroidChanged: {
+                                if (!active)
+                                    return
+                                addMap.panX -= centroid.position.x - lastX
+                                addMap.panY -= centroid.position.y - lastY
+                                lastX = centroid.position.x
+                                lastY = centroid.position.y
+                            }
+                        }
+                        HoverHandler {
+                            cursorShape: addMapPanner.active ? Qt.ClosedHandCursor
+                                                             : Qt.CrossCursor
+                        }
+
+                        // The crosshair the drag aims at. Ignores input so it never eats a
+                        // click meant for the map underneath.
+                        Item {
+                            anchors.centerIn: parent
+                            width: 26
+                            height: 26
+                            Rectangle {
+                                anchors.centerIn: parent
+                                width: 2; height: parent.height
+                                color: Theme.mapAccent
+                            }
+                            Rectangle {
+                                anchors.centerIn: parent
+                                width: parent.width; height: 2
+                                color: Theme.mapAccent
+                            }
+                            Rectangle {
+                                anchors.centerIn: parent
+                                width: 12; height: 12; radius: 6
+                                color: "transparent"
+                                border.width: 2
+                                border.color: Theme.mapAccent
+                            }
+                        }
                     }
                 }
 
@@ -336,15 +448,4 @@ PageFlickable {
         }
     }
 
-    PoiPickerDialog {
-        id: poiPicker
-        anchors.centerIn: Overlay.overlay
-        onAccepted_: (name, lat, lon) => {
-            // Through the field, not root.poiName directly, so the visible Name box shows
-            // what was typed in the picker (its own onTextChanged then updates root).
-            poiNameField.text = name
-            root.poiLat = lat
-            root.poiLon = lon
-        }
-    }
 }
