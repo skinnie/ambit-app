@@ -241,7 +241,9 @@ Item {
             // selected" (NavItem.qml's own selected-row color), for brand consistency with
             // the rest of the app. The white halo above still does the actual contrast work
             // against whatever's under it, same technique, just recolored.
-            ctx.strokeStyle = Theme.primary
+            // Theme.mapAccent, not Theme.primary: this is drawn on map tiles, which are
+            // light in either theme - see Theme.qml's own comment.
+            ctx.strokeStyle = Theme.mapAccent
             ctx.lineWidth = 3.5
             ctx.stroke()
         }
@@ -277,13 +279,13 @@ Item {
             anchors.bottom: parent.bottom
             anchors.bottomMargin: 6
             color: "white"
-            border.color: Theme.primary
+            border.color: Theme.mapAccent
             border.width: 2
         }
         Icon {
             glyph: Icons.pois
             size: 20
-            color: Theme.primary
+            color: Theme.mapAccent
             anchors.horizontalCenter: parent.horizontalCenter
             anchors.bottom: parent.bottom
             anchors.bottomMargin: 12
@@ -312,13 +314,13 @@ Item {
                 anchors.bottom: parent.bottom
                 anchors.bottomMargin: 4
                 color: "white"
-                border.color: Theme.primary
+                border.color: Theme.mapAccent
                 border.width: 2
             }
             Icon {
                 glyph: Icons.pois
                 size: 16
-                color: Theme.primary
+                color: Theme.mapAccent
                 anchors.horizontalCenter: parent.horizontalCenter
                 anchors.bottom: parent.bottom
                 anchors.bottomMargin: 9

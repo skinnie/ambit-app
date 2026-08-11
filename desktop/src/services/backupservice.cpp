@@ -1,5 +1,6 @@
 #include "backupservice.h"
 
+#include <QDateTime>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -103,7 +104,22 @@ void BackupService::checkFirmware()
             && obj.value(QStringLiteral("ok")).toBool();
         if (m_firmwareCheckOk) {
             m_firmwareLatestVersion = obj.value(QStringLiteral("latest_firmware_version")).toString();
-            m_firmwareUploadDate = obj.value(QStringLiteral("upload_date")).toString();
+            // André, 2026-08-11 (item 19): the raw field reads
+            // "2022-03-09T20:23:42ZZZ" - an ISO timestamp with a doubled zone suffix, shown
+            // verbatim. He wants the date and the time and nothing else. Parsed rather than
+            // string-sliced so a differently-shaped value degrades to itself instead of
+            // being cut in the wrong place; the trailing ZZZ is trimmed first because
+            // QDateTime will not parse it.
+            {
+                QString raw = obj.value(QStringLiteral("upload_date")).toString();
+                QString trimmed = raw;
+                while (trimmed.endsWith(QLatin1Char('Z')))
+                    trimmed.chop(1);
+                QDateTime parsed = QDateTime::fromString(trimmed, Qt::ISODate);
+                m_firmwareUploadDate = parsed.isValid()
+                    ? parsed.toString(QStringLiteral("yyyy-MM-dd HH:mm"))
+                    : raw;
+            }
             m_firmwareDownloadUrl = obj.value(QStringLiteral("download_url")).toString();
         } else {
             m_firmwareActionText = obj.value(QStringLiteral("stderr")).toString();

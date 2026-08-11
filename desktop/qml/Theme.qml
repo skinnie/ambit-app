@@ -87,6 +87,13 @@ QtObject {
     readonly property color background: isDark ? _darkBackground : _lightBackground
     readonly property color card: isDark ? _darkCard : _lightCard
     readonly property color primary: isDark ? _darkPrimary : _lightPrimary
+
+    // Ink drawn ON TOP OF MAP TILES - the track line and the POI markers. Deliberately NOT
+    // theme-dependent: OSM/CyclOSM tiles are light whatever the app is set to, so following
+    // the app theme meant the dark palette's primary (#9CA3AF, a grey) was being drawn on a
+    // light map. André, 2026-08-11: "for routes, in dark mode track still grey, not visible,
+    // use same green as light mode." The green is the light primary, so the two agree.
+    readonly property color mapAccent: _lightPrimary
     readonly property color secondary: isDark ? _darkSecondary : _lightSecondary
     readonly property color accent: isDark ? _darkAccent : _lightAccent
     readonly property color success: isDark ? _darkSuccess : _lightSuccess

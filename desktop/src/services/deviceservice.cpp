@@ -212,8 +212,9 @@ void DeviceService::updateGpsOrbit()
                 .arg(obj.value(QStringLiteral("error")).toString(
                     obj.value(QStringLiteral("stderr")).toString()));
         } else if (obj.value(QStringLiteral("skipped")).toBool()) {
-            m_gpsOrbitStatusText = QStringLiteral("No update needed (watch has %1)")
-                .arg(obj.value(QStringLiteral("watch_date")).toString());
+            // André, 2026-08-11: "If already synced and updated just say synced." The date
+            // it is synced TO is already on this card, so repeating it here said nothing.
+            m_gpsOrbitStatusText = QStringLiteral("Synced");
         } else if (obj.value(QStringLiteral("offline")).toBool()) {
             const QString watchDate = obj.value(QStringLiteral("watch_date")).toString();
             m_gpsOrbitStatusText = watchDate.isEmpty()
@@ -223,7 +224,7 @@ void DeviceService::updateGpsOrbit()
         } else if (obj.value(QStringLiteral("wrote")).toBool()) {
             m_gpsOrbitStatusText = QStringLiteral("Updated");
         } else {
-            m_gpsOrbitStatusText = QStringLiteral("Checked - nothing written");
+            m_gpsOrbitStatusText = QStringLiteral("Synced");
         }
         emit gpsOrbitChanged();
     });
