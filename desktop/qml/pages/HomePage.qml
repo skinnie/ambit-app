@@ -205,6 +205,14 @@ Flickable {
                                 enabled: !DeviceService.gpsOrbitBusy
                                 onTapped: DeviceService.updateGpsOrbit()
                             }
+                            // Real request, 2026-08-11 (André, G3): offline, the message
+                            // stays exactly as it is and hovering explains why nothing
+                            // happens on its own. Online, this syncs on connection now and
+                            // there is nothing to excuse.
+                            HoverHandler { id: orbitHover }
+                            ToolTip.visible: orbitHover.hovered && !DeviceService.online
+                            ToolTip.text: qsTr("This feature needs an internet connection.")
+                            ToolTip.delay: 300
                         }
                     }
                 }
@@ -249,6 +257,15 @@ Flickable {
                                     timeSyncMenu.visible = !timeSyncMenu.visible
                                 }
                             }
+                            // André, G2 - see the GPS orbit field above for the reasoning.
+                            // Tapping still works offline (the clock is set from this
+                            // machine, no network involved); what needs a connection is the
+                            // automatic sync on connection.
+                            HoverHandler { id: clockHover }
+                            ToolTip.visible: clockHover.hovered && !DeviceService.online
+                            ToolTip.text: qsTr("Syncing on connection needs an internet " +
+                                                "connection. Tapping still works offline.")
+                            ToolTip.delay: 300
                         }
 
                         // Real, 2026-08-10 ("a button to sync time... opens a menu 'from

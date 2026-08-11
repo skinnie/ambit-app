@@ -75,6 +75,11 @@ class DeviceService : public QObject
     // fetched lazily on first menu open, not on every Home load like deviceInfo/gpsOrbit,
     // since most syncTime() taps use "from device" and never need this list at all.
     Q_PROPERTY(QStringList timezones READ timezones NOTIFY timezonesChanged)
+    // Whether this machine currently has a route to the internet. Read from Qt's own
+    // network-reachability backend rather than by probing a server: the clock and GPS-orbit
+    // features need it only to decide whether they CAN run, and probing on every device poll
+    // would put real traffic on the wire for a question the OS already answers.
+    Q_PROPERTY(bool online READ online NOTIFY onlineChanged)
 
 public:
     explicit DeviceService(QObject *parent = nullptr);
@@ -133,6 +138,8 @@ public:
     // "from a different timezone" option is opened, not eagerly.
     Q_INVOKABLE void fetchTimezones();
 
+    bool online() const { return m_online; }
+
 signals:
     void loadingChanged();
     void backendReachableChanged();
@@ -142,9 +149,15 @@ signals:
     void ephemerisGpsOnlyChanged();
     void timeSyncChanged();
     void timezonesChanged();
+    void onlineChanged();
 
 private:
     QNetworkAccessManager m_network;
+    bool m_online = false;
+    // Auto-sync fires once per connection, not once per poll: the device endpoint is
+    // re-read every 10s by the heartbeat, and syncing the clock and re-checking the orbit
+    // on each of those would write to the watch continuously.
+    bool m_autoSyncedThisConnection = false;
     bool m_loading = false;
     bool m_backendReachable = false;
     QString m_lastError;

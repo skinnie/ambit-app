@@ -6,6 +6,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QNetworkInformation>
 #include <QNetworkReply>
 #include <QSettings>
 #include <QStandardPaths>
@@ -23,6 +24,28 @@ DeviceService::DeviceService(QObject *parent) : QObject(parent)
 
     m_heartbeatTimer.setSingleShot(true);
     connect(&m_heartbeatTimer, &QTimer::timeout, this, &DeviceService::refresh);
+
+    // Whether we have a route to the internet, from Qt's own reachability backend. Asked
+    // rather than probed: the clock and orbit features need this only to decide whether they
+    // CAN run, and probing a server on every device poll would put real traffic on the wire
+    // for something the OS already knows. If no backend loads (a stripped build, an unusual
+    // platform), assume online - the update paths already report honestly when a download
+    // fails, so a wrong "yes" costs one failed attempt while a wrong "no" would silently
+    // disable a working feature.
+    if (QNetworkInformation::loadDefaultBackend() && QNetworkInformation::instance()) {
+        auto *info = QNetworkInformation::instance();
+        auto apply = [this, info] {
+            const bool up = info->reachability() == QNetworkInformation::Reachability::Online;
+            if (up == m_online)
+                return;
+            m_online = up;
+            emit onlineChanged();
+        };
+        connect(info, &QNetworkInformation::reachabilityChanged, this, apply);
+        apply();
+    } else {
+        m_online = true;
+    }
 }
 
 QUrl DeviceService::backendUrl(const QString &path)
@@ -114,12 +137,31 @@ void DeviceService::fetchDeviceInfo()
             // enough to catch a real unplug within a bounded time without hammering the
             // USB link the way continuous 1s polling would.
             m_heartbeatTimer.start(kHeartbeatIntervalMs);
+
+            // Real request, 2026-08-11 (Andre, G2/G3): "clock, sync upon connection of the
+            // watch if connected to internet" and the same for the GPS orbit. This is a
+            // deliberate exception to this app's own "explicit tap for any write" rule -
+            // both are self-correcting, low-risk operations (set the clock to now; refresh
+            // ephemeris that expires on its own), and having to remember to tap them is
+            // exactly the busywork the rule exists to avoid elsewhere.
+            //
+            // Guarded so it happens once per CONNECTION, not once per poll: the heartbeat
+            // re-reads this endpoint every 10s while connected, and syncing on each of those
+            // would write to the watch continuously. Offline, nothing is attempted at all
+            // and the UI keeps its existing tap-to-sync message.
+            if (!m_autoSyncedThisConnection && m_online) {
+                m_autoSyncedThisConnection = true;
+                syncTime();
+                updateGpsOrbit();
+            }
         } else {
             const QString technical = reply->error() != QNetworkReply::NoError
                 ? QStringLiteral("GET /api/device: %1").arg(reply->errorString())
                 : QStringLiteral("GET /api/device: %1")
                     .arg(obj.value(QStringLiteral("stderr")).toString());
             setLastError(QStringLiteral("Watch not connected"), technical);
+            // Disconnected: the next connection is a new one and syncs again.
+            m_autoSyncedThisConnection = false;
             // Not connected - real request 2026-08-08 ("if not connected, refresh with a 1
             // second interval"): keep polling, uncapped, until it connects.
             m_pollTimer.start(kPollIntervalMs);
