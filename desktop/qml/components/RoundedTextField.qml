@@ -11,6 +11,11 @@ TextField {
     id: root
 
     color: Theme.text
+    // Never inherited from the system Qt palette: this app paints its own light Theme.card
+    // background, and on a dark desktop the palette's placeholder color is near-white -
+    // invisible on it. Found live 2026-08-11: the POI picker's Name and Search boxes showed
+    // as two identical anonymous fields.
+    placeholderTextColor: Theme.mutedText
     font.pixelSize: Theme.fontSizeBody
     selectionColor: Theme.primary
     selectedTextColor: Theme.card

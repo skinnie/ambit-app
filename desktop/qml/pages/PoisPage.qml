@@ -78,11 +78,12 @@ PageFlickable {
                     onTextChanged: root.poiName = text
                 }
                 // A place, not two numbers - André, 2026-08-11: "on add a poi, please make
-                // it open a map and search location, like we did for home for kailash". Same
-                // shape as Settings' Kailash HomeLocation row: a button that opens the
-                // search-plus-map picker, with the chosen coordinates staying visible next
-                // to it. Typing coordinates by hand still works - inside the picker, which
-                // has validated lat/lon fields of its own.
+                // it open a map and search location, like we did for home for kailash", then
+                // precisely: "just replicate what we did for home in kailash, one box, search
+                // on map" - so this is EXACTLY Settings' Kailash HomeLocation row, one button
+                // plus the chosen coordinates, no inline preview map (the first version kept
+                // one; he asked for it gone). Typing coordinates by hand still works - inside
+                // the picker, which has validated lat/lon fields of its own.
                 Row {
                     spacing: Theme.spacingSmall
                     RoundedButton {
@@ -101,38 +102,6 @@ PageFlickable {
                               .arg(root.poiLon.toFixed(6))
                         color: Theme.mutedText
                         font.pixelSize: Theme.fontSizeLabel
-                    }
-                }
-
-                // The preview opens the same picker - André, 2026-08-11 (item 18): "for the
-                // box under add a POI, can we make it clickable, open a new window". Placing
-                // a point by pointing at it is the natural gesture, so both the button above
-                // and the map itself lead to it.
-                Text {
-                    text: qsTr("Click the map to place a POI")
-                    color: Theme.mutedText
-                    font.pixelSize: Theme.fontSizeCaption
-                }
-                Item {
-                    width: parent.width
-                    height: 160
-                    TapHandler {
-                        onTapped: {
-                            poiPicker.latitude = root.poiLat
-                            poiPicker.longitude = root.poiLon
-                            poiPicker.poiName = root.poiName
-                            poiPicker.open()
-                        }
-                    }
-                    MapView {
-                        anchors.fill: parent
-                        latitude: root.poiLat
-                        longitude: root.poiLon
-                        // Real request 2026-08-08: "zoom in a bit to be more visible" -
-                        // was 10 (city level, fine for orientation but too wide to actually
-                        // place a POI precisely); 15 is street level.
-                        zoomLevel: 15
-                        showMarker: true
                     }
                 }
 
