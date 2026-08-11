@@ -165,6 +165,25 @@ Flickable {
     // state, so a staged change was invisible. Choosing a layout appeared to do nothing,
     // Remove emptied the row list but left the filmstrip showing the display, and Add did
     // nothing visible at all. Projecting the edits means the screen and the write agree.
+    // Open the data picker for one row of the currently selected display. Shared by the
+    // row's own "Change" button and by clicking that row on the watch-face preview - André's
+    // idea, 2026-08-11: "click on the numbers, to choose the data fields".
+    function editRow(rowIndex) {
+        const list = stagedDisplays()
+        const disp = list[currentDisplayIndex]
+        if (!disp || !disp.fields[rowIndex])
+            return
+        const field = disp.fields[rowIndex]
+        dataPicker.displayIndex = currentDisplayIndex
+        dataPicker.fieldIndex = rowIndex
+        dataPicker.activityId = selectedMode ? selectedMode.activityId : 1
+        dataPicker.displayTemplate = disp.templateId
+        dataPicker.rowName = field.rowLabel ? field.rowLabel.toUpperCase() : "TOP"
+        dataPicker.selected = (field.values || []).map(v => v.type)
+                                                  .filter(v => v !== undefined)
+        dataPicker.open()
+    }
+
     function stagedDisplays() {
         const mode = CustomModesService.modes.find(m => m.name === root.selectedModeName)
         let list = (mode && mode.displays ? mode.displays.filter(d => !d.isBuiltIn) : [])
@@ -411,13 +430,6 @@ Flickable {
                     }
                 }
 
-                Text {
-                    width: parent.width
-                    wrapMode: Text.WordWrap
-                    text: qsTr("Change the leg with a long press of BACK|LAP on the watch.")
-                    color: Theme.mutedText
-                    font.pixelSize: Theme.fontSizeCaption
-                }
             }
         }
 
@@ -951,6 +963,35 @@ Flickable {
                                 if (root.currentDisplayIndex > 0)
                                     root.currentDisplayIndex--
                             }
+                        }
+                    }
+
+                    // The selected display, big enough to point at - André's idea. Clicking
+                    // a number (or a graph's squiggle) opens that row's data picker directly,
+                    // which is a shorter path than finding the matching Change button below
+                    // and is something SuuntoLink does not offer.
+                    Row {
+                        width: parent.width
+                        spacing: Theme.spacingMedium
+
+                        WatchFacePreview {
+                            anchors.verticalCenter: parent.verticalCenter
+                            diameter: 132
+                            layoutType: currentScreenColumn.current
+                                        ? root.layoutTypeOf(currentScreenColumn.current) : "3rows"
+                            selected: true
+                            rowsClickable: true
+                            onRowClicked: (rowIndex) => root.editRow(rowIndex)
+                        }
+
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: parent.width - 132 - Theme.spacingMedium * 2
+                            wrapMode: Text.WordWrap
+                            text: qsTr("Click a row on the watch face to choose what it " +
+                                        "shows, or use the buttons below.")
+                            color: Theme.mutedText
+                            font.pixelSize: Theme.fontSizeCaption
                         }
                     }
 

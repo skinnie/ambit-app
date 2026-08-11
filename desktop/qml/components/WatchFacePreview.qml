@@ -18,6 +18,17 @@ Item {
     property bool selected: false
     property real diameter: 120
 
+    // When true, each numbered row is its own click target - André's idea, 2026-08-11:
+    // "click on the numbers, to choose the data fields (appearing on a new window)". Pointing
+    // at the row you mean is a shorter path than reading a list underneath and finding its
+    // Change button, and it is something SuuntoLink does not do. Off by default so the small
+    // thumbnails in the filmstrip stay a single target for selecting the display.
+    property bool rowsClickable: false
+
+    // 0 = Top, 1 = Center, 2 = Bottom, matching the order the rows are drawn and the order
+    // custom_modes.py reports them.
+    signal rowClicked(int rowIndex)
+
     implicitWidth: diameter
     implicitHeight: diameter
 
@@ -38,13 +49,38 @@ Item {
 
             Repeater {
                 model: root.layoutType === "1row" ? 1 : root.layoutType === "2rows" ? 2 : 3
-                delegate: Text {
+                delegate: Item {
+                    id: rowItem
+                    required property int index
                     width: parent.width
-                    horizontalAlignment: Text.AlignHCenter
-                    text: String(index + 1)
-                    font.pixelSize: root.diameter * 0.16
-                    font.bold: true
-                    color: Theme.text
+                    height: rowNumber.implicitHeight
+
+                    Text {
+                        id: rowNumber
+                        anchors.fill: parent
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                        text: String(rowItem.index + 1)
+                        font.pixelSize: root.diameter * 0.16
+                        font.bold: true
+                        // Highlights under the pointer when the rows are clickable, so it is
+                        // discoverable that they are.
+                        color: root.rowsClickable && rowHover.hovered ? Theme.primary : Theme.text
+                        Behavior on color { ColorAnimation { duration: 100 } }
+                    }
+                    HoverHandler {
+                        id: rowHover
+                        enabled: root.rowsClickable
+                        cursorShape: Qt.PointingHandCursor
+                    }
+                    TapHandler {
+                        enabled: root.rowsClickable
+                        // Takes the tap before the whole-preview handler behind it, so
+                        // clicking a number edits that row rather than re-selecting the
+                        // display or opening the layout picker.
+                        gesturePolicy: TapHandler.ReleaseWithinBounds
+                        onTapped: root.rowClicked(rowItem.index)
+                    }
                 }
             }
         }
@@ -58,13 +94,33 @@ Item {
             spacing: parent.height * 0.05
             visible: root.layoutType === "graph"
 
-            Canvas {
+            // The graph AREA is a target too - André, 2026-08-11: "on the case of graph we
+            // could click on graph or number..maybe an area". It is the right split
+            // semantically: the squiggle stands for the value being graphed, which is stored
+            // as row 0 (row 1 is its generated graph, not something anyone picks), and the
+            // number below is the display's own data row at index 2.
+            Item {
                 width: parent.width
                 height: root.diameter * 0.28
+
+                HoverHandler {
+                    id: graphAreaHover
+                    enabled: root.rowsClickable
+                    cursorShape: Qt.PointingHandCursor
+                }
+                TapHandler {
+                    enabled: root.rowsClickable
+                    gesturePolicy: TapHandler.ReleaseWithinBounds
+                    onTapped: root.rowClicked(0)
+                }
+
+            Canvas {
+                anchors.fill: parent
                 onPaint: {
                     const ctx = getContext("2d")
                     ctx.reset()
-                    ctx.strokeStyle = Theme.primary
+                    ctx.strokeStyle = (root.rowsClickable && graphAreaHover.hovered)
+                                      ? Theme.accent : Theme.primary
                     ctx.lineWidth = 2
                     ctx.beginPath()
                     ctx.moveTo(0, height * 0.7)
@@ -74,14 +130,40 @@ Item {
                     ctx.lineTo(width, height * 0.5)
                     ctx.stroke()
                 }
+                // Repaint when the hover colour changes, or the squiggle keeps its old ink.
+                Connections {
+                    target: graphAreaHover
+                    function onHoveredChanged() { parent.requestPaint() }
+                }
             }
-            Text {
+            }
+            // A graph display's own single data row - the bottom one. Its stored index is 2
+            // (Top/Center hold the graphed value and its generated graph), so that is what
+            // this reports rather than 0.
+            Item {
                 width: parent.width
-                horizontalAlignment: Text.AlignHCenter
-                text: "1"
-                font.pixelSize: root.diameter * 0.14
-                font.bold: true
-                color: Theme.text
+                height: graphRowNumber.implicitHeight
+                Text {
+                    id: graphRowNumber
+                    anchors.fill: parent
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                    text: "1"
+                    font.pixelSize: root.diameter * 0.14
+                    font.bold: true
+                    color: root.rowsClickable && graphHover.hovered ? Theme.primary : Theme.text
+                    Behavior on color { ColorAnimation { duration: 100 } }
+                }
+                HoverHandler {
+                    id: graphHover
+                    enabled: root.rowsClickable
+                    cursorShape: Qt.PointingHandCursor
+                }
+                TapHandler {
+                    enabled: root.rowsClickable
+                    gesturePolicy: TapHandler.ReleaseWithinBounds
+                    onTapped: root.rowClicked(2)
+                }
             }
         }
 
