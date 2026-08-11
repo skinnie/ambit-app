@@ -149,6 +149,18 @@ Item {
         return (1 - merc / Math.PI) / 2 * tilesPerSide * tileSize
     }
 
+    // The inverse - item coordinates back to lon/lat. Needed to place a POI by clicking the
+    // map (André, 2026-08-11, item 18: "search on a map, like we do for google maps, and once
+    // we select it inputs coordinates"). Same projection as above, solved the other way, so a
+    // point clicked and then re-drawn lands back exactly where it was clicked.
+    function lonAtX(x) {
+        return (x + originX) / (tilesPerSide * tileSize) * 360 - 180
+    }
+    function latAtY(y) {
+        const merc = (1 - 2 * (y + originY) / (tilesPerSide * tileSize)) * Math.PI
+        return Math.atan(Math.sinh(merc)) * 180 / Math.PI
+    }
+
     // Manual panning, in world pixels at the CURRENT zoom - real request 2026-08-11
     // (André, R2: a bigger map you can move around). Zero by default, so every existing
     // caller (the thumbnails on Activities/Routes/POIs) renders exactly as before. Applied

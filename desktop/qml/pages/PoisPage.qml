@@ -93,10 +93,26 @@ Flickable {
                     }
                 }
 
-                // Small preview map, per the spec - real, live, updates as you type.
+                // The preview opens the real picker - André, 2026-08-11 (item 18): "for the
+                // box under add a POI, can we make it clickable, open a new window". Placing
+                // a point by pointing at it is the natural gesture; typing two decimal
+                // numbers is the fallback, not the main path.
+                Text {
+                    text: qsTr("Click the map to place a POI")
+                    color: Theme.mutedText
+                    font.pixelSize: Theme.fontSizeCaption
+                }
                 Item {
                     width: parent.width
                     height: 160
+                    TapHandler {
+                        onTapped: {
+                            poiPicker.latitude = root.poiLat
+                            poiPicker.longitude = root.poiLon
+                            poiPicker.poiName = root.poiName
+                            poiPicker.open()
+                        }
+                    }
                     MapView {
                         anchors.fill: parent
                         latitude: root.poiLat
@@ -337,6 +353,16 @@ Flickable {
                     }
                 }
             }
+        }
+    }
+
+    PoiPickerDialog {
+        id: poiPicker
+        anchors.centerIn: Overlay.overlay
+        onAccepted_: (name, lat, lon) => {
+            root.poiName = name
+            root.poiLat = lat
+            root.poiLon = lon
         }
     }
 }
