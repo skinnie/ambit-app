@@ -30,6 +30,17 @@ QtObject {
     // connectivity signal, matching what made the real Android app feel fast.
     readonly property bool connected: DeviceService.backendReachable && DeviceService.deviceInfoOk
 
+    // Is ANY device present - a watch over USB, or a mounted Garmin. The app stays fully
+    // usable when this is false (André, 2026-08-11): cached activities, Totals, saved routes
+    // and POIs, and every app setting work with nothing plugged in, because none of them need
+    // the device to answer. Pages that genuinely cannot function without one are HIDDEN
+    // rather than shown empty - his call: an empty page invites the user to wonder what they
+    // did wrong.
+    //
+    // Deliberately not tied to Testing mode, which is a debugging tool and simulates a
+    // CONNECTED device; offline is the real state of a real user with the watch in a drawer.
+    readonly property bool anyDevice: connected || GarminService.connected
+
     readonly property string connectionStatusText: {
         if (DeviceService.loading) return qsTr("Checking...");
         if (!DeviceService.backendReachable) return qsTr("Backend not running");
@@ -63,6 +74,43 @@ QtObject {
         DeviceService.deviceInfoOk
             ? (_modelNames[DeviceService.model] || DeviceService.model)
             : qsTr("Suunto Ambit 3 Peak")  // static fallback - this project's one reference watch
+
+    // Real, 2026-08-11 (André: "correlation between the devices we support and their manual
+    // link"). One official Suunto user-guide PDF per codename, from `manualslinks` at the repo
+    // root (Suunto's own ns.suunto.com Userguides paths, one per model page) - keyed the same
+    // way _modelNames already is so a new model only ever needs adding once. Falls back to the
+    // Ambit3 Peak guide alongside deviceDisplayName's own fallback above.
+    readonly property var _manualUrls: ({
+        Bluebird: "https://ns.suunto.com/Manuals/Ambit/Userguides/Suunto_Ambit_UserGuide_EN.pdf",
+        Duck: "https://ns.suunto.com/Manuals/Ambit2/Userguides/Suunto_Ambit2_UserGuide_EN.pdf",
+        Colibri: "https://ns.suunto.com/Manuals/Ambit2_S/Userguides/Suunto_Ambit2_S_UserGuide_EN.pdf",
+        Greentit: "https://ns.suunto.com/Manuals/Ambit2_R/Userguides/Suunto_Ambit2_R_UserGuide_EN.pdf",
+        Emu: "https://ns.suunto.com/Manuals/Ambit3_Peak/Userguides/Suunto_Ambit3_Peak_UserGuide_EN.pdf",
+        Finch: "https://ns.suunto.com/Manuals/Ambit3_Sport/Userguides/Suunto_Ambit3_Sport_UserGuide_EN.pdf",
+        Ibisbill: "https://ns.suunto.com/Manuals/Ambit3_Run/Userguides/Suunto_Ambit3_Run_UserGuide_EN.pdf",
+        Kaka: "https://ns.suunto.com/Manuals/Ambit3_Vertical/Userguides/Suunto_Ambit3_Vertical_UserGuide_EN.pdf",
+        Jabiru: "https://ns.suunto.com/Manuals/Traverse/Userguides/Suunto_Traverse_UserGuide_EN.pdf",
+        Loon: "https://ns.suunto.com/Manuals/Traverse_Alpha/Userguides/Suunto_TraverseAlpha_UserGuide_EN.pdf",
+        Hoopoe: "https://ns.suunto.com/Manuals/Kailash/Userguides/Suunto_Kailash_UserGuide_EN.pdf",
+    })
+    readonly property string manualUrl:
+        DeviceService.deviceInfoOk
+            ? (_manualUrls[DeviceService.model] || _manualUrls["Emu"])
+            : _manualUrls["Emu"]
+
+    // Real, 2026-08-11 (André: "I added etrex manuals to the files, can you link it to the
+    // supported devices?"). Garmin has no codename table to key off (GarminService.model is
+    // free text straight from the watch's own GarminDevice.xml <Model><Description> - e.g.
+    // "eTrex 30", "eTrex 32x", see garminservice.cpp's parseGarminDeviceXml), and `manualslinks`
+    // only has two real eTrex guide PDFs covering two whole sub-families each (Garmin's own
+    // manual page groups 10/20/20x/30/30x under one guide and 22x/32x under the other) - not
+    // one-per-model like the Suunto table above, so this matches by family instead of an exact
+    // key. "22x"/"32x" is the one substring that tells the two families apart; everything else
+    // in the eTrex 10/20/30 generation falls to the first guide.
+    readonly property string garminManualUrl:
+        /32x|22x/i.test(GarminService.model)
+            ? "https://www8.garmin.com/manuals/webhelp/eTrex22x-32x/EN-US/eTrex_22x_32x_OM_EN-US.pdf"
+            : "https://www8.garmin.com/manuals/webhelp/eTrex_10_20x_30x/EN-US/eTrex_10_20_20x_30_30x_OM_EN-US.pdf"
 
     readonly property string batteryText:
         DeviceService.deviceInfoOk && DeviceService.batteryPercent >= 0

@@ -40,6 +40,11 @@ class GarminService : public QObject
     Q_PROPERTY(QString firmwareVersion READ firmwareVersion NOTIFY deviceChanged)
     Q_PROPERTY(QString partNumber READ partNumber NOTIFY deviceChanged)
     Q_PROPERTY(bool hasSdCard READ hasSdCard NOTIFY deviceChanged)
+    // Testing mode's simulated eTrex (André, 2026-08-11: "we add the garmin etrex, that we
+    // also know the characteristics"). Set to the fixture folder and detect() treats its two
+    // subfolders as mounted volumes - a real folder tree, walked by the real discovery code,
+    // so nothing below this line is stubbed. Empty means "look at real hardware only".
+    Q_PROPERTY(QString demoRoot READ demoRoot WRITE setDemoRoot NOTIFY deviceChanged)
 
     Q_PROPERTY(bool activitiesLoading READ activitiesLoading NOTIFY activitiesChanged)
     // Same shape as ActivityService.activities (name, startTime, distanceMeters,
@@ -78,6 +83,8 @@ public:
     QString firmwareVersion() const { return m_firmwareVersion; }
     QString partNumber() const { return m_partNumber; }
     bool hasSdCard() const { return m_hasSdCard; }
+    QString demoRoot() const { return m_demoRoot; }
+    void setDemoRoot(const QString &root);
 
     bool activitiesLoading() const { return m_activitiesLoading; }
     QVariantList activities() const { return m_activities; }
@@ -137,6 +144,7 @@ private:
     QString m_firmwareVersion;
     QString m_partNumber;
     bool m_hasSdCard = false;
+    QString m_demoRoot;
 
     QList<Volume> m_volumes;
 

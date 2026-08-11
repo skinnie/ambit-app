@@ -44,15 +44,30 @@ QtObject {
         return e !== undefined ? e : byId[1];
     }
 
+    // A handful of real Ambit3 default sport-mode names (SuuntoLink's own defaults - see
+    // SportModesPage.qml's sportBadgeColor() comment: "Cycling/Indoor training/Pool
+    // swimming/Run a route/Running/Trekking/Walk") don't spell themselves the same way as
+    // this table's own Suunto ActivityType name, even though they mean the same activity -
+    // "Walk" the sport mode vs "Walking" the ActivityType. Confirmed case by case, not a
+    // general fuzzy rule: five of those seven defaults (Cycling/Indoor training/Pool
+    // swimming/Running/Trekking) already match byId exactly and need no entry here.
+    readonly property var _nameAliases: ({
+        "walk": "walking"
+    })
+
     // Look an activity up by NAME - real need, 2026-08-11 (André, item 16's list view). An
     // activity read off the watch comes from its GPX, which carries the sport mode's name
     // ("Running", "Triathlon") but no numeric id, so a badge keyed on id alone showed the
     // generic star for everything. Matches case-insensitively and ignores punctuation, since
     // a mode is free text a user may have renamed; anything unrecognised falls back to
-    // "Unspecified sport" rather than guessing a sport from a name we do not know.
+    // "Unspecified sport" rather than guessing a sport from a name we do not know. Also
+    // key-independent of DEVICE: an Ambit3 sport mode and a Kailash activity assigned the
+    // same real name (e.g. "Walk") resolve to the same id here, which is what lets
+    // TotalsPage.qml group them into one bucket across devices.
     function forName(name) {
         if (!name) return byId[1];
-        const want = String(name).toLowerCase().replace(/[^a-z0-9]/g, "");
+        let want = String(name).toLowerCase().replace(/[^a-z0-9]/g, "");
+        if (_nameAliases[want] !== undefined) want = _nameAliases[want];
         for (const key in byId) {
             const e = byId[key];
             if (e.name.toLowerCase().replace(/[^a-z0-9]/g, "") === want) return e;

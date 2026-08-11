@@ -175,6 +175,26 @@ Item {
     readonly property real originX: lonToWorldX(_centerLon) - width / 2 + panX
     readonly property real originY: latToWorldY(_centerLat) - height / 2 + panY
 
+    // Scroll to zoom - real request, 2026-08-11 (André): "inside every map with zoom, can we
+    // alocate scroll up to zoom in and scroll down to zoom out?". Lives here rather than
+    // being repeated in each map's owner, so every map behaves the same way and a new map
+    // gets it for free.
+    //
+    // OPT-IN, and that is the point rather than an oversight: several of this app's maps are
+    // small previews sitting inside a scrolling page (the activity cards' grid, Home's own
+    // preview). A wheel handler on those would swallow the scroll meant for the page, so the
+    // list would stop scrolling whenever the pointer crossed a thumbnail. Enabled on maps
+    // the user actually navigates; left off on maps that are pictures.
+    property bool scrollZoom: false
+
+    WheelHandler {
+        enabled: root.scrollZoom
+        acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+        // Up (positive angleDelta) zooms in, down zooms out - the direction every map
+        // application uses.
+        onWheel: (event) => root.zoomBy(event.angleDelta.y > 0 ? 1 : -1)
+    }
+
     // Zoom a step, keeping the panned view anchored: pan is measured in pixels at the
     // current zoom, so it has to be rescaled when that zoom changes or the map jumps.
     function zoomBy(steps) {
@@ -217,7 +237,9 @@ Item {
             y: modelData.y * root.tileSize - root.originY
             width: root.tileSize
             height: root.tileSize
-            source: MapService.tileHost + root.tileZ + "/" + modelData.x + "/" + modelData.y + ".png"
+            // Through MapService's own builder - see its comment on why the provider owns
+            // the URL shape (IGN's is query parameters, not path segments).
+            source: MapService.tileUrl(root.tileZ, modelData.x, modelData.y)
             asynchronous: true
             cache: true
         }

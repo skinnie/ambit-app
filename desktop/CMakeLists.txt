@@ -45,6 +45,12 @@ set_source_files_properties(qml/Icons.qml PROPERTIES
 set_source_files_properties(qml/ActivityTypes.qml PROPERTIES
     QT_QML_SINGLETON_TYPE true
 )
+set_source_files_properties(qml/WatchUnits.qml PROPERTIES
+    QT_QML_SINGLETON_TYPE true
+)
+set_source_files_properties(qml/TotalsFacts.qml PROPERTIES
+    QT_QML_SINGLETON_TYPE true
+)
 set_source_files_properties(qml/viewmodels/HomeViewModel.qml PROPERTIES
     QT_QML_SINGLETON_TYPE true
 )
@@ -80,6 +86,15 @@ qt_add_qml_module(ambitapp
         qml/components/ClockSyncDialog.qml
         qml/components/ActivityRow.qml
         qml/components/PoiPickerDialog.qml
+        qml/components/DemoDevicePicker.qml
+        qml/components/LoadingPill.qml
+        qml/WatchUnits.qml
+        qml/TotalsFacts.qml
+        qml/components/TotalsCard.qml
+        qml/components/HomeLocationDialog.qml
+        qml/components/PlaceSearchBar.qml
+        qml/pages/TotalsPage.qml
+        qml/pages/CalendarPage.qml
         qml/components/Icon.qml
         qml/components/RoundedComboBox.qml
         qml/components/RoundedButton.qml

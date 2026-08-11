@@ -417,7 +417,8 @@
       "supportsFootPod": true,
       "supportsBikePod": true,
       "supportsPowerPod": true,
-      "supportsCadencePod": true
+      "supportsCadencePod": true,
+      "productName": "Suunto Ambit2"
     },
     "Greentit": {
       "name": "AMBIT2_R",
@@ -437,7 +438,8 @@
       "supportsFootPod": true,
       "supportsBikePod": false,
       "supportsPowerPod": false,
-      "supportsCadencePod": false
+      "supportsCadencePod": false,
+      "productName": "Suunto Ambit2 R"
     },
     "Colibri": {
       "name": "AMBIT2_S",
@@ -457,7 +459,8 @@
       "supportsFootPod": true,
       "supportsBikePod": true,
       "supportsPowerPod": true,
-      "supportsCadencePod": true
+      "supportsCadencePod": true,
+      "productName": "Suunto Ambit2 S"
     },
     "Emu": {
       "name": "AMBIT3_P",
@@ -477,7 +480,8 @@
       "supportsFootPod": true,
       "supportsBikePod": true,
       "supportsPowerPod": true,
-      "supportsCadencePod": false
+      "supportsCadencePod": false,
+      "productName": "Suunto Ambit3 Peak"
     },
     "Ibisbill": {
       "name": "AMBIT3_R",
@@ -497,7 +501,8 @@
       "supportsFootPod": true,
       "supportsBikePod": false,
       "supportsPowerPod": false,
-      "supportsCadencePod": false
+      "supportsCadencePod": false,
+      "productName": "Suunto Ambit3 Run"
     },
     "Finch": {
       "name": "AMBIT3_S",
@@ -517,7 +522,8 @@
       "supportsFootPod": true,
       "supportsBikePod": true,
       "supportsPowerPod": true,
-      "supportsCadencePod": false
+      "supportsCadencePod": false,
+      "productName": "Suunto Ambit3 Sport"
     },
     "Kaka": {
       "name": "AMBIT3_V",
@@ -537,7 +543,8 @@
       "supportsFootPod": true,
       "supportsBikePod": true,
       "supportsPowerPod": true,
-      "supportsCadencePod": false
+      "supportsCadencePod": false,
+      "productName": "Suunto Ambit3 Vertical"
     },
     "Hoopoe": {
       "name": "KAILASH",
@@ -557,7 +564,8 @@
       "supportsFootPod": true,
       "supportsBikePod": false,
       "supportsPowerPod": false,
-      "supportsCadencePod": false
+      "supportsCadencePod": false,
+      "productName": "Kailash"
     },
     "Jabiru": {
       "name": "TRAVERSE",
@@ -577,7 +585,8 @@
       "supportsFootPod": false,
       "supportsBikePod": false,
       "supportsPowerPod": false,
-      "supportsCadencePod": false
+      "supportsCadencePod": false,
+      "productName": "Suunto Traverse"
     },
     "Loon": {
       "name": "TRAVERSE_ALPHA",
@@ -597,7 +606,8 @@
       "supportsFootPod": false,
       "supportsBikePod": false,
       "supportsPowerPod": false,
-      "supportsCadencePod": false
+      "supportsCadencePod": false,
+      "productName": "Suunto Traverse Alpha"
     },
     "GpsPod": {
       "name": "GPS_POD",
@@ -637,7 +647,8 @@
       "supportsFootPod": true,
       "supportsBikePod": false,
       "supportsPowerPod": false,
-      "supportsCadencePod": false
+      "supportsCadencePod": false,
+      "productName": "Suunto EON Steel"
     },
     "Guru2": {
       "name": "EON_CORE",
@@ -657,7 +668,8 @@
       "supportsFootPod": true,
       "supportsBikePod": false,
       "supportsPowerPod": false,
-      "supportsCadencePod": false
+      "supportsCadencePod": false,
+      "productName": "Suunto EON Core"
     },
     "Guru3": {
       "name": "D5",
@@ -677,7 +689,8 @@
       "supportsFootPod": true,
       "supportsBikePod": false,
       "supportsPowerPod": false,
-      "supportsCadencePod": false
+      "supportsCadencePod": false,
+      "productName": "Suunto D5"
     },
     "GuruE": {
       "name": "EON_STEEL_BLACK",
@@ -697,7 +710,8 @@
       "supportsFootPod": true,
       "supportsBikePod": false,
       "supportsPowerPod": false,
-      "supportsCadencePod": false
+      "supportsCadencePod": false,
+      "productName": "Suunto EON Steel Black"
     },
     "Cobra3": {
       "name": "COBRA3",

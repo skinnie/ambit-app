@@ -17,6 +17,7 @@ QtObject {
     readonly property string backup: ""
     readonly property string settings: ""
     readonly property string sportModes: ""        // sports
+    readonly property string calendar: ""          // calendar_month
 
     readonly property string add: ""
     readonly property string arrowBack: ""

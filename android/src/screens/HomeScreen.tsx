@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  Alert, ActivityIndicator, useWindowDimensions, ScrollView,
+  Alert, ActivityIndicator, useWindowDimensions, ScrollView, Linking,
 } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -24,6 +24,7 @@ import { ambitBleDeviceProvider } from '../services/devices/AmbitBleDeviceProvid
 import { decodeDeviceHistory, KailashHistory } from '../services/KailashHistoryReader';
 import { decodeDeviceLog, realTrackPoints, deviceLogToGpx, KailashDeviceLog } from '../services/KailashDeviceLogReader';
 import { APP_VERSION } from '../config/version';
+import { manualUrlFor, garminManualUrlFor } from '../config/manuals';
 import { t } from '../i18n';
 import Icon from '../components/ui/Icon';
 import { ActionTile, Badge, Button, Chip, Logo, StatusLine } from '../components/ui/primitives';
@@ -658,6 +659,19 @@ export default function HomeScreen() {
               </Text>
               <Chip icon="check" label={t.homeDeviceConnectedStatus} />
             </View>
+            {/* Real, 2026-08-11 (André: "I added etrex manuals to the files, can you link
+                it to the supported devices?") - same mechanism as the Ambit manual link
+                below, family-matched (garminManualUrlFor()) since Garmin's own model text
+                doesn't map 1:1 the way Suunto codenames do. */}
+            <TouchableOpacity
+              style={styles.timeSyncRow}
+              onPress={() => Linking.openURL(garminManualUrlFor(vol?.model))}
+            >
+              <Icon name="info" size={14} color={theme.primary} />
+              <Text style={[styles.timeSyncText, { color: theme.primary }]}>
+                {t.homeManualLink}
+              </Text>
+            </TouchableOpacity>
           </Card>
         );
       })()}
@@ -698,6 +712,20 @@ export default function HomeScreen() {
             <Icon name="sync" size={14} color={theme.primary} />
             <Text style={[styles.timeSyncText, { color: theme.primary }]}>
               {timeSyncBusy ? t.connecting : (timeSyncMsg ?? t.homeSyncTimeButton)}
+            </Text>
+          </TouchableOpacity>
+          {/* Real, 2026-08-11 (André: "put the manual next to hardware") - opens the real
+              Suunto user-guide PDF for whichever model is connected (manualUrlFor(),
+              config/manuals.ts - same table as desktop's HomeViewModel.qml manualUrl) in
+              the OS's own PDF viewer/browser, same Linking.openURL() mechanism as any other
+              "open outside the app" action here. */}
+          <TouchableOpacity
+            style={styles.timeSyncRow}
+            onPress={() => Linking.openURL(manualUrlFor(ambitInfo.model))}
+          >
+            <Icon name="info" size={14} color={theme.primary} />
+            <Text style={[styles.timeSyncText, { color: theme.primary }]}>
+              {t.homeManualLink}
             </Text>
           </TouchableOpacity>
         </Card>

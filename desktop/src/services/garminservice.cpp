@@ -130,16 +130,28 @@ void GarminService::detect()
     QString model, firmware, partNumber;
     QString garminParentDir;
 
-    const auto storages = QStorageInfo::mountedVolumes();
-    for (const auto &storage : storages) {
-        if (!storage.isValid() || !storage.isReady())
-            continue;
-        const QString xmlPath = storage.rootPath() + QStringLiteral("/Garmin/GarminDevice.xml");
+    // Testing mode substitutes its fixture tree for the mounted-volume scan - deliberately
+    // instead of, not alongside, real hardware: a simulated device sitting next to a real one
+    // would make it impossible to tell which one the app is talking about.
+    QStringList roots;
+    if (!m_demoRoot.isEmpty()) {
+        roots << m_demoRoot + QStringLiteral("/internal")
+              << m_demoRoot + QStringLiteral("/sdcard");
+    } else {
+        const auto storages = QStorageInfo::mountedVolumes();
+        for (const auto &storage : storages) {
+            if (storage.isValid() && storage.isReady())
+                roots << storage.rootPath();
+        }
+    }
+
+    for (const QString &root : roots) {
+        const QString xmlPath = root + QStringLiteral("/Garmin/GarminDevice.xml");
         if (!QFile::exists(xmlPath))
             continue;
 
         Volume vol;
-        vol.rootPath = storage.rootPath();
+        vol.rootPath = root;
         QString thisModel, thisFirmware, thisPartNumber;
         if (!parseGarminDeviceXml(xmlPath, vol, thisModel, thisFirmware, thisPartNumber))
             continue;
@@ -162,18 +174,20 @@ void GarminService::detect()
     // /media/$USER/) without its own GarminDeviceXml as the SD card slot.
     bool hasSd = false;
     if (!m_volumes.isEmpty()) {
-        for (const auto &storage : storages) {
-            if (!storage.isValid() || !storage.isReady())
-                continue;
-            if (QFileInfo(storage.rootPath()).absolutePath() != garminParentDir)
+        for (const QString &root : roots) {
+            // The fixture's two volumes are siblings under one folder, so the real parent-dir
+            // heuristic below would reject the second one. Testing mode states outright which
+            // volume is the card instead of inferring it.
+            const bool demoSd = !m_demoRoot.isEmpty() && root.endsWith(QStringLiteral("/sdcard"));
+            if (!demoSd && QFileInfo(root).absolutePath() != garminParentDir)
                 continue;
             const bool alreadyKnown = std::any_of(
                 m_volumes.begin(), m_volumes.end(),
-                [&](const Volume &v) { return v.rootPath == storage.rootPath(); });
+                [&](const Volume &v) { return v.rootPath == root; });
             if (alreadyKnown)
                 continue;
             Volume sdVol;
-            sdVol.rootPath = storage.rootPath();
+            sdVol.rootPath = root;
             sdVol.hasGarminDeviceXml = false;
             sdVol.writePath = QStringLiteral("Garmin/GPX");
             m_volumes.append(sdVol);
@@ -311,7 +325,28 @@ QVariantMap GarminService::parseActivityGpx(const QString &gpxText)
     result[QStringLiteral("ascentMeters")] = ascent;
     result[QStringLiteral("sportTypeRaw")] = -1;  // no sport-type concept in a real Garmin GPX
     result[QStringLiteral("track")] = track;
+    // Same real gap as Kailash's TrackLog (see tools/kailash_tracklog.py's own comment): an
+    // eTrex has no sport-mode concept at all. Real captured GPX files DO usually carry a
+    // <name> (demo_data/garmin/.../Current.gpx has "Morning walk", "Park loop" - the
+    // device's own auto-generated/user track title, read from <metadata><name> here since
+    // this parser doesn't scope the "name" tag to <trk>) - a real label, but not one that
+    // matches any of the 84 Suunto ActivityType names, so keeping it silently sent every
+    // eTrex activity to the generic "Unspecified sport" badge. Always "Walk" instead, same
+    // as Kailash - not conditional on whether a name was found - so this lands in the same
+    // ActivityTypes bucket as an Ambit "Walk" sport mode (ActivityTypes.qml's forName()
+    // resolves both to id 12 "Walking"), which is what lets TotalsPage.qml group these
+    // together across devices instead of splitting them into an unclassified pile per
+    // device.
+    result[QStringLiteral("name")] = QStringLiteral("Walk");
     return result;
+}
+
+void GarminService::setDemoRoot(const QString &root)
+{
+    if (m_demoRoot == root)
+        return;
+    m_demoRoot = root;
+    detect();
 }
 
 void GarminService::refreshActivities()

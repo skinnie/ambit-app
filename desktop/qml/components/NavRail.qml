@@ -56,8 +56,30 @@ Rectangle {
             selected: root.currentPage === "pois"
             onClicked: root.pageSelected("pois")
         }
+        // Totals - André, 2026-08-11 ("Create a new screen: Totals (For the year)"). Sits
+        // next to Activities because it is the same data, summed: no device support to gate
+        // on, so it shows for every device including none, where it explains itself.
         NavItem {
             width: parent.width
+            glyph: Icons.sportModes
+            label: qsTr("Totals")
+            selected: root.currentPage === "totals"
+            onClicked: root.pageSelected("totals")
+        }
+        // Calendar - real request, 2026-08-11 (André, with a reference screenshot). Same
+        // reasoning as Totals just above: it's the same device-aware activity list, no
+        // device support to gate on, so it shows for every device including none.
+        NavItem {
+            width: parent.width
+            glyph: Icons.calendar
+            label: qsTr("Calendar")
+            selected: root.currentPage === "calendar"
+            onClicked: root.pageSelected("calendar")
+        }
+        NavItem {
+            width: parent.width
+            // Nothing to back up, and nothing to restore to, without a device.
+            visible: HomeViewModel.anyDevice
             glyph: Icons.backup
             label: qsTr("Backup")
             selected: root.currentPage === "backup"
@@ -71,7 +93,8 @@ Rectangle {
         // Sport Modes page exclusion is based on (no CustomModes region on that watch).
         NavItem {
             width: parent.width
-            visible: !HomeViewModel.isGarmin && !HomeViewModel.isKailash
+            visible: HomeViewModel.anyDevice
+                     && !HomeViewModel.isGarmin && !HomeViewModel.isKailash
             useIntervalsIcon: true
             label: qsTr("Intervals")
             selected: root.currentPage === "intervals"
@@ -81,8 +104,13 @@ Rectangle {
             width: parent.width
             // Kailash excluded, real 2026-08-08: its own memory map reports no CustomModes
             // region at all (confirmed empty - see custom_modes_andre.md's Kailash
-            // section), so this page has nothing to show for it.
-            visible: FeatureFlags.sportModes && !HomeViewModel.isKailash
+            // section), so this page has nothing to show for it. Garmin excluded, real
+            // 2026-08-11 (André: "sports modes should not appear on etrex") - an eTrex is a
+            // plain GPS logger with no on-watch sport-mode concept either (see
+            // GarminService::parseActivityGpx()'s own "no sport-type concept in a real
+            // Garmin GPX" comment), so same reasoning as Kailash applies.
+            visible: FeatureFlags.sportModes && HomeViewModel.anyDevice
+                     && !HomeViewModel.isKailash && !HomeViewModel.isGarmin
             glyph: Icons.sportModes
             label: qsTr("Sport Modes")
             selected: root.currentPage === "sportModes"

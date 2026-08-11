@@ -16,12 +16,25 @@ QtObject {
         return qsTr("%1 min").arg(m);
     }
 
+    // Distance and elevation follow the WATCH's unit setting, not a hardcoded metric
+    // (André, 2026-08-11: "read the units system from the watch and make the app match
+    // it"). The stored values stay SI - see WatchUnits.qml's own header for why the
+    // conversion belongs at display time and nowhere else.
     function formatDistance(meters) {
-        return qsTr("%1 km").arg((meters / 1000).toFixed(1));
+        return WatchUnits.distance(meters);
     }
 
     function formatElevation(meters) {
-        return qsTr("%1 m").arg(Math.round(meters));
+        return WatchUnits.altitude(meters);
+    }
+
+    // kcal, straight off the watch. No unit choice exists for energy on this hardware -
+    // see WatchUnits.qml. Returns "" for an activity that never recorded it (an older
+    // cached GPX predates the field), so the UI can hide the figure rather than claim the
+    // move cost nothing.
+    function formatEnergy(kcal) {
+        if (!kcal || kcal <= 0) return "";
+        return WatchUnits.energy(kcal);
     }
 
     function formatDate(isoString) {

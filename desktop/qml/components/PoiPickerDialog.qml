@@ -47,6 +47,16 @@ ThemedDialog {
             placeholderText: qsTr("Name this POI")
         }
 
+        // Search by name, then fine-tune by hand on the map - André, 2026-08-11.
+        PlaceSearchBar {
+            width: parent.width
+            onPlaceChosen: (lat, lon) => {
+                root.latitude = lat
+                root.longitude = lon
+                map.resetView()
+            }
+        }
+
         Row {
             width: parent.width
             spacing: Theme.spacingSmall
@@ -88,10 +98,11 @@ ThemedDialog {
 
         Item {
             width: parent.width
-            height: root.height - 230
+            height: root.height - 310
 
             MapView {
                 id: map
+                scrollZoom: true
                 anchors.fill: parent
                 clip: true
                 latitude: root.latitude
@@ -126,10 +137,6 @@ ThemedDialog {
                         lastX = centroid.position.x
                         lastY = centroid.position.y
                     }
-                }
-                WheelHandler {
-                    acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
-                    onWheel: (event) => map.zoomBy(event.angleDelta.y > 0 ? 1 : -1)
                 }
                 HoverHandler {
                     cursorShape: panner.active ? Qt.ClosedHandCursor : Qt.CrossCursor

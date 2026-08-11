@@ -19,10 +19,28 @@ Rectangle {
     signal opened()
 
     width: parent ? parent.width : 0
-    height: 56
+    height: 64
     radius: Theme.radiusCard
-    color: hover.hovered ? Theme.card : "transparent"
-    Behavior on color { ColorAnimation { duration: 120; easing.type: Easing.OutCubic } }
+    color: "transparent"
+
+    // Real bug, 2026-08-11 (André): "in activities there is the same flashing with grey when
+    // i move on the activities. please solve it as you did before."
+    //
+    // Same cause as the sport-mode display rows: animating `color` between "transparent" and
+    // Theme.card interpolates through rgba(0,0,0,0) -> opaque, so every frame in between is
+    // a translucent BLACK, which on a light background reads as a grey flash. Nothing is
+    // wrong with the endpoints; it is the path between them.
+    //
+    // The fix, same as before: the colour never animates. A sibling background sits at the
+    // final colour the whole time and its OPACITY animates instead, which fades card-colour
+    // over the page rather than through black.
+    Rectangle {
+        anchors.fill: parent
+        radius: parent.radius
+        color: Theme.card
+        opacity: hover.hovered ? 1 : 0
+        Behavior on opacity { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+    }
 
     HoverHandler { id: hover }
     TapHandler { onTapped: root.opened() }
@@ -65,32 +83,58 @@ Rectangle {
             }
         }
 
-        Text {
-            anchors.verticalCenter: parent.verticalCenter
-            width: 90
-            horizontalAlignment: Text.AlignRight
-            text: root.activity
-                  ? ActivityViewModel.formatDistance(root.activity.distanceMeters) : ""
-            color: Theme.text
-            font.pixelSize: Theme.fontSizeBody
-        }
-        Text {
-            anchors.verticalCenter: parent.verticalCenter
-            width: 90
-            horizontalAlignment: Text.AlignRight
-            text: root.activity
-                  ? ActivityViewModel.formatDuration(root.activity.durationSeconds) : ""
-            color: Theme.text
-            font.pixelSize: Theme.fontSizeBody
-        }
-        Text {
-            anchors.verticalCenter: parent.verticalCenter
-            width: 80
-            horizontalAlignment: Text.AlignRight
-            text: root.activity
-                  ? ActivityViewModel.formatElevation(root.activity.ascentMeters) : ""
-            color: Theme.mutedText
-            font.pixelSize: Theme.fontSizeBody
+        // Each figure says what it is on hover - real request, 2026-08-11 (André): "when
+        // you pass the mouse over a data, say what is that data field". A row of bare
+        // numbers is only readable if you already know the column order; this makes it
+        // readable without that. The number and the unit still come from the watch's own
+        // unit setting (see WatchUnits.qml), so the hint matches what is shown.
+        Repeater {
+            model: [
+                {
+                    text: root.activity
+                          ? ActivityViewModel.formatDistance(root.activity.distanceMeters) : "",
+                    hint: qsTr("This was your distance"),
+                    muted: false, w: 96
+                },
+                {
+                    text: root.activity
+                          ? ActivityViewModel.formatDuration(root.activity.durationSeconds) : "",
+                    hint: qsTr("This was the duration"),
+                    muted: false, w: 96
+                },
+                {
+                    text: root.activity
+                          ? ActivityViewModel.formatElevation(root.activity.ascentMeters) : "",
+                    hint: qsTr("This is your ascent"),
+                    muted: true, w: 88
+                },
+                {
+                    // Blank for a move with no recorded energy rather than a false "0 kcal"
+                    // - an activity cached before this field was carried through has none.
+                    text: root.activity
+                          ? ActivityViewModel.formatEnergy(root.activity.energyKcal) : "",
+                    hint: qsTr("This is the energy you spent"),
+                    muted: true, w: 96
+                },
+            ]
+            delegate: Item {
+                required property var modelData
+                anchors.verticalCenter: parent.verticalCenter
+                width: modelData.w
+                height: figure.implicitHeight
+
+                Text {
+                    id: figure
+                    anchors.right: parent.right
+                    text: modelData.text
+                    color: modelData.muted ? Theme.mutedText : Theme.text
+                    font.pixelSize: Theme.fontSizeBody
+                }
+                HoverHandler { id: figureHover }
+                ToolTip.visible: figureHover.hovered && modelData.text.length > 0
+                ToolTip.text: modelData.hint
+                ToolTip.delay: 300
+            }
         }
     }
 

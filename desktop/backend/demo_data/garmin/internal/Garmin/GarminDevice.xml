@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Device xmlns="http://www.garmin.com/xmlschemas/GarminDevice/v2">
+  <Model>
+    <PartNumber>006-B1305-00</PartNumber>
+    <SoftwareVersion>501</SoftwareVersion>
+    <Description>eTrex 30</Description>
+  </Model>
+  <Id>0000000000</Id>
+  <MassStorageMode>
+    <DataType>
+      <Name>GPSData</Name>
+      <File>
+        <Location>
+          <Path>Garmin/GPX</Path>
+        </Location>
+        <TransferDirection>InputToUnit</TransferDirection>
+      </File>
+      <File>
+        <Location>
+          <Path>Garmin/GPX/Current</Path>
+          <BaseName>Current</BaseName>
+          <FileExtension>GPX</FileExtension>
+        </Location>
+        <TransferDirection>OutputFromUnit</TransferDirection>
+      </File>
+    </DataType>
+  </MassStorageMode>
+</Device>

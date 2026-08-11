@@ -3,8 +3,9 @@ import QtQuick
 import AmbitApp
 
 QtObject {
+    // Follows the watch's own unit setting, same as activities - see WatchUnits.qml.
     function formatDistance(meters) {
-        return qsTr("%1 km").arg((meters / 1000).toFixed(1));
+        return WatchUnits.distance(meters);
     }
 
     function trackCenter(track) {

@@ -57,6 +57,14 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 TapHandler { onTapped: root.back() }
             }
+            // Same per-sport badge as the grid/list views - see ActivityCard.qml's own
+            // comment for why Kailash/Garmin "Walk" activities land on the same badge as an
+            // Ambit "Walk" sport mode here too.
+            ActivityBadge {
+                activityId: activity ? ActivityTypes.forName(activity.name).id : 1
+                size: 24
+                anchors.verticalCenter: parent.verticalCenter
+            }
             Text {
                 text: activity ? (activity.name || qsTr("Untitled activity")) : ""
                 font.pixelSize: Theme.fontSizeTitle
@@ -73,6 +81,9 @@ Item {
 
             MapView {
                 anchors.fill: parent
+                // Scroll to zoom - this map fills the detail view and is not inside a
+                // scrolling page, so the wheel has nothing else to do here.
+                scrollZoom: true
                 visible: root._center !== null
                 latitude: root._center ? root._center.lat : 0
                 longitude: root._center ? root._center.lon : 0

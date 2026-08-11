@@ -61,7 +61,16 @@ Card {
             padding: Theme.spacingMedium
             spacing: Theme.spacingSmall
 
-            Icon { glyph: Icons.activities; size: 20; color: Theme.primary }
+            // Same per-sport badge ActivityRow.qml's list view already shows, resolved off
+            // `activity.name` through the one shared ActivityTypes table (2026-08-11: this
+            // used to be a plain generic glyph here regardless of sport - Ambit, Kailash and
+            // Garmin activities all looked identical in the grid, the default view, even
+            // though Kailash/Garmin are named "Walk" the same way an Ambit "Walk" sport mode
+            // is and so already resolve to the exact same "Walking" entry via forName()).
+            ActivityBadge {
+                activityId: ActivityTypes.forName(activity.name).id
+                size: 20
+            }
 
             Column {
                 spacing: 2

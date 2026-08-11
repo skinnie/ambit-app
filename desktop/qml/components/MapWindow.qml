@@ -56,6 +56,7 @@ ThemedDialog {
 
         MapView {
             id: map
+            scrollZoom: true
             anchors.fill: parent
             trackPoints: root.trackPoints
             markers: root.markers
@@ -87,10 +88,6 @@ ThemedDialog {
                 }
             }
 
-            WheelHandler {
-                acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
-                onWheel: (event) => map.zoomBy(event.angleDelta.y > 0 ? 1 : -1)
-            }
 
             HoverHandler {
                 cursorShape: dragHandler.active ? Qt.ClosedHandCursor : Qt.OpenHandCursor

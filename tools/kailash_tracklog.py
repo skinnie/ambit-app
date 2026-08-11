@@ -169,7 +169,14 @@ def to_activity(points):
     distance = sum(haversine_meters(a["lat"], a["lon"], b["lat"], b["lon"])
                    for a, b in zip(points, points[1:]))
     return {
-        "name": "Kailash TrackLog",
+        # "Walk" - the same name a real Ambit3 default sport mode uses (SportModesPage.qml's
+        # own confirmed SuuntoLink defaults list). Kailash's DeviceHistory sessions carry no
+        # decoded sport-mode field of their own (kailash_history.py) to name this from, and
+        # every real capture of this watch so far is a walk - naming it exactly what Ambit
+        # would is what lets ActivityTypes.forName() (desktop/qml/ActivityTypes.qml) resolve
+        # both to the same "Walking" id, so TotalsPage.qml groups them into one bucket
+        # instead of splitting Kailash's walks into their own device-specific pile.
+        "name": "Walk",
         "startTime": start,
         "distanceMeters": round(distance, 1),
         "durationSeconds": max(0, end_minutes * 60),
@@ -269,10 +276,12 @@ def split_into_activities(points, sessions):
             matched = [p for dt, p in point_dts if lo <= dt <= hi]
 
         activity = to_activity(matched) or {
-            "name": "Kailash Walk", "startTime": None, "distanceMeters": 0,
+            "name": "Walk", "startTime": None, "distanceMeters": 0,
             "durationSeconds": 0, "track": [], "gpxText": "",
         }
-        activity["name"] = "Kailash Walk"
+        # Same "Walk" as to_activity()'s own comment - matches Ambit's real default sport
+        # mode name so ActivityTypes.forName() classifies this the same way across devices.
+        activity["name"] = "Walk"
         # The session's own real watch-reported stats win over the GPS-derived ones.
         if s.get("when") is not None:
             activity["startTime"] = s["when"]

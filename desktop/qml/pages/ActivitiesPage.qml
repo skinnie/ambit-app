@@ -89,14 +89,24 @@ Item {
     // wasn't. Garmin's own read is a plain local file read - fast, and Kailash's own
     // DeviceHistory read (2026-08-09) is a single 0x1200 query, also fast - so this message
     // only applies to the Ambit3 ExerciseLog path.
-    Text {
+    LoadingPill {
+        // Real, 2026-08-11 (André, with a screenshot): "give some spacing" - the pill was
+        // painting straight over the first activity rows. Exactly the bug the Kailash banner
+        // below already hit ("the loading text is on the back of the activities cards"): the
+        // fast session list can arrive while this is still up, and the list/grid, declared
+        // later in this file, only knew to move down for that OTHER banner. Both indicators
+        // are now in the anchor chain, and this one gets the same explicit z.
+        id: activityLoadingPill
+        z: 1
         visible: root.selectedActivity === null && root.loading
                  && !HomeViewModel.isGarmin && !HomeViewModel.isKailash
         anchors.horizontalCenter: parent.horizontalCenter
         y: Theme.spacingLarge
-        color: Theme.mutedText
-        text: qsTr("Reading activities off the watch - this can take a couple of minutes " +
-                    "(the log is read in full over USB, there's no faster path yet)...")
+        text: qsTr("Adventures loading...")
+        // The apology went (André, 2026-08-11: "take out that part") - it explained OUR
+        // constraint, which is not the user's problem. How long to expect stays: that is
+        // the one thing worth knowing while waiting on a multi-minute read.
+        detail: qsTr("Reading them off the watch - this can take a couple of minutes")
     }
 
     // Real, 2026-08-09 ("activities, they take a while to load...any chance of fixing?") -
@@ -236,8 +246,10 @@ Item {
         // top margin, with the grid painting right up against/behind it (z: 1 on the banner
         // only fixed which one is on top, not the fact they occupied the same space). Drops
         // below the banner's own bottom edge, with real spacing, only while it's visible.
-        anchors.top: trackLogLoadingBanner.visible ? trackLogLoadingBanner.bottom : parent.top
-        anchors.topMargin: trackLogLoadingBanner.visible ? Theme.spacingMedium : Theme.spacingLarge
+        anchors.top: trackLogLoadingBanner.visible ? trackLogLoadingBanner.bottom
+                     : activityLoadingPill.visible ? activityLoadingPill.bottom : parent.top
+        anchors.topMargin: (trackLogLoadingBanner.visible || activityLoadingPill.visible)
+                           ? Theme.spacingMedium : Theme.spacingLarge
         visible: root.selectedActivity === null && Theme.activitiesView !== "list"
         clip: true
         cellWidth: 360 + Theme.spacingMedium
@@ -275,8 +287,10 @@ Item {
         anchors.leftMargin: Theme.spacingLarge
         anchors.rightMargin: Theme.spacingLarge
         anchors.bottomMargin: Theme.spacingLarge
-        anchors.top: trackLogLoadingBanner.visible ? trackLogLoadingBanner.bottom : parent.top
-        anchors.topMargin: trackLogLoadingBanner.visible ? Theme.spacingMedium : Theme.spacingLarge
+        anchors.top: trackLogLoadingBanner.visible ? trackLogLoadingBanner.bottom
+                     : activityLoadingPill.visible ? activityLoadingPill.bottom : parent.top
+        anchors.topMargin: (trackLogLoadingBanner.visible || activityLoadingPill.visible)
+                           ? Theme.spacingMedium : Theme.spacingLarge
         visible: root.selectedActivity === null && Theme.activitiesView === "list"
         clip: true
         reuseItems: true

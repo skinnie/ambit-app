@@ -33,7 +33,20 @@ ApplicationWindow {
         settings: "pages/SettingsPage.qml",
         sportModes: "pages/SportModesPage.qml",
         intervals: "pages/IntervalsPage.qml",
+        totals: "pages/TotalsPage.qml",
+        calendar: "pages/CalendarPage.qml",
     })
+
+    // Testing mode's simulated eTrex, wired here rather than in Settings: the device stays
+    // simulated while you walk around Activities, Routes and POIs, so the binding has to
+    // outlive whichever page is loaded. GarminService then discovers the fixture folder with
+    // its own real scan - Settings only decides which device is selected, it does not reach
+    // into the Garmin path itself.
+    Binding {
+        target: GarminService
+        property: "demoRoot"
+        value: DeviceService.demoGarminRoot
+    }
 
     Row {
         anchors.fill: parent
