@@ -112,6 +112,10 @@ Flickable {
     // reports 5 sport modes / 4 displays / no multisport and the UI follows, without anyone
     // adding a per-device branch here (André, item 24).
     readonly property var caps: CustomModesService.capabilities
+    // Space reserved at each end of the display strip for its scroll arrows, so they sit
+    // beside the displays rather than on top of one.
+    readonly property int arrowGutter: 34
+
     readonly property int maxDisplays: caps.maxDisplays ? caps.maxDisplays : 8
     readonly property int deviceMaxSportModes: caps.maxSportModes ? caps.maxSportModes : 10
     readonly property int deviceMaxMultisport:
@@ -831,9 +835,17 @@ Flickable {
                 // Filmstrip - only the user's own displays, never the built-in watch screens
                 // (Compass/Navigation/Map): those are not editable, do not count toward the
                 // limit, and showing them made the strip look like it held more than the max.
-                Flickable {
+                Item {
                     width: parent.width
                     height: 140
+
+                Flickable {
+                    id: filmStrip
+                    // Inset by the arrow gutters, so the arrows have their own space and can
+                    // never sit on top of a display.
+                    anchors.fill: parent
+                    anchors.leftMargin: root.arrowGutter
+                    anchors.rightMargin: root.arrowGutter
                     contentWidth: filmRow.width
                     clip: true
                     boundsBehavior: Flickable.StopAtBounds
@@ -889,6 +901,35 @@ Flickable {
                                            ? Theme.text : Theme.mutedText
                                     font.pixelSize: Theme.fontSizeCaption
                                 }
+                                // Remove sits under the display it removes - André,
+                                // 2026-08-11: the old full-size button in the row below "was
+                                // out of place, too big compared to the text". Small, muted,
+                                // and only on the selected face, so it cannot be hit while
+                                // clicking rows on another one.
+                                Text {
+                                    width: 100
+                                    horizontalAlignment: Text.AlignHCenter
+                                    visible: filmItem.index === root.currentDisplayIndex
+                                             && displaysColumn.displays.length > 1
+                                             && !CustomModesService.writingMode
+                                    text: qsTr("Remove")
+                                    color: removeHover.hovered ? Theme.error : Theme.mutedText
+                                    font.pixelSize: Theme.fontSizeCaption
+                                    font.underline: removeHover.hovered
+                                    Behavior on color { ColorAnimation { duration: 120 } }
+                                    HoverHandler {
+                                        id: removeHover
+                                        cursorShape: Qt.PointingHandCursor
+                                    }
+                                    TapHandler {
+                                        onTapped: {
+                                            root.stageEdit({ "op": "remove",
+                                                             "display": filmItem.index })
+                                            if (root.currentDisplayIndex > 0)
+                                                root.currentDisplayIndex--
+                                        }
+                                    }
+                                }
                             }
                         }
 
@@ -919,6 +960,73 @@ Flickable {
                                 color: Theme.mutedText
                                 font.pixelSize: Theme.fontSizeCaption
                             }
+                        }
+                    }
+                }
+
+                    // Scroll cues - André, 2026-08-11: "add a very light shadowed right arrow
+                    // on the right bottom, centered compared to the displays, so people
+                    // understand they need to move... and when we move the displays, and a
+                    // left one is hidden, add a left arrow on left side."
+                    //
+                    // A horizontal strip that scrolls with no affordance is invisible: there
+                    // is nothing on screen saying more displays exist off the edge. Each arrow
+                    // shows only while there is actually something that way, so they double as
+                    // the indicator of where you are in the strip.
+                    Rectangle {
+                        anchors.left: parent.left
+                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.verticalCenterOffset: -14
+                        width: root.arrowGutter - 4
+                        height: root.arrowGutter - 4
+                        radius: width / 2
+                        color: Theme.card
+                        opacity: leftArrowHover.hovered ? 0.95 : 0.65
+                        visible: filmStrip.contentX > 1
+                        Behavior on opacity { NumberAnimation { duration: 120 } }
+                        // chevronRight turned around, NOT a chevronLeft: the icon font is
+                        // subset to only the codepoints this app uses (assets/fonts/
+                        // NOTICE.md), so adding one means regenerating the font. Rotating
+                        // costs nothing and cannot render as tofu. Found live, 2026-08-11 -
+                        // Icons.chevronLeft does not exist, so the arrow drew an empty circle
+                        // that is nearly invisible on a dark background, which is exactly what
+                        // André saw as "missing the left arrow".
+                        Icon {
+                            anchors.centerIn: parent
+                            glyph: Icons.chevronRight
+                            rotation: 180
+                            size: 18
+                            color: Theme.text
+                        }
+                        HoverHandler { id: leftArrowHover; cursorShape: Qt.PointingHandCursor }
+                        TapHandler {
+                            onTapped: filmStrip.contentX =
+                                Math.max(0, filmStrip.contentX - (100 + Theme.spacingMedium))
+                        }
+                    }
+
+                    Rectangle {
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.verticalCenterOffset: -14
+                        width: root.arrowGutter - 4
+                        height: root.arrowGutter - 4
+                        radius: width / 2
+                        color: Theme.card
+                        opacity: rightArrowHover.hovered ? 0.95 : 0.65
+                        visible: filmStrip.contentX < filmStrip.contentWidth - filmStrip.width - 1
+                        Behavior on opacity { NumberAnimation { duration: 120 } }
+                        Icon {
+                            anchors.centerIn: parent
+                            glyph: Icons.chevronRight
+                            size: 18
+                            color: Theme.text
+                        }
+                        HoverHandler { id: rightArrowHover; cursorShape: Qt.PointingHandCursor }
+                        TapHandler {
+                            onTapped: filmStrip.contentX = Math.min(
+                                filmStrip.contentWidth - filmStrip.width,
+                                filmStrip.contentX + (100 + Theme.spacingMedium))
                         }
                     }
                 }
@@ -954,56 +1062,76 @@ Flickable {
                             font.bold: true
                             color: Theme.text
                         }
-                        RoundedButton {
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: qsTr("Change layout")
-                            // marker: layout button
-                            enabled: !CustomModesService.writingMode
-                            onClicked: layoutPicker.openFor(root.currentDisplayIndex)
-                        }
-                        RoundedButton {
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: qsTr("Remove this display")
-                            // Available on any display, including one just added - the old
-                            // version greyed this out on a staged display, so a mistaken Add
-                            // could not be taken back without discarding everything.
-                            enabled: displaysColumn.displays.length > 1
-                                     && !CustomModesService.writingMode
-                            onClicked: {
-                                root.stageEdit({ "op": "remove",
-                                                 "display": root.currentDisplayIndex })
-                                if (root.currentDisplayIndex > 0)
-                                    root.currentDisplayIndex--
-                            }
-                        }
                     }
 
-                    // What this display currently shows, read-only - André's choice, 2026-08-11,
-                    // over putting the values inside the circle (they do not fit at 100px for
-                    // three rows, and truncating them there would be worse than not showing
-                    // them). Removing the row list took the values off the screen entirely;
-                    // this puts them back without a second set of buttons for the same job.
-                    // Rows are separated by a middle dot, and a multi-value row lists its own
-                    // values with commas, so the grouping stays readable in one line.
-                    Text {
+                    // What each row holds, one line per row - André, 2026-08-11: "the list
+                    // needs to be vertical and listing what is inside each, so people know.
+                    // we can double the function of clicking on the number there, when we
+                    // click on a sports". So each line is also a click target for that row,
+                    // and is numbered to match the digit on the watch face above: the two are
+                    // one control seen twice, not two controls.
+                    //
+                    // A graph display shows its graphed value against the squiggle and its
+                    // data row against "1"; the middle field is that value's generated graph
+                    // and is deliberately not listed, since nobody picks it.
+                    Column {
                         width: parent.width
-                        wrapMode: Text.WordWrap
-                        maximumLineCount: 2
-                        elide: Text.ElideRight
-                        visible: text.length > 0
-                        color: Theme.mutedText
-                        font.pixelSize: Theme.fontSizeCaption
-                        text: {
-                            const disp = currentScreenColumn.current
-                            if (!disp || !disp.fields)
-                                return ""
-                            const parts = []
-                            for (const f of disp.fields) {
-                                const labels = (f.values || []).map(v => v.label)
-                                if (labels.length > 0)
-                                    parts.push(labels.join(", "))
+                        spacing: 2
+
+                        Repeater {
+                            model: currentScreenColumn.current
+                                   ? currentScreenColumn.current.fields : []
+                            delegate: Rectangle {
+                                id: valueLine
+                                required property var modelData
+                                required property int index
+
+                                readonly property bool isGraph:
+                                    currentScreenColumn.current
+                                    && currentScreenColumn.current.templateId === 257
+                                // The generated graph field - listed nowhere.
+                                readonly property bool hidden: isGraph && index === 1
+                                readonly property string marker:
+                                    isGraph ? (index === 0 ? qsTr("graph") : "1")
+                                            : String(index + 1)
+
+                                width: parent.width
+                                height: hidden ? 0 : valueText.implicitHeight + 8
+                                visible: !hidden
+                                radius: 4
+                                color: lineHover.hovered ? Theme.card : "transparent"
+                                Behavior on color { ColorAnimation { duration: 120 } }
+
+                                Row {
+                                    anchors.left: parent.left
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    anchors.leftMargin: 4
+                                    spacing: Theme.spacingSmall
+
+                                    Text {
+                                        width: 34
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        text: valueLine.marker
+                                        color: Theme.mutedText
+                                        font.pixelSize: Theme.fontSizeCaption
+                                        font.bold: true
+                                    }
+                                    Text {
+                                        id: valueText
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        text: (valueLine.modelData.values || [])
+                                                .map(v => v.label).join(", ")
+                                        color: lineHover.hovered ? Theme.text : Theme.mutedText
+                                        font.pixelSize: Theme.fontSizeBody
+                                    }
+                                }
+
+                                HoverHandler {
+                                    id: lineHover
+                                    cursorShape: Qt.PointingHandCursor
+                                }
+                                TapHandler { onTapped: root.editRow(valueLine.index) }
                             }
-                            return parts.join("  ·  ")
                         }
                     }
 
