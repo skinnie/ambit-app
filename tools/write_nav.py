@@ -706,7 +706,11 @@ def run_addpoi(args):
     never touches the Waypoints/Routes flash regions and needs no commit - it is only the
     0x0b24 read followed by the 0x0b25 rewrite of the full list, new record first (the
     same order poiimport's own capture shows). The same read-before-write rule as route
-    writes applies: skipping the read is what erased the POI store on 2026-08-04."""
+    writes applies: skipping the read is what erased the POI store on 2026-08-04.
+
+    Confirmed working on the real watch 2026-08-11 (André, first live write through the
+    desktop app: POI added, existing POIs intact) - this port is now hardware-proven in
+    its own right, not just by inheritance from the Android implementation."""
     if not args.name or not args.name.strip():
         raise SystemExit("addpoi: --name must not be empty (the watch shows POIs by name)")
     if args.lat is None or args.lon is None:
