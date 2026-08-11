@@ -2432,3 +2432,30 @@ What it did give:
    activity class 1-10 all match the manual exactly. Weight is the one difference - the
    manual says 30-200 kg, SuuntoLink's UI allows 30-250. The UI wins, since it is what gates
    the write; the disagreement is recorded rather than resolved.
+
+## Finding 51: APP_META is a last-edited stamp, not app metadata (2026-08-11)
+
+Correcting a claim made earlier the same day. When the two-write staging was built, only
+Running2 carried an EXERCISE_MODES_APP_META on André's watch, and Running2 is the only mode
+with Suunto Apps installed (5 of them) - so the tag was read as app metadata, present only
+where apps are, and `stamp_plan()` deliberately skipped any mode without one on the grounds
+that leaving it alone was already byte-identical to SuuntoLink's behaviour.
+
+That was a coincidence of which modes had been edited recently. André then edited two
+app-less modes in SuuntoLink - Cycling (the Empty test) and Pool swimming - and **both gained
+an APP_META, with Rules still 0**. Before: nine modes had none. After: exactly the two he
+touched have one. So SuuntoLink writes the stamp on any mode it saves, and the tag's name is
+narrower than its behaviour.
+
+Consequence, now implemented: a mode with no APP_META gets one CREATED on save rather than
+skipped, since matching SuuntoLink is the standing decision (André, "so we match perfectly").
+Observed shape when SuuntoLink creates one fresh - Cycling, T1 03:06:50 / T2 03:06:53 - is
+both stamps set a few seconds apart, identical to the update case, so the same touch/commit
+staging covers it.
+
+Also settled the same session: **an empty row is FT_SHORTCUT (0x00) with no shortcuts.** That
+mapping had been withheld deliberately, because FT_SHORTCUT was only the obvious guess and no
+capture showed what SuuntoLink writes for "Empty". André set the bottom row of his Cycling
+display 1 to Empty and saved: it went from `Type=0, Shortcuts=[1, 72, 23, 71]` to `Type=0,
+Shortcuts=[]`. The guess was right and is now an observation, so "Empty" is offered again -
+54 of SuuntoLink's 60 rows.

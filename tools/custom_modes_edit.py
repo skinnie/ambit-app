@@ -183,13 +183,19 @@ STAMP_GAP_SECONDS = 2
 def stamp_plan(pristine, edited, mode_name, now=None):
     """How SuuntoLink stages a save on a mode that carries APP_META, or None if it doesn't.
 
-    EXERCISE_MODES_APP_META is *app* metadata: it exists only on modes with Suunto Apps
-    installed. On Andre's watch only Running2 has it (5 apps); the other nine modes have none
-    and SuuntoLink never adds one, even though it rewrites every mode on every save. So for an
-    app-less mode there is nothing to stage and this returns None - leaving the region alone is
-    already byte-identical to what SuuntoLink would do.
+    CORRECTED 2026-08-11. This function first assumed EXERCISE_MODES_APP_META was *app*
+    metadata present only on modes with Suunto Apps, because on André's watch only Running2
+    had it and Running2 has 5 apps. That was a coincidence of which modes had been edited
+    recently. He then edited Cycling and Pool swimming in SuuntoLink - both with zero apps -
+    and both gained an APP_META. So SuuntoLink adds one to ANY mode it saves, and the tag's
+    name is narrower than its behaviour: it is a per-mode last-edited stamp.
 
-    For a mode that HAS it, SuuntoLink saves in two full-region writes about two seconds apart
+    Consequence: a mode that has none today gets one CREATED here, rather than skipped, since
+    that is what SuuntoLink does and matching it is the standing decision. Observed shape when
+    SuuntoLink creates one fresh (Cycling, 03:06:50/03:06:53): both stamps set, a few seconds
+    apart, exactly like the update case.
+
+    SuuntoLink saves in two full-region writes about two seconds apart
     (running2fromcreateandthen1to7, saves 3+4, 6+7, 9+10):
 
         write 1 - Timestamp1 = now, structure UNCHANGED   ("touch")
@@ -203,9 +209,12 @@ def stamp_plan(pristine, edited, mode_name, now=None):
     Returns (touch_structure, commit_structure); both are complete decoded regions ready to
     encode."""
     target = find_mode(edited, mode_name)
-    if not isinstance(target.get("AppMeta"), dict):
-        return None
     now = int(time.time() if now is None else now)
+    if not isinstance(target.get("AppMeta"), dict):
+        # No stamp yet: create one, the way SuuntoLink does for a mode it has not saved
+        # before. Both writes then proceed exactly as for a mode that already had one.
+        target["AppMeta"] = {"Timestamp1": now, "Timestamp2": now}
+        find_mode(pristine, mode_name)["AppMeta"] = {"Timestamp1": now, "Timestamp2": now}
 
     touch = pristine
     find_mode(touch, mode_name)["AppMeta"]["Timestamp1"] = now
