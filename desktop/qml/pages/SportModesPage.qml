@@ -957,6 +957,7 @@ Flickable {
                         RoundedButton {
                             anchors.verticalCenter: parent.verticalCenter
                             text: qsTr("Change layout")
+                            // marker: layout button
                             enabled: !CustomModesService.writingMode
                             onClicked: layoutPicker.openFor(root.currentDisplayIndex)
                         }
@@ -974,6 +975,35 @@ Flickable {
                                 if (root.currentDisplayIndex > 0)
                                     root.currentDisplayIndex--
                             }
+                        }
+                    }
+
+                    // What this display currently shows, read-only - André's choice, 2026-08-11,
+                    // over putting the values inside the circle (they do not fit at 100px for
+                    // three rows, and truncating them there would be worse than not showing
+                    // them). Removing the row list took the values off the screen entirely;
+                    // this puts them back without a second set of buttons for the same job.
+                    // Rows are separated by a middle dot, and a multi-value row lists its own
+                    // values with commas, so the grouping stays readable in one line.
+                    Text {
+                        width: parent.width
+                        wrapMode: Text.WordWrap
+                        maximumLineCount: 2
+                        elide: Text.ElideRight
+                        visible: text.length > 0
+                        color: Theme.mutedText
+                        font.pixelSize: Theme.fontSizeCaption
+                        text: {
+                            const disp = currentScreenColumn.current
+                            if (!disp || !disp.fields)
+                                return ""
+                            const parts = []
+                            for (const f of disp.fields) {
+                                const labels = (f.values || []).map(v => v.label)
+                                if (labels.length > 0)
+                                    parts.push(labels.join(", "))
+                            }
+                            return parts.join("  ·  ")
                         }
                     }
 

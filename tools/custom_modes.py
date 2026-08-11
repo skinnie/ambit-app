@@ -244,21 +244,31 @@ FIELD_TYPES = {
 # numbers look like on a real screen, only that TEMPLATE_4 is the ordinary repeating data
 # screen - see custom_modes_andre.md) - field_type_label()'s own fallback just cleans up
 # the real enum name's own formatting for those instead of guessing new meaning.
+# Human labels. Where a field is one SuuntoLink also offers as a display row, the wording is
+# ITS wording, taken from assets/sportmode_rows.json (generated from its own module and
+# translations) rather than invented here - 23 of these were relabelled on 2026-08-11 for
+# exactly that reason. The rule behind it is André's: SuuntoLink shows what the watch shows,
+# so a user reading our screen and his watch should see the same words. Run
+# `tools/row_bridge.py` after changing this table if you want to check the two still agree.
+#
+# FT_SHORTCUT is deliberately NOT SuuntoLink's "Empty": 0x00 doubles as the marker for a
+# multi-value row, and _field_to_json() distinguishes the two by whether shortcuts are
+# present, reporting "Empty" only when there are none.
 FIELD_TYPE_LABELS = {
-    "FT_SHORTCUT": "Shortcut", "FT_TIME": "Time", "FT_TIME_SEC": "Time (with seconds)",
+    "FT_SHORTCUT": "Shortcut", "FT_TIME": "Day time", "FT_TIME_SEC": "Time (with seconds)",
     "FT_DATE": "Date", "FT_WEEKDAY": "Weekday", "FT_TIMER": "Chrono", "FT_ALTI": "Altitude",
-    "FT_BARO": "Barometric Pressure", "FT_COMPASS": "Compass Heading",
-    "FT_HEART_RATE_AVG": "Heart Rate (average)", "FT_DISTANCE": "Distance",
-    "FT_VELOCITY": "Speed", "FT_AVGSPEED": "Speed (average)", "FT_TEMPERATURE": "Temperature",
-    "FT_BARO_GRAPH": "Barometric Pressure Graph", "FT_ALTI_GRAPH": "Altitude Graph",
+    "FT_BARO": "Sea level air pressure", "FT_COMPASS": "Compass Heading",
+    "FT_HEART_RATE_AVG": "Avg heart rate", "FT_DISTANCE": "Distance",
+    "FT_VELOCITY": "Speed", "FT_AVGSPEED": "Average speed", "FT_TEMPERATURE": "Temperature",
+    "FT_BARO_GRAPH": "Barograph", "FT_ALTI_GRAPH": "Altitude Graph",
     "FT_COMPASSCARDINAL": "Compass Direction", "FT_TOTAL_CALORIES": "Calories",
     "FT_REF_ALTI": "Reference Altitude", "FT_ENERGY_SYMBOL": "Energy Level",
-    "FT_HEART_RATE_PEAK": "Heart Rate (peak)", "FT_HEART_RATE_CURR": "Heart Rate",
+    "FT_HEART_RATE_PEAK": "Heart Rate (peak)", "FT_HEART_RATE_CURR": "Heart rate",
     "FT_HEART_RATE_GRAPH": "Heart Rate Graph", "FT_CADENCE": "Cadence",
     "FT_NAVI_ARROW": "Navigation Arrow", "FT_NAVI_DISTANCE": "Navigation Distance",
-    "FT_NAVI_DIRECTION": "Navigation Direction", "FT_DUAL_TIME": "Dual Time",
-    "FT_PACE": "Pace", "FT_AVG_PACE": "Pace (average)", "FT_RECOVERY_TIME": "Recovery Time",
-    "FT_TE": "Training Effect", "FT_EXERCISE_ALTI_GRAPH": "Altitude Graph (exercise)",
+    "FT_NAVI_DIRECTION": "Navigation Direction", "FT_DUAL_TIME": "Dual time",
+    "FT_PACE": "Pace", "FT_AVG_PACE": "Average pace", "FT_RECOVERY_TIME": "Recovery Time",
+    "FT_TE": "Peak Training Effect", "FT_EXERCISE_ALTI_GRAPH": "Altitude Graph (exercise)",
     "FT_RULE_ENGINE_0": "Suunto App Slot 1", "FT_RULE_ENGINE_1": "Suunto App Slot 2",
     "FT_RULE_ENGINE_2": "Suunto App Slot 3",
     "FT_VERTICAL_SPEED": "Vertical speed", "FT_ASCENT": "Ascent", "FT_DESCENT": "Descent",
@@ -279,7 +289,7 @@ FIELD_TYPE_LABELS = {
     "FT_TEXT_ADJUST": "Text Adjust", "FT_CALIBRATED_DISTANCE": "Distance (calibrated)",
     "FT_INTERVAL_VALUE": "Interval Value", "FT_INTERVAL_TITLE": "Interval Title",
     "FT_SPLIT_LAP_DISTANCE": "Split/Lap Distance", "FT_SWIM_STYLE_TITLE": "Swim Style Title",
-    "FT_DRILL_TITLE": "Drill Title", "FT_BATTERY_CHARGE": "Battery Charge",
+    "FT_DRILL_TITLE": "Drill Title", "FT_BATTERY_CHARGE": "Battery charge",
     # Read off SuuntoLink by André, 2026-08-11. Our own wording ("Lap Stopwatch", "Lap
     # Average Speed") was a guess from the FT_ symbol and is actively misleading - these are
     # the CURRENT-ACTIVITY fields of a multisport mode, not lap fields. The ids themselves
@@ -287,22 +297,22 @@ FIELD_TYPE_LABELS = {
     # were wrong, which is exactly the kind of error a UI shows the user every day.
     "FT_SPORT_LAP_STOPWATCH": "Current activity duration",
     "FT_SPORT_LAP_AVGSPEED": "Current activity avg speed",
-    "FT_BIKE_POWER_AVG": "Bike Power (average)", "FT_BIKE_POWER_10S": "Bike Power (10s average)",
-    "FT_BIKE_POWER_LAP": "Bike Power (lap average)", "FT_BIKE_POWER_LAP_MAX": "Bike Power (lap max)",
+    "FT_BIKE_POWER_AVG": "Average power", "FT_BIKE_POWER_10S": "Power 10s",
+    "FT_BIKE_POWER_LAP": "Lap power", "FT_BIKE_POWER_LAP_MAX": "Lap maximum power",
     "FT_SWIM_AVG_SWOLF": "Average SWOLF",
     "FT_SWIM_INT_STROKE_RATE": "Interval stroke rate",
     "FT_SWIM_INT_SWOLF": "Interval avg SWOLF",
     "FT_SWIM_STYLE": "Previous pool length style",   # SuuntoLink's own wording, André 2026-08-11 "FT_SWIM_STROKES": "Swim Strokes", "FT_SWIM_PACE": "Swim Pace",
-    "FT_SWIM_AVG_PACE": "Swim Pace (average)",
-    "FT_SWIM_AVG_STROKE_RATE": "Stroke Rate (average)",
+    "FT_SWIM_AVG_PACE": "Average swim pace",
+    "FT_SWIM_AVG_STROKE_RATE": "Average stroke rate",
     # SuuntoLink groups the FT_SPORT_LAP_* family under "Multisport" and words them
     # "Current activity ..." - matched here so our UI reads the same as the app the
     # owner already knows.
-    "FT_SPORT_LAP_DISTANCE": "Current activity distance", "FT_SWIM_LAP_DISTANCE": "Swim Lap Distance",
-    "FT_SWIM_LAP_RATE": "Swim Stroke Rate", "FT_SWIM_LAP_SWOLF": "Swim SWOLF",
+    "FT_SPORT_LAP_DISTANCE": "Current activity distance", "FT_SWIM_LAP_DISTANCE": "Lap distance",
+    "FT_SWIM_LAP_RATE": "Lap stroke rate", "FT_SWIM_LAP_SWOLF": "Lap avg SWOLF",
     "FT_SWIM_POOL_STROKES": "Pool Swim Strokes", "FT_SWIM_POOL_PACE": "Pool Swim Pace",
-    "FT_SWIM_INT_TIME": "Swim Interval Time", "FT_SWIM_INT_STROKES": "Swim Interval Strokes",
-    "FT_SWIM_INT_PACE": "Swim Interval Pace", "FT_SWIM_REST_TIME": "Swim Rest Time",
+    "FT_SWIM_INT_TIME": "Interval duration", "FT_SWIM_INT_STROKES": "Interval stroke count",
+    "FT_SWIM_INT_PACE": "Interval pace", "FT_SWIM_REST_TIME": "Rest time",
     "MT_NONE": "(none)",
 }
 
