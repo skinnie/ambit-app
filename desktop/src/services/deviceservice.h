@@ -84,6 +84,30 @@ class DeviceService : public QObject
     // explored with no watch attached. Every reply it produces is flagged, so the UI can say
     // plainly that nothing here is a real device.
     Q_PROPERTY(bool demoMode READ demoMode NOTIFY demoModeChanged)
+    // Which device Testing mode is pretending to be (a codename like "Emu", or
+    // "GarminEtrex"). Empty until the backend has answered.
+    Q_PROPERTY(QString demoVariant READ demoVariant NOTIFY demoModeChanged)
+    // The simulated device's product name, resolved by the backend from the same table the
+    // picker lists - so the two can never disagree about what is being simulated.
+    Q_PROPERTY(QString demoDeviceName READ demoDeviceName NOTIFY demoModeChanged)
+    // Where the simulated Garmin's folder tree lives; empty unless the eTrex is selected.
+    Q_PROPERTY(QString demoGarminRoot READ demoGarminRoot NOTIFY demoModeChanged)
+
+    // Bluetooth (Linux only for now - see HANDOFF.md Milestone 7 items 14-17). Deliberately
+    // separate from deviceInfoOk/model/etc above: /api/device already answers over BLE once
+    // connected (server.py's own transport-agnostic design), so those existing properties
+    // pick up a BLE-connected watch with no changes here. What's new is the STATE BEFORE
+    // that - searching, a fresh pairing waiting on a passkey - which /api/device has no way
+    // to express since it's a plain "is the watch there" query, not a connection process.
+    Q_PROPERTY(bool bleAttempting READ bleAttempting NOTIFY bleStateChanged)
+    Q_PROPERTY(bool bleSubscribed READ bleSubscribed NOTIFY bleStateChanged)
+    Q_PROPERTY(bool bleHandshakeDone READ bleHandshakeDone NOTIFY bleStateChanged)
+    // Non-empty while a fresh pairing needs a human to read the watch's own displayed
+    // passkey and report it back (LE Legacy Passkey Entry - this watch family has no way to
+    // confirm pairing any other way, see ble_server.py's Agent docstring). The UI shows a
+    // passkey-entry dialog exactly when this is non-empty.
+    Q_PROPERTY(QString blePendingPasskeyDevice READ blePendingPasskeyDevice NOTIFY bleStateChanged)
+    Q_PROPERTY(QString bleError READ bleError NOTIFY bleStateChanged)
 
 public:
     explicit DeviceService(QObject *parent = nullptr);
@@ -146,8 +170,31 @@ public:
     bool demoMode() const { return m_demoMode; }
 
     // POST /api/demo. Refreshes straight after, so the switch is visible immediately.
-    Q_INVOKABLE void setDemoMode(bool enabled);
+    QString demoVariant() const { return m_demoVariant; }
+    QString demoDeviceName() const { return m_demoDeviceName; }
+    QString demoGarminRoot() const { return m_demoGarminRoot; }
+    // variant empty = keep whatever is already selected.
+    Q_INVOKABLE void setDemoMode(bool enabled, const QString &variant = QString());
     Q_INVOKABLE void refreshDemoMode();
+
+    bool bleAttempting() const { return m_bleAttempting; }
+    bool bleSubscribed() const { return m_bleSubscribed; }
+    bool bleHandshakeDone() const { return m_bleHandshakeDone; }
+    QString blePendingPasskeyDevice() const { return m_blePendingPasskeyDevice; }
+    QString bleError() const { return m_bleError; }
+
+    // Starts ble_server.py (POST /api/ble/connect) and polls /api/ble/status until the
+    // handshake completes, a passkey is needed (blePendingPasskeyDevice), or it fails.
+    // `forget` mirrors ble_server.py's own --forget - NOT the default; PROJECT_RULES.md's
+    // own pairing guidance is "always unpair, don't replace" as a WATCH-side menu action,
+    // not something to do from this app on every connect tap, since a bond just
+    // established is what lets a plain reconnect work next time.
+    Q_INVOKABLE void connectBle(bool forget = false);
+    // Tears the daemon down; leaves the watch's own bond alone.
+    Q_INVOKABLE void disconnectBle();
+    // Reports the passkey a human read off the watch's screen back to the pairing agent -
+    // see blePendingPasskeyDevice's own comment for why this can't be automated.
+    Q_INVOKABLE void submitBlePasskey(int passkey);
 
 signals:
     void loadingChanged();
@@ -160,11 +207,15 @@ signals:
     void timezonesChanged();
     void onlineChanged();
     void demoModeChanged();
+    void bleStateChanged();
 
 private:
     QNetworkAccessManager m_network;
     bool m_online = false;
     bool m_demoMode = false;
+    QString m_demoVariant;
+    QString m_demoDeviceName;
+    QString m_demoGarminRoot;
     // Auto-sync fires once per connection, not once per poll: the device endpoint is
     // re-read every 10s by the heartbeat, and syncing the clock and re-checking the orbit
     // on each of those would write to the watch continuously.
@@ -206,6 +257,19 @@ private:
     // searching" case; the two are never running at the same time.
     QTimer m_heartbeatTimer;
     static constexpr int kHeartbeatIntervalMs = 10000;
+
+    bool m_bleAttempting = false;
+    bool m_bleSubscribed = false;
+    bool m_bleHandshakeDone = false;
+    QString m_blePendingPasskeyDevice;
+    QString m_bleError;
+    // Polls /api/ble/status while connectBle() is in progress - separate from
+    // m_pollTimer/m_heartbeatTimer (those poll /api/device, which only starts answering
+    // once a BLE watch has actually subscribed; this tracks getting there, including a
+    // fresh pairing's own passkey wait).
+    QTimer m_blePollTimer;
+    static constexpr int kBlePollIntervalMs = 1000;
+    void pollBleStatus();
 
     void setLoading(bool value);
     void setLastError(const QString &friendlyMessage, const QString &technicalDetail);

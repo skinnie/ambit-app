@@ -7,6 +7,20 @@ they land, on the way to what André/Vincent have been calling "V3": wireless sy
 
 ---
 
+## 2026-08-11: desktop BLE reaches the actual UI - written, NOT yet compiled/tested
+
+- **New "Connect via Bluetooth" button + passkey dialog on HomePage.qml**, backed by new
+  `DeviceService` properties/methods (`connectBle()`/`disconnectBle()`/`submitBlePasskey()`,
+  polling `/api/ble/status`). Everything through the previous entries only worked from
+  Python scripts directly against the backend - this is the first time any of it is
+  reachable from the app itself.
+- **`/api/ble/connect` no longer blocks server-side** waiting for the watch to subscribe
+  (used to, up to 25s) - a fresh pairing's passkey relay needs longer than that in the
+  general case, so the client now polls status itself instead.
+- New `POST /api/ble/passkey` endpoint.
+- **Not yet built or hardware-tested** - PROJECT_RULES.md rule 4 (never compile without
+  asking). See `HANDOFF.md` Milestone 7 item 18.
+
 ## 2026-08-11: desktop BLE - activity-log transport proven (first request of three)
 
 - New `tools/ble_logs.py` + `GET /api/ble/logs/summary`: the first of three real

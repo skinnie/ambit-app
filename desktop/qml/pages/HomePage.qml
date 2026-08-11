@@ -188,6 +188,44 @@ PageFlickable {
                     }
                 }
 
+                // --- Bluetooth connect (Linux/BlueZ only for now - HANDOFF.md Milestone 7
+                // items 14-17). Shown only while nothing is connected: once a BLE watch
+                // subscribes, /api/device answers over BLE transparently and this row's own
+                // job is done - the existing "Ambit3 info rows" below just starts showing
+                // real data, no separate "connected via BLE" state to maintain here. ---
+                Column {
+                    width: parent.width
+                    spacing: Theme.spacingSmall
+                    visible: !HomeViewModel.connected && !HomeViewModel.isGarmin
+                             && !DeviceService.demoMode
+
+                    Row {
+                        width: parent.width
+                        spacing: Theme.spacingMedium
+
+                        RoundedButton {
+                            text: DeviceService.bleAttempting ? qsTr("Connecting…")
+                                                               : qsTr("Connect via Bluetooth")
+                            enabled: !DeviceService.bleAttempting
+                            onClicked: DeviceService.connectBle(false)
+                        }
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            visible: DeviceService.bleAttempting && !DeviceService.bleSubscribed
+                            text: qsTr("Trigger \"Pair Mobile App\" or \"Sync now\" on the " +
+                                       "watch now - its window is short")
+                            color: Theme.mutedText
+                            font.pixelSize: Theme.fontSizeLabel
+                        }
+                    }
+                    Text {
+                        visible: DeviceService.bleError.length > 0
+                        text: DeviceService.bleError
+                        color: Theme.error
+                        font.pixelSize: Theme.fontSizeLabel
+                    }
+                }
+
                 // --- Ambit3 info rows ---
                 Row {
                     width: parent.width
@@ -760,5 +798,52 @@ PageFlickable {
     ClockSyncDialog {
         id: clockSyncDialog
         anchors.centerIn: Overlay.overlay
+    }
+
+    // Fresh-pairing passkey prompt. This watch family uses LE Legacy Passkey Entry (watch
+    // displays a 6-digit code, the central types it in) - there is no way for this app to
+    // read the watch's own screen, so a human has to relay it (ble_server.py's Agent
+    // docstring, HANDOFF.md Milestone 7 item 16). Opens itself whenever
+    // DeviceService.blePendingPasskeyDevice becomes non-empty rather than needing a
+    // separate button, since that state only exists while BlueZ is actively waiting on it.
+    ThemedDialog {
+        id: blePasskeyDialog
+        anchors.centerIn: Overlay.overlay
+        title: qsTr("Enter the watch's passkey")
+        standardButtons: Dialog.Ok | Dialog.Cancel
+        onOpened: passkeyField.text = ""
+        onAccepted: DeviceService.submitBlePasskey(parseInt(passkeyField.text, 10))
+
+        Connections {
+            target: DeviceService
+            function onBleStateChanged() {
+                if (DeviceService.blePendingPasskeyDevice.length > 0 && !blePasskeyDialog.visible) {
+                    blePasskeyDialog.open();
+                } else if (DeviceService.blePendingPasskeyDevice.length === 0 && blePasskeyDialog.visible) {
+                    blePasskeyDialog.close();
+                }
+            }
+        }
+
+        contentItem: Column {
+            spacing: Theme.spacingMedium
+            width: 280
+
+            Text {
+                width: parent.width
+                wrapMode: Text.WordWrap
+                text: qsTr("The watch is showing a 6-digit code right now - type it in " +
+                            "to finish pairing.")
+                color: Theme.text
+                font.pixelSize: Theme.fontSizeBody
+            }
+            RoundedTextField {
+                id: passkeyField
+                width: parent.width
+                inputMethodHints: Qt.ImhDigitsOnly
+                validator: IntValidator { bottom: 0; top: 999999 }
+                placeholderText: qsTr("123456")
+            }
+        }
     }
 }

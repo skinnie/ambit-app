@@ -25,6 +25,9 @@ DeviceService::DeviceService(QObject *parent) : QObject(parent)
     m_heartbeatTimer.setSingleShot(true);
     connect(&m_heartbeatTimer, &QTimer::timeout, this, &DeviceService::refresh);
 
+    m_blePollTimer.setSingleShot(true);
+    connect(&m_blePollTimer, &QTimer::timeout, this, &DeviceService::pollBleStatus);
+
     // Whether we have a route to the internet, from Qt's own reachability backend. Asked
     // rather than probed: the clock and orbit features need this only to decide whether they
     // CAN run, and probing a server on every device poll would put real traffic on the wire
@@ -94,25 +97,34 @@ void DeviceService::refreshDemoMode()
             return;
         const auto obj = QJsonDocument::fromJson(reply->readAll()).object();
         const bool on = obj.value(QStringLiteral("enabled")).toBool();
-        if (on == m_demoMode)
+        const QString variant = obj.value(QStringLiteral("variant")).toString();
+        if (on == m_demoMode && variant == m_demoVariant)
             return;
         m_demoMode = on;
+        m_demoVariant = variant;
+        m_demoDeviceName = obj.value(QStringLiteral("deviceName")).toString();
+        m_demoGarminRoot = obj.value(QStringLiteral("garminRoot")).toString();
         emit demoModeChanged();
     });
 }
 
-void DeviceService::setDemoMode(bool enabled)
+void DeviceService::setDemoMode(bool enabled, const QString &variant)
 {
     QNetworkRequest request(backendUrl(QStringLiteral("/api/demo")));
     request.setHeader(QNetworkRequest::ContentTypeHeader,
                       QStringLiteral("application/json"));
     QJsonObject payload;
     payload.insert(QStringLiteral("enabled"), enabled);
+    if (!variant.isEmpty())
+        payload.insert(QStringLiteral("variant"), variant);
     QNetworkReply *reply = m_network.post(request, QJsonDocument(payload).toJson());
     connect(reply, &QNetworkReply::finished, this, [this, reply] {
         reply->deleteLater();
         const auto obj = QJsonDocument::fromJson(reply->readAll()).object();
         m_demoMode = obj.value(QStringLiteral("enabled")).toBool();
+        m_demoVariant = obj.value(QStringLiteral("variant")).toString();
+        m_demoDeviceName = obj.value(QStringLiteral("deviceName")).toString();
+        m_demoGarminRoot = obj.value(QStringLiteral("garminRoot")).toString();
         emit demoModeChanged();
         // Switching either way changes what every page is looking at, so re-read now rather
         // than leaving the previous device's data on screen.
@@ -372,4 +384,107 @@ QString DeviceService::currentTimeInZone(const QString &timezone) const
     // actually-useful hour:minute off the visible edge. Just the time - picking a timezone
     // to compare "what hour is it there" doesn't need today's date repeated 599 times.
     return QDateTime::currentDateTime(tz).toString(QStringLiteral("HH:mm"));
+}
+
+void DeviceService::connectBle(bool forget)
+{
+    m_bleAttempting = true;
+    m_bleSubscribed = false;
+    m_bleHandshakeDone = false;
+    m_blePendingPasskeyDevice.clear();
+    m_bleError.clear();
+    emit bleStateChanged();
+
+    QJsonObject body;
+    body[QStringLiteral("forget")] = forget;
+    QNetworkRequest request(backendUrl(QStringLiteral("/api/ble/connect")));
+    request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
+    QNetworkReply *reply = m_network.post(request, QJsonDocument(body).toJson());
+    connect(reply, &QNetworkReply::finished, this, [this, reply] {
+        reply->deleteLater();
+        const auto obj = QJsonDocument::fromJson(reply->readAll()).object();
+        if (reply->error() != QNetworkReply::NoError || !obj.value(QStringLiteral("ok")).toBool()) {
+            m_bleAttempting = false;
+            m_bleError = obj.value(QStringLiteral("error")).toString(reply->errorString());
+            emit bleStateChanged();
+            return;
+        }
+        // The daemon is up; now poll /api/ble/status for the states that unfold after this
+        // (subscribed, a passkey request, the handshake completing) - see connectBle()'s
+        // own header comment for why this request itself doesn't wait for any of that.
+        pollBleStatus();
+    });
+}
+
+void DeviceService::pollBleStatus()
+{
+    QNetworkReply *reply =
+        m_network.get(QNetworkRequest(backendUrl(QStringLiteral("/api/ble/status"))));
+    connect(reply, &QNetworkReply::finished, this, [this, reply] {
+        reply->deleteLater();
+        const auto obj = QJsonDocument::fromJson(reply->readAll()).object();
+        if (reply->error() != QNetworkReply::NoError) {
+            m_bleAttempting = false;
+            m_bleError = reply->errorString();
+            emit bleStateChanged();
+            return;
+        }
+        m_bleSubscribed = obj.value(QStringLiteral("subscribed")).toBool();
+        m_bleHandshakeDone = obj.value(QStringLiteral("handshake_done")).toBool();
+        const auto pendingVal = obj.value(QStringLiteral("pending_passkey_device"));
+        m_blePendingPasskeyDevice = pendingVal.isNull() ? QString() : pendingVal.toString();
+        emit bleStateChanged();
+
+        if (m_bleHandshakeDone) {
+            // Real device data (model/serial/fw/hw/battery) comes from /api/device, which
+            // already answers over BLE transparently once a watch is subscribed - no
+            // separate fetch needed here, just kick the existing poll so it picks this up
+            // right away instead of waiting for its own next scheduled tick.
+            m_bleAttempting = false;
+            emit bleStateChanged();
+            refresh();
+            return;
+        }
+        if (!m_bleAttempting) {
+            return;  // disconnectBle() was called while this request was in flight
+        }
+        // Keep polling - a fresh pairing's passkey wait can take longer than any single
+        // fixed timeout should force it to give up within (the person has to notice the
+        // watch's screen, read six digits, and tell this app).
+        m_blePollTimer.start(kBlePollIntervalMs);
+    });
+}
+
+void DeviceService::disconnectBle()
+{
+    m_blePollTimer.stop();
+    m_bleAttempting = false;
+    m_bleSubscribed = false;
+    m_bleHandshakeDone = false;
+    m_blePendingPasskeyDevice.clear();
+    emit bleStateChanged();
+
+    QNetworkReply *reply =
+        m_network.post(QNetworkRequest(backendUrl(QStringLiteral("/api/ble/disconnect"))),
+                       QByteArray());
+    connect(reply, &QNetworkReply::finished, reply, &QNetworkReply::deleteLater);
+}
+
+void DeviceService::submitBlePasskey(int passkey)
+{
+    QJsonObject body;
+    body[QStringLiteral("passkey")] = passkey;
+    QNetworkRequest request(backendUrl(QStringLiteral("/api/ble/passkey")));
+    request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
+    QNetworkReply *reply = m_network.post(request, QJsonDocument(body).toJson());
+    connect(reply, &QNetworkReply::finished, this, [this, reply] {
+        reply->deleteLater();
+        const auto obj = QJsonDocument::fromJson(reply->readAll()).object();
+        if (reply->error() != QNetworkReply::NoError || !obj.value(QStringLiteral("ok")).toBool()) {
+            m_bleError = obj.value(QStringLiteral("error")).toString(reply->errorString());
+            emit bleStateChanged();
+        }
+        // Success just clears the pending prompt on the next pollBleStatus() tick - no
+        // separate handling needed here.
+    });
 }

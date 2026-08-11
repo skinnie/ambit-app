@@ -302,6 +302,8 @@ class Handler(BaseHTTPRequestHandler):
             self._handle_ble_connect(body)
         elif self.path == "/api/ble/disconnect":
             self._handle_ble_disconnect()
+        elif self.path == "/api/ble/passkey":
+            self._handle_ble_passkey(body)
         elif self.path == "/api/routes":
             self._handle_route_write(body)
         elif self.path == "/api/routes/export":
@@ -363,10 +365,25 @@ class Handler(BaseHTTPRequestHandler):
 
     def _handle_activities(self):
         """Recorded moves, as GPX and FIT. Read-only by construction - exercise_log.py's
-        `nav` equivalent never has a --write flag, it only reads flash."""
+        `nav` equivalent never has a --write flag, it only reads flash.
+
+        Query: ?known_count=N - real, 2026-08-11 (desktop Activities page perf audit found
+        this endpoint decoded and returned the watch's ENTIRE recorded history on every
+        single call, even though desktop's own ActivityService already has the older ones
+        cached). N is how many oldest activities the caller already has (ActivityService's
+        own local index count) - passed straight to exercise_log.py's own --known-count,
+        which skips decoding (not re-reading flash for) that many. Omitted/0 behaves exactly
+        as before: every activity, same as a fresh cache. total_entries in the response is
+        the watch's real current count (from exercise_log.py's own master.json sidecar) -
+        the caller compares it against what it thinks it knows; if the watch's log ever
+        shrank (wrapped/reset) since the caller's known_count was recorded, old cached
+        indices no longer mean the same activity, and the caller has to ask again with 0."""
+        query = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+        known_count = query.get("known_count", ["0"])[0]
         with tempfile.TemporaryDirectory() as tmpdir:
             code, out, err = run_tool(
-                "exercise_log.py", ["--gpx-out", tmpdir, "--fit-out", tmpdir])
+                "exercise_log.py",
+                ["--gpx-out", tmpdir, "--fit-out", tmpdir, "--known-count", known_count])
             if code != 0:
                 self._send_json(502, {"ok": False, "raw_output": out, "stderr": err})
                 return
@@ -381,7 +398,11 @@ class Handler(BaseHTTPRequestHandler):
                     "fit_base64": (base64.b64encode(fit_path.read_bytes()).decode("ascii")
                                    if fit_path.exists() else None),
                 })
-            self._send_json(200, {"ok": True, "activities": activities, "raw_output": out})
+            master_path = tmp / "master.json"
+            total_entries = (json.loads(master_path.read_text())["total_entries"]
+                              if master_path.exists() else len(activities))
+            self._send_json(200, {"ok": True, "activities": activities,
+                                   "total_entries": total_entries, "raw_output": out})
 
     def _handle_pois_read(self):
         """POIs currently on the watch. Raw output, deliberately - unlike routes'
@@ -622,32 +643,49 @@ class Handler(BaseHTTPRequestHandler):
 
     def _handle_ble_connect(self, body):
         """POST /api/ble/connect {"forget": bool} - starts the ble_server.py daemon (a
-        no-op if one is already running) and waits, bounded, for the watch to subscribe.
-        `forget` mirrors ble_server.py's own --forget: NOT the default, since a bond just
+        no-op if one is already running) and returns as soon as it's reachable. `forget`
+        mirrors ble_server.py's own --forget: NOT the default, since a bond just
         established is what lets a reconnect work - only opt in when pairing is stuck,
         same guidance PROJECT_RULES.md gives for the watch's own "always unpair" menu
-        action, not something to do on every connect tap."""
+        action, not something to do on every connect tap.
+
+        Deliberately does NOT block waiting for the watch to subscribe (an earlier version
+        did, up to 25s) - a fresh pairing needs a human to read a passkey off the watch and
+        report it back via /api/ble/passkey (HANDOFF.md Milestone 7 item 16), which can
+        easily take longer than any bounded wait here would allow, and blocking this
+        request would leave the UI with nothing to poll while that's happening. The caller
+        polls GET /api/ble/status instead - "subscribed"/"handshake_done"/
+        "pending_passkey_device" are exactly the states a connect UI needs to show."""
         try:
             ble_bridge.bridge.start(forget=bool(body.get("forget", False)))
         except ble_bridge.BleBridgeError as exc:
             self._send_json(502, {"ok": False, "error": str(exc)})
             return
-        # The watch's own advertising window is short (PROJECT_RULES.md: "Pair Mobile App"/
-        # "Sync now" have to be pressed right before this) - poll rather than block on a
-        # single long call, so a caller sees "still searching" instead of the HTTP request
-        # itself timing out.
-        deadline = time.monotonic() + 25.0
-        status = ble_bridge.bridge.status()
-        while not status.get("subscribed") and time.monotonic() < deadline:
-            time.sleep(0.5)
-            status = ble_bridge.bridge.status()
-        self._send_json(200, {"ok": True, **status})
+        self._send_json(200, {"ok": True, **ble_bridge.bridge.status()})
 
     def _handle_ble_disconnect(self):
         """POST /api/ble/disconnect - tears the daemon down. Leaves the watch's bond alone;
         see ble_bridge.BleBridge.stop()'s own comment."""
         ble_bridge.bridge.stop()
         self._send_json(200, {"ok": True})
+
+    def _handle_ble_passkey(self, body):
+        """POST /api/ble/passkey {"passkey": 123456} - a fresh pairing needs this: the
+        watch (LE Legacy Passkey Entry, HANDOFF.md Milestone 7 item 16) shows a 6-digit
+        code with no way for this app to read it directly, so the UI has to ask the person
+        in front of the watch and relay it here. /api/ble/status's own
+        "pending_passkey_device" tells the UI when to show that prompt at all."""
+        passkey = body.get("passkey")
+        if not isinstance(passkey, int):
+            self._send_json(400, {"ok": False, "error": "passkey must be an integer"})
+            return
+        try:
+            ok = ble_bridge.bridge.submit_passkey(passkey)
+        except ble_bridge.BleBridgeError as exc:
+            self._send_json(502, {"ok": False, "error": str(exc)})
+            return
+        self._send_json(200 if ok else 409,
+                        {"ok": ok, **({} if ok else {"error": "no passkey request pending"})})
 
     def _handle_device(self):
         """Model/serial/firmware/hardware/battery - tools/device_info.py, added 2026-08-07.
