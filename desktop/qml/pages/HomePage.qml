@@ -667,9 +667,10 @@ PageFlickable {
                 // "create a second card underneath with some random fun fact from
                 // internet" - André, 2026-08-12, filling the space under This year that
                 // the rejected equal-height experiment left. uselessfacts.jsph.pl: free,
-                // keyless, no tracking, one JSON field. Tap for another; hidden entirely
-                // when offline or before the first fact lands - a card with an error in
-                // it would be the opposite of fun.
+                // keyless, no tracking, one JSON field. Tap for another. Same day, on
+                // hearing it was online-only ("that is really what I want!"): offline it
+                // falls back to FunFacts.qml's curated local base instead of hiding, so
+                // the card works on a mountain with no signal too.
                 Card {
                     id: funFactCard
                     width: parent.width
@@ -696,9 +697,12 @@ PageFlickable {
                                 return
                             try {
                                 const fact = JSON.parse(xhr.responseText).text
-                                if (fact && fact.length > 0)
+                                if (fact && fact.length > 0) {
                                     funFactCard.factText = fact
-                            } catch (e) { /* offline or a bad reply: card stays as it is */ }
+                                    return
+                                }
+                            } catch (e) { /* fall through to the offline base */ }
+                            funFactCard.factText = FunFacts.random()
                         }
                         xhr.open("GET",
                                  "https://uselessfacts.jsph.pl/api/v2/facts/random?language=en")

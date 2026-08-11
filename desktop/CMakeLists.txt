@@ -57,6 +57,9 @@ set_source_files_properties(qml/NavBus.qml PROPERTIES
 set_source_files_properties(qml/SunTimes.qml PROPERTIES
     QT_QML_SINGLETON_TYPE true
 )
+set_source_files_properties(qml/FunFacts.qml PROPERTIES
+    QT_QML_SINGLETON_TYPE true
+)
 set_source_files_properties(qml/viewmodels/HomeViewModel.qml PROPERTIES
     QT_QML_SINGLETON_TYPE true
 )
@@ -97,6 +100,7 @@ qt_add_qml_module(ambitapp
         qml/TotalsFacts.qml
         qml/NavBus.qml
         qml/SunTimes.qml
+        qml/FunFacts.qml
         qml/components/TotalsCard.qml
         qml/components/HomeLocationDialog.qml
         qml/components/PlaceSearchBar.qml
