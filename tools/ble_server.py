@@ -63,6 +63,8 @@ DBUS_PROP_IFACE = "org.freedesktop.DBus.Properties"
 GATT_SERVICE_IFACE = "org.bluez.GattService1"
 GATT_CHRC_IFACE = "org.bluez.GattCharacteristic1"
 LE_ADVERTISEMENT_IFACE = "org.bluez.LEAdvertisement1"
+AGENT_IFACE = "org.bluez.Agent1"
+AGENT_MANAGER_IFACE = "org.bluez.AgentManager1"
 
 # Identical on the Ambit3 and the Kailash - see this file's docstring for the two independent
 # sources these come from.
@@ -71,6 +73,7 @@ NOTIFY_CHAR_UUID = "d0fd6b80-e62e-11e3-a2e9-0002a5d5c51b"
 WRITE_CHAR_UUID = "c6339440-e62e-11e3-a5b3-0002a5d5c51b"
 
 BASE_PATH = "/org/ambitapp/nsp"
+AGENT_PATH = BASE_PATH + "/agent"
 
 # Real request, 2026-08-11 (André, via the desktop-app conversation): "port the bluetooth
 # stack of android to desktop" doesn't stop at this file being reachable from a terminal -
@@ -98,6 +101,11 @@ class ControlSocketServer:
         -> {"ok": true, "payload_hex": "..."} or {"ok": false, "error": "..."}
       {"op": "set_dry_run", "value": true}
         -> {"ok": true, "dry_run": bool}
+      {"op": "submit_passkey", "passkey": 123456}
+        -> {"ok": true} or {"ok": false, "error": "..."}
+        A fresh pairing needs this: `status`'s "pending_passkey_device" is non-null while
+        the watch is showing a 6-digit code and BlueZ is waiting for the KeyboardDisplay
+        agent to type it in - see Agent's own docstring for why this can't be automated.
 
     `command` calls are serialized with a lock: `ServerLink` (like `write_nav.Link`) only
     tracks one in-flight command's reply at a time, and this socket can have more than one
@@ -105,9 +113,10 @@ class ControlSocketServer:
     subprocess tool calls, applied here instead to concurrent socket requests.
     """
 
-    def __init__(self, link, rx_total, path=SOCKET_PATH):
+    def __init__(self, link, rx_total, agent=None, path=SOCKET_PATH):
         self.link = link
         self.rx_total = rx_total
+        self.agent = agent
         self.path = Path(path)
         self._cmd_lock = threading.Lock()
 
@@ -122,10 +131,17 @@ class ControlSocketServer:
             return {"ok": True, "subscribed": bool(self.link.notify_chrc.notifying),
                      "handshake_done": self.link.handshake_done.is_set(),
                      "device_info": self.link.device_info,
-                     "dry_run": self.link.dry_run, "rx_total": self.rx_total[0]}
+                     "dry_run": self.link.dry_run, "rx_total": self.rx_total[0],
+                     "pending_passkey_device":
+                         self.agent.pending_passkey_device if self.agent else None}
         if op == "set_dry_run":
             self.link.dry_run = bool(request.get("value", True))
             return {"ok": True, "dry_run": self.link.dry_run}
+        if op == "submit_passkey":
+            if not self.agent:
+                return {"ok": False, "error": "no pairing agent registered"}
+            ok = self.agent.submit_passkey(request.get("passkey"))
+            return {"ok": ok} if ok else {"ok": False, "error": "no passkey request pending"}
         if op == "command":
             try:
                 payload = bytes.fromhex(request.get("payload_hex", ""))
@@ -365,7 +381,111 @@ def build_classes():
         def Release(self):
             pass
 
-    return Application, Service, Characteristic, Advertisement, dbus, GLib
+    class Agent(dbus_service.Object):
+        """org.bluez.Agent1, registered with "KeyboardDisplay" capability.
+
+        Real gap, found live 2026-08-11: a FRESH pairing needs *something* to answer
+        BlueZ's passkey request, and this file registered no agent of its own - it depended
+        entirely on whatever agent the desktop environment happened to already have running
+        (Cinnamon's applet, here), invisible to this process and not guaranteed to exist on
+        every machine.
+
+        Capability is "KeyboardDisplay", not "NoInputNoOutput" - deliberately, and only
+        after that guess failed live and a look at this project's own real history
+        (HANDOFF.md, "2026-08-08: real Linux/BlueZ pairing session") explained why. Decoding
+        the watch's real IO Capability fields from a real capture settled the SMP method
+        unambiguously: watch = Display Only, requests MITM -> **LE Legacy Passkey Entry**
+        (watch displays a 6-digit code, the CENTRAL types it in), not Just Works, not
+        Numeric Comparison. A NoInputNoOutput agent forces a Just-Works downgrade the watch
+        happens not to refuse in principle, but that same document also records a live,
+        reproducible connect-then-disconnect failure mode around exactly this area
+        (`le-connection-abort-by-local` and friends) - and this session's own NoInputNoOutput
+        attempt reproduced a disconnect right after pairing, not just a theoretical risk.
+        The one fresh pairing that document records actually reaching `Paired: yes, Bonded:
+        yes` used a KeyboardDisplay agent with the real passkey typed in - the same real
+        constraint Android hit and solved with its own `promptForPin()` UI (`setPin()` is
+        the only public submission API there too).
+
+        There is no OCR/camera reading the watch's screen here, so `RequestPasskey()` can't
+        answer synchronously - it uses D-Bus async_callbacks and blocks on `submit_passkey()`
+        being called from the control socket once a human (today: relayed through the
+        conversation; later: a real UI field) reports what the watch is showing.
+        """
+
+        def __init__(self, bus, path):
+            self.path = path
+            self.pending_passkey_device = None
+            self._passkey_value = None
+            self._passkey_ready = threading.Event()
+            dbus_service.Object.__init__(self, bus, self.path)
+
+        def submit_passkey(self, passkey):
+            """Called from the control socket thread once a human has read the code off the
+            watch's screen. Returns False if nothing is actually pending."""
+            if self.pending_passkey_device is None:
+                return False
+            self._passkey_value = int(passkey)
+            self._passkey_ready.set()
+            return True
+
+        @dbus_service.method(AGENT_IFACE, in_signature="", out_signature="")
+        def Release(self):
+            pass
+
+        @dbus_service.method(AGENT_IFACE, in_signature="os", out_signature="")
+        def AuthorizeService(self, device, uuid):
+            print(f"  pairing: auto-authorizing service {uuid} for {device}")
+
+        @dbus_service.method(AGENT_IFACE, in_signature="o", out_signature="s")
+        def RequestPinCode(self, device):
+            raise dbus.exceptions.DBusException(
+                "org.bluez.Error.Rejected", "this watch family uses Passkey Entry, not a "
+                "legacy PIN - see RequestPasskey")
+
+        @dbus_service.method(AGENT_IFACE, in_signature="ouq", out_signature="")
+        def DisplayPasskey(self, device, passkey, entered):
+            # Would fire if the WATCH had to type a code WE display - not this watch
+            # family's real direction (it is Display Only), kept only so an unexpected
+            # negotiation doesn't hang silently.
+            print(f"  pairing: WE are displaying passkey {passkey:06d} for {device} "
+                  f"({entered} digits entered so far)")
+
+        @dbus_service.method(AGENT_IFACE, in_signature="os", out_signature="")
+        def DisplayPinCode(self, device, pincode):
+            print(f"  pairing: WE are displaying PIN {pincode} for {device}")
+
+        @dbus_service.method(AGENT_IFACE, in_signature="o", out_signature="u",
+                             async_callbacks=("reply_handler", "error_handler"))
+        def RequestPasskey(self, device, reply_handler, error_handler):
+            self.pending_passkey_device = device
+            self._passkey_value = None
+            self._passkey_ready.clear()
+            print(f"  pairing: watch {device} is showing a 6-digit passkey - read it off "
+                  "the watch's screen and report it back (up to 60s)")
+
+            def wait_for_passkey():
+                if self._passkey_ready.wait(60.0):
+                    reply_handler(self._passkey_value)
+                else:
+                    error_handler(dbus.exceptions.DBusException(
+                        "org.bluez.Error.Rejected", "passkey not provided within 60s"))
+                self.pending_passkey_device = None
+
+            threading.Thread(target=wait_for_passkey, daemon=True).start()
+
+        @dbus_service.method(AGENT_IFACE, in_signature="ou", out_signature="")
+        def RequestConfirmation(self, device, passkey):
+            print(f"  pairing: auto-confirming passkey {passkey:06d} for {device}")
+
+        @dbus_service.method(AGENT_IFACE, in_signature="o", out_signature="")
+        def RequestAuthorization(self, device):
+            print(f"  pairing: auto-authorizing {device}")
+
+        @dbus_service.method(AGENT_IFACE, in_signature="", out_signature="")
+        def Cancel(self):
+            print("  pairing: cancelled")
+
+    return Application, Service, Characteristic, Advertisement, Agent, dbus, GLib
 
 
 class ServerLink:
@@ -413,6 +533,20 @@ class ServerLink:
         # already documented for the native code.
         self.handshake_done = threading.Event()
         self.device_info = {}
+
+    def reset(self):
+        """Called when the watch's ACL link drops without BlueZ ever calling StopNotify on
+        our characteristic (a real, observed gap - see `listen()`'s own disconnect-signal
+        handler) - without this, a stale `handshake_done`/`device_info` from the PREVIOUS
+        connection would make the next one look already-identified when it isn't, and
+        `command()` would try to drive requests into a connId/pktNum sequence the watch
+        has no memory of."""
+        self.handshake_done.clear()
+        self.device_info = {}
+        self._pkt_num = 0
+        self._reply = None
+        self._expecting = None
+        self._reply_ready.clear()
 
     def on_message(self, message):
         """Called from the D-Bus thread for every decoded inbound frame. Before the
@@ -515,6 +649,37 @@ class ServerLink:
         return self._reply.payload
 
 
+# ambit3_get_compact_serial (ambit_pcap.py's own name for it) - the clean numeric serial
+# ("1849100781") the handshake's 0x0002 hello does NOT carry (it only has the hello's own
+# raw id string, e.g. "8A153C5111000900" - see ServerLink._handle_handshake_frame's own
+# comment). Found by decoding the real working Suunto app's own capture directly,
+# 2026-08-11 (assets/ble 2026-08-09/btsnoop_suuntoapp_2026-08-09.log, via tshark + this
+# file's own SLIP/frame logic - same method as ble_pklg.py, just against a btsnoop capture
+# instead of a .pklg one): the app's first real post-handshake driver-path request is
+# exactly this command, flags=0x05, pktNum=1 (matching DRIVER_FLAGS and the handshake's own
+# pkt_num=1 reset), and the watch's reply is byte-for-byte the connect+identify flow's
+# missing piece.
+CMD_GET_COMPACT_SERIAL = 0x0B1E
+# The real request payload from that capture, copied verbatim rather than guessed - its
+# individual bytes look like a nonce/challenge (not all-zero, not obviously derivable) and
+# the capture is the only evidence of what the watch actually accepts, so byte-exact reuse
+# is safer than inventing a "simplified" version that might not be. Semantics unconfirmed;
+# reuse is deliberate, not lazy - see this project's own "known formulas over derivation"
+# preference applied to a captured value instead of a textbook one.
+COMPACT_SERIAL_REQUEST = bytes.fromhex("00000000f90858ee017e00000892c98538")
+
+
+def parse_compact_serial(payload):
+    """Byte 8 is some flag (0x01 in the real capture, meaning unconfirmed); the serial
+    itself is a null-terminated ASCII string starting at byte 9 - confirmed decoding
+    "1849100781" out of the real capture's reply, which matches this project's own
+    independently-recorded real serial for the same watch (HANDOFF.md)."""
+    if len(payload) < 10:
+        return None
+    serial = payload[9:].split(b"\x00", 1)[0].decode("ascii", "replace")
+    return serial or None
+
+
 def find_adapter(bus, dbus):
     """The first adapter that can actually do what we need - both managers present."""
     manager = dbus.Interface(bus.get_object(BLUEZ, "/"), DBUS_OM_IFACE)
@@ -561,16 +726,51 @@ def forget_suunto_bonds(bus, dbus, adapter):
     return removed
 
 
-def start_discovery(bus, dbus, adapter, verbose):
+def start_discovery(bus, dbus, adapter, verbose, on_disconnect=None):
     """Scan, and connect to anything soliciting the NSP service.
 
     Deliberately an unfiltered scan. The Kotlin module hit exactly this on real hardware: the
     Kailash only SOLICITS the UUID, so a service-UUID scan filter matched nothing at all
     ("scan registered, zero results"). Every device is examined here and judged on its own
     UUID list instead.
+
+    `on_disconnect`, if given, is called (with the device path) whenever a device already in
+    `seen` reports Connected -> False. Real bug, found live 2026-08-11: `seen` exists so a
+    device already being connected-to isn't redundantly dialed again mid-attempt - but with
+    nothing ever removing a path from it, one failed/dropped connection permanently
+    blacklisted the watch for the rest of the process's life, even though the watch kept
+    re-advertising and the user kept retrying "Sync now" on it. Every real connect attempt
+    this session that didn't complete on the first try needed this to recover.
     """
     adapter_obj = dbus.Interface(bus.get_object(BLUEZ, adapter), ADAPTER_IFACE)
     seen = set()
+
+    def resume_discovery():
+        # consider() stops discovery before connecting (an active scan and a connect fight
+        # for the same radio - see its own comment) and nothing was resuming it afterward -
+        # real bug, found live 2026-08-11: on a dropped or failed connection, this device
+        # was still un-blacklisted from `seen` above, but discovery itself stayed off, so no
+        # new advertisement could ever be seen to retry with.
+        try:
+            adapter_obj.StartDiscovery()
+        except Exception:
+            pass                       # already running is fine
+
+    def on_connection_state(interface, changed, invalidated, path=None):
+        if interface != "org.bluez.Device1" or not path or path not in seen:
+            return
+        if "Connected" not in changed or bool(changed["Connected"]):
+            return                                          # not a drop
+        print(f"  watch disconnected ({path.split('/')[-1]}) - will retry on the next "
+              "advertisement/Sync now")
+        seen.discard(path)
+        resume_discovery()
+        if on_disconnect:
+            on_disconnect(path)
+
+    bus.add_signal_receiver(
+        on_connection_state, dbus_interface=DBUS_PROP_IFACE, signal_name="PropertiesChanged",
+        arg0="org.bluez.Device1", path_keyword="path")
 
     def consider(path, ifaces):
         device = ifaces.get("org.bluez.Device1")
@@ -609,9 +809,18 @@ def start_discovery(bus, dbus, adapter, verbose):
         # 25s default long before BlueZ finishes connecting and pairing - the first run
         # failed exactly that way ("Did not receive a reply"), which looked like a refusal
         # and was really just impatience.
+        def on_connect_failed(exc):
+            print(f"  connect failed: {exc}")
+            # Same un-blacklist/resume-scanning need as a later disconnect - a failed
+            # Connect() (le-connection-abort-by-local and friends are common and often
+            # transient, per this project's own real history with this watch family) must
+            # not permanently rule the device out of future attempts either.
+            seen.discard(path)
+            resume_discovery()
+
         dbus.Interface(bus.get_object(BLUEZ, path), "org.bluez.Device1").Connect(
             reply_handler=lambda: print("  connected - waiting for it to subscribe"),
-            error_handler=lambda exc: print(f"  connect failed: {exc}"),
+            error_handler=on_connect_failed,
             timeout=60)
 
     bus.add_signal_receiver(
@@ -683,7 +892,7 @@ def start_discovery(bus, dbus, adapter, verbose):
 
 
 def listen(verbose=False, timeout=0, forget=False, serve_socket=True):
-    Application, Service, Characteristic, Advertisement, dbus, GLib = build_classes()
+    Application, Service, Characteristic, Advertisement, Agent, dbus, GLib = build_classes()
     import dbus.mainloop.glib                              # noqa: PLC0415
 
     dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
@@ -698,6 +907,20 @@ def listen(verbose=False, timeout=0, forget=False, serve_socket=True):
     # Powered on and discoverable, or the watch has nothing to find.
     props = dbus.Interface(bus.get_object(BLUEZ, adapter), DBUS_PROP_IFACE)
     props.Set(ADAPTER_IFACE, "Powered", dbus.Boolean(True))
+
+    # Register our own pairing agent (see Agent's own docstring for why) BEFORE anything
+    # that could trigger pairing - forget_suunto_bonds()/discovery/connect below - so a
+    # fresh pair started moments after this process comes up always has an agent to answer
+    # to, not just ones that happen after some other agent got there first.
+    agent = Agent(bus, AGENT_PATH)
+    agent_manager = dbus.Interface(bus.get_object(BLUEZ, "/org/bluez"), AGENT_MANAGER_IFACE)
+    try:
+        agent_manager.RegisterAgent(AGENT_PATH, "KeyboardDisplay")
+        agent_manager.RequestDefaultAgent(AGENT_PATH)
+        print("  pairing agent registered (NoInputNoOutput - fresh pairs need no confirmation)")
+    except Exception as exc:
+        print(f"  could not register pairing agent: {exc} - fresh pairing will depend on "
+              "whatever agent (if any) the desktop environment already provides")
 
     service = Service(bus, 0)
     # Order matters only for readability; BlueZ keys off the UUIDs.
@@ -735,8 +958,21 @@ def listen(verbose=False, timeout=0, forget=False, serve_socket=True):
     link = ServerLink(notify_chrc, GLib)
 
     if serve_socket:
-        control = ControlSocketServer(link, rx_total)
+        control = ControlSocketServer(link, rx_total, agent=agent)
         threading.Thread(target=control.serve_forever, daemon=True).start()
+
+    # Real gap, found testing this live 2026-08-11: BlueZ's GATT server has no
+    # onConnectionStateChange-equivalent callback the way Android's BluetoothGattServerCallback
+    # does - when the watch's ACL link drops, BlueZ does NOT reliably call StopNotify on our
+    # characteristic first, so `notify_chrc.notifying` (and therefore ble_bridge's
+    # "subscribed"/"handshake_done" status) can keep reporting stale-true after the watch is
+    # actually gone, and a subsequent command() call just hangs to its own timeout instead of
+    # failing fast. Wired into start_discovery()'s own disconnect signal (which also has to
+    # exist, to un-blacklist the device path for a retry) rather than a second, separate
+    # D-Bus listener for the same signal.
+    def reset_link_on_disconnect(path):
+        notify_chrc.notifying = False
+        link.reset()
 
     gatt_manager = dbus.Interface(bus.get_object(BLUEZ, adapter), GATT_MANAGER_IFACE)
     ad_manager = dbus.Interface(bus.get_object(BLUEZ, adapter),
@@ -772,7 +1008,7 @@ def listen(verbose=False, timeout=0, forget=False, serve_socket=True):
 
     # The real mechanism, mirroring AmbitBleModule.scanAndConnect(): find the watch
     # soliciting our service, then connect to it while we host the server.
-    start_discovery(bus, dbus, adapter, verbose)
+    start_discovery(bus, dbus, adapter, verbose, on_disconnect=reset_link_on_disconnect)
 
     if timeout > 0:
         def stop():
@@ -791,6 +1027,7 @@ def listen(verbose=False, timeout=0, forget=False, serve_socket=True):
         try:
             ad_manager.UnregisterAdvertisement(advert.path)
             gatt_manager.UnregisterApplication(app.path)
+            agent_manager.UnregisterAgent(AGENT_PATH)
         except Exception:
             pass                       # teardown on an already-gone bus is not a failure
     return 0

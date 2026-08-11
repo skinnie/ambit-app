@@ -676,6 +676,8 @@ class Handler(BaseHTTPRequestHandler):
         runs AFTER the handshake (protocol_ble.c's driver path, flags=0x05) - `command()`
         now refuses to run before handshake_done for exactly this reason, so calling it
         here is safe once we already know the handshake completed."""
+        sys.path.insert(0, str(TOOLS_DIR))
+        import ble_server                                    # noqa: PLC0415
         status = ble_bridge.bridge.status()
         info = dict(status.get("device_info") or {})
         try:
@@ -683,6 +685,20 @@ class Handler(BaseHTTPRequestHandler):
             battery_reply = ble_bridge.bridge.command(0x0306, b"")
             if len(battery_reply) >= 2:
                 info["battery_percent"] = battery_reply[1]
+            # The handshake's hello only carries its own raw id string (see the docstring
+            # above) - this is the real numeric serial, a second driver-path request
+            # (ble_server.py's own parse_compact_serial(), reverse-engineered from the real
+            # Suunto app's capture, 2026-08-11). Overrides the hello's id on success; falls
+            # back to it silently if this one request fails, rather than failing the whole
+            # device read over one non-essential field.
+            try:
+                serial_reply = ble_bridge.bridge.command(
+                    ble_server.CMD_GET_COMPACT_SERIAL, ble_server.COMPACT_SERIAL_REQUEST)
+                serial = ble_server.parse_compact_serial(serial_reply)
+                if serial:
+                    info["serial"] = serial
+            except (ble_bridge.BleBridgeError, RuntimeError, TimeoutError):
+                pass
         except ble_bridge.BleBridgeError as exc:
             self._send_json(502, {"ok": False, "error": str(exc)})
             return

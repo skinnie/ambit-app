@@ -93,7 +93,15 @@ class BleBridge:
             log_file = open(self._log_path, "a", encoding="utf-8")  # noqa: SIM115 - lives as long as _proc
             self._proc = subprocess.Popen(
                 args, cwd=str(TOOLS_DIR), stdout=log_file, stderr=subprocess.STDOUT,
-                stdin=subprocess.DEVNULL)
+                stdin=subprocess.DEVNULL,
+                # Fully detach into its own session - real bug, hit live 2026-08-11 testing
+                # a fresh pairing: without this, the daemon is still in the SAME process
+                # group as whatever shell launched it (a terminal, or - while testing this -
+                # a backgrounded `&` job), and that shell exiting/being reaped can take the
+                # daemon down with it mid-pairing, well before any BLE timeout would. The
+                # whole point of this being a persistent daemon (see this module's own
+                # docstring) is that it outlives the process that started it.
+                start_new_session=True)
         self._wait_for_socket()
 
     def stop(self):
@@ -169,6 +177,13 @@ class BleBridge:
 
     def set_dry_run(self, value):
         return self._request({"op": "set_dry_run", "value": bool(value)})["dry_run"]
+
+    def submit_passkey(self, passkey):
+        """A fresh pairing needs a human to read a 6-digit passkey off the watch's own
+        screen and report it back - see ble_server.py's Agent docstring for why this can't
+        be automated (LE Legacy Passkey Entry, watch = Display Only). Call once status()
+        shows a non-null "pending_passkey_device"."""
+        return self._request({"op": "submit_passkey", "passkey": int(passkey)})["ok"]
 
     def command(self, cmd, payload=b"", expect_reply=True, timeout=20.0):
         """`Link.command()`'s shape (command id, payload bytes in, payload bytes out) -

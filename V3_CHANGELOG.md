@@ -7,6 +7,24 @@ they land, on the way to what André/Vincent have been calling "V3": wireless sy
 
 ---
 
+## 2026-08-11: desktop BLE - fresh pairing solved, clean serial recovered
+
+- **Fresh pairing now works standalone on Linux**: registered a real `org.bluez.Agent1`
+  with `KeyboardDisplay` capability (this watch family needs LE Legacy Passkey Entry, not
+  Just Works or Numeric Comparison - confirmed from this project's own prior IO-capability
+  decode). `RequestPasskey()` blocks until a human reports the passkey the watch is
+  displaying, submitted via a new control-socket op / `ble_bridge.submit_passkey()`.
+  Confirmed live: watch showed a code, submitted it, pairing completed, real device data
+  read straight after - no more depending on the desktop environment's own Bluetooth applet.
+- **Clean numeric serial** ("1849100781") now read via a real post-handshake `0x0b1e`
+  request, reverse-engineered by decoding the real Suunto app's own capture directly
+  (btsnoop + tshark). Previously only the handshake's raw hello id was available.
+- **Two real bugs fixed** that were making retries look like protocol failures: the
+  scanner's own "already seen" bookkeeping permanently blacklisted the watch after any
+  dropped connection instead of allowing a retry, and the daemon subprocess wasn't properly
+  detached, so it could die between tool calls independent of anything BLE-related.
+- See `HANDOFF.md` Milestone 7 item 16 for the full story.
+
 ## 2026-08-11: desktop BLE - real handshake fix, confirmed working end-to-end on hardware
 
 - **Fixed the actual protocol bug**, found by testing the bridge below against a real
