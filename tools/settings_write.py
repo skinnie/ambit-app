@@ -73,12 +73,16 @@ AMBIT3_SETTINGS = {
     "button_lock_time_mode": "ButtonLock.TimeMode",
     "button_lock_sport_mode": "ButtonLock.SportMode",
     "tones": "Audio.Mode",
-    # Real, 2026-08-10: readable, NOT writable. Entry 0x1f is in the watch's own read
-    # reply and in SuuntoLink's generic ServiceAdapter.xml, but appears in NONE of the
-    # 134 captured writes, and André confirmed it is changed on the watch itself and is
-    # on no SuuntoLink screen. It has no write template, so write_one() refuses it - see
-    # AMBIT3_KEY_TEMPLATE.
-    "display_contrast": "Display.Contrast",
+    # display_contrast (entry 0x1f) is deliberately ABSENT here. It is readable - it is in
+    # the watch's own 0x1100 reply and in SuuntoLink's generic ServiceAdapter.xml - but it
+    # appears in NONE of the 134 captured writes, it is on no SuuntoLink screen, and André
+    # confirmed 2026-08-10 that it is changed on the watch itself (Settings > General >
+    # Display > Contrast). It was shown as a read-only row until 2026-08-11, when André
+    # ruled: "if we can't change it no point on being on a app, apply this rule to
+    # everything". Dropped from the curated list, so it never reaches either UI. The
+    # decoder still knows the entry (android's AmbitSettingsReader keeps its id) - this is
+    # a presentation decision, not a loss of what was reverse-engineered. Note the Kailash
+    # table below KEEPS its own contrast field: there it is genuinely writable.
     "display_dark": "Display.Invert",  # confirmed live, 2026-08-08 - see docstring
     "backlight_mode": "Display.Backlight.Mode",
     "backlight_brightness": "Display.Backlight.Brightness",
@@ -276,10 +280,10 @@ AMBIT3_WRITE_TEMPLATES = {
 
 # Which template carries each curated key. A key with no entry here has no real
 # SuuntoLink template that contains it, and write_one() refuses rather than inventing
-# one - `display_contrast` is the real case (entry 0x1f is in the read reply and in
-# SuuntoLink's own generic ServiceAdapter.xml, but appears in NONE of the 134 captured
-# writes; André confirmed 2026-08-10 that it is changed on the watch itself and is not
-# on any SuuntoLink screen).
+# one. The guard stays even though every curated Ambit3 key now has a template:
+# display_contrast, the one field that ever hit it, was dropped from the curated list on
+# 2026-08-11 (see AMBIT3_SETTINGS), and the next unwritable field found should be caught
+# here rather than have a template guessed for it.
 AMBIT3_KEY_TEMPLATE = {
     "language": "general", "gps_time_keeping": "general",
     "gps_position_format": "general", "compass_declination": "general",
@@ -364,18 +368,8 @@ AMBIT3_DISPLAY = {
     "activity_level":         {"label": "Activity class", "control": "dropdown",
                                "scale": 10, "decimals": 1, "step": 1.0},
     # --- Not on any SuuntoLink settings screen ---
-    # Read-only, and checked again 2026-08-11 when André asked for a 5-100% slider. There is
-    # no write path to invent one from: the field appears in NONE of the 134 captured 0x1101
-    # writes, so no screen template carries it; SuuntoLink 4.1.15 has no contrast control at
-    # all (no TXT_*CONTRAST* string in its translations, and "Contrast" appears only in the
-    # generic ServiceAdapter.xml device schema, never in a UI file); and André himself said
-    # on 2026-08-09 that he believed contrast is only changed on the watch. Building a slider
-    # would mean guessing a template - the same class of guess that wrote GpsPositionFormat
-    # 15 and forced a factory reset. Shown with the note below instead, which tells the user
-    # where the setting actually lives.
-    "display_contrast":       {"label": "Display contrast", "control": "readonly",
-                               "note": "Changed on the watch itself: Settings > General > "
-                                       "Display > Contrast. No app can write it."},
+    # (display_contrast used to live here as a read-only row; removed 2026-08-11, see the
+    # comment where it was dropped from AMBIT3_SETTINGS.)
     # Real: Settings.UseTrainingProgram, "Training plan source (0 - off, 1 - Manual from
     # MovesCount)" per ServiceAdapter.xml's own comment. It rides in EVERY write template
     # (like Pods) because it is part of the common tail, not because it is a General
@@ -690,12 +684,12 @@ def read_all(payload, descriptor, product_id=None):
         if product_id != KAILASH_PRODUCT_ID:
             value = _to_display(key, value)
         # Real, 2026-08-10: tell a UI what it may actually offer, instead of leaving it
-        # to guess from `kind`. `writable` is false for a field on no real SuuntoLink
-        # screen (display_contrast), so the UI shows the value without an editor rather
-        # than sending a write this project has no reference implementation for; and the
-        # min/max here are the ranges SuuntoLink's own UI enforces, which are much
-        # tighter than the raw integer width describe_field() derives (backlight
-        # brightness is 5..100, not 0..255).
+        # to guess from `kind`. `writable` is false for a field with no write path -
+        # today only Kailash's enabled_navigation_systems - so the UI shows the value
+        # without an editor rather than sending a write this project has no reference
+        # implementation for; and the min/max here are the ranges SuuntoLink's own UI
+        # enforces, which are much tighter than the raw integer width describe_field()
+        # derives (backlight brightness is 5..100, not 0..255).
         writable = (key not in KAILASH_READ_ONLY) if product_id == KAILASH_PRODUCT_ID \
             else (key in AMBIT3_KEY_TEMPLATE)
         if product_id != KAILASH_PRODUCT_ID and _display_range(key) is not None:
@@ -703,14 +697,14 @@ def read_all(payload, descriptor, product_id=None):
             desc["min"], desc["max"] = _display_range(key)
         elif not writable:
             # No editor will be shown, so don't hand a UI a range to build one from -
-            # describe_field()'s own is the raw integer width (0..255 for
-            # display_contrast), which was never a real range for this field anyway.
+            # describe_field()'s own is the raw integer width, which was never a real
+            # range for a field the watch alone owns.
             desc = {k: v for k, v in desc.items() if k not in ("min", "max")}
         # Which of SuuntoLink's own settings screens this field lives on, so a UI can
         # group the list the way the watch's owner already knows it (General / Unit /
         # Personal) instead of showing 30+ fields in one flat run. None for a field on
-        # no screen (display_contrast) and for every Kailash field, whose own 7R app
-        # groups differently and has no captured template.
+        # no screen, and for every Kailash field, whose own 7R app groups differently and
+        # has no captured template.
         screen = AMBIT3_KEY_TEMPLATE.get(key) if product_id != KAILASH_PRODUCT_ID else None
         if screen == "units_mode":
             screen = "units"

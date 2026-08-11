@@ -135,11 +135,6 @@ def build_settings():
                                     "choices": [[v, lbl] for v, lbl in
                                                 settings_write.AMBIT3_NUMERIC_CHOICES[
                                                     "Personal.ActivityLevel"]]},
-            "display_contrast":    {"ok": True, "value": 50, "label": "Display contrast",
-                                    "kind": "number", "control": "readonly", "writable": False,
-                                    "path": "sml.DeviceSettings.Display.Contrast",
-                                    "note": "Changed on the watch itself: Settings > General > "
-                                            "Display > Contrast. No app can write it."},
             "display_dark":        {"ok": True, "value": 1, "label": "Display", "kind": "enum",
                                     "control": "radio", "writable": True, "screen": "general",
                                     "path": "sml.DeviceSettings.Display.Invert",

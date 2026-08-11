@@ -30,8 +30,9 @@ class SettingsWriteService : public QObject
     Q_PROPERTY(QString device READ device WRITE setDevice NOTIFY deviceChanged)
     // Each entry: {key, path, kind ("bool"/"enum"/"number"/"text"/"raw"), value, choices
     // ([{value, label}, ...] for "enum" - converted here from the tool's own [[value,
-    // label], ...] pairs), min, max (for "number"), writable (false for a field on no real
-    // SuuntoLink screen, e.g. display_contrast - show it, offer no editor) and screen
+    // label], ...] pairs), min, max (for "number"), writable (false for a field with no
+    // write path, e.g. Kailash's enabled_navigation_systems - show it, offer no editor)
+    // and screen
     // ("general"/"units"/"personal", or null - which of SuuntoLink's own settings screens
     // it belongs to, so a UI can group the ~34 Ambit3 fields the way the watch's owner
     // already knows them). Kailash or a smaller

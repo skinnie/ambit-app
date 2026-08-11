@@ -200,16 +200,6 @@
         ]
       ]
     },
-    "display_contrast": {
-      "ok": true,
-      "value": 50,
-      "label": "Display contrast",
-      "kind": "number",
-      "control": "readonly",
-      "writable": false,
-      "path": "sml.DeviceSettings.Display.Contrast",
-      "note": "Changed on the watch itself: Settings > General > Display > Contrast. No app can write it."
-    },
     "display_dark": {
       "ok": true,
       "value": 1,

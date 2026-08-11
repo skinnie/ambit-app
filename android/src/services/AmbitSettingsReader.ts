@@ -88,7 +88,6 @@ export const AMBIT3_SETTINGS_FIELDS: SettingField[] = [
   // as desktop's tools/settings_write.py own _ENUM_LABEL_FIXES, never ported here until now.
   { key: 'gps_time_keeping', entryId: 0x14, kind: 'enum', byteWidth: 1,
     choices: [{ value: 0, label: 'True' }, { value: 1, label: 'False' }] },
-  { key: 'display_contrast', entryId: 0x1f, kind: 'number', byteWidth: 1 },
   { key: 'display_dark', entryId: 0x20, kind: 'bool', byteWidth: 1 },
   { key: 'backlight_mode', entryId: 0x21, kind: 'enum', byteWidth: 1,
     choices: [{ value: 0, label: 'Normal' }, { value: 1, label: 'Off' }, { value: 2, label: 'Night' }, { value: 3, label: 'Toggle' }] },

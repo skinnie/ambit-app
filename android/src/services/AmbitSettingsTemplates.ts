@@ -70,7 +70,6 @@ export const AMBIT3_KEY_TEMPLATE: Record<string, string | null> = {
   "button_lock_time_mode": "general",
   "button_lock_sport_mode": "general",
   "tones": "general",
-  "display_contrast": null,
   "display_dark": "general",
   "backlight_mode": "general",
   "backlight_brightness": "general",

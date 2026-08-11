@@ -52,8 +52,8 @@ def main():
         screens[name] = ids
 
     # Which screen owns each writable key. A key with no screen has no write template and
-    # must be refused rather than written some other way - that is how the desktop treats
-    # Display.Contrast.
+    # must be refused rather than written some other way - the same rule the desktop
+    # applies (see settings_write.AMBIT3_KEY_TEMPLATE).
     key_screen = {key: S.AMBIT3_KEY_TEMPLATE.get(key) for key in S.AMBIT3_SETTINGS}
 
     # What _representable() needs, reduced to data: the legal value set for every enum entry,
