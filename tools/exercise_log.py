@@ -476,17 +476,39 @@ def read_entry_at(data, mem_size, entry_address, mem_start):
     return header, samples, next_addr, prev_addr
 
 
-def walk_entries(data, mem_start=EXERCISE_LOG_BASE, mem_size=EXERCISE_LOG_SIZE):
+def walk_entries(data, mem_start=EXERCISE_LOG_BASE, mem_size=EXERCISE_LOG_SIZE, skip_count=0):
     """Yields (header, samples) for every entry reachable from the region's own master
     index, oldest or newest first per whatever `first_entry` points at - mirrors
     log_next_header()+log_read_entry() walking the on-flash linked list, no live NSP
-    query needed since the whole region is already in `data`."""
+    query needed since the whole region is already in `data`.
+
+    skip_count: real, 2026-08-11 (desktop Activities page perf audit) - fast-skip this many
+    oldest entries via a cheap peek (just the magic + next_addr, 8 bytes) instead of the full
+    read_entry_at() decode (which walks every sample of every entry). The list is a linked
+    list walked oldest-first, so entries the caller already has cached (by this same index
+    convention - main()'s own `count` enumeration) are always a contiguous prefix - the
+    caller can skip re-decoding activities it already has just by knowing how many. This
+    does NOT reduce what's read off the watch (still one bulk flash read, already bounded to
+    next_free_address by the 2026-08-07 fix above) - it only skips the CPU-side sample decode
+    for entries that read produced but the caller doesn't need again, which is the actual
+    cost that scaled with total history on every single Activities page refresh before this."""
     master = parse_master_header(data)
     if master["entries"] == 0:
         return
     current = mem_start
     nxt = master["first_entry"]
+    skipped = 0
     while current != nxt:
+        if skipped < skip_count:
+            base = nxt - mem_start
+            magic = data[base:base + 4]
+            if magic != b"PMEM":
+                raise ValueError(f"no PMEM magic at 0x{nxt:x} (got {magic!r}) while fast-skipping")
+            next_addr = read32(data, base + 4)
+            current = nxt
+            nxt = next_addr
+            skipped += 1
+            continue
         header, samples, next_addr, prev_addr = read_entry_at(data, mem_size, nxt, mem_start)
         yield header, samples
         current = nxt
@@ -582,6 +604,13 @@ def to_gpx(header, samples):
         f'      <duration>{header["duration_ms"] // 1000}</duration>',
         f'      <distance>{header["distance"]}</distance>',
         f'      <ascent>{header["ascent"]}</ascent>',
+        # kcal, not joules - libambit's own header annotates this field
+        # `uint16_t energy_consumption; /* kcal */` (see
+        # android/.../libambit/libambit.h), and this project's decoder reads the same
+        # u16 at the same offset. Exported so the app can show what a move actually cost
+        # (André, 2026-08-11: "add kacolires in Kcal (this is the energy you spent)");
+        # the watch already had it, it was simply never carried through.
+        f'      <energy>{header["energy_consumption"]}</energy>',
         f'      <sport_type>{header["activity_type"]}</sport_type>',
         '    </extensions>',
         '  <trkseg>',
@@ -781,6 +810,14 @@ def main():
                      help="write one .gpx file per entry found into this directory")
     ap.add_argument("--fit-out", metavar="DIR",
                      help="write one .fit file per entry found into this directory")
+    # Real, 2026-08-11 (desktop Activities page perf audit: every refresh re-decoded every
+    # activity ever recorded, every time). The caller (server.py, on behalf of desktop's own
+    # local cache) already knows how many activities it has from a previous run - passing
+    # that count here skips decoding (not re-reading) that many, via walk_entries()'s own
+    # skip_count. 0 (default) behaves exactly as before: everything decoded, same as any
+    # other direct/manual invocation of this tool.
+    ap.add_argument("--known-count", type=int, default=0, metavar="N",
+                     help="skip decoding the N oldest entries (already cached by the caller)")
     args = ap.parse_args()
 
     if args.from_file:
@@ -815,21 +852,23 @@ def main():
         # before committing to the fast read, and falls back to the real, always-correct
         # full read rather than risk silently-truncated data.
         try:
-            entries = list(walk_entries(data))
+            entries = list(walk_entries(data, skip_count=args.known_count))
         except (IndexError, struct.error) as exc:
             print(f"  fast read parsed incompletely ({exc}) - falling back to a full "
                   f"region read")
             data = read_flash(link, EXERCISE_LOG_BASE, EXERCISE_LOG_SIZE, label="ExerciseLog")
-            entries = list(walk_entries(data))
+            entries = list(walk_entries(data, skip_count=args.known_count))
     if args.from_file:
-        entries = list(walk_entries(data))
+        entries = list(walk_entries(data, skip_count=args.known_count))
 
     master = parse_master_header(data)
     print(f"master index: entries={master['entries']} "
           f"first=0x{master['first_entry']:x} last=0x{master['last_entry']:x} "
           f"next_free=0x{master['next_free_address']:x}")
+    if args.known_count:
+        print(f"known-count={args.known_count}: skipping decode of that many oldest entries")
 
-    count = 0
+    count = args.known_count
     for header, samples in entries:
         count += 1
         print(f"\nentry {count}: {header['activity_name']!r} "
@@ -869,6 +908,21 @@ def main():
 
     if count == 0:
         print("\nno entries found (empty logbook)")
+    elif count == args.known_count:
+        print(f"\nno new entries since known-count={args.known_count}")
+
+    # Real total entry count, for the caller to detect a shrunk logbook (the watch's own
+    # log wrapped/reset since the caller's known-count was recorded, so old cached indices
+    # no longer mean the same activity) - server.py reads this to decide whether to ask
+    # again with --known-count 0 instead of trusting its cache. Written next to the GPX/FIT
+    # files themselves, same directory convention, no separate --json flag needed for one
+    # integer.
+    if args.gpx_out:
+        import json
+        import os
+        with open(os.path.join(args.gpx_out, "master.json"), "w") as f:
+            json.dump({"total_entries": master["entries"]}, f)
+
     return 0
 
 

@@ -4,6 +4,7 @@
 #include <QNetworkAccessManager>
 #include <QObject>
 #include <QQmlEngine>
+#include <QSqlDatabase>
 #include <QVariantList>
 
 // Step 7. Wraps backend/server.py's /api/activities (raw GPX/FIT per recorded move) and
@@ -22,15 +23,25 @@
 // nothing in the UI picks a sport-specific icon from it yet. Inventing a mapping here would
 // be guessing at something this project has explicitly never verified.
 //
-// Local offline cache, real 2026-08-07 ("activities in general should be saved in the
-// computer... loads when watch is not plugged"): every successful live refresh() also
-// writes each activity's real GPX/FIT bytes to QStandardPaths::AppDataLocation +
-// "/activities_cache/" (moveN.gpx/.fit - the same naming the backend's own temp dir already
-// uses). A plain per-file cache, not a SQL database - this app has no database anywhere
-// else either (QSettings for Connections, nothing more), and activities are already
-// real, self-contained files once exported; a DB would be solving a problem that doesn't
-// exist here. GPX only (not FIT) for the cache-driven UI itself, matching parseGpx()'s own
-// input; FIT is cached alongside purely so offline Export FIT still works.
+// Real, 2026-08-11 (performance audit: "is this creating a database... or just reading
+// live?", comparing against Android's real SQLite-backed diff sync). The answer used to be
+// "reads live, every time" - refresh() re-fetched, re-decoded, and re-parsed the watch's
+// ENTIRE recorded history on every single Activities page visit (this class's own previous
+// header comment reasoned explicitly against a database: "a DB would be solving a problem
+// that doesn't exist here" - true when this was written, false once the perf audit measured
+// what "every page visit re-decodes everything ever recorded" actually costs on rule 5's old
+// hardware). This is that reversal, done honestly rather than silently: a real SQLite
+// database (QStandardPaths::AppDataLocation + "/activities.db", one `activities` table,
+// `idx` primary key), same spirit as Android's `ambitsync.db`. refresh() now sends the
+// database's own highest known idx to the backend as `known_count` - exercise_log.py's own
+// new `--known-count` skips decoding (not re-reading flash for) activities already in the
+// database, and the backend only returns genuinely new ones. Already-known activities are
+// read straight back out of the database (including their real GPX/FIT bytes, so Export
+// still works exactly as before) - zero network payload and zero GPX re-parse for anything
+// that hasn't changed. Replaces the old per-file activities_cache/ entirely (gpxText/
+// fitBase64 are now DB columns, not separate files) - same offline-fallback role (used
+// whenever the live call fails), same track/points array cached (as compact JSON) so
+// reading from the database never re-runs the GPX XML parser either.
 class ActivityService : public QObject
 {
     Q_OBJECT
@@ -40,8 +51,8 @@ class ActivityService : public QObject
     Q_PROPERTY(bool loading READ loading NOTIFY loadingChanged)
     Q_PROPERTY(bool ok READ ok NOTIFY activitiesChanged)
     Q_PROPERTY(QString lastError READ lastError NOTIFY lastErrorChanged)
-    // True when activities[] came from the local cache (no live watch read succeeded this
-    // time) rather than a real, just-now read off the watch.
+    // True when activities[] came from the local database (no live watch read succeeded
+    // this time) rather than a real, just-now read off the watch.
     Q_PROPERTY(bool showingCachedData READ showingCachedData NOTIFY activitiesChanged)
     // Each entry: {name, durationSeconds, distanceMeters, ascentMeters, sportTypeRaw,
     // startTime (ISO string, from the first track point, empty if none),
@@ -66,6 +77,7 @@ signals:
 
 private:
     QNetworkAccessManager m_network;
+    QSqlDatabase m_db;
     bool m_loading = false;
     bool m_ok = false;
     bool m_showingCachedData = false;
@@ -75,7 +87,12 @@ private:
     void setLoading(bool value);
     void setLastError(const QString &message);
     static QVariantMap parseGpx(const QString &gpxText);
-    static QString cacheDir();
-    void saveToCache(const QJsonArray &rawActivities);
-    bool loadFromCache();
+
+    void openDatabase();
+    int dbKnownCount();
+    void dbClear();
+    void dbInsert(int index, const QVariantMap &parsed, const QString &gpxText,
+                  const QString &fitBase64);
+    bool dbLoadAll();
+    void requestActivities(int knownCount, bool alreadyRetried);
 };

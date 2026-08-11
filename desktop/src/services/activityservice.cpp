@@ -1,17 +1,21 @@
 #include "activityservice.h"
 
 #include <QDir>
-#include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QNetworkReply>
+#include <QSqlError>
+#include <QSqlQuery>
 #include <QStandardPaths>
 #include <QXmlStreamReader>
 
 static const QString kBackendBase = QStringLiteral("http://127.0.0.1:8766");
 
-ActivityService::ActivityService(QObject *parent) : QObject(parent) {}
+ActivityService::ActivityService(QObject *parent) : QObject(parent)
+{
+    openDatabase();
+}
 
 void ActivityService::setLoading(bool value)
 {
@@ -39,6 +43,10 @@ QVariantMap ActivityService::parseGpx(const QString &gpxText)
     result[QStringLiteral("durationSeconds")] = 0;
     result[QStringLiteral("distanceMeters")] = 0;
     result[QStringLiteral("ascentMeters")] = 0;
+    // kcal straight off the watch (see exercise_log.py's own comment on the unit). 0 means
+    // "not recorded" - an older GPX in the cache predates this field entirely, and the UI
+    // hides the figure rather than claiming the move cost nothing.
+    result[QStringLiteral("energyKcal")] = 0;
     result[QStringLiteral("sportTypeRaw")] = -1;
     result[QStringLiteral("startTime")] = QString();
 
@@ -87,6 +95,8 @@ QVariantMap ActivityService::parseGpx(const QString &gpxText)
                 result[QStringLiteral("distanceMeters")] = text.toDouble();
             } else if (inExtensions && currentTag == QStringLiteral("ascent")) {
                 result[QStringLiteral("ascentMeters")] = text.toDouble();
+            } else if (inExtensions && currentTag == QStringLiteral("energy")) {
+                result[QStringLiteral("energyKcal")] = text.toInt();
             } else if (inExtensions && currentTag == QStringLiteral("sport_type")) {
                 result[QStringLiteral("sportTypeRaw")] = text.toInt();
             }
@@ -101,15 +111,20 @@ void ActivityService::refresh()
 {
     setLoading(true);
     setLastError(QString());
+    requestActivities(dbKnownCount(), false);
+}
 
-    QNetworkReply *reply = m_network.get(
-        QNetworkRequest(QUrl(kBackendBase + QStringLiteral("/api/activities"))));
-    connect(reply, &QNetworkReply::finished, this, [this, reply] {
+void ActivityService::requestActivities(int knownCount, bool alreadyRetried)
+{
+    const QUrl url(kBackendBase + QStringLiteral("/api/activities?known_count=%1")
+                                       .arg(knownCount));
+    QNetworkReply *reply = m_network.get(QNetworkRequest(url));
+    connect(reply, &QNetworkReply::finished, this, [this, reply, knownCount, alreadyRetried] {
         reply->deleteLater();
-        setLoading(false);
 
         if (reply->error() != QNetworkReply::NoError) {
-            m_ok = loadFromCache();
+            setLoading(false);
+            m_ok = dbLoadAll();
             if (!m_ok)
                 setLastError(reply->errorString());
             emit activitiesChanged();
@@ -120,89 +135,136 @@ void ActivityService::refresh()
         const auto root = doc.object();
         const bool liveOk = root.value(QStringLiteral("ok")).toBool();
         if (!liveOk) {
-            m_ok = loadFromCache();
+            setLoading(false);
+            m_ok = dbLoadAll();
             if (!m_ok)
                 setLastError(root.value(QStringLiteral("stderr")).toString());
             emit activitiesChanged();
             return;
         }
 
-        m_ok = true;
-        m_showingCachedData = false;
-        m_activities.clear();
+        // Real total entry count straight from the watch (exercise_log.py's own
+        // master.json, see server.py's own comment) - if it's LESS than what we already
+        // knew, the watch's log wrapped/reset since our database was built, so our cached
+        // indices no longer mean the same activities. One automatic retry from scratch
+        // (known_count 0) rather than silently mixing old and new data under the same idx.
+        const int totalEntries = root.value(QStringLiteral("total_entries")).toInt();
+        if (totalEntries < knownCount && !alreadyRetried) {
+            dbClear();
+            requestActivities(0, true);
+            return;
+        }
+
         const auto rawList = root.value(QStringLiteral("activities")).toArray();
         for (const auto &rawValue : rawList) {
             const auto rawObj = rawValue.toObject();
+            const int index = rawObj.value(QStringLiteral("index")).toInt();
             const QString gpxText = rawObj.value(QStringLiteral("gpx")).toString();
-            QVariantMap parsed = parseGpx(gpxText);
-            parsed[QStringLiteral("index")] = rawObj.value(QStringLiteral("index")).toInt();
-            // Kept for real 2026-08-07: Export GPX/FIT (ActivitiesPage.qml) and the local
-            // offline cache below both need the exact bytes exercise_log.py's to_gpx()/
-            // to_fit() produced, not a re-serialization of the fields parseGpx() extracted
-            // from it - those are a lossy subset (no <extensions> round-trip, etc.).
-            parsed[QStringLiteral("gpxText")] = gpxText;
-            parsed[QStringLiteral("fitBase64")] =
-                rawObj.value(QStringLiteral("fit_base64")).toString();
-            m_activities.append(parsed);
+            const QString fitBase64 = rawObj.value(QStringLiteral("fit_base64")).toString();
+            const QVariantMap parsed = parseGpx(gpxText);
+            dbInsert(index, parsed, gpxText, fitBase64);
         }
-        saveToCache(rawList);
+
+        setLoading(false);
+        m_ok = dbLoadAll();
+        m_showingCachedData = false;
         emit activitiesChanged();
     });
 }
 
-QString ActivityService::cacheDir()
+void ActivityService::openDatabase()
 {
-    return QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)
-        + QStringLiteral("/activities_cache");
-}
-
-void ActivityService::saveToCache(const QJsonArray &rawActivities)
-{
-    const QString dir = cacheDir();
+    // A named connection (not the default one) - QML_SINGLETON means exactly one instance
+    // of this class ever exists, but naming it anyway avoids the classic Qt trap where a
+    // second addDatabase() call with the default connection name silently steals the first.
+    m_db = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), QStringLiteral("activities"));
+    const QString dir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
     QDir().mkpath(dir);
-    for (const auto &rawValue : rawActivities) {
-        const auto rawObj = rawValue.toObject();
-        const int index = rawObj.value(QStringLiteral("index")).toInt();
-        QFile gpxFile(QStringLiteral("%1/move%2.gpx").arg(dir).arg(index));
-        if (gpxFile.open(QIODevice::WriteOnly | QIODevice::Text))
-            gpxFile.write(rawObj.value(QStringLiteral("gpx")).toString().toUtf8());
-
-        const QString fitBase64 = rawObj.value(QStringLiteral("fit_base64")).toString();
-        if (!fitBase64.isEmpty()) {
-            QFile fitFile(QStringLiteral("%1/move%2.fit").arg(dir).arg(index));
-            if (fitFile.open(QIODevice::WriteOnly))
-                fitFile.write(QByteArray::fromBase64(fitBase64.toUtf8()));
-        }
+    m_db.setDatabaseName(dir + QStringLiteral("/activities.db"));
+    if (!m_db.open()) {
+        setLastError(m_db.lastError().text());
+        return;
     }
+    QSqlQuery q(m_db);
+    q.exec(QStringLiteral(
+        "CREATE TABLE IF NOT EXISTS activities ("
+        "idx INTEGER PRIMARY KEY, name TEXT, duration_s INTEGER, distance_m REAL, "
+        "ascent_m REAL, energy_kcal INTEGER, sport_type_raw INTEGER, start_time TEXT, "
+        "track_json TEXT, gpx_text TEXT, fit_base64 TEXT)"));
 }
 
-bool ActivityService::loadFromCache()
+int ActivityService::dbKnownCount()
 {
-    const QDir dir(cacheDir());
-    const QStringList gpxFiles =
-        dir.entryList({QStringLiteral("move*.gpx")}, QDir::Files, QDir::Name);
-    if (gpxFiles.isEmpty())
+    if (!m_db.isOpen())
+        return 0;
+    QSqlQuery q(QStringLiteral("SELECT MAX(idx) FROM activities"), m_db);
+    if (q.next())
+        return q.value(0).toInt();  // NULL (empty table) -> QVariant().toInt() == 0
+    return 0;
+}
+
+void ActivityService::dbClear()
+{
+    if (!m_db.isOpen())
+        return;
+    QSqlQuery q(m_db);
+    q.exec(QStringLiteral("DELETE FROM activities"));
+}
+
+void ActivityService::dbInsert(int index, const QVariantMap &parsed, const QString &gpxText,
+                                const QString &fitBase64)
+{
+    if (!m_db.isOpen())
+        return;
+    const QJsonDocument trackDoc(QJsonArray::fromVariantList(parsed.value(
+        QStringLiteral("track")).toList()));
+
+    QSqlQuery q(m_db);
+    q.prepare(QStringLiteral(
+        "INSERT OR REPLACE INTO activities "
+        "(idx, name, duration_s, distance_m, ascent_m, energy_kcal, sport_type_raw, "
+        " start_time, track_json, gpx_text, fit_base64) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"));
+    q.addBindValue(index);
+    q.addBindValue(parsed.value(QStringLiteral("name")));
+    q.addBindValue(parsed.value(QStringLiteral("durationSeconds")));
+    q.addBindValue(parsed.value(QStringLiteral("distanceMeters")));
+    q.addBindValue(parsed.value(QStringLiteral("ascentMeters")));
+    q.addBindValue(parsed.value(QStringLiteral("energyKcal")));
+    q.addBindValue(parsed.value(QStringLiteral("sportTypeRaw")));
+    q.addBindValue(parsed.value(QStringLiteral("startTime")));
+    q.addBindValue(QString::fromUtf8(trackDoc.toJson(QJsonDocument::Compact)));
+    q.addBindValue(gpxText);
+    q.addBindValue(fitBase64);
+    q.exec();
+}
+
+bool ActivityService::dbLoadAll()
+{
+    m_activities.clear();
+    if (!m_db.isOpen())
         return false;
 
-    m_activities.clear();
-    for (const QString &fileName : gpxFiles) {
-        QFile file(dir.filePath(fileName));
-        if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
-            continue;
-        const QString gpxText = QString::fromUtf8(file.readAll());
-        QVariantMap parsed = parseGpx(gpxText);
-        // "moveN.gpx" -> N, same index the live path uses, so a cached and a live
-        // activities[] entry always mean the same watch-side move.
-        const QString stem = fileName.mid(4, fileName.size() - 4 - 4);  // strip "move"/".gpx"
-        parsed[QStringLiteral("index")] = stem.toInt();
-        parsed[QStringLiteral("gpxText")] = gpxText;
-        const QString fitPath = dir.filePath(QStringLiteral("move%1.fit").arg(stem));
-        QFile fitFile(fitPath);
-        parsed[QStringLiteral("fitBase64")] =
-            fitFile.open(QIODevice::ReadOnly) ? QString::fromLatin1(fitFile.readAll().toBase64())
-                                               : QString();
+    QSqlQuery q(QStringLiteral(
+        "SELECT idx, name, duration_s, distance_m, ascent_m, energy_kcal, sport_type_raw, "
+        "start_time, track_json, gpx_text, fit_base64 FROM activities ORDER BY idx ASC"),
+        m_db);
+    while (q.next()) {
+        QVariantMap parsed;
+        parsed[QStringLiteral("index")] = q.value(0).toInt();
+        parsed[QStringLiteral("name")] = q.value(1).toString();
+        parsed[QStringLiteral("durationSeconds")] = q.value(2).toInt();
+        parsed[QStringLiteral("distanceMeters")] = q.value(3).toDouble();
+        parsed[QStringLiteral("ascentMeters")] = q.value(4).toDouble();
+        parsed[QStringLiteral("energyKcal")] = q.value(5).toInt();
+        parsed[QStringLiteral("sportTypeRaw")] = q.value(6).toInt();
+        parsed[QStringLiteral("startTime")] = q.value(7).toString();
+        const auto trackDoc = QJsonDocument::fromJson(q.value(8).toString().toUtf8());
+        parsed[QStringLiteral("track")] = trackDoc.array().toVariantList();
+        parsed[QStringLiteral("gpxText")] = q.value(9).toString();
+        parsed[QStringLiteral("fitBase64")] = q.value(10).toString();
         m_activities.append(parsed);
     }
     m_showingCachedData = !m_activities.isEmpty();
-    return m_showingCachedData;
+    return !m_activities.isEmpty();
 }

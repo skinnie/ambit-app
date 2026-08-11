@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 
 find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Qml Quick QuickControls2 QuickDialogs2
-    Network)
+    Network Sql)
 
 # Step 6 (Maps) - two real backends tried and abandoned, both after real hardware testing:
 # maplibre-native-qt (a separate ~1.7GB build) crashed outright (std::bad_alloc, reproducible
@@ -163,6 +163,7 @@ target_link_libraries(ambitapp PRIVATE
     Qt6::Quick
     Qt6::QuickControls2
     Qt6::Network
+    Qt6::Sql
 )
 
 # qt_add_qml_module's auto-generated type-registration file (ambitapp_qmltyperegistrations.cpp)
