@@ -531,6 +531,13 @@ PageFlickable {
                 Card {
                     id: thisYearCard
                     width: parent.width
+                    // Same height as its row-mate when they sit side by side - André,
+                    // 2026-08-12: "the this year card the same size as the weather". Two
+                    // unequal cards on one row read as an accident; matching the taller
+                    // one (weather, with its forecast row) makes the row read as designed.
+                    height: column.twoColumn && weatherCard.visible
+                        ? Math.max(implicitHeight, weatherCard.height)
+                        : implicitHeight
 
                     // Same per-device source rule as Last Activity below - the year is
                     // whatever the newest activity's year is, matching TotalsPage's own
