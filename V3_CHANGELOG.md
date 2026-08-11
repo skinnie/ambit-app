@@ -7,6 +7,21 @@ they land, on the way to what André/Vincent have been calling "V3": wireless sy
 
 ---
 
+## 2026-08-11: desktop BLE - real handshake fix, confirmed working end-to-end on hardware
+
+- **Fixed the actual protocol bug**, found by testing the bridge below against a real
+  Ambit3: `ServerLink` was sending `0x0000` and waiting for a reply, the USB pattern - over
+  BLE the watch pushes first (`0x1201`, then `0x0002` hello) and the phone must answer, not
+  ask. Ported Android's already-proven native handshake responder
+  (`protocol_ble.c`'s `libambit_ble_handshake_device_info()`) into `ServerLink`, and fixed
+  the post-handshake driver-path flags (0x05, not `ble_link.py`'s client-role 0x0A).
+- **Confirmed live**: real device identity (`fw 2.4.17`, `hw 70.2.17414` - exact match to
+  this project's own documented value) parsed from the handshake, and a real post-handshake
+  `0x0306` battery read (99%) - the first watch-facing BLE read to work through the actual
+  app. See `HANDOFF.md` Milestone 7 item 15 for the full story, including a real pairing-
+  agent gap hit along the way (fresh pairing needs a Bluetooth agent this project doesn't
+  register itself yet).
+
 ## 2026-08-11: desktop backend can reach the BLE connection, not just USB
 
 - **`tools/ble_server.py` gained a local control socket** (`ControlSocketServer`, Unix

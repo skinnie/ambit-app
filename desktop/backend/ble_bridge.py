@@ -79,7 +79,13 @@ class BleBridge:
             if self._proc is not None and self._proc.poll() is None:
                 return
             self._log_path.parent.mkdir(parents=True, exist_ok=True)
-            args = [PYTHON, str(TOOLS_DIR / "ble_server.py"), "listen"]
+            # "-u": unbuffered. Real bug caught while testing this on hardware, 2026-08-11 -
+            # a Python child process with stdout redirected to a real file (not a tty) is
+            # fully block-buffered by default, so `ble_server.py`'s own progress prints
+            # (bond forgetting, "watch found", "watch subscribed") sat in the child's
+            # buffer instead of reaching this log file, making a live session look stalled
+            # when it wasn't. Nothing here needs it fast; it needs it AT ALL while running.
+            args = [PYTHON, "-u", str(TOOLS_DIR / "ble_server.py"), "listen"]
             if forget:
                 args.append("--forget")
             if verbose:
@@ -145,14 +151,19 @@ class BleBridge:
 
     def status(self):
         """Read-only - safe to poll the way DeviceService's own heartbeat polls USB. Reports
-        not-running rather than raising when the daemon was never started, so a caller can
-        treat this like any other "is the watch there" check."""
-        if not self.is_running():
-            return {"running": False, "subscribed": False}
+        not-running rather than raising when no daemon answers, so a caller can treat this
+        like any other "is the watch there" check.
+
+        Deliberately does NOT gate on `is_running()`/`self._proc` first - that only knows
+        about a daemon *this* BleBridge instance itself spawned. A real backend restart (or,
+        while testing, a daemon started by hand outside the app) leaves a perfectly live
+        daemon with no tracked subprocess handle here at all; asking the socket directly is
+        the only check that reflects what's actually running, not just what this object
+        remembers starting."""
         try:
             response = self._request({"op": "status"}, timeout=3.0)
         except BleBridgeError:
-            return {"running": True, "subscribed": False}
+            return {"running": False, "subscribed": False}
         response["running"] = True
         return response
 

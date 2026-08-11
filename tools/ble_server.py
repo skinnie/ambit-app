@@ -114,7 +114,14 @@ class ControlSocketServer:
     def _handle(self, request):
         op = request.get("op")
         if op == "status":
+            # "subscribed" is the transport-level signal (CCCD write); "handshake_done"/
+            # "device_info" report the higher-level bootstrap exchange - a watch can be
+            # subscribed for a moment before it's pushed 0x1201/0x0002, so callers that
+            # need real device identity (server.py's /api/device) should wait for
+            # handshake_done, not just subscribed.
             return {"ok": True, "subscribed": bool(self.link.notify_chrc.notifying),
+                     "handshake_done": self.link.handshake_done.is_set(),
+                     "device_info": self.link.device_info,
                      "dry_run": self.link.dry_run, "rx_total": self.rx_total[0]}
         if op == "set_dry_run":
             self.link.dry_run = bool(request.get("value", True))
@@ -373,6 +380,15 @@ class ServerLink:
     step - the watch arrives on its own, so `open()` is a wait rather than an action.
     """
 
+    # Server-role driver flags. NOT ble_link.py's FLAGS_DEFAULT (0x0A) - that value was
+    # reverse-engineered from the 7R app acting as a BLE CLIENT (HANDOFF.md Milestone 7's
+    # "Outgoing flags" paragraph). We are the opposite role (server), and
+    # protocol_ble.c's ble_send_command - the native code that actually got phone-driven
+    # requests working post-handshake on real hardware, 2026-08-09 - uses 0x05 for every
+    # driver-path request once the handshake below has completed. Reusing 0x0A here would
+    # be the client's own value in the server's mouth.
+    DRIVER_FLAGS = 0x05
+
     def __init__(self, notify_chrc, glib):
         self.notify_chrc = notify_chrc
         self._glib = glib
@@ -386,11 +402,68 @@ class ServerLink:
         self._reply_ready = threading.Event()
         self._expecting = None
 
+        # Server-side bootstrap handshake (HANDOFF.md Milestone 7 items 9-10, ported
+        # byte-for-byte from protocol_ble.c's libambit_ble_handshake_device_info() - the
+        # fix that got Android's own connect+identify working on real hardware). Over BLE
+        # the WATCH drives the opening exchange: it pushes 0x1201 first and won't send
+        # anything else until we answer it with 0x0000; only then does it push 0x0002
+        # (hello - model/serial/fw/hw, not a reply to a request). A naive "send 0x0000,
+        # wait for a reply" - the USB pattern device_info.py already uses - just hangs:
+        # confirmed the same way here, live, 2026-08-11, that Android's HANDOFF.md entry
+        # already documented for the native code.
+        self.handshake_done = threading.Event()
+        self.device_info = {}
+
     def on_message(self, message):
-        """Called from the D-Bus thread for every decoded inbound frame."""
+        """Called from the D-Bus thread for every decoded inbound frame. Before the
+        handshake completes, incoming frames are the watch's own opener pushes, not replies
+        to anything we sent - dispatched to _handle_handshake_frame() instead of the normal
+        _expecting match."""
+        if not self.handshake_done.is_set():
+            self._handle_handshake_frame(message)
+            return
         if self._expecting is not None and message.command == self._expecting:
             self._reply = message
             self._reply_ready.set()
+
+    def _handle_handshake_frame(self, message):
+        if message.command == 0x1201:
+            # The watch's opener. Byte-exact against the working Suunto capture
+            # (protocol_ble.c's own comment, itself sourced from assets/ble 2026-08-09/):
+            # flags=0x01, connId=0x0000, pktNum=0x0000, payload 03 00 00 00. Answering
+            # this is what makes the watch advance to sending its 0x0002 hello - without
+            # it the watch just re-sends 0x1201 every ~5s.
+            self._send_raw(0x0000, flags=0x01, conn_id=0x0000, pkt_num=0x0000,
+                           payload=b"\x03\x00\x00\x00")
+            return
+        if message.command == 0x0002:
+            # hello: [model 16][id 16][fw 4][hw 4]... - same offsets
+            # libambit_ble_handshake_device_info() reads, ported directly rather than
+            # re-derived. fw is a plain 3-byte major.minor.patch (HANDOFF.md's own worked
+            # example: 02 04 11 = "2.4.17"); hw mirrors the USB device_info reply's
+            # 16-bit-third-component convention (device_info.py's read_device_info(), and
+            # protocol_ble.c's own comment says this explicitly - "mirroring the USB
+            # device-info reply layout").
+            payload = message.payload
+            info = {}
+            if len(payload) >= 16:
+                info["model"] = payload[0:16].split(b"\0")[0].decode("utf-8", "replace")
+            if len(payload) >= 32:
+                info["serial"] = payload[16:32].split(b"\0")[0].decode("utf-8", "replace")
+            if len(payload) >= 36:
+                fw = payload[32:36]
+                info["fw_version"] = f"{fw[0]}.{fw[1]}.{fw[2]}"
+            if len(payload) >= 40:
+                hw = payload[36:40]
+                info["hw_version"] = f"{hw[0]}.{hw[1]}.{hw[2] | (hw[3] << 8)}"
+            self.device_info = info
+            # Driver-path commands (getLogs etc.) continue the pktNum sequence from here -
+            # protocol_ble.c: "device_info was the watch's pkt 0 exchange... the phone's
+            # first real request is pkt 1."
+            self._pkt_num = 1
+            self.handshake_done.set()
+            return
+        # any other early push (a retried 0x1201, etc.) is ignored, same as the native code
 
     def _send(self, frame):
         """Notifications must be emitted on the GLib main loop thread - D-Bus signals are not
@@ -403,11 +476,23 @@ class ServerLink:
             return False               # one-shot idle callback
         self._glib.idle_add(emit)
 
+    def _send_raw(self, command, flags, conn_id, pkt_num, payload):
+        """Like _send(), but with explicit header fields instead of self._conn_id/
+        self._pkt_num - the handshake's 0x0000 answer uses fixed values (flags=0x01,
+        connId=0, pktNum=0) that don't fit the driver-path bookkeeping command() does."""
+        frame = encode_nsp_frame(command, payload, flags, conn_id, pkt_num)
+        self._send(frame)
+
     def command(self, command, payload=b"", expect_reply=True, quiet=False, flags=None,
                 timeout=20.0):
+        if not self.handshake_done.is_set():
+            raise RuntimeError(
+                "handshake not complete yet - the watch hasn't pushed its 0x1201/0x0002 "
+                "opener, so there's no connId/pktNum sequence to send a driver-path "
+                "request into. Wait for ServerLink.handshake_done before calling command().")
         name = CMD_NAMES.get(command, f"0x{command:04x}")
         frame = encode_nsp_frame(command, payload,
-                                 FLAGS_DEFAULT if flags is None else flags,
+                                 self.DRIVER_FLAGS if flags is None else flags,
                                  self._conn_id, self._pkt_num)
         if not quiet:
             print(f"  {'[dry-run] ' if self.dry_run else ''}-> 0x{command:04x} "

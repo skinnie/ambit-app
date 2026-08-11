@@ -641,7 +641,7 @@ class Handler(BaseHTTPRequestHandler):
                 info["name"] = row["productName"]
             self._send_json(200, info)
             return
-        if ble_bridge.bridge.status().get("subscribed"):
+        if ble_bridge.bridge.status().get("handshake_done"):
             self._handle_device_ble()
             return
         code, out, err = run_tool("device_info.py", ["--json"])
@@ -658,21 +658,31 @@ class Handler(BaseHTTPRequestHandler):
         self._send_json(200, {"ok": True, **info})
 
     def _handle_device_ble(self):
-        """The BLE path for /api/device, taken when ble_bridge reports a subscribed watch.
-        Reuses device_info.py's own read_device_info()/read_battery() unchanged - both only
-        ever call `link.command()`, and ble_bridge.bridge presents that exact method, so the
-        same already-hardware-verified byte layout (model/serial/fw/hw offsets, the
-        third-version-component 16-bit fix) applies with no reimplementation, same principle
-        as PROJECT_RULES.md rule 16 (don't re-derive what a real, tested source already
-        settled). Read-only queries (0x0000, 0x0306) still need dry_run off - ServerLink
-        gates ALL commands on it, not just writes, matching Link's own USB behaviour that
-        device_info.py already relies on."""
-        sys.path.insert(0, str(TOOLS_DIR))
-        import device_info                                   # noqa: PLC0415
+        """The BLE path for /api/device, taken once ble_bridge reports the bootstrap
+        handshake is done.
+
+        Real bug, caught live on hardware, 2026-08-11: this originally called
+        device_info.py's read_device_info() unchanged, on the assumption that
+        `ble_bridge.bridge` presenting the same `.command()` shape as a USB `Link` was
+        enough. It isn't - that function SENDS a 0x0000 request and waits for a reply,
+        which is the USB (phone-drives) pattern. Over BLE the watch drives the opening
+        exchange instead (see ServerLink's own handshake code and HANDOFF.md Milestone 7
+        items 9-10, ported from Android's real fix for the identical bug) - the phone
+        answers the watch's pushed 0x1201/0x0002, it never gets to ask. Model/serial/fw/hw
+        therefore come from `ble_bridge`'s status(), populated by that handshake, not from
+        a request made here.
+
+        Battery is different: 0x0306 is a genuine phone-driven request in the flow that
+        runs AFTER the handshake (protocol_ble.c's driver path, flags=0x05) - `command()`
+        now refuses to run before handshake_done for exactly this reason, so calling it
+        here is safe once we already know the handshake completed."""
+        status = ble_bridge.bridge.status()
+        info = dict(status.get("device_info") or {})
         try:
             ble_bridge.bridge.set_dry_run(False)
-            info = device_info.read_device_info(ble_bridge.bridge)
-            info["battery_percent"] = device_info.read_battery(ble_bridge.bridge)
+            battery_reply = ble_bridge.bridge.command(0x0306, b"")
+            if len(battery_reply) >= 2:
+                info["battery_percent"] = battery_reply[1]
         except ble_bridge.BleBridgeError as exc:
             self._send_json(502, {"ok": False, "error": str(exc)})
             return
