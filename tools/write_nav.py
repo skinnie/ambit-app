@@ -416,10 +416,30 @@ def run_nav(args):
     # region this function reads, for data a plain "show my routes/POIs" call never uses.
     # --save is the one real exception - milestone 4's actual backup use of this same
     # function genuinely does want every region, so it still gets the full read.
+    # Read what THIS watch says it has, not what our static table lists. Real bug, found
+    # 2026-08-11: the Routes page returned Bad Gateway on the Ambit3 Peak because
+    # F.REGIONS gained a GlonassSGEE entry (added 2026-08-10 for the Kailash) and this loop
+    # read every entry in it. The Peak declares no such region, so the 0x0b17 read at
+    # 0x1339e0 came back short and took the whole navigation read down with it - a region
+    # that has nothing to do with navigation breaking the page that shows routes.
+    #
+    # Asking the watch is also the cross-device answer: a Traverse, which really does have
+    # GlonassSGEE, gets it read; a watch without one is never asked.
+    declared = read_memory_map(link)
     for base, (name, size, _) in sorted(F.REGIONS.items()):
         if name == "GpsSGEE":
             continue  # 140000 bytes of ephemeris, nothing to do with navigation
         if name in ("Apps", "TrainingProgram") and not args.save:
+            continue
+        if name not in declared:
+            # --save is a backup and wants everything it can get, so still try the region -
+            # but a watch that cannot serve it must not sink the whole backup.
+            if not args.save:
+                continue
+            try:
+                regions[name] = read_flash(link, base, size, label=name)
+            except RuntimeError as exc:
+                print(f"  skipped {name}: this watch does not declare it ({exc})")
             continue
         regions[name] = read_flash(link, base, size, label=name)
 
