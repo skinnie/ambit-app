@@ -7,6 +7,24 @@ they land, on the way to what André/Vincent have been calling "V3": wireless sy
 
 ---
 
+## 2026-08-11: desktop backend can reach the BLE connection, not just USB
+
+- **`tools/ble_server.py` gained a local control socket** (`ControlSocketServer`, Unix
+  socket at `~/.cache/AmbitApp/ble.sock`) so it can stay the one long-lived process holding
+  the watch's BLE connection open while other processes issue commands through it - it was
+  previously only reachable from a terminal.
+- **New `desktop/backend/ble_bridge.py`**: starts/stops the `ble_server.py` daemon and
+  presents a `Link`-compatible `.command()`, so code that already knows how to read the
+  watch's replies (`device_info.py`'s `read_device_info()`/`read_battery()`) works against
+  it with no changes.
+- **New endpoints** `/api/ble/connect`, `/api/ble/status`, `/api/ble/disconnect` in
+  `desktop/backend/server.py`; `/api/device` now answers over BLE when a watch is
+  subscribed. Daemon start, socket status, and clean teardown proven end-to-end on real
+  Linux/BlueZ hardware this session; the watch-facing reply itself still needs a real watch
+  in range to confirm. See `HANDOFF.md` Milestone 7 item 14 for the full architecture and
+  what's still open (every other watch-facing endpoint still USB-only; macOS/Windows need
+  their own GATT-server backend behind the same bridge interface).
+
 ## 2026-08-08: eTrex screen inset further; Workout Builder gets a real light/dark/system theme and text cleanup
 
 - **eTrex icon screen inset further** - the white/grey-framed screen from the same day's

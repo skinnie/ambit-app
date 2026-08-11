@@ -48,6 +48,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from zoneinfo import available_timezones
 
+import ble_bridge
+
 TOOLS_DIR = Path(__file__).resolve().parent.parent.parent / "tools"
 PYTHON = sys.executable
 # Real, 2026-08-09 (App Slot picker) - extract_apps_catalog.py's own real, distributable
@@ -73,6 +75,22 @@ GPS_ORBIT_URL = "https://devices.suunto-operations.com/devices/gpsorbit/binary"
 # watch is asked whether it declares the region (see sgee.py's glonass_status()), so any
 # device that supports it gets the data, including ones this project has never seen.
 GLONASS_ORBIT_URL = "https://devices.suunto-operations.com/devices/glonassorbit/binary"
+
+# Place search - real request, 2026-08-11 (André, for the POI and Kailash-home map pickers:
+# "add a search on the map so the user can search for a place"). Nominatim, chosen and
+# confirmed with him: it is the same OpenStreetMap data the app's own tiles come from, works
+# worldwide, and needs no API key or account. IGN's own geocoder was considered and rejected
+# for this - it is France-only by design, so a search box built on it would silently fail
+# everywhere else.
+#
+# Deliberately here rather than in QML. Nominatim's usage policy requires an identifying
+# User-Agent and at most one request per second, and both are things a single choke point can
+# actually guarantee - a QML XMLHttpRequest per keystroke could not. The UI searches on Enter,
+# not per keystroke, for the same reason.
+NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
+NOMINATIM_USER_AGENT = "AmbitApp/1.0 (open-source Suunto Ambit companion; place search)"
+_NOMINATIM_LOCK = threading.Lock()
+_NOMINATIM_LAST = [0.0]
 
 
 # ThreadingHTTPServer gives every incoming request its own thread, and the QML app fires
@@ -100,7 +118,25 @@ WATCH_LOCK = threading.Lock()
 # state anyone should end up in without asking for it. Every reply it produces carries
 # "demo": true so a UI can say so rather than quietly showing fiction.
 DEMO_DIR = Path(__file__).resolve().parent / "demo_data"
-DEMO = {"enabled": False, "custommodes": None}
+DEMO = {"enabled": False, "custommodes": None, "variant": "Emu"}
+
+# Which devices Testing mode can pretend to be. Everything here is cross-linked from real
+# data - the capability record comes from SuuntoLink's own module and the product name from
+# its Devices.xml - so the list stays right as devices are added, rather than being a
+# hand-kept copy. Dive computers are excluded: this app does not support them, and offering
+# one would be pretending harder than the data allows.
+DEMO_DEVICE_PREFIXES = ("Suunto Ambit", "Suunto Traverse", "Kailash")
+
+
+def demo_ambit():
+    """True when Testing mode is standing in for a WATCH.
+
+    The simulated Garmin is not one: it is a mass-storage device, handled entirely on the Qt
+    side by pointing GarminService at a folder tree. If these Ambit paths answered while the
+    eTrex was selected, the app would show a watch and a Garmin plugged in at once - which
+    cannot happen, and which was the whole reason the Qt side substitutes rather than adds.
+    """
+    return DEMO["enabled"] and DEMO["variant"] != "GarminEtrex"
 
 
 def demo_custom_modes_path():
@@ -217,6 +253,8 @@ class Handler(BaseHTTPRequestHandler):
             self._handle_backups_list()
         elif self.path == "/api/device":
             self._handle_device()
+        elif self.path == "/api/ble/status":
+            self._handle_ble_status()
         elif self.path == "/api/firmware":
             self._handle_firmware_check()
         elif self.path == "/api/kailash/history":
@@ -233,8 +271,12 @@ class Handler(BaseHTTPRequestHandler):
             self._handle_customodes_row_menu()
         elif self.path.startswith("/api/customodes/capabilities"):
             self._handle_customodes_capabilities()
+        elif self.path.startswith("/api/geocode"):
+            self._handle_geocode()
+        elif self.path == "/api/demo/devices":
+            self._handle_demo_devices()
         elif self.path == "/api/demo":
-            self._send_json(200, {"ok": True, "enabled": DEMO["enabled"]})
+            self._send_json(200, self._demo_state())
         elif self.path == "/api/agps/status":
             self._handle_agps_status()
         elif self.path == "/api/apps":
@@ -254,7 +296,11 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(400, {"error": f"invalid JSON body: {e}"})
             return
 
-        if self.path == "/api/routes":
+        if self.path == "/api/ble/connect":
+            self._handle_ble_connect(body)
+        elif self.path == "/api/ble/disconnect":
+            self._handle_ble_disconnect()
+        elif self.path == "/api/routes":
             self._handle_route_write(body)
         elif self.path == "/api/routes/export":
             self._handle_route_export(body)
@@ -541,6 +587,42 @@ class Handler(BaseHTTPRequestHandler):
             })
         self._send_json(200, {"ok": True, "backups": backups})
 
+    def _handle_ble_status(self):
+        """GET /api/ble/status - read-only, safe to poll like DeviceService's own USB
+        heartbeat. "subscribed" is the real "transport is live" signal (the watch has
+        subscribed to our notify characteristic) - same meaning as
+        AmbitBleModule.kt's nativeInitStarted gate on the Android side."""
+        self._send_json(200, ble_bridge.bridge.status())
+
+    def _handle_ble_connect(self, body):
+        """POST /api/ble/connect {"forget": bool} - starts the ble_server.py daemon (a
+        no-op if one is already running) and waits, bounded, for the watch to subscribe.
+        `forget` mirrors ble_server.py's own --forget: NOT the default, since a bond just
+        established is what lets a reconnect work - only opt in when pairing is stuck,
+        same guidance PROJECT_RULES.md gives for the watch's own "always unpair" menu
+        action, not something to do on every connect tap."""
+        try:
+            ble_bridge.bridge.start(forget=bool(body.get("forget", False)))
+        except ble_bridge.BleBridgeError as exc:
+            self._send_json(502, {"ok": False, "error": str(exc)})
+            return
+        # The watch's own advertising window is short (PROJECT_RULES.md: "Pair Mobile App"/
+        # "Sync now" have to be pressed right before this) - poll rather than block on a
+        # single long call, so a caller sees "still searching" instead of the HTTP request
+        # itself timing out.
+        deadline = time.monotonic() + 25.0
+        status = ble_bridge.bridge.status()
+        while not status.get("subscribed") and time.monotonic() < deadline:
+            time.sleep(0.5)
+            status = ble_bridge.bridge.status()
+        self._send_json(200, {"ok": True, **status})
+
+    def _handle_ble_disconnect(self):
+        """POST /api/ble/disconnect - tears the daemon down. Leaves the watch's bond alone;
+        see ble_bridge.BleBridge.stop()'s own comment."""
+        ble_bridge.bridge.stop()
+        self._send_json(200, {"ok": True})
+
     def _handle_device(self):
         """Model/serial/firmware/hardware/battery - tools/device_info.py, added 2026-08-07.
         Real commands write_nav.py already sends (0x0000) or already names from captures but
@@ -549,8 +631,18 @@ class Handler(BaseHTTPRequestHandler):
         (hw_version matched HANDOFF.md's independently-documented value exactly once a real
         parsing bug was fixed). Confirmed working against real hardware in this same
         session, unlike most of this backend."""
-        if DEMO["enabled"]:
-            self._send_json(200, demo_json("device.json"))
+        if demo_ambit():
+            info = demo_json("device.json")
+            sys.path.insert(0, str(TOOLS_DIR))
+            import row_bridge                                # noqa: PLC0415
+            row = row_bridge.load_rows().get("variants", {}).get(DEMO["variant"], {})
+            info["model"] = DEMO["variant"]
+            if row.get("productName"):
+                info["name"] = row["productName"]
+            self._send_json(200, info)
+            return
+        if ble_bridge.bridge.status().get("subscribed"):
+            self._handle_device_ble()
             return
         code, out, err = run_tool("device_info.py", ["--json"])
         if code != 0:
@@ -564,6 +656,30 @@ class Handler(BaseHTTPRequestHandler):
                                    "no parseable JSON", "raw_output": out})
             return
         self._send_json(200, {"ok": True, **info})
+
+    def _handle_device_ble(self):
+        """The BLE path for /api/device, taken when ble_bridge reports a subscribed watch.
+        Reuses device_info.py's own read_device_info()/read_battery() unchanged - both only
+        ever call `link.command()`, and ble_bridge.bridge presents that exact method, so the
+        same already-hardware-verified byte layout (model/serial/fw/hw offsets, the
+        third-version-component 16-bit fix) applies with no reimplementation, same principle
+        as PROJECT_RULES.md rule 16 (don't re-derive what a real, tested source already
+        settled). Read-only queries (0x0000, 0x0306) still need dry_run off - ServerLink
+        gates ALL commands on it, not just writes, matching Link's own USB behaviour that
+        device_info.py already relies on."""
+        sys.path.insert(0, str(TOOLS_DIR))
+        import device_info                                   # noqa: PLC0415
+        try:
+            ble_bridge.bridge.set_dry_run(False)
+            info = device_info.read_device_info(ble_bridge.bridge)
+            info["battery_percent"] = device_info.read_battery(ble_bridge.bridge)
+        except ble_bridge.BleBridgeError as exc:
+            self._send_json(502, {"ok": False, "error": str(exc)})
+            return
+        except (RuntimeError, TimeoutError) as exc:
+            self._send_json(502, {"ok": False, "error": str(exc)})
+            return
+        self._send_json(200, {"ok": True, "transport": "ble", **info})
 
     def _handle_firmware_check(self):
         """Latest firmware available for the connected watch + a real download URL -
@@ -631,7 +747,7 @@ class Handler(BaseHTTPRequestHandler):
         entry IDs were confirmed to only ever be looked up fresh per-device, after a real
         bug where a hardcoded ID from one watch's schema silently hit a different field on
         another. Every value in both tables live-verified against real screenshots."""
-        if DEMO["enabled"]:
+        if demo_ambit():
             self._send_json(200, demo_json("settings.json"))
             return
         query = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
@@ -710,7 +826,7 @@ class Handler(BaseHTTPRequestHandler):
         so this needs no separate name-mapping layer."""
         # Testing mode decodes the fixture through the SAME tool, via its own --from, so
         # this path is the real one minus the USB read.
-        args = ["--json"] + (["--from", demo_custom_modes_path()] if DEMO["enabled"] else [])
+        args = ["--json"] + (["--from", demo_custom_modes_path()] if demo_ambit() else [])
         code, out, err = run_tool("custom_modes.py", args)
         info = self._parse_last_json_line(out)
         if info is None:
@@ -803,6 +919,114 @@ class Handler(BaseHTTPRequestHandler):
             "maxSuuntoApps": catalogue["limits"]["maxSuuntoApps"],
         })
 
+    def _handle_geocode(self):
+        """GET /api/geocode?q=... - find a place by name.
+
+        Rate limited to Nominatim's stated one request per second, enforced here rather than
+        trusted to the UI: exceeding it is how a free service gets an app blocked, and no
+        amount of care in the QML could guarantee it once more than one picker exists.
+        """
+        query = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+        text = (query.get("q") or [""])[0].strip()
+        if not text:
+            self._send_json(400, {"ok": False, "error": "missing q"})
+            return
+
+        with _NOMINATIM_LOCK:
+            wait = 1.0 - (time.time() - _NOMINATIM_LAST[0])
+            if wait > 0:
+                time.sleep(wait)
+            _NOMINATIM_LAST[0] = time.time()
+
+        url = NOMINATIM_URL + "?" + urllib.parse.urlencode({
+            "q": text, "format": "jsonv2", "limit": 8,
+        })
+        request = urllib.request.Request(url, headers={
+            "User-Agent": NOMINATIM_USER_AGENT,
+            "Accept-Language": "en",
+        })
+        try:
+            with urllib.request.urlopen(request, timeout=20) as reply:
+                raw = json.loads(reply.read().decode("utf-8"))
+        except (urllib.error.URLError, ValueError, TimeoutError) as exc:
+            # A search failing must never look like "no such place" - the map picker still
+            # works by hand, and saying which it was is the difference between retrying and
+            # giving up.
+            self._send_json(502, {"ok": False, "error": f"place search failed: {exc}"})
+            return
+
+        results = [{
+            "name": entry.get("display_name", ""),
+            "lat": float(entry["lat"]),
+            "lon": float(entry["lon"]),
+        } for entry in raw if entry.get("lat") and entry.get("lon")]
+        self._send_json(200, {"ok": True, "results": results})
+
+    def _demo_state(self):
+        """What Testing mode is currently pretending to be.
+
+        garminRoot is handed to the Qt side rather than resolved there: the fixture lives
+        next to this file, and the app should not have to guess where the backend keeps it.
+        """
+        return {
+            "ok": True,
+            "enabled": DEMO["enabled"],
+            "variant": DEMO["variant"],
+            "deviceName": self._demo_device_name(DEMO["variant"]),
+            "garminRoot": str(DEMO_DIR / "garmin")
+                          if (DEMO["enabled"] and DEMO["variant"] == "GarminEtrex") else "",
+        }
+
+    def _demo_device_name(self, variant):
+        """The friendly name for a simulated device, from the same source the picker uses."""
+        if variant == "GarminEtrex":
+            return "Garmin eTrex 30"
+        sys.path.insert(0, str(TOOLS_DIR))
+        import row_bridge                                    # noqa: PLC0415
+        row = row_bridge.load_rows().get("variants", {}).get(variant, {})
+        return row.get("productName") or variant
+
+    def _handle_demo_devices(self):
+        """GET /api/demo/devices - what Testing mode can pretend to be.
+
+        Names and capabilities both come from the generated table, so a device this project
+        has never physically seen still appears with its own real limits.
+        """
+        sys.path.insert(0, str(TOOLS_DIR))
+        import row_bridge                                    # noqa: PLC0415
+        catalogue = row_bridge.load_rows()
+
+        devices = []
+        for code, row in catalogue.get("variants", {}).items():
+            name = row.get("productName")
+            if not name or not name.startswith(DEMO_DEVICE_PREFIXES):
+                continue
+            devices.append({
+                "variant": code,
+                "name": name,
+                "maxSportModes": row.get("maxSportModes"),
+                "maxDisplays": row.get("maxDisplays"),
+                "maxMultisportModes": row.get("maxMultisportModes"),
+                # Kailash has no CustomModes region at all, so it has no sport modes to show -
+                # the app already detects that on real hardware and the demo must not pretend
+                # otherwise.
+                "hasSportModes": code != "Hoopoe",
+                "kind": "suunto",
+            })
+        devices.sort(key=lambda d: d["name"])
+        # The eTrex is not in SuuntoLink's table for obvious reasons - its record comes from
+        # this project's own hardware notes (GARMIN_USB_IMPORT_SPEC.md, André's eTrex 30).
+        # It is a mass-storage device with no sport modes at all, so none of the Suunto
+        # ceilings apply to it.
+        devices.append({
+            "variant": "GarminEtrex",
+            "name": "Garmin eTrex 30",
+            "maxSportModes": 0, "maxDisplays": 0, "maxMultisportModes": 0,
+            "hasSportModes": False,
+            "kind": "garmin",
+        })
+        self._send_json(200, {"ok": True, "devices": devices})
+
     def _handle_demo(self, body):
         """POST /api/demo {"enabled": bool} - turn Testing mode on or off.
 
@@ -810,6 +1034,17 @@ class Handler(BaseHTTPRequestHandler):
         starts from the shipped fixture again rather than from whatever was left behind.
         """
         enabled = bool(body.get("enabled"))
+        variant = body.get("variant")
+        if variant:
+            DEMO["variant"] = variant
+            # A different device means a different sample watch: drop the scratch region so
+            # the next read starts from the fixture rather than the previous device's edits.
+            if DEMO["custommodes"]:
+                try:
+                    os.unlink(DEMO["custommodes"])
+                except OSError:
+                    pass
+                DEMO["custommodes"] = None
         if not enabled and DEMO["custommodes"]:
             try:
                 os.unlink(DEMO["custommodes"])
@@ -817,7 +1052,7 @@ class Handler(BaseHTTPRequestHandler):
                 pass                       # best effort - a stale scratch file harms nothing
             DEMO["custommodes"] = None
         DEMO["enabled"] = enabled
-        self._send_json(200, {"ok": True, "enabled": DEMO["enabled"]})
+        self._send_json(200, self._demo_state())
 
     def _handle_customodes_capabilities(self):
         """GET /api/customodes/capabilities?variant=<codename>
@@ -834,7 +1069,11 @@ class Handler(BaseHTTPRequestHandler):
         """
         from urllib.parse import urlparse, parse_qs
         query = parse_qs(urlparse(self.path).query)
-        variant = (query.get("variant") or ["Emu"])[0]
+        # The fallback follows Testing mode when it is on, so a caller that asks without
+        # naming a variant gets the simulated device's limits rather than the reference
+        # watch's - the picker would otherwise look like it had done nothing.
+        default = DEMO["variant"] if demo_ambit() else "Emu"
+        variant = (query.get("variant") or [default])[0]
 
         sys.path.insert(0, str(TOOLS_DIR))
         import row_bridge                                    # noqa: PLC0415
@@ -1008,7 +1247,7 @@ class Handler(BaseHTTPRequestHandler):
         # Testing mode edits the demo region image instead of a watch, through the same tool
         # and the same round-trip guard - so an edit made while trying the app out behaves
         # exactly like one made on hardware, and persists for the session.
-        if DEMO["enabled"]:
+        if demo_ambit():
             args += ["--from", demo_custom_modes_path()]
         code, out, err = run_tool("custom_modes_edit.py", args)
         parsed = self._parse_last_json_line(out)
