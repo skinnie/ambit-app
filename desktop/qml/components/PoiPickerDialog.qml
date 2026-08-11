@@ -38,6 +38,17 @@ ThemedDialog {
     contentItem: Column {
         spacing: Theme.spacingSmall
 
+        // Same wording and position as HomeLocationDialog - André, 2026-08-11: "just
+        // replicate what we did for home in kailash".
+        Text {
+            width: parent.width
+            wrapMode: Text.WordWrap
+            text: qsTr("Drag the map to put the POI under the crosshair, or click a point. " +
+                        "Scroll to zoom.")
+            color: Theme.mutedText
+            font.pixelSize: Theme.fontSizeBody
+        }
+
         RoundedTextField {
             id: nameField
             width: parent.width
@@ -88,14 +99,6 @@ ThemedDialog {
             }
         }
 
-        Text {
-            width: parent.width
-            wrapMode: Text.WordWrap
-            text: qsTr("Click the map to place the POI. Drag to move, scroll or +/- to zoom.")
-            color: Theme.mutedText
-            font.pixelSize: Theme.fontSizeCaption
-        }
-
         Item {
             width: parent.width
             height: root.height - 310
@@ -126,7 +129,16 @@ ThemedDialog {
                     property real lastX: 0
                     property real lastY: 0
                     onActiveChanged: {
-                        if (active) { lastX = centroid.position.x; lastY = centroid.position.y }
+                        if (active) {
+                            lastX = centroid.position.x
+                            lastY = centroid.position.y
+                        } else {
+                            // Drag-to-pick, same as HomeLocationDialog: on release, the
+                            // point under the centre crosshair IS the choice.
+                            root.latitude = map.latAtY(map.height / 2)
+                            root.longitude = map.lonAtX(map.width / 2)
+                            map.resetView()
+                        }
                         map.userControlled = true
                     }
                     onCentroidChanged: {
@@ -140,6 +152,31 @@ ThemedDialog {
                 }
                 HoverHandler {
                     cursorShape: panner.active ? Qt.ClosedHandCursor : Qt.CrossCursor
+                }
+
+                // The crosshair the drag aims at, same as HomeLocationDialog's. Drawn over
+                // the map, ignoring input so it never eats a click meant for the map.
+                Item {
+                    anchors.centerIn: parent
+                    width: 26
+                    height: 26
+                    Rectangle {
+                        anchors.centerIn: parent
+                        width: 2; height: parent.height
+                        color: Theme.mapAccent
+                    }
+                    Rectangle {
+                        anchors.centerIn: parent
+                        width: parent.width; height: 2
+                        color: Theme.mapAccent
+                    }
+                    Rectangle {
+                        anchors.centerIn: parent
+                        width: 12; height: 12; radius: 6
+                        color: "transparent"
+                        border.width: 2
+                        border.color: Theme.mapAccent
+                    }
                 }
             }
         }
