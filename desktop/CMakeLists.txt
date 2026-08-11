@@ -146,6 +146,9 @@ qt_add_qml_module(ambitapp
         src/services/customodesservice.cpp
         src/services/appsservice.h
         src/services/appsservice.cpp
+        src/services/tilecachepaths.h
+        src/services/tilecacheservice.h
+        src/services/tilecacheservice.cpp
     RESOURCES
         assets/fonts/MaterialSymbolsRounded.ttf
         packaging/icon.png

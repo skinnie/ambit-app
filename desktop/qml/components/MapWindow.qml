@@ -105,5 +105,51 @@ ThemedDialog {
             color: Theme.mutedText
             font.pixelSize: Theme.fontSizeCaption
         }
+
+        // Offline download - real, 2026-08-11 (André: "put this offline map cache in the
+        // desktop version", matching Android's own TileCache.ts download button on
+        // MapScreen.tsx). trackPoints + markers together is the same union MapView.qml's own
+        // _trackBounds already fits the view to, so "this area" means the same area the map
+        // is actually showing.
+        Column {
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            anchors.margins: Theme.spacingSmall
+            spacing: Theme.spacingSmall / 2
+
+            RoundedButton {
+                anchors.right: parent.right
+                text: TileCacheService.downloading
+                      ? qsTr("Downloading %1/%2…").arg(TileCacheService.downloadDone).arg(TileCacheService.downloadTotal)
+                      : qsTr("Download for offline")
+                enabled: !TileCacheService.downloading && (root.trackPoints.length + root.markers.length) > 0
+                onClicked: TileCacheService.downloadRegion(
+                    root.trackPoints.concat(root.markers), MapService.provider)
+            }
+
+            Text {
+                id: statusText
+                anchors.right: parent.right
+                visible: text.length > 0
+                color: Theme.mutedText
+                font.pixelSize: Theme.fontSizeCaption
+                text: ""
+
+                Timer {
+                    id: statusClearTimer
+                    interval: 4000
+                    onTriggered: statusText.text = ""
+                }
+                Connections {
+                    target: TileCacheService
+                    function onDownloadFinished(done, total, failed) {
+                        statusText.text = failed > 0
+                            ? qsTr("Saved %1/%2 tiles for offline use").arg(done - failed).arg(total)
+                            : qsTr("Saved %1 tiles for offline use").arg(total)
+                        statusClearTimer.restart()
+                    }
+                }
+            }
+        }
     }
 }

@@ -1015,6 +1015,33 @@ PageFlickable {
                         onClicked: MapService.provider = "cyclosm"
                     }
                 }
+
+                // Offline tile cache - real, 2026-08-11 (André: "put this offline map cache
+                // in the desktop version", matching Android's own SettingsScreen.tsx cache
+                // size + "Clear map cache" row). This is the SAME cache every map tile
+                // (browsed or explicitly downloaded via MapWindow's own "Download for
+                // offline" button) lands in - one number, one clear action, not a separate
+                // "offline tiles" store to manage.
+                Row {
+                    width: parent.width
+                    spacing: Theme.spacingSmall
+                    Text {
+                        width: parent.width - clearCacheButton.width - Theme.spacingSmall
+                        anchors.verticalCenter: parent.verticalCenter
+                        wrapMode: Text.WordWrap
+                        color: Theme.text
+                        font.pixelSize: Theme.fontSizeBody
+                        text: qsTr("Offline tile cache: %1 MB")
+                              .arg((TileCacheService.cacheSizeBytes / (1024 * 1024)).toFixed(1))
+                    }
+                    RoundedButton {
+                        id: clearCacheButton
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: qsTr("Clear")
+                        enabled: TileCacheService.cacheSizeBytes > 0
+                        onClicked: TileCacheService.clearCache()
+                    }
+                }
             }
         }
 

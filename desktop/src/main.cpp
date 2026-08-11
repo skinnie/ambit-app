@@ -7,7 +7,8 @@
 #include <QNetworkRequest>
 #include <QQmlApplicationEngine>
 #include <QQmlNetworkAccessManagerFactory>
-#include <QStandardPaths>
+
+#include "services/tilecachepaths.h"
 
 namespace {
 
@@ -38,9 +39,7 @@ public:
         : QNetworkAccessManager(parent)
     {
         auto *diskCache = new QNetworkDiskCache(this);
-        diskCache->setCacheDirectory(
-            QStandardPaths::writableLocation(QStandardPaths::CacheLocation)
-            + QStringLiteral("/tiles"));
+        diskCache->setCacheDirectory(mapTileCacheDirectory());
         // Map tiles for a few countries at typical zoom levels comfortably fit in this;
         // Qt evicts oldest-first once it's full, so this is a ceiling, not a reservation.
         diskCache->setMaximumCacheSize(500LL * 1024 * 1024);
