@@ -841,10 +841,21 @@ Flickable {
                                     diameter: 100
                                     layoutType: root.layoutTypeOf(filmItem.modelData)
                                     selected: filmItem.index === root.currentDisplayIndex
+                                    // Real bug, 2026-08-11 (André: "I can't select it to
+                                    // then change the top center bottom"). Making the
+                                    // thumbnail open the layout picker took away the plain
+                                    // "select this display" gesture, so the rows below could
+                                    // not be reached at all. A click SELECTS; clicking the
+                                    // one already selected opens the layout picker, which is
+                                    // the same click-again-to-act pattern the rest of the
+                                    // app uses and leaves "Change layout" as the explicit
+                                    // route for anyone who does not discover it.
                                     TapHandler {
                                         onTapped: {
-                                            root.currentDisplayIndex = filmItem.index
-                                            layoutPicker.openFor(filmItem.index)
+                                            if (root.currentDisplayIndex === filmItem.index)
+                                                layoutPicker.openFor(filmItem.index)
+                                            else
+                                                root.currentDisplayIndex = filmItem.index
                                         }
                                     }
                                 }
@@ -888,6 +899,13 @@ Flickable {
                             }
                         }
                     }
+                }
+
+                Text {
+                    text: qsTr("Click a display to select it, click it again to change its " +
+                                "layout.")
+                    color: Theme.mutedText
+                    font.pixelSize: Theme.fontSizeCaption
                 }
 
                 // The selected display's own rows.
