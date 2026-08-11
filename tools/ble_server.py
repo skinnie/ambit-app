@@ -917,7 +917,8 @@ def listen(verbose=False, timeout=0, forget=False, serve_socket=True):
     try:
         agent_manager.RegisterAgent(AGENT_PATH, "KeyboardDisplay")
         agent_manager.RequestDefaultAgent(AGENT_PATH)
-        print("  pairing agent registered (NoInputNoOutput - fresh pairs need no confirmation)")
+        print("  pairing agent registered (KeyboardDisplay - fresh pairs need a passkey "
+              "relayed via /api/ble/passkey)")
     except Exception as exc:
         print(f"  could not register pairing agent: {exc} - fresh pairing will depend on "
               "whatever agent (if any) the desktop environment already provides")
