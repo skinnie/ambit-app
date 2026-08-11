@@ -236,12 +236,13 @@ PageFlickable {
                 // --- Ambit3 info grid - real, 2026-08-11 ("move clock up, and put the
                 // manual next to hardware", then "reduce spacing between the column of
                 // battery and firmware, allowing GPS orbit to stay in a column next to
-                // clock"). Two GridLayouts (same fix already used for the Kailash Travel
-                // History card below) instead of one 3-row grid: the first row tightens
-                // columnSpacing to Theme.spacingSmall so Battery/Firmware/GPS orbit/Clock
-                // all fit across the card's own width, the second keeps the wider
-                // Theme.spacingLarge Serial number/Hardware/Manual had before - it isn't
-                // as cramped for room (3 columns, not 4). ---
+                // clock"; finally "text disaligned, please align it"). ONE GridLayout for
+                // both rows, not the two separate ones an earlier iteration used: separate
+                // grids each computed their own column widths, so Battery/Firmware sat at
+                // different x than Serial number/Hardware right below them and the card
+                // read as scattered. A single grid lines the columns up by construction;
+                // the tight Theme.spacingSmall (needed to fit 4 columns) applies to both
+                // rows, which costs the second row nothing - it has a column to spare. ---
                 GridLayout {
                     width: parent.width
                     visible: !HomeViewModel.isGarmin
@@ -343,14 +344,6 @@ PageFlickable {
                         // slightly when open instead of floating over them, which sidesteps
                         // every failure mode hit tonight in one stroke.
                     }
-                }
-
-                GridLayout {
-                    width: parent.width
-                    visible: !HomeViewModel.isGarmin
-                    columns: 3
-                    columnSpacing: Theme.spacingLarge
-                    rowSpacing: Theme.spacingMedium
 
                     Column {
                         spacing: 2
