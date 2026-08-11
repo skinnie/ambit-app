@@ -2,10 +2,12 @@
 #include <QGuiApplication>
 #include <QIcon>
 #include <QNetworkAccessManager>
+#include <QNetworkDiskCache>
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QQmlApplicationEngine>
 #include <QQmlNetworkAccessManagerFactory>
+#include <QStandardPaths>
 
 namespace {
 
@@ -18,10 +20,32 @@ namespace {
 // 418 image instead of map tiles. This is the one place in the app that talks to a raw tile
 // server, so the fix lives here (applies to every QML network request) rather than in
 // MapView.qml or MapService.qml.
+//
+// Real perf bug found 2026-08-11 (André: "maps load slow, can't we cache/go offline?"):
+// this QNetworkAccessManager had no QNetworkDiskCache attached at all, so *every* tile of
+// *every* map view - including one already shown five seconds ago, or yesterday - went
+// back out over the network. MapService.qml's `offlineAvailable: false` comment says real
+// MBTiles-based offline is future work (a bigger, separate feature: bundling/downloading
+// whole regions ahead of time). This is the small, real piece of that rule 11 goal
+// ("prefer full offline capability") available now for free: a standard HTTP disk cache,
+// same mechanism a browser uses, so any tile already fetched once loads instantly and
+// still renders with no network at all, no code changes needed anywhere else since
+// QNetworkDiskCache is transparent to the QNetworkAccessManager that owns it.
 class TileNetworkAccessManager : public QNetworkAccessManager
 {
 public:
-    using QNetworkAccessManager::QNetworkAccessManager;
+    explicit TileNetworkAccessManager(QObject *parent = nullptr)
+        : QNetworkAccessManager(parent)
+    {
+        auto *diskCache = new QNetworkDiskCache(this);
+        diskCache->setCacheDirectory(
+            QStandardPaths::writableLocation(QStandardPaths::CacheLocation)
+            + QStringLiteral("/tiles"));
+        // Map tiles for a few countries at typical zoom levels comfortably fit in this;
+        // Qt evicts oldest-first once it's full, so this is a ceiling, not a reservation.
+        diskCache->setMaximumCacheSize(500LL * 1024 * 1024);
+        setCache(diskCache);
+    }
 
 protected:
     QNetworkReply *createRequest(Operation op, const QNetworkRequest &originalRequest,
@@ -29,6 +53,13 @@ protected:
     {
         QNetworkRequest request(originalRequest);
         request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("AmbitApp/2.0"));
+        // PreferCache (not the Qt default AlwaysNetwork/PreferNetwork): map tiles for a
+        // given z/x/y almost never change, so once cached there is no real reason to ever
+        // revalidate over the network - this is what makes revisits and app restarts load
+        // from disk instead of re-downloading.
+        request.setAttribute(QNetworkRequest::CacheLoadControlAttribute,
+                              QNetworkRequest::PreferCache);
+        request.setAttribute(QNetworkRequest::CacheSaveControlAttribute, true);
         return QNetworkAccessManager::createRequest(op, request, outgoingData);
     }
 };
