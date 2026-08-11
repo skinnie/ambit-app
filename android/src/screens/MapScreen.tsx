@@ -680,11 +680,15 @@ export default function MapScreen() {
         onPress={handleDownloadOffline}
         disabled={!!downloadProgress}
       >
-        <Text style={styles.exportFabText}>
-          {downloadProgress
-            ? (downloadProgress.total > 0 ? `${Math.round((downloadProgress.done / downloadProgress.total) * 100)}%` : '…')
-            : '⬇'}
-        </Text>
+        {downloadProgress ? (
+          <Text style={styles.exportFabText}>
+            {downloadProgress.total > 0
+              ? `${Math.round((downloadProgress.done / downloadProgress.total) * 100)}%`
+              : '…'}
+          </Text>
+        ) : (
+          <Icon name="download" size={22} color={theme.primary} />
+        )}
       </TouchableOpacity>
 
       {/* ── Bouton export flottant ── */}
@@ -693,7 +697,9 @@ export default function MapScreen() {
         onPress={() => setShowExportMenu(v => !v)}
         disabled={exporting}
       >
-        <Text style={styles.exportFabText}>{exporting ? '…' : '⬆'}</Text>
+        {exporting
+          ? <Text style={styles.exportFabText}>…</Text>
+          : <Icon name="upload" size={22} color={theme.primary} />}
       </TouchableOpacity>
 
       {/* ── Menu d'export ── */}
@@ -716,15 +722,15 @@ export default function MapScreen() {
         
         <View style={styles.replayControls}>
           <TouchableOpacity onPress={() => seekRelative(-15)} style={styles.replayBtn}>
-            <Text style={styles.replayIcon}>⏪</Text>
+            <Icon name="skipBack" size={18} color={theme.text} />
           </TouchableOpacity>
           
           <TouchableOpacity onPress={togglePlay} style={styles.replayBtnMain}>
-            <Text style={styles.replayIconMain}>{isPlaying ? '⏸' : '▶️'}</Text>
+            <Icon name={isPlaying ? 'pause' : 'play'} size={20} color={theme.card} />
           </TouchableOpacity>
           
           <TouchableOpacity onPress={() => seekRelative(15)} style={styles.replayBtn}>
-            <Text style={styles.replayIcon}>⏩</Text>
+            <Icon name="skipForward" size={18} color={theme.text} />
           </TouchableOpacity>
         </View>
 

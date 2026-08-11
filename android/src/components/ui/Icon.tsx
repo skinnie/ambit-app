@@ -10,7 +10,8 @@ export type IconName =
   | 'delete' | 'check' | 'info' | 'battery' | 'warning' | 'mountain'
   | 'watch' | 'etrex' | 'sun' | 'moon' | 'auto' | 'chevronLeft' | 'chevronRight'
   | 'cycling' | 'running' | 'walking'
-  | 'play' | 'pause' | 'skipBack' | 'skipForward';
+  | 'play' | 'pause' | 'skipBack' | 'skipForward'
+  | 'download' | 'upload';
 
 interface Props {
   name: IconName;
@@ -165,6 +166,23 @@ export default function Icon({ name, size = 20, color = '#000' }: Props) {
         <Svg width={size} height={size} viewBox="0 0 24 24">
           <Rect x={5} y={4} width={5} height={16} rx={1.2} fill={color} stroke="none" />
           <Rect x={14} y={4} width={5} height={16} rx={1.2} fill={color} stroke="none" />
+        </Svg>
+      );
+    // Real, 2026-08-11 (André, A1: "Still the ugly orange buttons inside activity").
+    // MapScreen's two floating buttons still drew raw arrows (⬇ ⬆) as text - the same root
+    // cause as the replay bar and the activity chips before them: Android's emoji font bakes
+    // a colored glyph in and no style can tint it. Outline arrows in the same 24dp/1.9
+    // stroke as the rest of this set.
+    case 'download':
+      return (
+        <Svg width={size} height={size} viewBox="0 0 24 24">
+          <Path d="M12 3v12M7 11l5 5 5-5M4 20h16" {...s} />
+        </Svg>
+      );
+    case 'upload':
+      return (
+        <Svg width={size} height={size} viewBox="0 0 24 24">
+          <Path d="M12 21V9M7 13l5-5 5 5M4 4h16" {...s} />
         </Svg>
       );
     case 'skipBack':
