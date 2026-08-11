@@ -109,6 +109,18 @@ class DeviceService : public QObject
     Q_PROPERTY(QString blePendingPasskeyDevice READ blePendingPasskeyDevice NOTIFY bleStateChanged)
     Q_PROPERTY(QString bleError READ bleError NOTIFY bleStateChanged)
 
+    // Real decision, 2026-08-11 (André, after a live BLE session this same night hit real
+    // reliability trouble - a route write that needed a mid-flight bug fix, and repeated
+    // BlueZ connect/subscribe flakiness this project's own history already knew about but
+    // hadn't fully solved): BLE stays real, but behind an explicit, OFF-by-default
+    // Settings toggle - "experimental", not the default Home experience. Cable-only is
+    // what most people get; this is for people who opt in knowing it's still being
+    // hardened. Also the point where macOS/Windows BLE backends were explicitly dropped
+    // from scope (HANDOFF.md) - this toggle and everything behind it is Linux/BlueZ only.
+    // Persisted via QSettings, same mechanism as ephemerisGpsOnly above.
+    Q_PROPERTY(bool bleExperimentEnabled READ bleExperimentEnabled
+               WRITE setBleExperimentEnabled NOTIFY bleExperimentEnabledChanged)
+
 public:
     explicit DeviceService(QObject *parent = nullptr);
 
@@ -196,6 +208,9 @@ public:
     // see blePendingPasskeyDevice's own comment for why this can't be automated.
     Q_INVOKABLE void submitBlePasskey(int passkey);
 
+    bool bleExperimentEnabled() const { return m_bleExperimentEnabled; }
+    void setBleExperimentEnabled(bool value);
+
 signals:
     void loadingChanged();
     void backendReachableChanged();
@@ -208,6 +223,7 @@ signals:
     void onlineChanged();
     void demoModeChanged();
     void bleStateChanged();
+    void bleExperimentEnabledChanged();
 
 private:
     QNetworkAccessManager m_network;
@@ -263,6 +279,7 @@ private:
     bool m_bleHandshakeDone = false;
     QString m_blePendingPasskeyDevice;
     QString m_bleError;
+    bool m_bleExperimentEnabled = false;
     // Polls /api/ble/status while connectBle() is in progress - separate from
     // m_pollTimer/m_heartbeatTimer (those poll /api/device, which only starts answering
     // once a BLE watch has actually subscribed; this tracks getting there, including a

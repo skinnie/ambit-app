@@ -28,6 +28,46 @@ PageFlickable {
         }
     }
 
+    // The longitude half of Kailash's home location. The settings list is flat, so the
+    // latitude row (which now presents the pair) has to look its partner up by key.
+    readonly property real homeLongitudeValue: {
+        const list = SettingsWriteService.settings
+        for (let i = 0; i < list.length; i++) {
+            if (list[i].path && list[i].path.endsWith("HomeLocation.Longitude"))
+                return list[i].value
+        }
+        return 0
+    }
+
+    HomeLocationDialog {
+        id: homePicker
+        onPicked: (lat, lon) => {
+            // Written one after the other, not both at once: SettingsWriteService handles a
+            // single write at a time (writingKey), and firing two together would race for
+            // the same USB connection. The longitude is queued and sent as soon as the
+            // latitude write reports done.
+            root.pendingHomeLongitude = lon
+            SettingsWriteService.writeSetting("home_latitude", lat)
+        }
+    }
+
+    // NaN means "nothing queued" - a real coordinate of 0 is a legitimate value (the Gulf of
+    // Guinea), so 0 cannot be the sentinel here.
+    property real pendingHomeLongitude: NaN
+
+    Connections {
+        target: SettingsWriteService
+        function onWritingKeyChanged() {
+            if (SettingsWriteService.writingKey !== "")
+                return
+            if (isNaN(root.pendingHomeLongitude))
+                return
+            const lon = root.pendingHomeLongitude
+            root.pendingHomeLongitude = NaN
+            SettingsWriteService.writeSetting("home_longitude", lon)
+        }
+    }
+
     Column {
         id: column
         anchors.horizontalCenter: parent.horizontalCenter
@@ -114,52 +154,6 @@ PageFlickable {
                         checked: Theme.activitiesView === "list"
                         text: qsTr("See as a list")
                         onClicked: Theme.activitiesView = "list"
-                    }
-                }
-            }
-        }
-
-        // --- Testing mode - real request, 2026-08-11 (André): "add on feature on settings:
-        // testing mode, where it simulates that an ambit 3 is connected, so people can test
-        // it without the watch. for usability could be cool."
-        //
-        // The backend answers from a real captured CustomModes region, so the whole app -
-        // sport modes, the display editor, the row picker - works exactly as it does against
-        // hardware, decoder, encoder and round-trip guard included. Edits persist for the
-        // session and are thrown away when it ends.
-        Card {
-            width: parent.width
-            Column {
-                width: parent.width
-                spacing: Theme.spacingSmall
-                Row {
-                    spacing: Theme.spacingSmall
-                    Icon { glyph: Icons.watch; size: 20; color: Theme.text; anchors.verticalCenter: parent.verticalCenter }
-                    Text { text: qsTr("Testing mode"); font.bold: true; font.pixelSize: Theme.fontSizeBodyLarge; color: Theme.text; anchors.verticalCenter: parent.verticalCenter }
-                }
-                Text {
-                    width: parent.width
-                    wrapMode: Text.WordWrap
-                    text: qsTr("Pretend an Ambit3 Peak is connected, so you can look around " +
-                                "the app without a watch. Changes are made to a sample watch " +
-                                "and forgotten when you close the app - nothing is written to " +
-                                "a real device.")
-                    color: Theme.mutedText
-                    font.pixelSize: Theme.fontSizeBody
-                }
-                Row {
-                    spacing: Theme.spacingSmall
-                    RoundedSwitch {
-                        anchors.verticalCenter: parent.verticalCenter
-                        checked: DeviceService.demoMode
-                        onToggled: DeviceService.setDemoMode(checked)
-                    }
-                    Text {
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: DeviceService.demoMode ? qsTr("On - showing a sample watch")
-                                                     : qsTr("Off")
-                        color: DeviceService.demoMode ? Theme.primary : Theme.mutedText
-                        font.pixelSize: Theme.fontSizeBody
                     }
                 }
             }
@@ -284,7 +278,7 @@ PageFlickable {
                 // `screen` each field lives on - the same three SuuntoLink itself groups
                 // them into, which is the grouping the watch's owner already knows - so
                 // the grouping needs no second table here to drift out of sync. Fields
-                // with no screen (Kailash's whole table, and display_contrast) fall into
+                // with no screen (Kailash's whole table) fall into
                 // "other" and are still shown.
                 function rowsForScreen(name) {
                     const out = [];
@@ -447,18 +441,30 @@ PageFlickable {
                         readonly property bool hasRange:
                             item.min !== undefined && item.min !== null
                             && item.max !== undefined && item.max !== null
+                        // André, 2026-08-11: "remove the home latitude/longitude, call it:
+                        // home coordinates". The watch stores them as ONE grouped field
+                        // (entry 0x36, Latitude/Longitude sub-fields), so showing two rows
+                        // was the app splitting something the device keeps whole. The
+                        // latitude row now presents the pair and the longitude row is
+                        // hidden - it is still read and still written, just not listed
+                        // twice.
                         readonly property bool isHomeCoord:
                             item.path.endsWith("HomeLocation.Latitude")
-                            || item.path.endsWith("HomeLocation.Longitude")
+                        readonly property bool isHomeCoordPartner:
+                            item.path.endsWith("HomeLocation.Longitude")
                         // SuuntoLink's own field name where we have it; otherwise the old
                         // "display_dark" -> "Display dark" formatter, still used for Kailash.
                         readonly property string label: {
+                            if (isHomeCoord)
+                                return qsTr("Home coordinates");
                             if (item.label)
                                 return item.label;
                             const parts = item.key.split("_");
                             parts[0] = parts[0].charAt(0).toUpperCase() + parts[0].slice(1);
                             return parts.join(" ");
                         }
+                        visible: !isHomeCoordPartner
+                        height: isHomeCoordPartner ? 0 : implicitHeight
                         readonly property string control: {
                             if (item.control)
                                 return item.control;
@@ -539,9 +545,15 @@ PageFlickable {
                             RoundedSlider {
                                 anchors.verticalCenter: parent.verticalCenter
                                 width: 200
-                                from: settingRow.item.min
-                                to: settingRow.item.max
-                                value: settingRow.item.value
+                                // Bindings are evaluated for EVERY setting row, not just the
+                                // ones where this slider is visible - so on an enum or bool
+                                // field, which has no min/max at all, these read undefined
+                                // and Qt logs "Unable to assign [undefined] to double" on
+                                // every re-read. The values are unused when hidden; the
+                                // fallbacks exist purely to keep the binding well-typed.
+                                from: settingRow.item.min !== undefined ? settingRow.item.min : 0
+                                to: settingRow.item.max !== undefined ? settingRow.item.max : 100
+                                value: settingRow.item.value !== undefined ? settingRow.item.value : 0
                                 enabled: !settingRow.busy
                                 onMoved: settingRow.commit(Math.round(value))
                             }
@@ -654,31 +666,36 @@ PageFlickable {
                             }
                         }
 
-                        // Kailash's HomeLocation - free-text degrees, no sensible slider range.
+                        // Kailash's HomeLocation, as a place rather than two numbers -
+                        // see HomeLocationDialog.qml. The coordinates stay visible next to
+                        // the button, which is what "then show the coordinates on the
+                        // settings side" asked for.
                         Row {
                             visible: settingRow.control === "coord"
-                            spacing: 8
-                            RoundedTextField {
-                                id: coordField
-                                anchors.verticalCenter: parent.verticalCenter
-                                width: 110
-                                text: settingRow.item.value.toFixed(6)
-                                enabled: !settingRow.busy
-                            }
+                            spacing: Theme.spacingSmall
+
                             RoundedButton {
                                 anchors.verticalCenter: parent.verticalCenter
-                                text: qsTr("Set")
+                                text: qsTr("Pick on a map")
                                 enabled: !settingRow.busy
                                 onClicked: {
-                                    const parsed = parseFloat(coordField.text);
-                                    if (isNaN(parsed)) return;
-                                    settingRow.commit(parsed);
+                                    homePicker.latitude = settingRow.item.value
+                                    homePicker.longitude = root.homeLongitudeValue
+                                    homePicker.open()
                                 }
+                            }
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: qsTr("%1, %2").arg(settingRow.item.value.toFixed(6))
+                                      .arg(root.homeLongitudeValue.toFixed(6))
+                                color: Theme.mutedText
+                                font.pixelSize: Theme.fontSizeBody
                             }
                         }
 
-                        // Read-only: a field on no real SuuntoLink screen (display_contrast),
-                        // or a number with no confirmed range to build an editor from.
+                        // Read-only: a field with no write path (Kailash's own
+                        // enabled_navigation_systems), or a number with no confirmed range
+                        // to build an editor from.
                         Text {
                             visible: settingRow.control === "readonly" || !settingRow.editable
                             text: settingRow.item.value + (settingRow.unitSuffix.length
@@ -985,12 +1002,16 @@ PageFlickable {
                     Text { text: qsTr("Maps"); font.bold: true; font.pixelSize: Theme.fontSizeBodyLarge; color: Theme.text; anchors.verticalCenter: parent.verticalCenter }
                 }
                 Text {
-                    text: qsTr("Provider: tiles from %1")
-                        .arg(MapService.provider === "osm" ? "OpenStreetMap" : "CyclOSM")
+                    // Straight from the provider record, so a provider added to
+                    // MapService needs no second edit here to name itself correctly.
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    text: qsTr("Provider: %1").arg(MapService.providerName)
                     color: Theme.text
                     font.pixelSize: Theme.fontSizeBody
                 }
-                Row {
+                Flow {
+                    width: parent.width
                     spacing: Theme.spacingSmall
                     // autoExclusive (QQC2's default for same-parent RadioButtons) fights
                     // with these declarative `checked` bindings - it explicitly assigns
@@ -1013,6 +1034,15 @@ PageFlickable {
                         checked: MapService.provider === "cyclosm"
                         text: qsTr("CyclOSM (cycling-focused)")
                         onClicked: MapService.provider = "cyclosm"
+                    }
+                    // André, 2026-08-11: "ok add IGN to desktop" - for parity with Android,
+                    // which has had it and defaults to it. Same layer, so both versions draw
+                    // the identical map.
+                    RoundedRadioButton {
+                        autoExclusive: false
+                        checked: MapService.provider === "ign"
+                        text: qsTr("IGN (France)")
+                        onClicked: MapService.provider = "ign"
                     }
                 }
 
@@ -1125,6 +1155,117 @@ PageFlickable {
                     font.pixelSize: Theme.fontSizeLabel
                     text: qsTr("Create/list/restore backups from the Backup page in the " +
                                 "main navigation - not duplicated here.")
+                }
+            }
+        }
+
+        // --- Testing mode. Real request, 2026-08-11 (André): "add on feature on settings:
+        // testing mode, where it simulates that an ambit 3 is connected, so people can test
+        // it without the watch. for usability could be cool." Then, same day: "put it on the
+        // bottom of the site before the about... opens a window and we can choose device,
+        // based on all the characteristics we already know...always linked..and we add the
+        // garmin etrex".
+        //
+        // "Always linked" is what makes this worth having rather than a mock: the Suunto
+        // devices come from the generated capability table and the eTrex from a real folder
+        // tree, so every page runs its normal code - the same decoder, encoder, round-trip
+        // guard and GPX reader hardware goes through. Edits land on a sample device and are
+        // thrown away when the app closes; nothing reaches a real one.
+        Card {
+            width: parent.width
+            Column {
+                width: parent.width
+                spacing: Theme.spacingSmall
+                Row {
+                    spacing: Theme.spacingSmall
+                    Icon { glyph: Icons.watch; size: 20; color: Theme.text; anchors.verticalCenter: parent.verticalCenter }
+                    Text { text: qsTr("Testing mode"); font.bold: true; font.pixelSize: Theme.fontSizeBodyLarge; color: Theme.text; anchors.verticalCenter: parent.verticalCenter }
+                }
+                Text {
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    text: qsTr("Pretend a device is connected, so you can look around the app " +
+                                "without one. Changes are made to a sample device and " +
+                                "forgotten when you close the app - nothing is written to a " +
+                                "real one.")
+                    color: Theme.mutedText
+                    font.pixelSize: Theme.fontSizeBody
+                }
+                Row {
+                    spacing: Theme.spacingSmall
+                    RoundedSwitch {
+                        anchors.verticalCenter: parent.verticalCenter
+                        checked: DeviceService.demoMode
+                        onToggled: DeviceService.setDemoMode(checked, "")
+                    }
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        // The device's name is the status: "On" alone would leave the one
+                        // thing you actually want confirmed - which device - unsaid.
+                        text: DeviceService.demoMode
+                              ? qsTr("On - showing %1").arg(DeviceService.demoDeviceName
+                                                            || qsTr("a sample device"))
+                              : qsTr("Off")
+                        color: DeviceService.demoMode ? Theme.primary : Theme.mutedText
+                        font.pixelSize: Theme.fontSizeBody
+                    }
+                }
+                Row {
+                    spacing: Theme.spacingSmall
+                    visible: DeviceService.demoMode
+                    RoundedButton {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: qsTr("Change device")
+                        onClicked: demoPicker.open()
+                    }
+                }
+            }
+
+            DemoDevicePicker {
+                id: demoPicker
+                current: DeviceService.demoVariant
+                onDeviceChosen: (variant) => DeviceService.setDemoMode(true, variant)
+            }
+        }
+
+        // --- Experimental Features. Real decision, 2026-08-11 (André, after a live BLE
+        // session that same night hit real reliability trouble - see HANDOFF.md Milestone
+        // 7 items 16-19): Bluetooth stays real, but opt-in and clearly labeled as still
+        // being hardened, rather than part of the default cable-first Home experience.
+        // "By default, only cable" - this toggle is what switches Home's own Bluetooth
+        // section (HomePage.qml) on, off by default, persisted like Testing mode above. ---
+        Card {
+            width: parent.width
+            Column {
+                width: parent.width
+                spacing: Theme.spacingSmall
+                Row {
+                    spacing: Theme.spacingSmall
+                    Icon { glyph: Icons.watch; size: 20; color: Theme.text; anchors.verticalCenter: parent.verticalCenter }
+                    Text { text: qsTr("Experimental features"); font.bold: true; font.pixelSize: Theme.fontSizeBodyLarge; color: Theme.text; anchors.verticalCenter: parent.verticalCenter }
+                }
+                Text {
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    text: qsTr("Bluetooth connectivity (Linux only). Still being hardened - " +
+                                "cable stays the reliable default. Turning this on adds a " +
+                                "\"Connect via Bluetooth\" option to the Home screen.")
+                    color: Theme.mutedText
+                    font.pixelSize: Theme.fontSizeBody
+                }
+                Row {
+                    spacing: Theme.spacingSmall
+                    RoundedSwitch {
+                        anchors.verticalCenter: parent.verticalCenter
+                        checked: DeviceService.bleExperimentEnabled
+                        onToggled: DeviceService.bleExperimentEnabled = checked
+                    }
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: DeviceService.bleExperimentEnabled ? qsTr("On") : qsTr("Off")
+                        color: DeviceService.bleExperimentEnabled ? Theme.primary : Theme.mutedText
+                        font.pixelSize: Theme.fontSizeBody
+                    }
                 }
             }
         }

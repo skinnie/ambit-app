@@ -19,6 +19,9 @@ DeviceService::DeviceService(QObject *parent) : QObject(parent)
 {
     // Restore the persisted "Ephemeris GPS only" choice on launch.
     m_ephemerisGpsOnly = QSettings().value(QStringLiteral("ephemeris/gpsOnly"), false).toBool();
+    // Off by default - real decision, 2026-08-11 (see this property's own header comment).
+    m_bleExperimentEnabled =
+        QSettings().value(QStringLiteral("experimental/bluetooth"), false).toBool();
     m_pollTimer.setSingleShot(true);
     connect(&m_pollTimer, &QTimer::timeout, this, &DeviceService::refresh);
 
@@ -487,4 +490,19 @@ void DeviceService::submitBlePasskey(int passkey)
         // Success just clears the pending prompt on the next pollBleStatus() tick - no
         // separate handling needed here.
     });
+}
+
+void DeviceService::setBleExperimentEnabled(bool value)
+{
+    if (m_bleExperimentEnabled == value)
+        return;
+    m_bleExperimentEnabled = value;
+    QSettings().setValue(QStringLiteral("experimental/bluetooth"), value);
+    // Turning it off mid-session tears down whatever BLE state was live, rather than
+    // leaving a daemon running (and a "Connecting..."/passkey dialog possibly still
+    // showing) behind a toggle the user just switched off.
+    if (!value) {
+        disconnectBle();
+    }
+    emit bleExperimentEnabledChanged();
 }

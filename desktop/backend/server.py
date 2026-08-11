@@ -446,7 +446,19 @@ class Handler(BaseHTTPRequestHandler):
         """Body: {"name": str, "gpx": "<gpx xml text>", "confirm": bool}. Without `confirm`,
         runs the exact same rehearsal `write_nav.py route FILE` (no --write) already does -
         real validation, nothing emitted - so a client can sanity-check before committing to
-        an actual write."""
+        an actual write.
+
+        **Real incident, 2026-08-11**: this endpoint (and its BLE sibling) only ever sent
+        the ONE new route to `write_nav.py route`, which rebuilds the ENTIRE on-watch
+        Routes region from exactly the paths it's given - the CLI's own documented
+        contract, never honoured by this app's own upload flow. A real BLE test that
+        night wiped two of André's existing routes; the exact same bug existed here too,
+        just never triggered. Fixed: with `confirm:true`, existing on-watch routes are now
+        read first (`_existing_route_gpx_paths()`) and included alongside the new one, so
+        an add-a-route tap can no longer silently delete every other route. Skipped for a
+        rehearsal (`confirm:false`) - nothing is written either way, so there is nothing to
+        preserve, and reading the whole Routes region first would only slow the preview
+        down for no safety benefit."""
         gpx_text = body.get("gpx")
         if not gpx_text:
             self._send_json(400, {"error": "missing \"gpx\" (GPX file text)"})
@@ -456,17 +468,70 @@ class Handler(BaseHTTPRequestHandler):
         with tempfile.NamedTemporaryFile("w", suffix=".gpx", delete=False) as f:
             f.write(gpx_text)
             gpx_path = f.name
+        existing_paths = []
         try:
-            args = ["route", gpx_path]
+            if ble_bridge.bridge.status().get("handshake_done"):
+                self._handle_route_write_ble(gpx_path, confirm)
+                return
+            if confirm:
+                existing_paths = self._existing_route_gpx_paths()
+            args = ["route", *existing_paths, gpx_path]
             if confirm:
                 args.append("--write")
             code, out, err = run_tool("write_nav.py", args)
         finally:
             Path(gpx_path).unlink(missing_ok=True)
+            for p in existing_paths:
+                Path(p).unlink(missing_ok=True)
 
         self._send_json(200 if code == 0 else 502, {
             "ok": code == 0, "wrote": confirm and code == 0,
+            "routes_kept": len(existing_paths),
             "raw_output": out, "stderr": err})
+
+    def _existing_route_gpx_paths(self):
+        """Every route currently on the watch, each exported to its own temp GPX file -
+        the USB-path counterpart to `write_nav.existing_routes_as_gpx()` (BLE calls that
+        directly; USB's own architecture is subprocess-per-tool, so this shells out to the
+        same already-tested `nav --route-gpx`/`--json` CLI surface `/api/routes/export`
+        already uses, once per existing route, rather than importing write_nav.py's
+        internals here). Caller is responsible for deleting the returned paths."""
+        code, out, err = run_tool("write_nav.py", ["nav", "--json"])
+        summary = self._parse_last_json_line(out)
+        route_count = len(summary.get("routes", [])) if summary else 0
+        paths = []
+        for index in range(route_count):
+            with tempfile.NamedTemporaryFile("w", suffix=".gpx", delete=False) as f:
+                gpx_path = f.name
+            code, out, err = run_tool(
+                "write_nav.py", ["nav", "--route-gpx", str(index),
+                                 "--route-gpx-out", gpx_path])
+            if code == 0 and Path(gpx_path).stat().st_size > 0:
+                paths.append(gpx_path)
+            else:
+                Path(gpx_path).unlink(missing_ok=True)
+        return paths
+
+    def _handle_route_write_ble(self, gpx_path, confirm):
+        """The BLE path for route writes - tools/ble_routes.py. Same rehearsal-first
+        contract as the USB path: confirm=false leaves ble_bridge in its default dry_run
+        state (nothing sent), confirm=true is a REAL flash write over BLE - unverified
+        against any real capture this project has (see ble_routes.py's own docstring), so
+        a first real attempt should be small and cautious. WATCH_LOCK isn't needed here the
+        way it is for USB - the BLE connection is inherently single-session, not something
+        two subprocesses can race for."""
+        sys.path.insert(0, str(TOOLS_DIR))
+        import ble_routes                                    # noqa: PLC0415
+        try:
+            ble_bridge.bridge.set_dry_run(not confirm)
+            result = ble_routes.write_route(ble_bridge.bridge, [gpx_path])
+        except ble_bridge.BleBridgeError as exc:
+            self._send_json(502, {"ok": False, "error": str(exc)})
+            return
+        except (RuntimeError, TimeoutError) as exc:
+            self._send_json(502, {"ok": False, "error": str(exc)})
+            return
+        self._send_json(200, {"transport": "ble", "wrote": confirm, **result})
 
     def _parse_last_json_line(self, out):
         """Shared by every tool invocation that prints human-readable progress lines (real
@@ -840,6 +905,9 @@ class Handler(BaseHTTPRequestHandler):
         if demo_ambit():
             self._send_json(200, demo_json("settings.json"))
             return
+        if ble_bridge.bridge.status().get("handshake_done"):
+            self._handle_settings_read_ble()
+            return
         query = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
         device = query.get("device", [None])[0]
         args = ["--json"]
@@ -852,6 +920,28 @@ class Handler(BaseHTTPRequestHandler):
                                    "no parseable JSON", "raw_output": out, "stderr": err})
             return
         self._send_json(200 if info.get("ok") else 502, info)
+
+    def _handle_settings_read_ble(self):
+        """The BLE path for GET /api/settings - tools/ble_settings.py. Real 0x1100 read,
+        never simulated (matches settings_write.py's own CLI, which reads for real even in
+        its dry-run mode - only the write step there is optional). Device family comes from
+        the handshake's own model string (ble_settings.product_id_from_model()), not a
+        `?device=` query param - there's no USB descriptor to override it with, and the
+        watch already told us what it is."""
+        sys.path.insert(0, str(TOOLS_DIR))
+        import ble_settings                                  # noqa: PLC0415
+        status = ble_bridge.bridge.status()
+        model = status.get("device_info", {}).get("model")
+        try:
+            ble_bridge.bridge.set_dry_run(False)
+            info = ble_settings.read_settings(ble_bridge.bridge, model)
+        except ble_bridge.BleBridgeError as exc:
+            self._send_json(502, {"ok": False, "error": str(exc)})
+            return
+        except (RuntimeError, TimeoutError) as exc:
+            self._send_json(502, {"ok": False, "error": str(exc)})
+            return
+        self._send_json(200 if info.get("ok") else 502, {"transport": "ble", **info})
 
     def _handle_settings_write(self, body):
         """POST /api/settings. Body: {"key": str, "value": number, "confirm": bool,
@@ -867,6 +957,9 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(400, {"error": "missing \"key\" or \"value\""})
             return
         confirm = bool(body.get("confirm", False))
+        if ble_bridge.bridge.status().get("handshake_done"):
+            self._handle_settings_write_ble(key, value, confirm)
+            return
         device = body.get("device")
         args = ["--set", f"{key}={value}", "--json"]
         if device:
@@ -880,6 +973,34 @@ class Handler(BaseHTTPRequestHandler):
                                    "no parseable JSON", "raw_output": out, "stderr": err})
             return
         self._send_json(200 if info.get("ok") else 502, info)
+
+    def _handle_settings_write_ble(self, key, value, confirm):
+        """The BLE path for POST /api/settings - tools/ble_settings.py. Without confirm,
+        shows the current value only (a real 0x1100 read - settings_write.py's own dry-run
+        never simulates that part either). With confirm, a real 0x1101 (or Kailash's
+        single-entry push) write via write_one(), unverified over BLE until tested against
+        real hardware the same careful way route writes need to be (see ble_settings.py's
+        own docstring)."""
+        sys.path.insert(0, str(TOOLS_DIR))
+        import ble_settings                                  # noqa: PLC0415
+        status = ble_bridge.bridge.status()
+        model = status.get("device_info", {}).get("model")
+        try:
+            ble_bridge.bridge.set_dry_run(False)
+            if not confirm:
+                current = ble_settings.read_settings(ble_bridge.bridge, model)
+                info = {"ok": True, "dry_run": True, "key": key,
+                        "current": current.get("settings", {}).get(key),
+                        "would_write": value}
+            else:
+                info = ble_settings.write_setting(ble_bridge.bridge, key, value, model)
+        except ble_bridge.BleBridgeError as exc:
+            self._send_json(502, {"ok": False, "error": str(exc)})
+            return
+        except (RuntimeError, TimeoutError) as exc:
+            self._send_json(502, {"ok": False, "error": str(exc)})
+            return
+        self._send_json(200 if info.get("ok") else 502, {"transport": "ble", **info})
 
     def _handle_time_sync(self, body):
         """POST /api/time/sync. Body: {} (this device's own local time) or

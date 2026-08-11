@@ -188,15 +188,22 @@ PageFlickable {
                     }
                 }
 
-                // --- Bluetooth connect (Linux/BlueZ only for now - HANDOFF.md Milestone 7
-                // items 14-17). Shown only while nothing is connected: once a BLE watch
-                // subscribes, /api/device answers over BLE transparently and this row's own
-                // job is done - the existing "Ambit3 info rows" below just starts showing
-                // real data, no separate "connected via BLE" state to maintain here. ---
+                // --- Bluetooth connect (Linux/BlueZ only, and Experimental-only - real
+                // decision, 2026-08-11: a live session that same night hit real BlueZ
+                // reliability trouble and a route-write bug (both since fixed - HANDOFF.md
+                // Milestone 7 items 16-19), so this stays behind Settings' "Experimental
+                // Features" toggle (off by default - SettingsPage.qml) rather than being
+                // part of the default cable-first Home experience. macOS/Windows BLE were
+                // explicitly dropped from scope the same night, not deferred. Shown only
+                // while nothing is connected: once a BLE watch subscribes, /api/device
+                // answers over BLE transparently and this row's own job is done - the
+                // existing "Ambit3 info rows" below just starts showing real data, no
+                // separate "connected via BLE" state to maintain here. ---
                 Column {
                     width: parent.width
                     spacing: Theme.spacingSmall
-                    visible: !HomeViewModel.connected && !HomeViewModel.isGarmin
+                    visible: DeviceService.bleExperimentEnabled
+                             && !HomeViewModel.connected && !HomeViewModel.isGarmin
                              && !DeviceService.demoMode
 
                     Row {
@@ -226,11 +233,21 @@ PageFlickable {
                     }
                 }
 
-                // --- Ambit3 info rows ---
-                Row {
+                // --- Ambit3 info grid - real, 2026-08-11 ("move clock up, and put the
+                // manual next to hardware", then "reduce spacing between the column of
+                // battery and firmware, allowing GPS orbit to stay in a column next to
+                // clock"). Two GridLayouts (same fix already used for the Kailash Travel
+                // History card below) instead of one 3-row grid: the first row tightens
+                // columnSpacing to Theme.spacingSmall so Battery/Firmware/GPS orbit/Clock
+                // all fit across the card's own width, the second keeps the wider
+                // Theme.spacingLarge Serial number/Hardware/Manual had before - it isn't
+                // as cramped for room (3 columns, not 4). ---
+                GridLayout {
                     width: parent.width
-                    spacing: Theme.spacingLarge
                     visible: !HomeViewModel.isGarmin
+                    columns: 4
+                    columnSpacing: Theme.spacingSmall
+                    rowSpacing: Theme.spacingMedium
 
                     Column {
                         spacing: 2
@@ -242,19 +259,19 @@ PageFlickable {
                         Text { text: qsTr("Firmware"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
                         Text { text: HomeViewModel.firmwareText; color: Theme.text; font.pixelSize: Theme.fontSizeBody }
                     }
+                    // Real, 2026-08-07 (was "Not available yet" - the backend side,
+                    // sgee_andre.md, was already built and hardware-verified, only this
+                    // UI was missing). Passively shows the watch's own currently-stored
+                    // orbit date on every Home load (checkGpsOrbitStatus(), read-only,
+                    // works even offline); tapping runs the real update flow
+                    // (updateGpsOrbit()) - download-if-online-and-stale, else honestly
+                    // report why not, matching this app's own "explicit tap for any
+                    // write" rule elsewhere (Routes/Backup) rather than writing to the
+                    // watch just from loading this page.
                     Column {
-                        width: 140
+                        Layout.preferredWidth: 110
                         spacing: 2
                         Text { text: qsTr("GPS orbit"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
-                        // Real, 2026-08-07 (was "Not available yet" - the backend side,
-                        // sgee_andre.md, was already built and hardware-verified, only this
-                        // UI was missing). Passively shows the watch's own currently-stored
-                        // orbit date on every Home load (checkGpsOrbitStatus(), read-only,
-                        // works even offline); tapping runs the real update flow
-                        // (updateGpsOrbit()) - download-if-online-and-stale, else honestly
-                        // report why not, matching this app's own "explicit tap for any
-                        // write" rule elsewhere (Routes/Backup) rather than writing to the
-                        // watch just from loading this page.
                         Text {
                             width: parent.width
                             wrapMode: Text.WordWrap
@@ -278,30 +295,13 @@ PageFlickable {
                             ToolTip.delay: 300
                         }
                     }
-                }
-
-                Row {
-                    width: parent.width
-                    spacing: Theme.spacingLarge
-                    visible: !HomeViewModel.isGarmin
-
-                    Column {
-                        spacing: 2
-                        Text { text: qsTr("Serial number"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
-                        Text { text: HomeViewModel.serialText; color: Theme.text; font.pixelSize: Theme.fontSizeBody }
-                    }
-                    Column {
-                        spacing: 2
-                        Text { text: qsTr("Hardware"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
-                        Text { text: HomeViewModel.hardwareText; color: Theme.text; font.pixelSize: Theme.fontSizeBody }
-                    }
                     // Real, 2026-08-10 ("I connected the kailash via usb... it didn't sync
                     // time... is this function implemented in our app? if not implement it") -
                     // same "explicit tap, no rehearsal shown" pattern as GPS orbit above,
                     // tools/set_time.py's own docstring covers why this one has no rehearsal
                     // step at all (always-safe clock set, unlike flash/PMEM writes).
                     Column {
-                        width: 200
+                        Layout.preferredWidth: 110
                         spacing: 2
                         Text { text: qsTr("Clock"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
                         Text {
@@ -345,6 +345,46 @@ PageFlickable {
                     }
                 }
 
+                GridLayout {
+                    width: parent.width
+                    visible: !HomeViewModel.isGarmin
+                    columns: 3
+                    columnSpacing: Theme.spacingLarge
+                    rowSpacing: Theme.spacingMedium
+
+                    Column {
+                        spacing: 2
+                        Text { text: qsTr("Serial number"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
+                        Text { text: HomeViewModel.serialText; color: Theme.text; font.pixelSize: Theme.fontSizeBody }
+                    }
+                    Column {
+                        spacing: 2
+                        Text { text: qsTr("Hardware"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
+                        Text { text: HomeViewModel.hardwareText; color: Theme.text; font.pixelSize: Theme.fontSizeBody }
+                    }
+                    // Real, 2026-08-11 (André: "correlation between the devices we support
+                    // and their manual link... put the manual next to hardware"). Opens the
+                    // real Suunto user-guide PDF for whichever model is connected
+                    // (HomeViewModel.manualUrl, sourced from the repo-root `manualslinks`
+                    // file) in the system's own PDF viewer/browser - same
+                    // Qt.openUrlExternally() mechanism as any other "open outside the app"
+                    // action, no in-app PDF renderer needed for hardware this old (rule 5).
+                    Column {
+                        Layout.preferredWidth: 140
+                        spacing: 2
+                        Text { text: qsTr("Manual"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
+                        Text {
+                            text: qsTr("View guide (PDF)")
+                            color: Theme.primary
+                            font.pixelSize: Theme.fontSizeBody
+                            font.underline: true
+                            TapHandler {
+                                onTapped: Qt.openUrlExternally(HomeViewModel.manualUrl)
+                            }
+                        }
+                    }
+                }
+
                 // --- Garmin info rows - firmware/part number, matching
                 // GARMIN_USB_IMPORT_SPEC.md's own "Implementation-ready: device
                 // identification" section exactly (Description + firmware as the primary
@@ -379,6 +419,23 @@ PageFlickable {
                             text: GarminService.hasSdCard ? qsTr("Present") : qsTr("Not detected")
                             color: GarminService.hasSdCard ? Theme.text : Theme.mutedText
                             font.pixelSize: Theme.fontSizeBody
+                        }
+                    }
+                    // Real, 2026-08-11 (André: "I added etrex manuals to the files, can you
+                    // link it to the supported devices?"). Same "open externally" mechanism
+                    // as the Suunto Manual field above, keyed by family instead of exact
+                    // codename - see HomeViewModel.garminManualUrl's own comment.
+                    Column {
+                        spacing: 2
+                        Text { text: qsTr("Manual"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
+                        Text {
+                            text: qsTr("View guide (PDF)")
+                            color: Theme.primary
+                            font.pixelSize: Theme.fontSizeBody
+                            font.underline: true
+                            TapHandler {
+                                onTapped: Qt.openUrlExternally(HomeViewModel.garminManualUrl)
+                            }
                         }
                     }
                 }

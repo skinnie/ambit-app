@@ -7,6 +7,28 @@ they land, on the way to what André/Vincent have been calling "V3": wireless sy
 
 ---
 
+## 2026-08-11: BLE settings writes proven real; a route-write data-loss bug found and fixed; BLE scoped to an off-by-default Experimental Feature, macOS/Windows dropped
+
+- **Settings writes over BLE, visually confirmed**: read the real settings blob, previewed
+  a dry-run change, then sent two real writes - `backlight_brightness` and `display_dark`
+  (dark -> light) - the watch's own screen visibly changed live over Bluetooth.
+- **Real incident**: a route write reported success but wiped two of André's existing
+  routes - `build_routes()` rebuilds the entire on-watch Routes region from exactly the
+  GPX paths given, and neither the new BLE path nor the existing USB path had ever
+  included what was already on the watch. Not a BLE-specific bug - identical gap existed
+  over cable, just never triggered before. Root-caused and fixed at the source: new
+  `write_nav.existing_routes_as_gpx()`, read by both `ble_routes.write_route()` and
+  `server.py`'s USB handler before every real write, so an add-a-route no longer deletes
+  what's already there. Confirmed live after the fix.
+- Also found and fixed live: a silent-data-corruption bug in outgoing BLE writes larger
+  than one ATT fragment (no pacing between notify() calls - fixed with real per-fragment
+  delay), a `ble_bridge.BleBridge` shape mismatch against what `write_nav.py`'s functions
+  actually need (`dry_run`/`sent` attributes, `command()`'s full signature), and two
+  smaller bugs in the new route-preservation code itself.
+- **Real scope decision**: BLE now sits behind a new, off-by-default "Experimental
+  Features" toggle (Settings page) - cable stays the default. macOS/Windows BLE backends
+  are dropped from scope entirely, not deferred. See `HANDOFF.md` Milestone 7 item 19.
+
 ## 2026-08-11: Garmin eTrex manuals linked, new SUPPORTED_DEVICES.md - written, NOT yet compiled/tested
 
 - **Garmin manual links** (André added the two real eTrex guide PDFs to `manualslinks`):

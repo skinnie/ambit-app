@@ -66,6 +66,19 @@ class BleBridge:
         self._lock = threading.Lock()
         self._proc = None
         self._log_path = Path.home() / ".cache" / "AmbitApp" / "ble_daemon.log"
+        # Real bug, found live 2026-08-11 wiring routes/settings: write_nav.py's own
+        # functions (read_pois(), send_plan(), main()'s own summary print) read
+        # `link.dry_run`/`link.sent` as PLAIN ATTRIBUTES - the real shape `write_nav.Link`
+        # and `ble_server.ServerLink` both have - not through a method call. This class
+        # only exposed `set_dry_run()`, so any of those functions crashed with
+        # AttributeError the first time one touched `link.dry_run` directly. `dry_run`
+        # mirrors the daemon's own state locally (set_dry_run() keeps it in sync); `sent`
+        # is a real per-command log matching Link's own (command, payload, raw-bytes)
+        # triples, close enough for the byte-count summaries that read it - the actual
+        # wire bytes were already sent by the daemon, this is bookkeeping, not the
+        # transport itself.
+        self.dry_run = True
+        self.sent = []
 
     def is_running(self):
         with self._lock:
@@ -176,7 +189,9 @@ class BleBridge:
         return response
 
     def set_dry_run(self, value):
-        return self._request({"op": "set_dry_run", "value": bool(value)})["dry_run"]
+        result = self._request({"op": "set_dry_run", "value": bool(value)})["dry_run"]
+        self.dry_run = result
+        return result
 
     def submit_passkey(self, passkey):
         """A fresh pairing needs a human to read a 6-digit passkey off the watch's own
@@ -185,15 +200,28 @@ class BleBridge:
         shows a non-null "pending_passkey_device"."""
         return self._request({"op": "submit_passkey", "passkey": int(passkey)})["ok"]
 
-    def command(self, cmd, payload=b"", expect_reply=True, timeout=20.0):
-        """`Link.command()`'s shape (command id, payload bytes in, payload bytes out) -
-        existing call sites that already know how to talk to a `Link` need nothing new
-        beyond swapping which object they call it on."""
+    def command(self, cmd, payload=b"", expect_reply=True, quiet=False, flags=None,
+                timeout=20.0):
+        """`Link.command()`'s full real signature (matching both `write_nav.Link` and
+        `ble_server.ServerLink`) - existing call sites (`read_flash()`, `send_plan()`,
+        `write_one()`, ...) need nothing new beyond swapping which object they call it on.
+        `quiet` and `flags` are accepted for signature compatibility but not forwarded -
+        real bug, found live 2026-08-11: `read_flash()` passing `quiet=True` raised
+        `TypeError: unexpected keyword argument` here because this method only ever
+        declared the two or three parameters this file's OWN early call sites happened to
+        use, not the shape callers coming from the wider `write_nav.py`/`settings_write.py`
+        codebase actually rely on. The daemon's own `ControlSocketServer` already always
+        runs `quiet=True` server-side regardless (nothing here would change its behavior);
+        `flags` isn't yet exposed over the control socket at all - every real command this
+        project has needed so far uses the driver-path default (`ServerLink.DRIVER_FLAGS`)
+        the daemon applies on its own."""
         response = self._request({
             "cmd": cmd, "op": "command", "payload_hex": payload.hex(),
             "expect_reply": expect_reply, "timeout": timeout,
         }, timeout=timeout + 5.0)
-        return bytes.fromhex(response["payload_hex"])
+        reply = bytes.fromhex(response["payload_hex"])
+        self.sent.append((cmd, payload, reply))
+        return reply
 
 
 # One bridge per backend process - see BleBridge's own docstring for why a second is never

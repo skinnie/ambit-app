@@ -344,6 +344,15 @@ def route_to_gpx(flash, index):
         '<?xml version="1.0" encoding="UTF-8"?>',
         '<gpx version="1.1" creator="ambit-app write_nav.py"'
         ' xmlns="http://www.topografix.com/GPX/1/1">',
+        # Real bug, found live 2026-08-11 building existing_routes_as_gpx(): this
+        # function's own output couldn't round-trip back through read_gpx() (used by
+        # route_from_gpx()/build_routes() to re-import a route) because read_gpx()'s
+        # META_NAME regex specifically looks for <metadata><name>, matching SuuntoLink's
+        # own real export format - the <rte><name> below was never enough on its own,
+        # despite being valid GPX. A standard, harmless addition - no existing reader of
+        # this function's output (POST /api/routes/export) is hurt by an extra
+        # <metadata> block - and it's what makes a read-modify-write cycle actually work.
+        f'  <metadata><name>{xml_escape(d.name)}</name></metadata>',
         f'  <rte><name>{xml_escape(d.name)}</name>',
     ]
     for p in points:
@@ -353,6 +362,40 @@ def route_to_gpx(flash, index):
     lines.append('  </rte>')
     lines.append('</gpx>')
     return "\n".join(lines)
+
+
+def existing_routes_as_gpx(link):
+    """Every route currently on the watch, as GPX text - real safety fix, 2026-08-11.
+
+    `build_routes()`/`send_plan()` do not merge with what is already on the watch: the
+    "route" action rewrites the ENTIRE Routes region from exactly the GPX paths it is
+    given, by design (the CLI's own usage, `route file1.gpx file2.gpx ...`, expects the
+    caller to list every route it wants kept - that is the documented contract, not a
+    bug). The desktop app's own upload flow (`server.py`'s `/api/routes`,
+    `RouteService::uploadPendingRoute()`) never implemented that contract - it only ever
+    sent the ONE newly-imported route, silently deleting every other route already on the
+    watch. Confirmed as a real, live incident, 2026-08-11: uploading one test route over
+    BLE wiped two of André's existing routes, over what turned out to be the exact same
+    code path USB already used - not a BLE-specific bug, a pre-existing gap in the whole
+    app's route-upload feature that had simply never been exercised against a watch that
+    already had other real routes on it.
+
+    Callers that want to ADD a route without losing what is already there must read this
+    FIRST and pass its result alongside the new route to `build_routes()` - see
+    `tools/ble_routes.py`'s `write_route()` for the reference caller."""
+    waypoints = read_flash(link, F.WAYPOINT_BASE, F.REGIONS[F.WAYPOINT_BASE][1],
+                           label="Waypoints")
+    routes = read_flash(link, F.ROUTE_BASE, F.REGIONS[F.ROUTE_BASE][1], label="Routes")
+    flash = FlashImage()
+    flash.write(F.WAYPOINT_BASE, waypoints)
+    flash.write(F.ROUTE_BASE, routes)
+    # route_count lives on RouteHeader (F.ROUTE_BASE), not WaypointHeader - real bug,
+    # found live 2026-08-11: WaypointHeader only has waypoint `count`, no `route_count`
+    # attribute at all, matching show_navigation()'s own two-separate-headers read above.
+    header = F.RouteHeader.parse(routes[:32])
+    if header.magic != F.ROUTE_HEADER_MAGIC:
+        return []                      # empty/uninitialized database, nothing to preserve
+    return [route_to_gpx(flash, i) for i in range(header.route_count)]
 
 
 def nav_summary_json(flash):

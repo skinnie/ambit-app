@@ -599,16 +599,39 @@ class ServerLink:
             return
         # any other early push (a retried 0x1201, etc.) is ignored, same as the native code
 
+    # Real bug, found live 2026-08-11 on the first large write this project has ever sent
+    # AS THE BLE SERVER (a ~1024-byte-per-command route write - every command proven
+    # working before this was a handful of bytes, one ATT fragment). notifyCharacteristicChanged
+    # (here, BlueZ's PropertiesChanged signal) has no built-in flow control - emitting it
+    # does not wait for the actual over-the-air transmission to complete, so blasting every
+    # 20-byte fragment of a large payload back-to-back in one loop can outrun what the LE
+    # link layer can actually deliver in a connection interval and silently drop fragments,
+    # with no CRC failure to show for it (the corruption is in what the watch received, not
+    # in the small reply we get back - which is why settings writes, one ATT fragment each,
+    # never surfaced this). Confirmed as the cause: a real route write reported success
+    # (all replies came back, CRC ok) but the route never appeared on the watch. Paced with
+    # a real per-fragment delay instead of a tight loop.
+    NOTIFY_PACING_MS = 15
+
     def _send(self, frame):
         """Notifications must be emitted on the GLib main loop thread - D-Bus signals are not
         safe to raise from another one - so the send is handed to the loop and this returns
-        immediately. command() then blocks on the reply event instead.
+        immediately. command() then blocks on the reply event instead. Paced via chained
+        `timeout_add` calls rather than a blocking `time.sleep()` loop, so the mainloop stays
+        free to service other D-Bus traffic (like the watch's own concurrent pushes) between
+        fragments.
         """
-        def emit():
-            for i in range(0, len(frame), CHUNK_SIZE):
-                self.notify_chrc.notify(frame[i:i + CHUNK_SIZE])
-            return False               # one-shot idle callback
-        self._glib.idle_add(emit)
+        chunks = [frame[i:i + CHUNK_SIZE] for i in range(0, len(frame), CHUNK_SIZE)]
+
+        def emit_next(remaining):
+            if not remaining:
+                return False
+            self.notify_chrc.notify(remaining[0])
+            if len(remaining) > 1:
+                self._glib.timeout_add(self.NOTIFY_PACING_MS, emit_next, remaining[1:])
+            return False               # one-shot callback either way
+
+        self._glib.idle_add(emit_next, chunks)
 
     def _send_raw(self, command, flags, conn_id, pkt_num, payload):
         """Like _send(), but with explicit header fields instead of self._conn_id/
