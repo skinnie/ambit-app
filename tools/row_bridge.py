@@ -133,6 +133,38 @@ def field_id_to_row(catalogue):
     return out
 
 
+TEMPLATE_TO_DISPLAY_TYPE = {262: "FIELDS_1", 261: "FIELDS_2", 260: "FIELDS_3", 257: "GRAPH"}
+
+# Which rows accept SEVERAL values, the ones the watch cycles between on a button press.
+# SuuntoLink renders checkboxes instead of radio buttons exactly when the display is a 2- or
+# 3-field one AND the row is the bottom (sport_mode_display_editor.js), so a graph's bottom
+# row takes a single value - which matches every graph in every capture.
+def row_is_multi_value(template, row_name):
+    return (TEMPLATE_TO_DISPLAY_TYPE.get(template) in ("FIELDS_2", "FIELDS_3")
+            and row_name == "BOTTOM")
+
+
+def allowed_field_ids(catalogue, activity_id, template, row_name):
+    """The watch field ids SuuntoLink would offer for this row, or None if it has no menu.
+
+    Keyed the way SuuntoLink keys it: by the mode's activity, the display's type and which
+    row. Ids we cannot write are dropped here rather than offered and then failing."""
+    per_type = catalogue["availability"].get(str(activity_id))
+    if not per_type:
+        return None
+    per_row = per_type.get(TEMPLATE_TO_DISPLAY_TYPE.get(template, ""), {})
+    index = per_row.get(row_name)
+    if index is None:
+        return None
+    out = []
+    for _category, row_ids in catalogue["menus"][index]:
+        for rid in row_ids:
+            fid = row_to_field_id(catalogue["rows"][str(rid)]["name"])
+            if fid is not None:
+                out.append(fid)
+    return out
+
+
 def coverage(catalogue):
     mapped, unmapped = {}, []
     for rid, row in catalogue["rows"].items():

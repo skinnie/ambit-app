@@ -32,6 +32,9 @@ import time
 import ambit_format as F
 import custom_modes
 import custom_modes_write
+import row_bridge
+
+_CATALOGUE = row_bridge.load_rows()
 from write_nav import Link, read_flash, read_memory_map, resolve_product_id, send_plan
 
 # The four display types SuuntoLink offers, from its own ambit/sport_mode.js DisplayType
@@ -287,8 +290,38 @@ def apply_edits(mode, args):
             raise SystemExit(f"display {which} has no {row} row (it has "
                              f"{len(disp['Fields'])} rows)")
         ids = [int(v, 0) for v in values.split(",") if v.strip()]
-        if len(ids) > 5:
-            raise SystemExit(f"{len(ids)} values given - a row holds at most 5")
+        if not ids:
+            raise SystemExit("no values given - a row needs at least one")
+
+        # Check the choice against SuuntoLink's own menu for this activity/display/row before
+        # touching anything. Writing a value the watch does not offer for a given sport is
+        # how a display ends up showing "--", and the menu is generated from SuuntoLink's own
+        # module (assets/sportmode_rows.json) rather than assumed.
+        row_name = ROW_NAMES[row_idx].upper()
+        multi = row_bridge.row_is_multi_value(disp.get("Template"), row_name)
+        if len(ids) > 1 and not multi:
+            raise SystemExit(
+                f"the {ROW_NAMES[row_idx]} row of this display holds one value, not "
+                f"{len(ids)}. Only the bottom row of a 2-field or 3-field display cycles "
+                f"between several values.")
+        limit = _CATALOGUE["limits"]["maxValuesPerMultiRow"]
+        if len(ids) > limit:
+            raise SystemExit(f"{len(ids)} values given - a row holds at most {limit}")
+
+        allowed = row_bridge.allowed_field_ids(
+            _CATALOGUE, mode["Settings"].get("ActivityID"), disp.get("Template"), row_name)
+        if allowed is not None:
+            rejected = [i for i in ids if i not in allowed]
+            if rejected:
+                raise SystemExit(
+                    "SuuntoLink does not offer "
+                    + ", ".join(f"{_label(i)} ({i:#06x})" for i in rejected)
+                    + f" on the {ROW_NAMES[row_idx]} row of a "
+                    + f"{row_bridge.TEMPLATE_TO_DISPLAY_TYPE.get(disp.get('Template'), '?')} "
+                    + f"display for this sport ({mode['Settings'].get('Name')}). "
+                    + "Writing a value the watch does not support for a sport is how a "
+                    + "display ends up showing '--'.")
+
         field = disp["Fields"][row_idx]
         if len(ids) == 1:
             # One value is stored as the row's own Type, with no shortcuts - the shape every
