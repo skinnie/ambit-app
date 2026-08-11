@@ -83,6 +83,39 @@ Flickable {
                         onClicked: Theme.override = "system"
                     }
                 }
+
+                // André, 2026-08-11 (item 16): "for activities, in settings let's add the
+                // option: see as a map, see as a list. the first is the one we already have."
+                // Lives here rather than on the Activities page itself so it is a preference
+                // that persists, like the theme above, not a toggle to re-set every visit.
+                Text {
+                    text: qsTr("Activities view")
+                    color: Theme.text
+                    font.pixelSize: Theme.fontSizeBody
+                    font.bold: true
+                    topPadding: Theme.spacingSmall
+                }
+                Text {
+                    text: qsTr("Cards show each track on a map. The list is lighter and " +
+                                "shows more at once.")
+                    color: Theme.mutedText
+                    font.pixelSize: Theme.fontSizeBody
+                }
+                Row {
+                    spacing: Theme.spacingSmall
+                    RoundedRadioButton {
+                        autoExclusive: false
+                        checked: Theme.activitiesView === "map"
+                        text: qsTr("See as a map")
+                        onClicked: Theme.activitiesView = "map"
+                    }
+                    RoundedRadioButton {
+                        autoExclusive: false
+                        checked: Theme.activitiesView === "list"
+                        text: qsTr("See as a list")
+                        onClicked: Theme.activitiesView = "list"
+                    }
+                }
             }
         }
 

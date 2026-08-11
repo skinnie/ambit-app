@@ -238,7 +238,7 @@ Item {
         // below the banner's own bottom edge, with real spacing, only while it's visible.
         anchors.top: trackLogLoadingBanner.visible ? trackLogLoadingBanner.bottom : parent.top
         anchors.topMargin: trackLogLoadingBanner.visible ? Theme.spacingMedium : Theme.spacingLarge
-        visible: root.selectedActivity === null
+        visible: root.selectedActivity === null && Theme.activitiesView !== "list"
         clip: true
         cellWidth: 360 + Theme.spacingMedium
         cellHeight: 280 + Theme.spacingMedium
@@ -262,6 +262,31 @@ Item {
                 activity: modelData
                 onOpened: root.selectedActivity = modelData
             }
+        }
+    }
+
+    // List view - André, item 16. A ListView rather than a Repeater for the same reason the
+    // grid is a GridView: it virtualises, so a long history costs the same as a short one.
+    ListView {
+        id: activitiesList
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        anchors.leftMargin: Theme.spacingLarge
+        anchors.rightMargin: Theme.spacingLarge
+        anchors.bottomMargin: Theme.spacingLarge
+        anchors.top: trackLogLoadingBanner.visible ? trackLogLoadingBanner.bottom : parent.top
+        anchors.topMargin: trackLogLoadingBanner.visible ? Theme.spacingMedium : Theme.spacingLarge
+        visible: root.selectedActivity === null && Theme.activitiesView === "list"
+        clip: true
+        reuseItems: true
+        spacing: 0
+        model: root.activeActivities
+        delegate: ActivityRow {
+            required property var modelData
+            width: activitiesList.width
+            activity: modelData
+            onOpened: root.selectedActivity = modelData
         }
     }
 

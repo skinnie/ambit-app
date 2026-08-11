@@ -106,6 +106,22 @@ QtObject {
         return e !== undefined ? e : byId[1];
     }
 
+    // Look an activity up by NAME - real need, 2026-08-11 (André, item 16's list view). An
+    // activity read off the watch comes from its GPX, which carries the sport mode's name
+    // ("Running", "Triathlon") but no numeric id, so a badge keyed on id alone showed the
+    // generic star for everything. Matches case-insensitively and ignores punctuation, since
+    // a mode is free text a user may have renamed; anything unrecognised falls back to
+    // "Unspecified sport" rather than guessing a sport from a name we do not know.
+    function forName(name) {
+        if (!name) return byId[1];
+        const want = String(name).toLowerCase().replace(/[^a-z0-9]/g, "");
+        for (const key in byId) {
+            const e = byId[key];
+            if (e.name.toLowerCase().replace(/[^a-z0-9]/g, "") === want) return e;
+        }
+        return byId[1];
+    }
+
     function colorForId(id) { return forId(id).color }
     function nameForId(id) { return forId(id).name }
 

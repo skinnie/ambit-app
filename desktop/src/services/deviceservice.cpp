@@ -243,9 +243,21 @@ void DeviceService::checkGpsOrbitStatus()
             // for on its own; the explicit "Update" button's own errors still show.
             return;
         }
-        m_gpsOrbitStatusText = obj.value(QStringLiteral("valid")).toBool()
-            ? QStringLiteral("%1 - tap to update").arg(obj.value(QStringLiteral("date")).toString())
-            : QStringLiteral("No data yet - tap to update");
+        // André, 2026-08-11 (item 14): "If already synced and updated just say synced."
+        // Orbit data is dated and expires, so "current" means the watch's own date is
+        // today's - anything older is worth an update and says so with the date, which is
+        // the one case where the date is useful.
+        {
+            const QString watchDate = obj.value(QStringLiteral("date")).toString();
+            const QString today =
+                QDateTime::currentDateTime().toString(QStringLiteral("yyyy-MM-dd"));
+            if (!obj.value(QStringLiteral("valid")).toBool())
+                m_gpsOrbitStatusText = QStringLiteral("No data yet - tap to update");
+            else if (watchDate == today)
+                m_gpsOrbitStatusText = QStringLiteral("Synced");
+            else
+                m_gpsOrbitStatusText = QStringLiteral("%1 - tap to update").arg(watchDate);
+        }
         // Asked of the watch, not assumed from its model - see the header's own comment.
         m_glonassSupported = obj.value(QStringLiteral("glonass")).toObject()
             .value(QStringLiteral("supported")).toBool();

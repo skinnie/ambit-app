@@ -77,6 +77,7 @@ qt_add_qml_module(ambitapp
         qml/components/LayoutPickerDialog.qml
         qml/components/ThemedDialog.qml
         qml/components/ClockSyncDialog.qml
+        qml/components/ActivityRow.qml
         qml/components/Icon.qml
         qml/components/RoundedComboBox.qml
         qml/components/RoundedButton.qml

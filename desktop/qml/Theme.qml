@@ -34,7 +34,14 @@ QtObject {
         id: settingsId
         category: "appearance"
         property string themeOverride: "system"
+        // André, 2026-08-11 (item 16): "for activities, in settings let's add the option:
+        // see as a map, see as a list." Persisted the same way the theme choice is, so the
+        // app opens on whichever view he last used.
+        property string activitiesView: "map"
     }
+
+    // "map" (cards with a track thumbnail, the original) or "list" (rows, no maps).
+    property alias activitiesView: settingsId.activitiesView
 
     readonly property bool isDark: {
         if (override === "light") return false;
