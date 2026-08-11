@@ -55,6 +55,20 @@ Item {
                     width: parent.width
                     height: rowNumber.implicitHeight
 
+                    // The whole band is the target, not just the digit - André, 2026-08-11:
+                    // "the user will instinctively click on that zone... hence why I spoke
+                    // about an area". Tinting the glyph alone told them WHAT was clickable
+                    // but not HOW BIG it was, so the miss rate would be all the space around
+                    // a small number.
+                    Rectangle {
+                        anchors.fill: parent
+                        anchors.margins: -2
+                        radius: 4
+                        visible: root.rowsClickable && rowHover.hovered
+                        color: Theme.primary
+                        opacity: 0.16
+                    }
+
                     Text {
                         id: rowNumber
                         anchors.fill: parent
@@ -103,6 +117,16 @@ Item {
                 width: parent.width
                 height: root.diameter * 0.28
 
+                // The graph ZONE is the target for the graphed value, and it looks like one.
+                Rectangle {
+                    anchors.fill: parent
+                    anchors.margins: -2
+                    radius: 4
+                    visible: root.rowsClickable && graphAreaHover.hovered
+                    color: Theme.primary
+                    opacity: 0.16
+                }
+
                 HoverHandler {
                     id: graphAreaHover
                     enabled: root.rowsClickable
@@ -143,6 +167,14 @@ Item {
             Item {
                 width: parent.width
                 height: graphRowNumber.implicitHeight
+                Rectangle {
+                    anchors.fill: parent
+                    anchors.margins: -2
+                    radius: 4
+                    visible: root.rowsClickable && graphHover.hovered
+                    color: Theme.primary
+                    opacity: 0.16
+                }
                 Text {
                     id: graphRowNumber
                     anchors.fill: parent

@@ -853,6 +853,12 @@ Flickable {
                                     diameter: 100
                                     layoutType: root.layoutTypeOf(filmItem.modelData)
                                     selected: filmItem.index === root.currentDisplayIndex
+                                    // Only the selected face offers row targets - André:
+                                    // "just limit the area clickable for that function". An
+                                    // unselected thumbnail stays one target that selects it,
+                                    // so the first click never edits a row by accident.
+                                    rowsClickable: filmItem.index === root.currentDisplayIndex
+                                    onRowClicked: (rowIndex) => root.editRow(rowIndex)
                                     // Real bug, 2026-08-11 (André: "I can't select it to
                                     // then change the top center bottom"). Making the
                                     // thumbnail open the layout picker took away the plain
@@ -862,12 +868,16 @@ Flickable {
                                     // the same click-again-to-act pattern the rest of the
                                     // app uses and leaves "Change layout" as the explicit
                                     // route for anyone who does not discover it.
+                                    // One handler, two gestures. TapHandler has no "taps"
+                                    // property - double taps arrive as their own signal, and
+                                    // onTapped still fires for the first tap of a double,
+                                    // which is harmless here: it selects the display that is
+                                    // about to have its layout changed anyway.
                                     TapHandler {
-                                        onTapped: {
-                                            if (root.currentDisplayIndex === filmItem.index)
-                                                layoutPicker.openFor(filmItem.index)
-                                            else
-                                                root.currentDisplayIndex = filmItem.index
+                                        onTapped: root.currentDisplayIndex = filmItem.index
+                                        onDoubleTapped: {
+                                            root.currentDisplayIndex = filmItem.index
+                                            layoutPicker.openFor(filmItem.index)
                                         }
                                     }
                                 }
@@ -914,8 +924,9 @@ Flickable {
                 }
 
                 Text {
-                    text: qsTr("Click a display to select it, click it again to change its " +
-                                "layout.")
+                    // André's own wording, 2026-08-11.
+                    text: qsTr("Click a display to change it, double click to change layout, " +
+                                "click on the numbers to edit data")
                     color: Theme.mutedText
                     font.pixelSize: Theme.fontSizeCaption
                 }
@@ -966,100 +977,10 @@ Flickable {
                         }
                     }
 
-                    // The selected display, big enough to point at - André's idea. Clicking
-                    // a number (or a graph's squiggle) opens that row's data picker directly,
-                    // which is a shorter path than finding the matching Change button below
-                    // and is something SuuntoLink does not offer.
-                    Row {
-                        width: parent.width
-                        spacing: Theme.spacingMedium
-
-                        WatchFacePreview {
-                            anchors.verticalCenter: parent.verticalCenter
-                            diameter: 132
-                            layoutType: currentScreenColumn.current
-                                        ? root.layoutTypeOf(currentScreenColumn.current) : "3rows"
-                            selected: true
-                            rowsClickable: true
-                            onRowClicked: (rowIndex) => root.editRow(rowIndex)
-                        }
-
-                        Text {
-                            anchors.verticalCenter: parent.verticalCenter
-                            width: parent.width - 132 - Theme.spacingMedium * 2
-                            wrapMode: Text.WordWrap
-                            text: qsTr("Click a row on the watch face to choose what it " +
-                                        "shows, or use the buttons below.")
-                            color: Theme.mutedText
-                            font.pixelSize: Theme.fontSizeCaption
-                        }
-                    }
-
-                    Repeater {
-                        model: currentScreenColumn.current
-                               ? currentScreenColumn.current.fields : []
-                        delegate: Row {
-                            id: fieldRow
-                            required property var modelData
-                            required property int index
-                            width: parent.width
-                            spacing: Theme.spacingSmall
-
-                            Text {
-                                width: 56
-                                anchors.verticalCenter: parent.verticalCenter
-                                text: fieldRow.modelData.rowLabel
-                                    ? fieldRow.modelData.rowLabel
-                                    : qsTr("%1.").arg(fieldRow.index + 1)
-                                color: Theme.mutedText
-                                font.pixelSize: Theme.fontSizeBody
-                            }
-                            Column {
-                                anchors.verticalCenter: parent.verticalCenter
-                                spacing: 1
-                                Repeater {
-                                    model: fieldRow.modelData.values
-                                        ? fieldRow.modelData.values
-                                        : [{ "label": fieldRow.modelData.typeLabel }]
-                                    delegate: Text {
-                                        required property var modelData
-                                        text: modelData.label
-                                        color: Theme.text
-                                        font.pixelSize: Theme.fontSizeBody
-                                    }
-                                }
-                                Text {
-                                    visible: fieldRow.modelData.isMultiValue === true
-                                    text: qsTr("%1 values - press to step through")
-                                        .arg(fieldRow.modelData.values.length)
-                                    color: Theme.mutedText
-                                    font.pixelSize: Theme.fontSizeCaption
-                                }
-                            }
-                            Item { width: 1; height: 1 }
-                            RoundedButton {
-                                anchors.verticalCenter: parent.verticalCenter
-                                text: qsTr("Change")
-                                onClicked: {
-                                    dataPicker.displayIndex = root.currentDisplayIndex
-                                    dataPicker.fieldIndex = fieldRow.index
-                                    dataPicker.activityId = root.selectedMode
-                                        ? root.selectedMode.activityId : 1
-                                    dataPicker.displayTemplate =
-                                        currentScreenColumn.current
-                                            ? currentScreenColumn.current.templateId : 260
-                                    dataPicker.rowName = fieldRow.modelData.rowLabel
-                                        ? fieldRow.modelData.rowLabel.toUpperCase()
-                                        : "TOP"
-                                    dataPicker.selected =
-                                        (fieldRow.modelData.values || [])
-                                            .map(v => v.type)
-                                            .filter(v => v !== undefined)
-                                    dataPicker.open()
-                                }
-                            }
-                        }
-                    }
+                    // The per-row list used to live here. Removed 2026-08-11 at André's request -
+                    // "you can remove also the top center bottom stuff because it will be
+                    // integrated": a row is now edited by clicking it on the watch face above,
+                    // so the list was a second control for the same thing.
                 }
             }
         }
