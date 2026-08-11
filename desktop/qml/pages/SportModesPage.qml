@@ -807,6 +807,7 @@ Flickable {
         id: dataPicker
         modeName: root.selectedMode ? root.selectedMode.name : ""
         modeIndex: root.selectedModeIndex
+        hasPendingEdits: root.hasPendingEdits
         anchors.centerIn: Overlay.overlay
 
         // Staged, not written - one Save means one region write, the same as every other

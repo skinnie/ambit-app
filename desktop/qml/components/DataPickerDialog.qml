@@ -34,6 +34,11 @@ Dialog {
     property int fieldIndex: -1
     property int displayTemplate: 260
     property string rowName: "TOP"
+    // Whether the page currently holds unsaved display edits. Installing an app writes the
+    // CustomModes region immediately, so doing it on top of staged edits would have the
+    // save afterwards rebuild from a read taken before the install - see the Suunto Apps
+    // section below.
+    property bool hasPendingEdits: false
 
     // Field ids currently ticked, in the order chosen - the watch shows a multi-value row's
     // values in this order, so it is meaningful, not just a set.
@@ -163,9 +168,16 @@ Dialog {
 
             // --- Suunto Apps ---
             // An app is not a menu row: it is picked from the catalogue and installed onto
-            // the mode, then rendered on a row. That install path is already real and
-            // hardware-confirmed, so it stays as it is here and applies immediately rather
-            // than staging with the row edits.
+            // the mode, then rendered on a row. That install writes BOTH the Apps region and
+            // CustomModes through workout_install.py - real, hardware-confirmed flash-write
+            // code with its own logic - so it applies immediately rather than staging with
+            // the row edits, which only touch CustomModes.
+            //
+            // That difference is a real hazard, not just an inconsistency: installing while
+            // display edits are staged would rewrite CustomModes from the watch's current
+            // state, and the later Save would then rebuild from a read taken BEFORE that
+            // install and undo it. So the section is disabled until the staged edits are
+            // saved or discarded, and says why.
             Column {
                 width: parent.width
                 spacing: Theme.spacingSmall
@@ -175,26 +187,38 @@ Dialog {
                     color: Theme.text
                     topPadding: Theme.spacingSmall
                 }
+                Text {
+                    visible: root.hasPendingEdits
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    text: qsTr("Save or discard your unsaved display changes first - " +
+                                "installing an app writes to the watch straight away, and " +
+                                "would be undone by saving those changes afterwards.")
+                    color: Theme.mutedText
+                    font.pixelSize: Theme.fontSizeCaption
+                }
                 RoundedTextField {
                     id: appSearchField
                     width: parent.width
+                    enabled: !root.hasPendingEdits
                     placeholderText: qsTr("Search Suunto Apps...")
                     onTextChanged: AppsService.searchCatalog(text, DeviceService.model, -1)
                 }
                 Text {
-                    visible: AppsService.searching
+                    visible: !root.hasPendingEdits && AppsService.searching
                     color: Theme.mutedText
                     font.pixelSize: Theme.fontSizeCaption
                     text: qsTr("Searching...")
                 }
                 Text {
-                    visible: !AppsService.searching && AppsService.searchResults.length === 0
+                    visible: !root.hasPendingEdits && !AppsService.searching
+                             && AppsService.searchResults.length === 0
                     color: Theme.mutedText
                     font.pixelSize: Theme.fontSizeCaption
                     text: qsTr("No matching apps.")
                 }
                 Repeater {
-                    model: AppsService.searchResults
+                    model: root.hasPendingEdits ? [] : AppsService.searchResults
                     delegate: Column {
                         id: appRow
                         required property var modelData
