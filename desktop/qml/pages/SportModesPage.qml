@@ -320,122 +320,31 @@ Flickable {
             context: qsTr("reading or writing sport modes")
         }
 
-        // How full the watch is, and what it can hold - real request, 2026-08-11 (André,
-        // item 20), matching SuuntoLink's own "Create sport mode 10/10 used" / "Create
-        // multisport mode 1/2 used" rows. The ceilings come from the generated per-device
-        // table (assets/sportmode_rows.json), so a Traverse correctly shows 5 and no
-        // multisport line at all rather than this watch's numbers.
-        Card {
+        // A section header carrying its own usage, matching the Multisport one below -
+        // André, 2026-08-11: "pass the sport modes 10/10 used to near all the sport
+        // modes (similar to triathlon)". Both counts now sit with the list they count
+        // instead of in a separate card away from either.
+        Row {
             width: parent.width
+            spacing: Theme.spacingSmall
             visible: CustomModesService.modes.length > 0
-            Column {
-                width: parent.width
-                spacing: Theme.spacingSmall
-
-                Row {
-                    spacing: Theme.spacingSmall
-                    Text {
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: qsTr("Sport modes")
-                        color: Theme.text
-                        font.pixelSize: Theme.fontSizeBody
-                        font.bold: true
-                    }
-                    Text {
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: qsTr("%1/%2 used").arg(CustomModesService.modes.length)
-                                                .arg(root.deviceMaxSportModes)
-                        color: CustomModesService.modes.length >= root.deviceMaxSportModes
-                               ? Theme.error : Theme.mutedText
-                        font.pixelSize: Theme.fontSizeBody
-                    }
-                }
-
-                Row {
-                    spacing: Theme.spacingSmall
-                    visible: root.deviceMaxMultisport > 0
-                    Text {
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: qsTr("Multisport modes")
-                        color: Theme.text
-                        font.pixelSize: Theme.fontSizeBody
-                        font.bold: true
-                    }
-                    Text {
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: qsTr("%1/%2 used")
-                                .arg(CustomModesService.multisportModes.length)
-                                .arg(root.deviceMaxMultisport)
-                        color: Theme.mutedText
-                        font.pixelSize: Theme.fontSizeBody
-                    }
-                }
-
-                Text {
-                    width: parent.width
-                    wrapMode: Text.WordWrap
-                    text: qsTr("Creating and deleting modes isn't wired up yet - this shows " +
-                                "what the watch holds and what it can hold.")
-                    color: Theme.mutedText
-                    font.pixelSize: Theme.fontSizeCaption
-                }
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                text: qsTr("Sport modes")
+                color: Theme.text
+                font.pixelSize: Theme.fontSizeBodyLarge
+                font.bold: true
+            }
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                text: qsTr("%1/%2 used").arg(CustomModesService.modes.length)
+                                        .arg(root.deviceMaxSportModes)
+                color: CustomModesService.modes.length >= root.deviceMaxSportModes
+                       ? Theme.error : Theme.mutedText
+                font.pixelSize: Theme.fontSizeBody
             }
         }
 
-        // Multisport modes - André, item 22. They live in the SPORT_MODE slots rather than
-        // the exercise modes, and have no displays of their own: a multisport mode is an
-        // ORDERED list of other modes, which the watch steps through on a long BACK|LAP
-        // press. Listed separately for that reason rather than mixed in above.
-        Card {
-            width: parent.width
-            visible: CustomModesService.multisportModes.length > 0
-            Column {
-                width: parent.width
-                spacing: Theme.spacingSmall
-
-                Text {
-                    text: qsTr("Multisport")
-                    color: Theme.text
-                    font.pixelSize: Theme.fontSizeBody
-                    font.bold: true
-                }
-
-                Repeater {
-                    model: CustomModesService.multisportModes
-                    delegate: Column {
-                        id: msRow
-                        required property var modelData
-                        width: parent.width
-                        spacing: 2
-
-                        Row {
-                            spacing: Theme.spacingSmall
-                            ActivityBadge {
-                                anchors.verticalCenter: parent.verticalCenter
-                                activityId: msRow.modelData.activityId
-                                size: 28
-                            }
-                            Text {
-                                anchors.verticalCenter: parent.verticalCenter
-                                text: msRow.modelData.name
-                                color: Theme.text
-                                font.pixelSize: Theme.fontSizeBody
-                                font.bold: true
-                            }
-                        }
-                        Text {
-                            width: parent.width
-                            wrapMode: Text.WordWrap
-                            text: msRow.modelData.legNames.map(
-                                    (n, i) => (i + 1) + ": " + n).join("   ")
-                            color: Theme.mutedText
-                            font.pixelSize: Theme.fontSizeCaption
-                        }
-                    }
-                }
-
-            }
-        }
 
         Repeater {
             model: CustomModesService.modes
@@ -518,6 +427,65 @@ Flickable {
                         Icon { glyph: Icons.chevronRight; size: 20; color: Theme.mutedText; anchors.verticalCenter: parent.verticalCenter }
                     }
                 }
+            }
+        }
+
+        // the exercise modes, and have no displays of their own: a multisport mode is an
+        // ORDERED list of other modes, which the watch steps through on a long BACK|LAP
+        // press. Listed separately for that reason rather than mixed in above.
+        Card {
+            width: parent.width
+            visible: root.deviceMaxMultisport > 0
+            Column {
+                width: parent.width
+                spacing: Theme.spacingSmall
+
+                Row {
+                    width: parent.width
+                    spacing: Theme.spacingSmall
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: qsTr("Multisport")
+                        color: Theme.text
+                        font.pixelSize: Theme.fontSizeBodyLarge
+                        font.bold: true
+                    }
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: qsTr("%1/%2 used")
+                                .arg(CustomModesService.multisportModes.length)
+                                .arg(root.deviceMaxMultisport)
+                        color: Theme.mutedText
+                        font.pixelSize: Theme.fontSizeBody
+                    }
+                }
+
+                Repeater {
+                    model: CustomModesService.multisportModes
+                    delegate: Column {
+                        id: msRow
+                        required property var modelData
+                        width: parent.width
+                        spacing: 2
+
+                        Row {
+                            spacing: Theme.spacingSmall
+                            ActivityBadge {
+                                anchors.verticalCenter: parent.verticalCenter
+                                activityId: msRow.modelData.activityId
+                                size: 28
+                            }
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: msRow.modelData.name
+                                color: Theme.text
+                                font.pixelSize: Theme.fontSizeBody
+                                font.bold: true
+                            }
+                        }
+                    }
+                }
+
             }
         }
     }
