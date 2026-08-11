@@ -81,7 +81,7 @@ Flickable {
 
                 Text { text: qsTr("Import a route"); font.bold: true; color: Theme.text }
 
-                Button {
+                RoundedButton {
                     text: qsTr("Import GPX…")
                     onClicked: fileDialog.open()
                 }
@@ -151,12 +151,12 @@ Flickable {
                     visible: RouteService.pendingRoute.name !== undefined
                     spacing: Theme.spacingSmall
 
-                    Button {
+                    RoundedButton {
                         visible: !HomeViewModel.isGarmin
                         text: qsTr("Rehearse (no write)")
                         onClicked: RouteService.uploadPendingRoute(false)
                     }
-                    Button {
+                    RoundedButton {
                         text: HomeViewModel.isGarmin ? qsTr("Send to SD card") : qsTr("Upload to watch")
                         enabled: !HomeViewModel.isGarmin || GarminService.hasSdCard
                         onClicked: {
@@ -309,7 +309,7 @@ Flickable {
                                 }
                             }
 
-                            Button {
+                            RoundedButton {
                                 id: exportButton
                                 text: (RouteService.exporting && root.pendingExportIndex === index)
                                     ? qsTr("Exporting...") : qsTr("Export")

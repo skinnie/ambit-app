@@ -204,7 +204,7 @@ Item {
         // back (which happens to re-run Component.onCompleted since Main.qml's Loader
         // recreates the page) - not discoverable, and a real problem if this page's very
         // first load raced the watch still connecting (found 2026-08-07 via real testing).
-        Button {
+        RoundedButton {
             visible: HomeViewModel.isGarmin ? false : !ActivityService.ok
             anchors.horizontalCenter: parent.horizontalCenter
             text: qsTr("Retry")

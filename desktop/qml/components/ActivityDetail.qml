@@ -161,7 +161,7 @@ Item {
 
                 Row {
                     spacing: Theme.spacingSmall
-                    Button {
+                    RoundedButton {
                         text: qsTr("Export as GPX")
                         enabled: activity && activity.gpxText && activity.gpxText.length > 0
                         onClicked: {
@@ -171,7 +171,7 @@ Item {
                             gpxExportDialog.open()
                         }
                     }
-                    Button {
+                    RoundedButton {
                         text: qsTr("Export as FIT")
                         enabled: activity && activity.fitBase64 && activity.fitBase64.length > 0
                         onClicked: {

@@ -44,7 +44,10 @@ ThemedDialog {
 
     contentItem: Column {
         width: root.gridWidth
-        spacing: Theme.spacingMedium
+        // Same gap between the title and this text as between the two rows of previews -
+        // André, 2026-08-11: the header sat far from the description while everything below
+        // was tighter, so the dialog read as two loose halves.
+        spacing: Theme.spacingSmall
 
         Text {
             width: root.gridWidth

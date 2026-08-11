@@ -38,6 +38,11 @@ Dialog {
         border.color: Theme.mutedText
     }
 
+    // Padding is set here rather than left to the style so the gaps above and below the
+    // content match - André, 2026-08-11: the title sat a long way from the text under it
+    // while the buttons were almost touching the bottom edge. One value, used on both.
+    padding: Theme.spacingMedium
+
     header: Text {
         text: root.title
         visible: root.title.length > 0
@@ -45,7 +50,10 @@ Dialog {
         font.bold: true
         font.pixelSize: Theme.fontSizeBodyLarge
         elide: Text.ElideRight
-        padding: Theme.spacingMedium
+        leftPadding: Theme.spacingMedium
+        rightPadding: Theme.spacingMedium
+        topPadding: Theme.spacingMedium
+        bottomPadding: Theme.spacingSmall
     }
 
     // The button row needs its background removed, not just recoloured - real bug, 2026-08-11
@@ -59,9 +67,50 @@ Dialog {
     // border closes properly on all four corners. `standardButtons` is forwarded because
     // replacing the footer replaces the box Dialog would have built from it - Dialog still
     // wires accepted/rejected from whatever DialogButtonBox is here.
-    footer: DialogButtonBox {
-        standardButtons: root.standardButtons
+    // The buttons are ours, not the style's - André, 2026-08-11: "cancel button is square
+    // shaped. audit all the desktop app and change all square shaped buttons to rounded
+    // corners one as per our theme. make it a rule." A DialogButtonBox draws platform
+    // buttons, which are square whatever the app looks like, so forwarding standardButtons
+    // to it could never produce a rounded one. Building the row from RoundedButton instead
+    // is the only way the dialogs match everything else, and it also drops the opaque
+    // square-cornered background that was cutting the dialog's own bottom corners.
+    footer: Item {
         visible: root.standardButtons !== 0
-        background: Rectangle { color: "transparent" }
+        implicitHeight: footerRow.implicitHeight + Theme.spacingMedium
+
+        Row {
+            id: footerRow
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.rightMargin: Theme.spacingMedium
+            spacing: Theme.spacingSmall
+
+            RoundedButton {
+                visible: (root.standardButtons & Dialog.Cancel) !== 0
+                text: qsTr("Cancel")
+                onClicked: root.reject()
+            }
+            RoundedButton {
+                visible: (root.standardButtons & Dialog.Close) !== 0
+                text: qsTr("Close")
+                onClicked: root.reject()
+            }
+            RoundedButton {
+                visible: (root.standardButtons & Dialog.Ok) !== 0
+                text: qsTr("OK")
+                onClicked: root.accept()
+            }
+        }
+    }
+
+    // Dim the app behind a dialog so the dialog reads as the thing in front - André asked for
+    // a blur. A real blur means snapshotting the whole window into a texture and running it
+    // through an effect every time a dialog opens; on this project's target hardware (a 2012
+    // X230, see PROJECT_RULES rule 5 and 12) that is a real cost for a decoration. A dim
+    // scrim gets the same separation for the price of one rectangle, which is what desktop
+    // apps generally do. Say the word if you want the blur anyway and I will do it as a
+    // one-shot snapshot rather than a live effect.
+    Overlay.modal: Rectangle {
+        color: Qt.rgba(0, 0, 0, 0.55)
     }
 }

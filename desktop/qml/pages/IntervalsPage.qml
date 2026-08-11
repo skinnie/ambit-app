@@ -55,7 +55,7 @@ Flickable {
                                 "final compile step.")
                 }
 
-                Button {
+                RoundedButton {
                     text: qsTr("Open Workout Builder")
                     onClicked: {
                         const error = IntervalsService.launch();

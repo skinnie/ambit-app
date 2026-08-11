@@ -130,7 +130,7 @@ Flickable {
                                 "break your device.")
                 }
 
-                Button {
+                RoundedButton {
                     text: HomeViewModel.isGarmin ? qsTr("Send to SD card") : qsTr("Add")
                     enabled: !HomeViewModel.isGarmin || GarminService.hasSdCard
                     onClicked: {
@@ -186,7 +186,7 @@ Flickable {
 
                 Text { text: qsTr("Import from GPX"); font.bold: true; color: Theme.text }
 
-                Button {
+                RoundedButton {
                     text: qsTr("Import GPX…")
                     onClicked: poiFileDialog.open()
                 }
@@ -216,7 +216,7 @@ Flickable {
                                 .arg(modelData.lat.toFixed(5))
                                 .arg(modelData.lon.toFixed(5))
                         }
-                        Button {
+                        RoundedButton {
                             id: addImportedButton
                             text: HomeViewModel.isGarmin ? qsTr("Send to SD card") : qsTr("Add")
                             enabled: !HomeViewModel.isGarmin || GarminService.hasSdCard
@@ -320,7 +320,7 @@ Flickable {
                                 font.bold: true
                             }
 
-                            Button {
+                            RoundedButton {
                                 id: poiExportButton
                                 text: qsTr("Export")
                                 onClicked: {
