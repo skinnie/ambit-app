@@ -24,7 +24,18 @@ ThemedDialog {
 
     title: displayIndex >= 0 ? qsTr("Display layout") : qsTr("Add a display")
     standardButtons: Dialog.Cancel
-    width: 420
+
+    // Sized to its contents rather than a fixed width - real bug, 2026-08-11 (André: "when
+    // you click to change or add display, the screen is too big compared to the icons").
+    // It was 420 wide around four 96px previews, so most of it was empty. The column below
+    // is exactly two previews across, and the dialog takes its size from that.
+    // NOT named "contentWidth": that is a FINAL property of Control, and overriding it makes
+    // this whole component fail to load - which blanked the entire Sport Modes page, since
+    // that page instantiates this dialog. Exactly the collision MapView.qml already documents
+    // for Item's own "z". Found live, 2026-08-11, from André reporting "sports mode is black".
+    readonly property int previewSize: 96
+    readonly property int gridWidth: previewSize * 2 + Theme.spacingMedium
+    padding: Theme.spacingMedium
 
     function openFor(index) {
         displayIndex = index
@@ -32,10 +43,11 @@ ThemedDialog {
     }
 
     contentItem: Column {
+        width: root.gridWidth
         spacing: Theme.spacingMedium
 
         Text {
-            width: parent.width
+            width: root.gridWidth
             wrapMode: Text.WordWrap
             text: root.displayIndex >= 0
                 ? qsTr("Choose how this display is laid out.")
@@ -57,7 +69,7 @@ ThemedDialog {
                     spacing: 4
 
                     WatchFacePreview {
-                        diameter: 96
+                        diameter: root.previewSize
                         layoutType: option.modelData.preview
                         selected: option.modelData.templateId === root.currentTemplateId
                         TapHandler {
@@ -68,7 +80,7 @@ ThemedDialog {
                         }
                     }
                     Text {
-                        width: 96
+                        width: root.previewSize
                         horizontalAlignment: Text.AlignHCenter
                         text: option.modelData.label
                         color: Theme.text

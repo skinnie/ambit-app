@@ -47,4 +47,21 @@ Dialog {
         elide: Text.ElideRight
         padding: Theme.spacingMedium
     }
+
+    // The button row needs its background removed, not just recoloured - real bug, 2026-08-11
+    // (André: "on item 5 the bottom borders are not rendering ok"). A DialogButtonBox paints
+    // its own opaque, SQUARE-cornered background, and it sits at the very bottom of the
+    // dialog - so it covered the rounded background's two bottom corners and the border ran
+    // out into a straight edge. Exactly the same shape of fault as the combo-box popup
+    // highlight earlier today: a child painting past a rounded parent.
+    //
+    // Making it transparent lets the dialog's own rounded background show through, so the
+    // border closes properly on all four corners. `standardButtons` is forwarded because
+    // replacing the footer replaces the box Dialog would have built from it - Dialog still
+    // wires accepted/rejected from whatever DialogButtonBox is here.
+    footer: DialogButtonBox {
+        standardButtons: root.standardButtons
+        visible: root.standardButtons !== 0
+        background: Rectangle { color: "transparent" }
+    }
 }
