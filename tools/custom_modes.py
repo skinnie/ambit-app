@@ -177,14 +177,19 @@ FIELD_TYPES = {
     0x0053: "FT_SWIM_TOTAL_DISTANCE",
     0x006B: "FT_RULE_ENGINE_3", 0x006C: "FT_RULE_ENGINE_4",
     0x006E: "FT_RULE_ENGINE_1_GRAPH", 0x0070: "FT_RULE_ENGINE_3_GRAPH",
-    # UNCERTAIN, 2026-08-11: 0x57's name is a coin-flip and should not be trusted by a UI
-    # yet. André's Pool swimming display 2 bottom row stores [0x58, 0x0059, 0x57] and
-    # SuuntoLink shows it as {average swim pace, average stroke rate, average SWOLF}. 0x58 is
-    # verified as FT_SWIM_AVG_PACE, so the remaining two names belong to 0x0059 and 0x57 -
-    # but WHICH way round is unresolved, because SuuntoLink demonstrably does not always list
-    # a multi-value row in stored order (proven on Pool swimming display 1). 0x47 is
-    # unaffected; it was confirmed separately against a real Openwater swim screen.
+    # 0x57 CONFIRMED 2026-08-11 by differential test, after a day spent uncertain. Reading a
+    # multi-value row off SuuntoLink cannot settle these, because it demonstrably does not
+    # list such a row in stored order - so instead of reading, we CHANGED one and watched.
+    # André's Pool swimming display 2 bottom row stored [0x58, 0x0059, 0x57] against a UI
+    # showing {average swim pace, average stroke rate, average SWOLF}; he unticked average
+    # SWOLF in SuuntoLink and 0x0059 was the id that vanished. That names 0x0059 outright and
+    # leaves only average stroke rate for 0x57, confirming the 2026-08-10 guess.
+    #
+    # This is the technique to reach for whenever a row's names are known but their order is
+    # not: remove one value and see which id disappears. It needs no ordering assumption at
+    # all.
     0x0047: "FT_SPORT_LAP_DISTANCE", 0x0057: "FT_SWIM_AVG_STROKE_RATE",
+    0x0059: "FT_SWIM_AVG_SWOLF",
     0x005A: "FT_SWIM_LAP_DISTANCE", 0x005C: "FT_SWIM_LAP_RATE", 0x005E: "FT_SWIM_LAP_SWOLF",
     0x0060: "FT_SWIM_POOL_STROKES", 0x0062: "FT_SWIM_POOL_PACE", 0x0064: "FT_SWIM_INT_TIME",
     0x0066: "FT_SWIM_INT_STROKES", 0x0068: "FT_SWIM_INT_PACE", 0x006A: "FT_SWIM_REST_TIME",
@@ -268,6 +273,7 @@ FIELD_TYPE_LABELS = {
     "FT_SPORT_LAP_AVGSPEED": "Current activity avg speed",
     "FT_BIKE_POWER_AVG": "Bike Power (average)", "FT_BIKE_POWER_10S": "Bike Power (10s average)",
     "FT_BIKE_POWER_LAP": "Bike Power (lap average)", "FT_BIKE_POWER_LAP_MAX": "Bike Power (lap max)",
+    "FT_SWIM_AVG_SWOLF": "Average SWOLF",
     "FT_SWIM_STYLE": "Previous pool length style",   # SuuntoLink's own wording, André 2026-08-11 "FT_SWIM_STROKES": "Swim Strokes", "FT_SWIM_PACE": "Swim Pace",
     "FT_SWIM_AVG_PACE": "Swim Pace (average)",
     "FT_SWIM_AVG_STROKE_RATE": "Stroke Rate (average)",
