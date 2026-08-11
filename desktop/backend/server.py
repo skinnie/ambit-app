@@ -255,6 +255,8 @@ class Handler(BaseHTTPRequestHandler):
             self._handle_device()
         elif self.path == "/api/ble/status":
             self._handle_ble_status()
+        elif self.path == "/api/ble/logs/summary":
+            self._handle_ble_logs_summary()
         elif self.path == "/api/firmware":
             self._handle_firmware_check()
         elif self.path == "/api/kailash/history":
@@ -593,6 +595,30 @@ class Handler(BaseHTTPRequestHandler):
         subscribed to our notify characteristic) - same meaning as
         AmbitBleModule.kt's nativeInitStarted gate on the Android side."""
         self._send_json(200, ble_bridge.bridge.status())
+
+    def _handle_ble_logs_summary(self):
+        """GET /api/ble/logs/summary - the first real post-handshake 0x1200 request in the
+        activity-log sequence (tools/ble_logs.py). Deliberately NOT the full activity list:
+        that needs a pagination loop this project hasn't verified against a live watch yet
+        (see ble_logs.py's own docstring for exactly what's missing and why it isn't
+        guessed). Returns the raw reply as hex - real, tested plumbing, not a parsed
+        result - so this is honest about being a first slice, not the finished feature."""
+        if not ble_bridge.bridge.status().get("handshake_done"):
+            self._send_json(409, {"ok": False, "error": "no BLE connection with a "
+                                   "completed handshake - connect first"})
+            return
+        sys.path.insert(0, str(TOOLS_DIR))
+        import ble_logs                                      # noqa: PLC0415
+        try:
+            ble_bridge.bridge.set_dry_run(False)
+            reply = ble_logs.fetch_log_summary(ble_bridge.bridge)
+        except ble_bridge.BleBridgeError as exc:
+            self._send_json(502, {"ok": False, "error": str(exc)})
+            return
+        except (RuntimeError, TimeoutError) as exc:
+            self._send_json(502, {"ok": False, "error": str(exc)})
+            return
+        self._send_json(200, {"ok": True, "payload_hex": reply.hex(), "len": len(reply)})
 
     def _handle_ble_connect(self, body):
         """POST /api/ble/connect {"forget": bool} - starts the ble_server.py daemon (a

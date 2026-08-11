@@ -7,6 +7,16 @@ they land, on the way to what André/Vincent have been calling "V3": wireless sy
 
 ---
 
+## 2026-08-11: desktop BLE - activity-log transport proven (first request of three)
+
+- New `tools/ble_logs.py` + `GET /api/ble/logs/summary`: the first of three real
+  post-handshake `0x1200` requests in the activity-log sequence (found by decoding the real
+  Suunto app's own capture). Confirmed live against real hardware: a 670-byte reply
+  containing a live timestamp read straight off the watch's clock.
+- The other two requests (paginated per-activity entries) are intentionally not
+  implemented yet - the capture doesn't settle what ends the pagination loop, and guessing
+  risks an infinite or silently-truncated read. See `HANDOFF.md` Milestone 7 item 17.
+
 ## 2026-08-11: desktop BLE - fresh pairing solved, clean serial recovered
 
 - **Fresh pairing now works standalone on Linux**: registered a real `org.bluez.Agent1`
