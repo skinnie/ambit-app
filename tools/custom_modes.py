@@ -131,6 +131,21 @@ FIELD_TYPES = {
     # (slot 1) and Sleep Monitor (slot 3) apps, so 0x6B = slot 3 and the companions are
     # 0x6D + slot (1 -> 0x6E, 3 -> 0x70). The unseen members 0x6D/0x6F/0x71 follow the same
     # rule but have not been observed on hardware yet.
+    # 0x002C read straight off SuuntoLink's own UI: André opened Running2, whose display 0
+    # bottom row we decode as Speed / Distance / Training Effect / 0x002C / app slot 1, and
+    # SuuntoLink names that fourth value "Vertical speed" (2026-08-11). The same screen also
+    # confirmed slot 1 is "Beers burned off", which is RuleIdx 0 in the Apps region - so the
+    # rule-engine slot ordering above is right as well.
+    0x002C: "FT_VERTICAL_SPEED",
+    # The bike-power block. Our table already named every OTHER id here (0x4a/0x4c/0x4e/0x50)
+    # and SuuntoLink's own row list runs BikePower, BikePowerAvg, BikePower3sAvg,
+    # BikePower10sAvg, BikePower30sAvg, BikePowerLap, BikePowerMax, BikePowerLapMax. Lining
+    # the two up puts the four known anchors exactly where the sequence predicts, which fills
+    # the gaps below. Confirmed from two more directions: 0x49/0x4b/0x4d are precisely the
+    # unnamed power-range ids the captures use (in Running and Cycling), and 0x4f - the one
+    # the sequence says nobody selected - appears in no capture at all.
+    0x0049: "FT_BIKE_POWER", 0x004B: "FT_BIKE_POWER_3S",
+    0x004D: "FT_BIKE_POWER_30S", 0x004F: "FT_BIKE_POWER_MAX",
     0x006B: "FT_RULE_ENGINE_3", 0x006C: "FT_RULE_ENGINE_4",
     0x006E: "FT_RULE_ENGINE_1_GRAPH", 0x0070: "FT_RULE_ENGINE_3_GRAPH",
     0x0047: "FT_SPORT_LAP_DISTANCE", 0x0057: "FT_SWIM_AVG_STROKE_RATE",
@@ -189,6 +204,9 @@ FIELD_TYPE_LABELS = {
     "FT_TE": "Training Effect", "FT_EXERCISE_ALTI_GRAPH": "Altitude Graph (exercise)",
     "FT_RULE_ENGINE_0": "Suunto App Slot 1", "FT_RULE_ENGINE_1": "Suunto App Slot 2",
     "FT_RULE_ENGINE_2": "Suunto App Slot 3",
+    "FT_VERTICAL_SPEED": "Vertical speed",
+    "FT_BIKE_POWER": "Power", "FT_BIKE_POWER_3S": "Power 3s",
+    "FT_BIKE_POWER_30S": "Power 30s", "FT_BIKE_POWER_MAX": "Maximum power",
     "FT_RULE_ENGINE_3": "Suunto App Slot 4", "FT_RULE_ENGINE_4": "Suunto App Slot 5",
     "FT_RULE_ENGINE_1_GRAPH": "Suunto App Slot 2 (graph)",
     "FT_RULE_ENGINE_3_GRAPH": "Suunto App Slot 4 (graph)",
