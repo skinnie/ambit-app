@@ -193,6 +193,8 @@ class Handler(BaseHTTPRequestHandler):
             self._handle_customodes_read()
         elif self.path == "/api/customodes/field-types":
             self._handle_customodes_field_types()
+        elif self.path.startswith("/api/customodes/row-menu"):
+            self._handle_customodes_row_menu()
         elif self.path == "/api/agps/status":
             self._handle_agps_status()
         elif self.path == "/api/apps":
@@ -677,6 +679,78 @@ class Handler(BaseHTTPRequestHandler):
                                    "produced no parseable JSON", "raw_output": out, "stderr": err})
             return
         self._send_json(200 if info.get("ok") else 502, info)
+
+    def _handle_customodes_row_menu(self):
+        """GET /api/customodes/row-menu?activity=<id>&template=<n>&row=<TOP|CENTER|BOTTOM>
+
+        What the row editor is allowed to offer, exactly as SuuntoLink would offer it: the
+        values grouped into its own categories, in its own order, with its own labels. The
+        catalogue is generated from SuuntoLink's own module (tools/gen_sportmode_rows.js ->
+        assets/sportmode_rows.json), so this endpoint is a lookup, not a judgement.
+
+        Values this project cannot write are dropped rather than shown and then failing -
+        `row_bridge` maps 54 of SuuntoLink's 60 rows to a watch field id, and a row we cannot
+        write is better absent from the menu than wrong in it.
+
+        No watch is touched: it is a static file plus a lookup.
+        """
+        from urllib.parse import urlparse, parse_qs
+        query = parse_qs(urlparse(self.path).query)
+
+        def one(name, default=None):
+            values = query.get(name)
+            return values[0] if values else default
+
+        sys.path.insert(0, str(TOOLS_DIR))
+        import row_bridge                                    # noqa: PLC0415 - tools are lazy
+        import custom_modes                                  # noqa: PLC0415
+
+        catalogue = row_bridge.load_rows()
+        try:
+            activity = int(one("activity", "1"))
+            template = int(one("template", "260"))
+        except ValueError:
+            self._send_json(400, {"ok": False,
+                                  "error": "activity and template must be integers"})
+            return
+        row = (one("row", "TOP") or "TOP").upper()
+        if row not in ("TOP", "CENTER", "BOTTOM"):
+            self._send_json(400, {"ok": False, "error": f"unknown row {row!r}"})
+            return
+
+        per_type = catalogue["availability"].get(str(activity), {})
+        index = per_type.get(row_bridge.TEMPLATE_TO_DISPLAY_TYPE.get(template, ""), {}).get(row)
+        if index is None:
+            self._send_json(200, {"ok": True, "categories": [], "multiValue": False,
+                                  "maxValues": 1,
+                                  "note": "this display type has no such row"})
+            return
+
+        categories = []
+        for category_id, row_ids in catalogue["menus"][index]:
+            values = []
+            for rid in row_ids:
+                entry = catalogue["rows"][str(rid)]
+                field_id = row_bridge.row_to_field_id(entry["name"])
+                if field_id is None:
+                    continue                                 # not writable by us - omit it
+                values.append({"fieldId": field_id, "label": entry["label"],
+                               "name": entry["name"]})
+            if values:
+                categories.append({
+                    "id": category_id,
+                    "label": catalogue["categories"][str(category_id)]["label"],
+                    "values": values,
+                })
+
+        multi = row_bridge.row_is_multi_value(template, row)
+        self._send_json(200, {
+            "ok": True,
+            "categories": categories,
+            "multiValue": multi,
+            "maxValues": catalogue["limits"]["maxValuesPerMultiRow"] if multi else 1,
+            "maxSuuntoApps": catalogue["limits"]["maxSuuntoApps"],
+        })
 
     def _handle_customodes_rename(self, body):
         """POST /api/customodes/rename. Body: {"from": str, "to": str, "confirm": bool}.

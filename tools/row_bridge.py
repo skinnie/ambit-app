@@ -57,7 +57,12 @@ ROW_TO_FIELD = {
     "Descent": "FT_DESCENT",
     "Distance": "FT_DISTANCE",
     "DualTime": "FT_DUAL_TIME",
-    "Empty": "FT_SHORTCUT",
+    # "Empty" is deliberately NOT mapped. SuuntoLink offers it, and FT_SHORTCUT (0x00) is the
+    # obvious candidate since that is the marker a multi-value row carries in its Type slot -
+    # but no row with Type=0 and no shortcuts appears anywhere in the 118 captured region
+    # images, so we have never seen what SuuntoLink actually writes for it. Offering it would
+    # mean inventing a write shape. Settle it the way the swim rows were settled: set a row
+    # to Empty in SuuntoLink, save, and read which bytes changed.
     "HeartRate": "FT_HEART_RATE_CURR",
     "Lap": "FT_LAP_NUMBER",
     "LapDistance": "FT_LAP_DISTANCE",
