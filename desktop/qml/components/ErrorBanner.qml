@@ -22,6 +22,13 @@ Rectangle {
     // What the app was doing, in the user's terms - goes into the report mail's subject line
     // area so a report is not just a stack of bytes.
     property string context: ""
+    // Opt-in "Try again" - real request, 2026-08-11 (André, after unplugging the watch
+    // mid-session left the POIs card stuck on this banner): when the failure is plausibly
+    // transient (device unplugged, backend busy), the owner connects onRetry to the same
+    // refresh that failed and the user gets a one-click recovery instead of switching
+    // pages or restarting the app. Opt-in because not every failure has a sensible retry.
+    property bool canRetry: false
+    signal retry()
 
     visible: detail.length > 0
     width: parent ? parent.width : 0
@@ -52,6 +59,11 @@ Rectangle {
 
         Row {
             spacing: Theme.spacingSmall
+            RoundedButton {
+                visible: root.canRetry
+                text: qsTr("Try again")
+                onClicked: root.retry()
+            }
             RoundedButton {
                 text: qsTr("Send logs")
                 onClicked: LogService.reportProblem(root.context)

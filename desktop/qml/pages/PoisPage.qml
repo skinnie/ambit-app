@@ -375,6 +375,10 @@ PageFlickable {
                     detail: (!HomeViewModel.isGarmin && !PoiService.loading && !PoiService.ok)
                             ? PoiService.lastError : ""
                     context: qsTr("reading POIs from the watch")
+                    // Unplugging the watch mid-session is the usual cause here (real case,
+                    // 2026-08-11) - plug it back in and this re-runs the same read.
+                    canRetry: true
+                    onRetry: PoiService.refresh()
                 }
                 Text {
                     visible: !onDevicePoiCard.loading && onDevicePoiCard.onDevicePois.length === 0
