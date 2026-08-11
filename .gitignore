@@ -64,3 +64,7 @@ desktop/*.exitcode
 
 # Generated stub so SuuntoLink JS can be required outside Electron (gen_sportmode_rows.js).
 /tools/.node_shim/
+
+# Local Python virtualenv at the repo root (same reasoning as venv/ above - machine-local,
+# regenerated, never travels).
+.venv/
