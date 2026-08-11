@@ -333,18 +333,7 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == "/api/apps/install":
             self._handle_apps_install(body)
         elif self.path == "/api/pois":
-            # POI import/export (GPX and typed coordinates) is real and confirmed working -
-            # tested via a real compiled Android app against real hardware, 2026-08-06
-            # (HANDOFF.md's POI section and Milestone 6 row). What's missing is narrower than
-            # that: the specific code isn't in *this repo's* copy of tools/write_nav.py yet
-            # (it only preserves POIs already on the watch across a route/reset/restore
-            # write) - so this bridge has nothing correct to call until that code is located
-            # or ported here. Returning 501 rather than silently doing nothing.
-            self._send_json(501, {
-                "error": "POI import/export is confirmed working (real hardware, 2026-08-06) "
-                         "but the code isn't in this repo's tools/write_nav.py yet - nothing "
-                         "for this endpoint to call until it's located or ported in. See "
-                         "HANDOFF.md's POI section."})
+            self._handle_poi_add(body)
         else:
             self.send_response(404)
             self.end_headers()
@@ -441,6 +430,38 @@ class Handler(BaseHTTPRequestHandler):
             "raw_output": out, "stderr": err})
 
     # --- writes: dry-run unless the caller explicitly confirms ---
+
+    def _handle_poi_add(self, body):
+        """Body: {"name": str, "lat": float, "lon": float}. This was an honest 501 until
+        2026-08-11: the working implementation existed only in the Android app's native
+        ambit3_add_poi_to_watch() (confirmed on real hardware 2026-08-06, Milestone 6).
+        write_nav.py's `addpoi` is that same algorithm ported back: read the whole POI
+        list (0x0b24), rewrite it with the new record first (0x0b25), never touching the
+        Waypoints/Routes flash regions and needing no commit. The read-before-write is
+        load-bearing - skipping it is what erased the POI store on 2026-08-04."""
+        name = (body.get("name") or "").strip()
+        try:
+            lat = float(body.get("lat"))
+            lon = float(body.get("lon"))
+        except (TypeError, ValueError):
+            self._send_json(400, {"error": "missing/invalid \"lat\"/\"lon\""})
+            return
+        if not name:
+            self._send_json(400, {"error": "a POI needs a name - the watch lists them by it"})
+            return
+        if not (-90.0 <= lat <= 90.0 and -180.0 <= lon <= 180.0):
+            self._send_json(400, {"error": f"{lat}, {lon} is not a coordinate on Earth"})
+            return
+
+        code, out, err = run_tool(
+            "write_nav.py",
+            ["addpoi", "--name", name, "--lat", f"{lat:.7f}", "--lon", f"{lon:.7f}",
+             "--write"])
+        if code != 0:
+            self._send_json(502, {"ok": False, "error": (err or out or "").strip()
+                                  or "POI write failed", "raw_output": out})
+            return
+        self._send_json(200, {"ok": True, "raw_output": out})
 
     def _handle_route_write(self, body):
         """Body: {"name": str, "gpx": "<gpx xml text>", "confirm": bool}. Without `confirm`,

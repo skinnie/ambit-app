@@ -9,10 +9,10 @@
 // Step 9. Deliberately thinner than DeviceService/RouteService: on-watch POIs come back as
 // raw text only (see backend/server.py's own comment on why - the schema-driven field names
 // aren't something this project can confirm ahead of a real watch check, unlike routes'
-// fixed print format), and adding a new POI is a real, confirmed-working capability
-// (HANDOFF.md's POI section, 2026-08-06) whose actual code isn't in this repo's
-// tools/write_nav.py yet - so `addPoi()` here calls the honest 501 the backend already
-// returns rather than a working endpoint.
+// fixed print format). addPoi() is a REAL write since 2026-08-11: the backend runs
+// write_nav.py's `addpoi`, the Android app's hardware-confirmed (2026-08-06) native
+// algorithm ported back into this repo's tools - the honest-501 era this class's comments
+// used to describe is over.
 class PoiService : public QObject
 {
     Q_OBJECT
@@ -24,11 +24,14 @@ class PoiService : public QObject
     Q_PROPERTY(bool ok READ ok NOTIFY dataChanged)
     Q_PROPERTY(QString lastError READ lastError NOTIFY lastErrorChanged)
     Q_PROPERTY(QString addResultText READ addResultText NOTIFY addResultChanged)
+    // Whether the last addPoi() succeeded - the page colors addResultText by it (success
+    // green vs error red) instead of assuming every result is a failure, which was true
+    // in the 501 era and isn't anymore.
+    Q_PROPERTY(bool addOk READ addOk NOTIFY addResultChanged)
     // GPX <wpt> import - real, confirmed-working on the Android app (opensportsync-main's
     // "POI import (GPX file and manual coordinates)"), missing here until 2026-08-07. Each
-    // entry: {name, lat, lon}. Parsing is real; submitting each one still goes through the
-    // same honest addPoi() 501 as manual entry, since the actual watch-write isn't in this
-    // repo's tools yet either way - see this class's own note above.
+    // entry: {name, lat, lon}; submitting one goes through the same real addPoi() write as
+    // manual entry - see this class's own note above.
     Q_PROPERTY(QVariantList importedPois READ importedPois NOTIFY importedPoisChanged)
     Q_PROPERTY(QString importError READ importError NOTIFY importedPoisChanged)
     // Real request 2026-08-08 ("POIs on the watch, please do like for the routes") - real
@@ -47,6 +50,7 @@ public:
     bool ok() const { return m_ok; }
     QString lastError() const { return m_lastError; }
     QString addResultText() const { return m_addResultText; }
+    bool addOk() const { return m_addOk; }
     QVariantList importedPois() const { return m_importedPois; }
     QString importError() const { return m_importError; }
     QVariantList onWatchPois() const { return m_onWatchPois; }
@@ -73,6 +77,7 @@ private:
     bool m_ok = false;
     QString m_lastError;
     QString m_addResultText;
+    bool m_addOk = false;
     QVariantList m_importedPois;
     QString m_importError;
     QVariantList m_onWatchPois;

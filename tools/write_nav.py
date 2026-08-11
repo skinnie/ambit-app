@@ -671,6 +671,70 @@ def poi_write_payload_add(reply, new_record):
     return SBEM_WRITE_PREFIX + F.SBEM_MAGIC + header + body
 
 
+def build_poi_record(name, lat, lon, stamp=None):
+    """One POI as the SBEM entry-0x55 body the watch stores, for poi_write_payload_add().
+
+    Layout, field for field the same as the Android app's ambit3_add_poi_to_watch()
+    (device_driver_ambit3.c) - the path Milestone 6 confirmed working against the real
+    watch on 2026-08-06:
+
+        name\\0  route_name\\0 (empty: standalone, not tied to a route)  timestamp\\0
+        [route_index=0][type=17][sub_type=0][type_index=0][flags=1]
+        [i32 LE lat*1e7][i32 LE lon*1e7]
+
+    type=17/flags=1 match what the watch itself writes for a POI it creates (SuuntoLink
+    leaves both at 0 for an imported one) - picked so this looks like a watch-made POI.
+
+    The timestamp is LOCAL time, no offset suffix, not UTC: tested directly on hardware
+    2026-08-06, the watch's own POI screen echoes this field back verbatim without
+    converting it, so storing UTC would display the wrong wall-clock time (see the C
+    implementation's comment for the full story of how the old UTC assumption fell)."""
+    import time
+    if stamp is None:
+        stamp = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime())
+    record = name.encode() + b"\0"
+    record += b"\0"                       # empty route_name
+    record += stamp.encode() + b"\0"
+    record += bytes([0, F.WAYPOINT_TYPE_DEFAULT, 0, 0, 1])
+    record += int(round(lat * 1e7)).to_bytes(4, "little", signed=True)
+    record += int(round(lon * 1e7)).to_bytes(4, "little", signed=True)
+    return record
+
+
+def run_addpoi(args):
+    """Adds ONE POI, preserving every POI already on the watch. Unlike a route write this
+    never touches the Waypoints/Routes flash regions and needs no commit - it is only the
+    0x0b24 read followed by the 0x0b25 rewrite of the full list, new record first (the
+    same order poiimport's own capture shows). The same read-before-write rule as route
+    writes applies: skipping the read is what erased the POI store on 2026-08-04."""
+    if not args.name or not args.name.strip():
+        raise SystemExit("addpoi: --name must not be empty (the watch shows POIs by name)")
+    if args.lat is None or args.lon is None:
+        raise SystemExit("addpoi: --lat and --lon are required")
+    if not (-90.0 <= args.lat <= 90.0) or not (-180.0 <= args.lon <= 180.0):
+        raise SystemExit(f"addpoi: {args.lat}, {args.lon} is not a coordinate on Earth")
+
+    link = Link(dry_run=not args.write, verbose=args.verbose, product_id=args.product_id)
+    if args.write:
+        print("!! REAL WRITE requested")
+        link.open()
+    else:
+        print("dry-run mode: not a byte will be emitted")
+
+    link.command(CMD_DEVICE_INFO, b"\x02\x48\x03\x00")
+    pois = read_pois(link, args.compare)
+    existing = ([data for entry_id, data in F.sbem_entries(pois)
+                 if entry_id == POI_ENTRY]
+                if pois and F.SBEM_MAGIC in pois else [])
+    record = build_poi_record(args.name.strip(), args.lat, args.lon)
+    payload = poi_write_payload_add(pois, record)
+    link.command(CMD_POI_WRITE, payload)
+    print(f"POI {args.name.strip()!r} ({args.lat:.6f}, {args.lon:.6f}) "
+          f"{'written' if args.write else 'would be written'}, "
+          f"{len(existing)} existing preserved")
+    return 0
+
+
 def read_memory_map(link):
     """Addresses and sizes declared by the watch. In dry-run the reference values,
     the ones from the capture, are returned."""
@@ -939,8 +1003,14 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("action",
                         choices=("reset", "route", "settings", "pois",
-                                 "logbook", "nav", "restore"))
+                                 "logbook", "nav", "restore", "addpoi"))
     parser.add_argument("gpx", nargs="*")
+    parser.add_argument("--name", metavar="NAME",
+                        help="addpoi: the POI's name as the watch will show it")
+    parser.add_argument("--lat", type=float, metavar="DEG",
+                        help="addpoi: latitude, decimal degrees")
+    parser.add_argument("--lon", type=float, metavar="DEG",
+                        help="addpoi: longitude, decimal degrees")
     parser.add_argument("--write", action="store_true",
                         help="actually emits; without this option nothing is sent")
     parser.add_argument("--meta", metavar="CAPTURE",
@@ -982,6 +1052,8 @@ def main():
         if args.write:
             parser.error("nav is read-only, --write has nothing to write")
         return run_nav(args)
+    if args.action == "addpoi":
+        return run_addpoi(args)
     if args.action in QUERIES:
         if args.write:
             parser.error(f"{args.action} is read-only, --write has nothing to write")

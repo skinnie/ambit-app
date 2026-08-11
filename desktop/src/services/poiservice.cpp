@@ -98,10 +98,19 @@ void PoiService::addPoi(const QString &name, double lat, double lon)
     connect(reply, &QNetworkReply::finished, this, [this, reply] {
         reply->deleteLater();
         const auto doc = QJsonDocument::fromJson(reply->readAll());
-        // Expected to be the honest 501 right now (see this class's own header comment) -
-        // shown to the user exactly as the backend phrases it, not reworded into something
-        // that sounds more finished than it is.
-        m_addResultText = doc.object().value(QStringLiteral("error")).toString();
+        m_addOk = doc.object().value(QStringLiteral("ok")).toBool();
+        if (m_addOk) {
+            m_addResultText = QStringLiteral("POI written to the watch.");
+            // The real proof: re-read the on-watch list so the new POI shows up in the
+            // "On the watch" card below, straight off the hardware rather than assumed.
+            refresh();
+        } else {
+            // Shown exactly as the backend phrases it, not reworded into something that
+            // sounds more finished than it is.
+            m_addResultText = doc.object().value(QStringLiteral("error")).toString();
+            if (m_addResultText.isEmpty())
+                m_addResultText = QStringLiteral("POI write failed (backend unreachable?)");
+        }
         emit addResultChanged();
     });
 }

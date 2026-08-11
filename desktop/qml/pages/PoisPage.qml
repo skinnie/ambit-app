@@ -4,11 +4,9 @@ import QtQuick.Dialogs
 import AmbitApp
 
 // Step 9. On-watch POIs shown as a real per-POI list with a thumbnail map and Export, since
-// 2026-08-08 (see the "On the watch" Card below for the fuller story). "Add" has a real,
-// live coordinate preview map even though actually submitting is honestly blocked right now
-// (POI write isn't in this repo's tools/write_nav.py yet, confirmed separately as working
-// elsewhere - see HANDOFF.md's POI section) - the form itself, and the map preview, are
-// still real.
+// 2026-08-08 (see the "On the watch" Card below for the fuller story). Add is a REAL watch
+// write since 2026-08-11 - write_nav.py's `addpoi`, the Android app's hardware-confirmed
+// algorithm ported back into this repo (see backend/server.py's _handle_poi_add).
 PageFlickable {
     id: root
     contentWidth: width
@@ -258,7 +256,7 @@ PageFlickable {
                     width: parent.width
                     wrapMode: Text.WordWrap
                     font.pixelSize: Theme.fontSizeCaption
-                    color: Theme.error
+                    color: PoiService.addOk ? Theme.success : Theme.error
                     text: PoiService.addResultText
                 }
                 Text {
@@ -283,9 +281,8 @@ PageFlickable {
 
         // --- Import from GPX - real, confirmed-working on the Android app
         // (opensportsync-main's "POI import (GPX file and manual coordinates)"), missing
-        // here until 2026-08-07. Parses real <wpt> waypoints; submitting each one still
-        // goes through the same honest addPoi() 501 as manual entry above, since the actual
-        // watch-write isn't in this repo's tools yet either way. ---
+        // here until 2026-08-07. Parses real <wpt> waypoints; since 2026-08-11 each Add is
+        // a real watch write (write_nav.py addpoi), same as manual entry above. ---
         Card {
             width: parent.width
             Column {
