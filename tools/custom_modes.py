@@ -190,6 +190,22 @@ FIELD_TYPES = {
     # all.
     0x0047: "FT_SPORT_LAP_DISTANCE", 0x0057: "FT_SWIM_AVG_STROKE_RATE",
     0x0059: "FT_SWIM_AVG_SWOLF",
+    # The last two unknowns in the table, settled the same way (André, 2026-08-11): he
+    # unticked "interval stroke rate" on his Pool swimming display 1 bottom row and 0x0067 is
+    # the id that vanished, leaving interval avg SWOLF for 0x0069. Note this is the OPPOSITE
+    # of the assignment a positional reading had suggested - worth testing rather than
+    # trusting.
+    0x0067: "FT_SWIM_INT_STROKE_RATE", 0x0069: "FT_SWIM_INT_SWOLF",
+    #
+    # That same save also resolved why positional readings had been unreliable. The row was
+    # stored as [int pace, 0x69, 0x67, rest time, style] but SuuntoLink displayed it as
+    # [rest time, int pace, ...]; after the save it is stored as [rest time, int pace, 0x69,
+    # style] - i.e. SuuntoLink WRITES a multi-value row in the order it shows it. The two
+    # never disagreed in principle; that row simply had not been re-saved since an older
+    # edit, so the stored order was stale. Reading a row off the UI by position is therefore
+    # sound for any row SuuntoLink has written recently - but the differential test above
+    # (remove one value, see which id disappears) needs no such assumption and is still the
+    # method to reach for.
     0x005A: "FT_SWIM_LAP_DISTANCE", 0x005C: "FT_SWIM_LAP_RATE", 0x005E: "FT_SWIM_LAP_SWOLF",
     0x0060: "FT_SWIM_POOL_STROKES", 0x0062: "FT_SWIM_POOL_PACE", 0x0064: "FT_SWIM_INT_TIME",
     0x0066: "FT_SWIM_INT_STROKES", 0x0068: "FT_SWIM_INT_PACE", 0x006A: "FT_SWIM_REST_TIME",
@@ -274,6 +290,8 @@ FIELD_TYPE_LABELS = {
     "FT_BIKE_POWER_AVG": "Bike Power (average)", "FT_BIKE_POWER_10S": "Bike Power (10s average)",
     "FT_BIKE_POWER_LAP": "Bike Power (lap average)", "FT_BIKE_POWER_LAP_MAX": "Bike Power (lap max)",
     "FT_SWIM_AVG_SWOLF": "Average SWOLF",
+    "FT_SWIM_INT_STROKE_RATE": "Interval stroke rate",
+    "FT_SWIM_INT_SWOLF": "Interval avg SWOLF",
     "FT_SWIM_STYLE": "Previous pool length style",   # SuuntoLink's own wording, André 2026-08-11 "FT_SWIM_STROKES": "Swim Strokes", "FT_SWIM_PACE": "Swim Pace",
     "FT_SWIM_AVG_PACE": "Swim Pace (average)",
     "FT_SWIM_AVG_STROKE_RATE": "Stroke Rate (average)",
