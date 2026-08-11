@@ -779,8 +779,23 @@ Flickable {
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: qsTr("Change")
                                 onClicked: {
+                                    // The picker needs the row's full context, not just
+                                    // which row: what may go on it depends on the mode's
+                                    // sport, the display's type and which row it is.
                                     dataPicker.displayIndex = root.currentDisplayIndex
                                     dataPicker.fieldIndex = fieldRow.index
+                                    dataPicker.activityId = root.selectedMode
+                                        ? root.selectedMode.activityId : 1
+                                    dataPicker.displayTemplate =
+                                        currentScreenColumn.current
+                                            ? currentScreenColumn.current.templateId : 260
+                                    dataPicker.rowName = fieldRow.modelData.rowLabel
+                                        ? fieldRow.modelData.rowLabel.toUpperCase()
+                                        : "TOP"
+                                    dataPicker.selected =
+                                        (fieldRow.modelData.values || [])
+                                            .map(v => v.type)
+                                            .filter(v => v !== undefined)
                                     dataPicker.open()
                                 }
                             }
@@ -796,5 +811,14 @@ Flickable {
         modeName: root.selectedMode ? root.selectedMode.name : ""
         modeIndex: root.selectedModeIndex
         anchors.centerIn: Overlay.overlay
+
+        // Staged, not written - one Save means one region write, the same as every other
+        // display edit on this page.
+        onRowChosen: (displayIndex, rowName, fieldIds) => root.stageEdit({
+            "op": "setRow",
+            "display": displayIndex,
+            "row": rowName.charAt(0) + rowName.slice(1).toLowerCase(),
+            "values": fieldIds
+        })
     }
 }

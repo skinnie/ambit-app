@@ -30,6 +30,9 @@ class CustomModesService : public QObject
     // Each entry: {value, name} - the real FIELD_TYPES catalog, fetched once and cached;
     // a UI builds its own "which data" picker from this.
     Q_PROPERTY(QVariantList fieldTypes READ fieldTypes NOTIFY fieldTypesChanged)
+    Q_PROPERTY(QVariantList rowMenu READ rowMenu NOTIFY rowMenuChanged)
+    Q_PROPERTY(bool rowMenuMultiValue READ rowMenuMultiValue NOTIFY rowMenuChanged)
+    Q_PROPERTY(int rowMenuMaxValues READ rowMenuMaxValues NOTIFY rowMenuChanged)
     // Name of the mode a write is currently in flight for, or empty.
     Q_PROPERTY(QString writingMode READ writingMode NOTIFY writingModeChanged)
 
@@ -41,6 +44,9 @@ public:
     QString lastError() const { return m_lastError; }
     QVariantList modes() const { return m_modes; }
     QVariantList fieldTypes() const { return m_fieldTypes; }
+    QVariantList rowMenu() const { return m_rowMenu; }
+    bool rowMenuMultiValue() const { return m_rowMenuMultiValue; }
+    int rowMenuMaxValues() const { return m_rowMenuMaxValues; }
     QString writingMode() const { return m_writingMode; }
 
     // GET /api/customodes - real, read-only (a single ~12KB flash read), safe any time.
@@ -48,6 +54,12 @@ public:
 
     // GET /api/customodes/field-types - no watch touched, fetch once and cache.
     Q_INVOKABLE void refreshFieldTypes();
+    // What may go on one particular row, as SuuntoLink itself would offer it: grouped into
+    // its categories, in its order, with its labels, filtered by the mode's sport and the
+    // display's type. Unlike fieldTypes() - which is the whole 95-entry catalogue and is
+    // wrong to show a user directly, since most of it is not offerable on a given row - this
+    // is per-row and answers "what can this row become". Results land in rowMenu.
+    Q_INVOKABLE void refreshRowMenu(int activityId, int template_, const QString &row);
 
     // POST /api/customodes/rename, confirm:true - real write, applied immediately (same
     // "explicit UI action is the confirmation" rule as SettingsWriteService). Refreshes
@@ -78,6 +90,7 @@ signals:
     void loadingChanged();
     void modesChanged();
     void fieldTypesChanged();
+    void rowMenuChanged();
     void lastErrorChanged();
     void writingModeChanged();
     void displayEditsApplied(bool ok);
@@ -89,6 +102,9 @@ private:
     QString m_lastError;
     QVariantList m_modes;
     QVariantList m_fieldTypes;
+    QVariantList m_rowMenu;
+    bool m_rowMenuMultiValue = false;
+    int m_rowMenuMaxValues = 1;
     QString m_writingMode;
 
     void setLoading(bool value);

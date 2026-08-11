@@ -2,31 +2,74 @@ import QtQuick
 import QtQuick.Controls
 import AmbitApp
 
-// Real, 2026-08-09 ("Full SuuntoLink-style redesign") - matches SuuntoLink's own real
-// "SELECT DATA FOR ROW" screen (assets/ambit3 pcap/v2/screens sports modes/
-// display1row1graphoptions.JPG): a searchable list of built-in field types, plus a real
-// "Suunto Apps" section - search this app's own bundled catalog (AppsService) and install
-// directly onto this exact display/field slot. Both write paths already existed
-// separately (CustomModesService.writeDisplayField for built-in types,
-// AppsService.install for catalog apps) - this dialog is the one real place a user picks
-// between them, matching SuuntoLink's own single combined screen.
+// SuuntoLink's own "CHOOSE WHAT TO SHOW IN THIS ROW" screen (its Figure 5, and
+// assets/ambit3 pcap/v2/screens sports modes/display1row1graphoptions.JPG): the values
+// grouped into Suunto's own categories - Speed, Distance/GPS, Heart rate, Altitude,
+// Environment, Time, Power, Cadence, Multisport - plus a Suunto Apps section.
+//
+// Two things this deliberately does NOT do, both of them earlier mistakes here:
+//
+//   * It does not list the whole 95-entry field catalogue. What may go on a row depends on
+//     the mode's SPORT, the display's TYPE and WHICH row it is - a swimming mode is not
+//     offered cycling power, and a graph's row is not offered what a 3-field row is. The
+//     backend answers that per row from SuuntoLink's own module; showing the full catalogue
+//     let a user pick a value the watch does not support for that sport, which is how a
+//     display ends up reading "--".
+//   * It does not write on click. Add/remove/retype already stage their changes and save
+//     once, because the watch has no per-field command for sport modes - every save rewrites
+//     the whole region. A row edit staging itself the same way keeps one Save button
+//     meaning one write, which is also what SuuntoLink does.
 Dialog {
     id: root
-    title: qsTr("Select Data")
+    title: qsTr("Choose what to show in this row")
     modal: true
-    width: 420
-    height: 560
-    standardButtons: Dialog.Close
+    width: 460
+    height: 600
+    standardButtons: Dialog.Cancel | Dialog.Ok
 
     property string modeName: ""
     property int modeIndex: -1
+    property int activityId: 1
     property int displayIndex: -1
     property int fieldIndex: -1
+    property int displayTemplate: 260
+    property string rowName: "TOP"
+
+    // Field ids currently ticked, in the order chosen - the watch shows a multi-value row's
+    // values in this order, so it is meaningful, not just a set.
+    property var selected: []
+
+    readonly property bool multiValue: CustomModesService.rowMenuMultiValue
+    readonly property int maxValues: CustomModesService.rowMenuMaxValues
+
+    // Emitted instead of writing: the page stages it alongside the other pending edits.
+    signal rowChosen(int displayIndex, string rowName, var fieldIds)
+
+    function isSelected(fieldId) { return selected.indexOf(fieldId) >= 0 }
+
+    function toggle(fieldId) {
+        const next = selected.slice()
+        const at = next.indexOf(fieldId)
+        if (!multiValue) {
+            selected = [fieldId]
+            return
+        }
+        if (at >= 0)
+            next.splice(at, 1)
+        else if (next.length < maxValues)
+            next.push(fieldId)
+        selected = next
+    }
 
     onOpened: {
-        fieldSearchField.text = ""
         appSearchField.text = ""
+        CustomModesService.refreshRowMenu(activityId, displayTemplate, rowName)
         AppsService.searchCatalog("", DeviceService.model, -1)
+    }
+
+    onAccepted: {
+        if (selected.length > 0)
+            rowChosen(displayIndex, rowName, selected)
     }
 
     Flickable {
@@ -40,55 +83,98 @@ Dialog {
             width: parent.width
             spacing: Theme.spacingMedium
 
-            // --- Built-in field types ---
-            Column {
+            Text {
                 width: parent.width
-                spacing: Theme.spacingSmall
-                Text { text: qsTr("Field types"); font.bold: true; color: Theme.text }
-                RoundedTextField {
-                    id: fieldSearchField
-                    width: parent.width
-                    placeholderText: qsTr("Search field types...")
-                }
-                Repeater {
-                    model: {
-                        const q = fieldSearchField.text.trim().toLowerCase()
-                        const all = CustomModesService.fieldTypes
-                        if (!q) return all
-                        return all.filter(f => f.label.toLowerCase().indexOf(q) >= 0)
+                wrapMode: Text.WordWrap
+                color: Theme.mutedText
+                font.pixelSize: Theme.fontSizeCaption
+                text: root.multiValue
+                    ? qsTr("This row can hold up to %1 values - the watch steps through " +
+                            "them on a button press. %2 chosen.")
+                        .arg(root.maxValues).arg(root.selected.length)
+                    : qsTr("This row holds one value.")
+            }
+
+            Text {
+                visible: CustomModesService.rowMenu.length === 0
+                width: parent.width
+                wrapMode: Text.WordWrap
+                color: Theme.mutedText
+                font.pixelSize: Theme.fontSizeCaption
+                text: qsTr("No values are offered for this row.")
+            }
+
+            // --- the values, in Suunto's own categories and order ---
+            Repeater {
+                model: CustomModesService.rowMenu
+                delegate: Column {
+                    id: categoryColumn
+                    required property var modelData
+                    width: contentColumn.width
+                    spacing: 2
+
+                    Text {
+                        text: categoryColumn.modelData.label
+                        font.bold: true
+                        color: Theme.text
+                        topPadding: Theme.spacingSmall
                     }
-                    delegate: Item {
-                        id: typeRow
-                        required property var modelData
-                        width: contentColumn.width
-                        height: 32
-                        Text {
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: typeRow.modelData.label
-                            color: Theme.text
-                            font.pixelSize: Theme.fontSizeBody
-                        }
-                        MouseArea {
-                            anchors.fill: parent
-                            onClicked: {
-                                CustomModesService.writeDisplayField(
-                                    root.modeName, root.displayIndex, root.fieldIndex,
-                                    typeRow.modelData.name)
-                                root.close()
+
+                    Repeater {
+                        model: categoryColumn.modelData.values
+                        delegate: Item {
+                            id: valueRow
+                            required property var modelData
+                            width: categoryColumn.width
+                            height: 30
+
+                            Row {
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: Theme.spacingSmall
+
+                                // Radio for a one-value row, checkbox for a multi-value one -
+                                // the same distinction SuuntoLink draws.
+                                Rectangle {
+                                    width: 14
+                                    height: 14
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    radius: root.multiValue ? 3 : 7
+                                    border.width: 1
+                                    border.color: Theme.mutedText
+                                    color: root.isSelected(valueRow.modelData.fieldId)
+                                        ? Theme.accent : "transparent"
+                                }
+                                Text {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    text: valueRow.modelData.label
+                                    color: Theme.text
+                                    font.pixelSize: Theme.fontSizeBody
+                                }
+                            }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                onClicked: root.toggle(valueRow.modelData.fieldId)
                             }
                         }
                     }
                 }
             }
 
-            // --- Suunto Apps - real, 2026-08-09 ("2 bigger. Let's ship the full
-            // catalog"). Filtered to whichever watch variant is actually connected
-            // (compatibleVariants - see extract_apps_catalog.py's own comment on where
-            // that real data comes from). ---
+            // --- Suunto Apps ---
+            // An app is not a menu row: it is picked from the catalogue and installed onto
+            // the mode, then rendered on a row. That install path is already real and
+            // hardware-confirmed, so it stays as it is here and applies immediately rather
+            // than staging with the row edits.
             Column {
                 width: parent.width
                 spacing: Theme.spacingSmall
-                Text { text: qsTr("Suunto Apps"); font.bold: true; color: Theme.text }
+                Text {
+                    text: qsTr("Suunto Apps")
+                    font.bold: true
+                    color: Theme.text
+                    topPadding: Theme.spacingSmall
+                }
                 RoundedTextField {
                     id: appSearchField
                     width: parent.width
@@ -135,7 +221,8 @@ Dialog {
                             height: 40
                             onClicked: {
                                 AppsService.install(root.modeIndex, root.displayIndex,
-                                                     root.fieldIndex, appRow.modelData.ruleId, true)
+                                                     root.fieldIndex, appRow.modelData.ruleId,
+                                                     true)
                                 root.close()
                             }
                         }

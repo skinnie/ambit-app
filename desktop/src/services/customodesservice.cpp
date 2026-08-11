@@ -4,6 +4,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QNetworkReply>
+#include <QUrlQuery>
 
 static const QString kBackendBase = QStringLiteral("http://127.0.0.1:8766");
 
@@ -80,6 +81,7 @@ void CustomModesService::refresh()
                 QVariantMap dispRow;
                 dispRow[QStringLiteral("index")] = disp.value(QStringLiteral("index")).toInt();
                 dispRow[QStringLiteral("template")] = disp.value(QStringLiteral("template")).toString();
+                dispRow[QStringLiteral("templateId")] = disp.value(QStringLiteral("templateId")).toInt();
                 dispRow[QStringLiteral("templateLabel")] = disp.value(QStringLiteral("templateLabel")).toString();
                 dispRow[QStringLiteral("isBuiltIn")] = disp.value(QStringLiteral("isBuiltIn")).toBool();
                 // Real bug, found 2026-08-09 ("screen unidentified where it should show screen
@@ -103,6 +105,26 @@ void CustomModesService::refresh()
                     fieldRow[QStringLiteral("indexName")] = field.value(QStringLiteral("indexName")).toString();
                     fieldRow[QStringLiteral("type")] = field.value(QStringLiteral("type")).toInt();
                     fieldRow[QStringLiteral("typeLabel")] = field.value(QStringLiteral("typeLabel")).toString();
+                    // Real bug, found 2026-08-11: these three were never copied, so the QML
+                    // read undefined for all of them. A row is named Top/Center/Bottom rather
+                    // than numbered, and it can hold SEVERAL values that the watch steps
+                    // through - custom_modes.py has reported `rowLabel`, `values` and
+                    // `isMultiValue` since the item-11 fix, but they stopped here. Without
+                    // them a multi-value row fell back to its own typeLabel, which for such a
+                    // row is the placeholder "Shortcut" - so the page showed one meaningless
+                    // entry instead of the real values, and the row editor had no current
+                    // selection to pre-tick.
+                    fieldRow[QStringLiteral("rowLabel")] = field.value(QStringLiteral("rowLabel")).toString();
+                    fieldRow[QStringLiteral("isMultiValue")] = field.value(QStringLiteral("isMultiValue")).toBool();
+                    QVariantList values;
+                    for (const auto &v : field.value(QStringLiteral("values")).toArray()) {
+                        const auto value = v.toObject();
+                        QVariantMap valueRow;
+                        valueRow[QStringLiteral("type")] = value.value(QStringLiteral("type")).toInt();
+                        valueRow[QStringLiteral("label")] = value.value(QStringLiteral("label")).toString();
+                        values.append(valueRow);
+                    }
+                    fieldRow[QStringLiteral("values")] = values;
                     fields.append(fieldRow);
                 }
                 dispRow[QStringLiteral("fields")] = fields;
@@ -139,6 +161,56 @@ void CustomModesService::refreshFieldTypes()
         }
         m_fieldTypes = types;
         emit fieldTypesChanged();
+    });
+}
+
+void CustomModesService::refreshRowMenu(int activityId, int template_, const QString &row)
+{
+    // Static-file lookup on the backend, no watch involved - safe to call on every dialog
+    // open. The menu depends on all three arguments: SuuntoLink offers a swimming mode
+    // different values from a running one, a graph's row different values from a 3-field
+    // one, and the bottom row is the only one that takes several.
+    QUrl url = backendUrl(QStringLiteral("/api/customodes/row-menu"));
+    QUrlQuery query;
+    query.addQueryItem(QStringLiteral("activity"), QString::number(activityId));
+    query.addQueryItem(QStringLiteral("template"), QString::number(template_));
+    query.addQueryItem(QStringLiteral("row"), row);
+    url.setQuery(query);
+
+    QNetworkReply *reply = m_network.get(QNetworkRequest(url));
+    connect(reply, &QNetworkReply::finished, this, [this, reply] {
+        reply->deleteLater();
+        const auto obj = QJsonDocument::fromJson(reply->readAll()).object();
+        if (reply->error() != QNetworkReply::NoError
+            || !obj.value(QStringLiteral("ok")).toBool()) {
+            m_rowMenu.clear();
+            m_rowMenuMultiValue = false;
+            m_rowMenuMaxValues = 1;
+            emit rowMenuChanged();
+            return;
+        }
+
+        QVariantList categories;
+        for (const auto &c : obj.value(QStringLiteral("categories")).toArray()) {
+            const auto category = c.toObject();
+            QVariantList values;
+            for (const auto &v : category.value(QStringLiteral("values")).toArray()) {
+                const auto value = v.toObject();
+                QVariantMap entry;
+                entry[QStringLiteral("fieldId")] = value.value(QStringLiteral("fieldId")).toInt();
+                entry[QStringLiteral("label")] = value.value(QStringLiteral("label")).toString();
+                entry[QStringLiteral("name")] = value.value(QStringLiteral("name")).toString();
+                values.append(entry);
+            }
+            QVariantMap group;
+            group[QStringLiteral("label")] = category.value(QStringLiteral("label")).toString();
+            group[QStringLiteral("values")] = values;
+            categories.append(group);
+        }
+        m_rowMenu = categories;
+        m_rowMenuMultiValue = obj.value(QStringLiteral("multiValue")).toBool();
+        m_rowMenuMaxValues = obj.value(QStringLiteral("maxValues")).toInt(1);
+        emit rowMenuChanged();
     });
 }
 

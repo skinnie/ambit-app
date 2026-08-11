@@ -774,6 +774,11 @@ def _displays_to_json(displays):
             "screenNumber": None if is_built_in else i + 1,
             "isBuiltIn": is_built_in,
             "template": disp["TemplateName"],
+            # The numeric template id as well as its name. A UI needs the number to ask
+            # which values may go on this display's rows (SuuntoLink keys that by display
+            # type), and deriving it back from the name would be a parse where a field will
+            # do.
+            "templateId": disp["Template"],
             "templateLabel": field_type_label(disp["TemplateName"]),
             "fields": [_field_to_json(f) for f in disp["Fields"]],
         })
