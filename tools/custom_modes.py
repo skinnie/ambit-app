@@ -837,10 +837,37 @@ def to_json(result):
             "rules": mode["Rules"],
         })
 
-    sport_modes = [
-        {"name": slot["Name"], "activityId": slot["ActivityID"], "legs": slot["Exercises"]}
-        for slot in result["sport_modes"] if slot["Name"]
-    ]
+    # A SPORT_MODE slot is either a pointer to one exercise mode (an ordinary sport mode) or
+    # an ordered list of several - a MULTISPORT mode. André's own watch has "Triathlon"
+    # (activityId 19) with legs [0, 1, 2, 1, 3]: Openwater swim, Transition, Cycling,
+    # Transition, Running. That is why the Triathlon never appeared in a UI listing exercise
+    # modes: it has no exercise mode of its own, only legs pointing at other modes'.
+    #
+    # `legNames` resolves those indices here rather than making every caller do it, and
+    # `usedByMultisport` marks the exercise modes a multisport leg points at - SuuntoLink
+    # refuses to delete one of those ("You can't delete this sport mode because it's used in
+    # one of your multisport modes"), and a UI needs to know which without re-deriving it.
+    exercise_names = [m.get("Settings", {}).get("Name") for m in result["exercise_modes"]]
+    used_by_multisport = set()
+    sport_modes = []
+    for slot in result["sport_modes"]:
+        if not slot["Name"]:
+            continue
+        legs = list(slot["Exercises"] or [])
+        if len(legs) > 1:
+            used_by_multisport.update(legs)
+        sport_modes.append({
+            "name": slot["Name"],
+            "activityId": slot["ActivityID"],
+            "order": slot.get("Order"),
+            "legs": legs,
+            "legNames": [exercise_names[i] if 0 <= i < len(exercise_names) else None
+                         for i in legs],
+            "isMultisport": len(legs) > 1,
+        })
+
+    for index, mode in enumerate(modes):
+        mode["usedByMultisport"] = index in used_by_multisport
 
     return {"ok": True, "formatType": result.get("format_type"),
             "exerciseModes": modes, "sportModes": sport_modes}

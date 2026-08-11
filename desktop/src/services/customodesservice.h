@@ -27,6 +27,11 @@ class CustomModesService : public QObject
     // hrLimitsUse, autoStart, autoPause, autoScrolling, backlightMode, displayMode,
     // quickNavigation, displays: [{index, template, fields: [{indexName, type, typeName}]}]}
     Q_PROPERTY(QVariantList modes READ modes NOTIFY modesChanged)
+    // Multisport modes - real, 2026-08-11 (André, item 22): "triathlon/multisport mode is
+    // missing from our menu, and it is on the watch". It was never missing data: a multisport
+    // mode lives in the SPORT_MODE slots, not the exercise modes this list carries, and has
+    // no displays of its own - only an ordered list of legs pointing at other modes.
+    Q_PROPERTY(QVariantList multisportModes READ multisportModes NOTIFY modesChanged)
     // Each entry: {value, name} - the real FIELD_TYPES catalog, fetched once and cached;
     // a UI builds its own "which data" picker from this.
     Q_PROPERTY(QVariantList fieldTypes READ fieldTypes NOTIFY fieldTypesChanged)
@@ -34,6 +39,9 @@ class CustomModesService : public QObject
     Q_PROPERTY(bool rowMenuMultiValue READ rowMenuMultiValue NOTIFY rowMenuChanged)
     Q_PROPERTY(int rowMenuMaxValues READ rowMenuMaxValues NOTIFY rowMenuChanged)
     // Name of the mode a write is currently in flight for, or empty.
+    // This watch's own limits and features, from the generated per-device table. Defaults
+    // are the Ambit3 family's so a UI has sane numbers before the fetch lands.
+    Q_PROPERTY(QVariantMap capabilities READ capabilities NOTIFY capabilitiesChanged)
     Q_PROPERTY(QString writingMode READ writingMode NOTIFY writingModeChanged)
 
 public:
@@ -43,10 +51,12 @@ public:
     bool ok() const { return m_ok; }
     QString lastError() const { return m_lastError; }
     QVariantList modes() const { return m_modes; }
+    QVariantList multisportModes() const { return m_multisportModes; }
     QVariantList fieldTypes() const { return m_fieldTypes; }
     QVariantList rowMenu() const { return m_rowMenu; }
     bool rowMenuMultiValue() const { return m_rowMenuMultiValue; }
     int rowMenuMaxValues() const { return m_rowMenuMaxValues; }
+    QVariantMap capabilities() const { return m_capabilities; }
     QString writingMode() const { return m_writingMode; }
 
     // GET /api/customodes - real, read-only (a single ~12KB flash read), safe any time.
@@ -60,6 +70,8 @@ public:
     // wrong to show a user directly, since most of it is not offerable on a given row - this
     // is per-row and answers "what can this row become". Results land in rowMenu.
     Q_INVOKABLE void refreshRowMenu(int activityId, int template_, const QString &row);
+    // GET /api/customodes/capabilities?variant=<codename>. Call with DeviceService.model.
+    Q_INVOKABLE void refreshCapabilities(const QString &variant);
 
     // POST /api/customodes/rename, confirm:true - real write, applied immediately (same
     // "explicit UI action is the confirmation" rule as SettingsWriteService). Refreshes
@@ -91,6 +103,7 @@ signals:
     void modesChanged();
     void fieldTypesChanged();
     void rowMenuChanged();
+    void capabilitiesChanged();
     void lastErrorChanged();
     void writingModeChanged();
     void displayEditsApplied(bool ok);
@@ -101,10 +114,12 @@ private:
     bool m_ok = false;
     QString m_lastError;
     QVariantList m_modes;
+    QVariantList m_multisportModes;
     QVariantList m_fieldTypes;
     QVariantList m_rowMenu;
     bool m_rowMenuMultiValue = false;
     int m_rowMenuMaxValues = 1;
+    QVariantMap m_capabilities;
     QString m_writingMode;
 
     void setLoading(bool value);

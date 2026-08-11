@@ -244,18 +244,19 @@ Flickable {
                         Text {
                             width: parent.width
                             wrapMode: Text.WordWrap
+                            // André, 2026-08-11 (item 15): "just say synced when it is
+                            // synced" - the full timestamp it synced TO added nothing the
+                            // user had asked for.
                             text: DeviceService.timeSyncBusy
                                 ? qsTr("Syncing...")
-                                : (DeviceService.timeSyncStatusText || qsTr("Tap to sync"))
+                                : (DeviceService.timeSyncStatusText.length > 0
+                                   ? qsTr("Synced") : qsTr("Tap to sync"))
                             color: Theme.primary
                             font.pixelSize: Theme.fontSizeBody
                             font.underline: !DeviceService.timeSyncBusy
                             TapHandler {
                                 enabled: !DeviceService.timeSyncBusy
-                                onTapped: {
-                                    timezonePicker.visible = false
-                                    timeSyncMenu.visible = !timeSyncMenu.visible
-                                }
+                                onTapped: clockSyncDialog.open()
                             }
                             // André, G2 - see the GPS orbit field above for the reasoning.
                             // Tapping still works offline (the clock is set from this
@@ -278,87 +279,6 @@ Flickable {
                         // reparenting trick needed at all; it pushes the cards below it down
                         // slightly when open instead of floating over them, which sidesteps
                         // every failure mode hit tonight in one stroke.
-                        Column {
-                            id: timeSyncMenu
-                            visible: false
-                            width: parent.width
-                            spacing: Theme.spacingSmall
-                            topPadding: Theme.spacingSmall
-
-                            // Real, 2026-08-10 ("the buttons seems big compared to the clock
-                            // letters") - RoundedButton's own default 36px pill
-                            // (implicitHeight, from its background Rectangle - see
-                            // RoundedButton.qml) is right for the app's real primary actions
-                            // elsewhere, but heavy for this lightweight menu. Shrunk locally
-                            // here rather than adding a whole new "small button" variant
-                            // component for one menu.
-                            RoundedButton {
-                                width: parent.width
-                                implicitHeight: 30
-                                text: qsTr("From device")
-                                onClicked: {
-                                    timeSyncMenu.visible = false
-                                    DeviceService.syncTime()
-                                }
-                            }
-
-                            RoundedButton {
-                                width: parent.width
-                                implicitHeight: 30
-                                visible: !timezonePicker.visible
-                                text: qsTr("From a different timezone")
-                                onClicked: {
-                                    DeviceService.fetchTimezones()
-                                    timezonePicker.visible = true
-                                }
-                            }
-
-                            Column {
-                                id: timezonePicker
-                                visible: false
-                                width: parent.width
-                                spacing: Theme.spacingSmall
-
-                                // Real, 2026-08-10 ("when you show the timezone can you show
-                                // what time is there now" - clarified after a first attempt
-                                // put it in the wrong place: "next to the country-region" IN
-                                // the dropdown list itself, not a separate label under the
-                                // closed box). Overrides RoundedComboBox's own default
-                                // delegate (RoundedComboBox.qml) for this one instance only -
-                                // every other real usage of that shared component elsewhere
-                                // in the app keeps its plain name-only delegate unchanged.
-                                RoundedComboBox {
-                                    id: tzCombo
-                                    width: parent.width
-                                    model: DeviceService.timezones
-                                    delegate: ItemDelegate {
-                                        width: tzCombo.popup.width
-                                        highlighted: tzCombo.highlightedIndex === index
-                                        contentItem: Text {
-                                            text: modelData + "  —  " + DeviceService.currentTimeInZone(modelData)
-                                            color: Theme.text
-                                            font.pixelSize: Theme.fontSizeBody
-                                            elide: Text.ElideRight
-                                            verticalAlignment: Text.AlignVCenter
-                                        }
-                                        background: Rectangle {
-                                            color: highlighted ? Theme.primary + "26" : "transparent"
-                                        }
-                                    }
-                                }
-
-                                RoundedButton {
-                                    width: parent.width
-                                    implicitHeight: 30
-                                    text: qsTr("Sync")
-                                    enabled: DeviceService.timezones.length > 0
-                                    onClicked: {
-                                        timeSyncMenu.visible = false
-                                        DeviceService.syncTime(tzCombo.currentText)
-                                    }
-                                }
-                            }
-                        }
                     }
                 }
 
@@ -809,5 +729,11 @@ Flickable {
                 }
             }
         }
+    }
+
+    // Clock sync - a dialog rather than a menu that grew inside the card (André, item 15).
+    ClockSyncDialog {
+        id: clockSyncDialog
+        anchors.centerIn: Overlay.overlay
     }
 }

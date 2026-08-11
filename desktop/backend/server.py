@@ -195,6 +195,8 @@ class Handler(BaseHTTPRequestHandler):
             self._handle_customodes_field_types()
         elif self.path.startswith("/api/customodes/row-menu"):
             self._handle_customodes_row_menu()
+        elif self.path.startswith("/api/customodes/capabilities"):
+            self._handle_customodes_capabilities()
         elif self.path == "/api/agps/status":
             self._handle_agps_status()
         elif self.path == "/api/apps":
@@ -751,6 +753,35 @@ class Handler(BaseHTTPRequestHandler):
             "maxValues": catalogue["limits"]["maxValuesPerMultiRow"] if multi else 1,
             "maxSuuntoApps": catalogue["limits"]["maxSuuntoApps"],
         })
+
+    def _handle_customodes_capabilities(self):
+        """GET /api/customodes/capabilities?variant=<codename>
+
+        What THIS watch can do - how many sport modes, displays, apps and multisport modes it
+        holds, plus SuuntoLink's own supports* flags. Generated for all 46 variants it knows
+        (tools/gen_sportmode_rows.js), so a device this project has never seen still gets the
+        right UI instead of the reference watch's numbers.
+
+        Real request, 2026-08-11 (André, item 24): "make it adaptable so we don't have to
+        workout this stuff device per device when a new device is added."
+
+        Static-file lookup; no watch touched.
+        """
+        from urllib.parse import urlparse, parse_qs
+        query = parse_qs(urlparse(self.path).query)
+        variant = (query.get("variant") or ["Emu"])[0]
+
+        sys.path.insert(0, str(TOOLS_DIR))
+        import row_bridge                                    # noqa: PLC0415
+
+        catalogue = row_bridge.load_rows()
+        row = catalogue.get("variants", {}).get(variant)
+        if row is None:
+            # Unknown watch: say so rather than quietly handing back the Ambit3's numbers.
+            self._send_json(200, {"ok": False, "variant": variant,
+                                  "error": f"no capability record for variant {variant!r}"})
+            return
+        self._send_json(200, {"ok": True, "variant": variant, **row})
 
     def _handle_customodes_rename(self, body):
         """POST /api/customodes/rename. Body: {"from": str, "to": str, "confirm": bool}.

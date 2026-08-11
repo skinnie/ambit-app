@@ -68,6 +68,12 @@ void CustomModesService::refresh()
             row[QStringLiteral("name")] = mode.value(QStringLiteral("name")).toString();
             row[QStringLiteral("activityId")] = mode.value(QStringLiteral("activityId")).toInt();
             row[QStringLiteral("appCount")] = mode.value(QStringLiteral("appCount")).toInt();
+            // Whether a multisport mode uses this one as a leg. SuuntoLink refuses to delete
+            // such a mode ("You can't delete this sport mode because it's used in one of your
+            // multisport modes") - deleting it would leave the multisport pointing at
+            // nothing.
+            row[QStringLiteral("usedByMultisport")] =
+                mode.value(QStringLiteral("usedByMultisport")).toBool();
             row[QStringLiteral("useHw")] = mode.value(QStringLiteral("useHw")).toInt();
             row[QStringLiteral("autolap")] = mode.value(QStringLiteral("autolap")).toInt();
             row[QStringLiteral("hrHigh")] = mode.value(QStringLiteral("hrHigh")).toInt();
@@ -136,6 +142,23 @@ void CustomModesService::refresh()
             modes.append(row);
         }
         m_modes = modes;
+
+        QVariantList multisport;
+        for (const auto &m : obj.value(QStringLiteral("sportModes")).toArray()) {
+            const auto slot = m.toObject();
+            if (!slot.value(QStringLiteral("isMultisport")).toBool())
+                continue;               // an ordinary sport mode is just a pointer to a mode
+            QVariantMap row;
+            row[QStringLiteral("name")] = slot.value(QStringLiteral("name")).toString();
+            row[QStringLiteral("activityId")] = slot.value(QStringLiteral("activityId")).toInt();
+            QStringList legs;
+            for (const auto &n : slot.value(QStringLiteral("legNames")).toArray())
+                legs.append(n.toString());
+            row[QStringLiteral("legNames")] = legs;
+            multisport.append(row);
+        }
+        m_multisportModes = multisport;
+
         setLastError(QString());
         emit modesChanged();
     });
@@ -212,6 +235,27 @@ void CustomModesService::refreshRowMenu(int activityId, int template_, const QSt
         m_rowMenuMultiValue = obj.value(QStringLiteral("multiValue")).toBool();
         m_rowMenuMaxValues = obj.value(QStringLiteral("maxValues")).toInt(1);
         emit rowMenuChanged();
+    });
+}
+
+void CustomModesService::refreshCapabilities(const QString &variant)
+{
+    if (variant.isEmpty())
+        return;
+    QUrl url = backendUrl(QStringLiteral("/api/customodes/capabilities"));
+    QUrlQuery query;
+    query.addQueryItem(QStringLiteral("variant"), variant);
+    url.setQuery(query);
+
+    QNetworkReply *reply = m_network.get(QNetworkRequest(url));
+    connect(reply, &QNetworkReply::finished, this, [this, reply] {
+        reply->deleteLater();
+        const auto obj = QJsonDocument::fromJson(reply->readAll()).object();
+        if (reply->error() != QNetworkReply::NoError
+            || !obj.value(QStringLiteral("ok")).toBool())
+            return;                     // keep whatever defaults the UI already has
+        m_capabilities = obj.toVariantMap();
+        emit capabilitiesChanged();
     });
 }
 

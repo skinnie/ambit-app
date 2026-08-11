@@ -108,7 +108,14 @@ Flickable {
         pendingEdits = [];
     }
     // SuuntoLink's own getMaxDisplays() for this watch family.
-    readonly property int maxDisplays: 8
+    // Limits come from the connected watch's own record, not from this one. A Traverse
+    // reports 5 sport modes / 4 displays / no multisport and the UI follows, without anyone
+    // adding a per-device branch here (André, item 24).
+    readonly property var caps: CustomModesService.capabilities
+    readonly property int maxDisplays: caps.maxDisplays ? caps.maxDisplays : 8
+    readonly property int deviceMaxSportModes: caps.maxSportModes ? caps.maxSportModes : 10
+    readonly property int deviceMaxMultisport:
+        caps.maxMultisportModes !== undefined ? caps.maxMultisportModes : 0
 
     // The four layouts a display can take, with the template id the watch stores for each
     // and the default rows the backend fills a new one with (custom_modes_edit._DEFAULT_ROWS,
@@ -219,6 +226,8 @@ Flickable {
         if (HomeViewModel.isKailash) return
         CustomModesService.refreshFieldTypes()
         CustomModesService.refresh()
+        // Ask what THIS watch can hold rather than assuming the reference watch's numbers.
+        CustomModesService.refreshCapabilities(DeviceService.model)
         // Real, 2026-08-09 ("check if meters or imperial or advanced, and how the watch
         // deals with it") - needed for the real-unit Autolap display below. Explicit ""
         // (Ambit3) rather than trusting SettingsWriteService.device's already-set value -
@@ -286,6 +295,130 @@ Flickable {
             width: parent.width
             detail: CustomModesService.ok ? "" : CustomModesService.lastError
             context: qsTr("reading or writing sport modes")
+        }
+
+        // How full the watch is, and what it can hold - real request, 2026-08-11 (André,
+        // item 20), matching SuuntoLink's own "Create sport mode 10/10 used" / "Create
+        // multisport mode 1/2 used" rows. The ceilings come from the generated per-device
+        // table (assets/sportmode_rows.json), so a Traverse correctly shows 5 and no
+        // multisport line at all rather than this watch's numbers.
+        Card {
+            width: parent.width
+            visible: CustomModesService.modes.length > 0
+            Column {
+                width: parent.width
+                spacing: Theme.spacingSmall
+
+                Row {
+                    spacing: Theme.spacingSmall
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: qsTr("Sport modes")
+                        color: Theme.text
+                        font.pixelSize: Theme.fontSizeBody
+                        font.bold: true
+                    }
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: qsTr("%1/%2 used").arg(CustomModesService.modes.length)
+                                                .arg(root.deviceMaxSportModes)
+                        color: CustomModesService.modes.length >= root.deviceMaxSportModes
+                               ? Theme.error : Theme.mutedText
+                        font.pixelSize: Theme.fontSizeBody
+                    }
+                }
+
+                Row {
+                    spacing: Theme.spacingSmall
+                    visible: root.deviceMaxMultisport > 0
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: qsTr("Multisport modes")
+                        color: Theme.text
+                        font.pixelSize: Theme.fontSizeBody
+                        font.bold: true
+                    }
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: qsTr("%1/%2 used")
+                                .arg(CustomModesService.multisportModes.length)
+                                .arg(root.deviceMaxMultisport)
+                        color: Theme.mutedText
+                        font.pixelSize: Theme.fontSizeBody
+                    }
+                }
+
+                Text {
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    text: qsTr("Creating and deleting modes isn't wired up yet - this shows " +
+                                "what the watch holds and what it can hold.")
+                    color: Theme.mutedText
+                    font.pixelSize: Theme.fontSizeCaption
+                }
+            }
+        }
+
+        // Multisport modes - André, item 22. They live in the SPORT_MODE slots rather than
+        // the exercise modes, and have no displays of their own: a multisport mode is an
+        // ORDERED list of other modes, which the watch steps through on a long BACK|LAP
+        // press. Listed separately for that reason rather than mixed in above.
+        Card {
+            width: parent.width
+            visible: CustomModesService.multisportModes.length > 0
+            Column {
+                width: parent.width
+                spacing: Theme.spacingSmall
+
+                Text {
+                    text: qsTr("Multisport")
+                    color: Theme.text
+                    font.pixelSize: Theme.fontSizeBody
+                    font.bold: true
+                }
+
+                Repeater {
+                    model: CustomModesService.multisportModes
+                    delegate: Column {
+                        id: msRow
+                        required property var modelData
+                        width: parent.width
+                        spacing: 2
+
+                        Row {
+                            spacing: Theme.spacingSmall
+                            ActivityBadge {
+                                anchors.verticalCenter: parent.verticalCenter
+                                activityId: msRow.modelData.activityId
+                                size: 28
+                            }
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: msRow.modelData.name
+                                color: Theme.text
+                                font.pixelSize: Theme.fontSizeBody
+                                font.bold: true
+                            }
+                        }
+                        Text {
+                            width: parent.width
+                            wrapMode: Text.WordWrap
+                            text: msRow.modelData.legNames.map(
+                                    (n, i) => (i + 1) + ": " + n).join("   ")
+                            color: Theme.mutedText
+                            font.pixelSize: Theme.fontSizeCaption
+                        }
+                    }
+                }
+
+                Text {
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    text: qsTr("Change the leg with a long press of BACK|LAP on the watch.")
+                    color: Theme.mutedText
+                    font.pixelSize: Theme.fontSizeCaption
+                }
+            }
         }
 
         Repeater {
