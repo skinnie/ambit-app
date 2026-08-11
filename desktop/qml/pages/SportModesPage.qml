@@ -472,6 +472,17 @@ Flickable {
                                 color: Theme.mutedText
                                 font.pixelSize: Theme.fontSizeCaption
                             }
+                            // André, item 21: a mode a multisport uses cannot be deleted -
+                            // SuuntoLink says exactly this and greys its bin. Shown now
+                            // rather than when delete is built, because it also explains why
+                            // "Transition" is in the list at all: it exists only to be a leg.
+                            Text {
+                                visible: modeCard.modelData.usedByMultisport === true
+                                text: qsTr("Used by a multisport mode - can't be deleted")
+                                color: Theme.mutedText
+                                font.pixelSize: Theme.fontSizeCaption
+                                font.italic: true
+                            }
                         }
                     }
 
