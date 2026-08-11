@@ -72,31 +72,42 @@ PageFlickable {
                 Text { text: qsTr("Add a POI"); font.bold: true; color: Theme.text }
 
                 RoundedTextField {
+                    id: poiNameField
                     width: parent.width
                     placeholderText: qsTr("Name")
                     onTextChanged: root.poiName = text
                 }
+                // A place, not two numbers - André, 2026-08-11: "on add a poi, please make
+                // it open a map and search location, like we did for home for kailash". Same
+                // shape as Settings' Kailash HomeLocation row: a button that opens the
+                // search-plus-map picker, with the chosen coordinates staying visible next
+                // to it. Typing coordinates by hand still works - inside the picker, which
+                // has validated lat/lon fields of its own.
                 Row {
-                    width: parent.width
                     spacing: Theme.spacingSmall
-                    RoundedTextField {
-                        width: (parent.width - Theme.spacingSmall) / 2
-                        placeholderText: qsTr("Latitude")
-                        text: root.poiLat.toString()
-                        onTextChanged: { const v = parseFloat(text); if (!isNaN(v)) root.poiLat = v; }
+                    RoundedButton {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: qsTr("Pick on a map")
+                        onClicked: {
+                            poiPicker.latitude = root.poiLat
+                            poiPicker.longitude = root.poiLon
+                            poiPicker.poiName = root.poiName
+                            poiPicker.open()
+                        }
                     }
-                    RoundedTextField {
-                        width: (parent.width - Theme.spacingSmall) / 2
-                        placeholderText: qsTr("Longitude")
-                        text: root.poiLon.toString()
-                        onTextChanged: { const v = parseFloat(text); if (!isNaN(v)) root.poiLon = v; }
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: qsTr("%1, %2").arg(root.poiLat.toFixed(6))
+                              .arg(root.poiLon.toFixed(6))
+                        color: Theme.mutedText
+                        font.pixelSize: Theme.fontSizeLabel
                     }
                 }
 
-                // The preview opens the real picker - André, 2026-08-11 (item 18): "for the
+                // The preview opens the same picker - André, 2026-08-11 (item 18): "for the
                 // box under add a POI, can we make it clickable, open a new window". Placing
-                // a point by pointing at it is the natural gesture; typing two decimal
-                // numbers is the fallback, not the main path.
+                // a point by pointing at it is the natural gesture, so both the button above
+                // and the map itself lead to it.
                 Text {
                     text: qsTr("Click the map to place a POI")
                     color: Theme.mutedText
@@ -360,7 +371,9 @@ PageFlickable {
         id: poiPicker
         anchors.centerIn: Overlay.overlay
         onAccepted_: (name, lat, lon) => {
-            root.poiName = name
+            // Through the field, not root.poiName directly, so the visible Name box shows
+            // what was typed in the picker (its own onTextChanged then updates root).
+            poiNameField.text = name
             root.poiLat = lat
             root.poiLon = lon
         }
