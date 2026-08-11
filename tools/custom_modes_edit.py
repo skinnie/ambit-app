@@ -26,6 +26,7 @@ makes a sport mode unusable.
 
 import argparse
 import copy
+import pathlib
 import sys
 import time
 
@@ -398,17 +399,31 @@ def main():
                           "installed - app-less modes carry no APP_META and are unaffected "
                           "either way. Default is to stamp it exactly as SuuntoLink does.")
     ap.add_argument("--verbose", action="store_true")
+    # Edit a region IMAGE instead of a watch. Added 2026-08-11 for the app's Testing mode,
+    # which answers from a real captured region so the whole editor can be exercised with no
+    # watch attached - and, just as usefully, so this tool can be tested offline. With
+    # --write the edited image is written back to the same file, which is what makes an edit
+    # in Testing mode persist the way an edit on a watch does.
+    ap.add_argument("--from", dest="from_file", metavar="FILE",
+                     help="edit this CustomModes image rather than a connected watch")
     args = ap.parse_args()
 
-    product_id = resolve_product_id(args.device) if args.device else None
-    link = Link(dry_run=False, verbose=args.verbose, product_id=product_id)
-    link.open()
-    found = read_memory_map(link)
-    if "CustomModes" not in found:
-        raise SystemExit("this watch declares no CustomModes region (Kailash has none) - "
-                          "sport modes are not editable on it")
-    base, size = found["CustomModes"]
-    region = read_flash(link, base, size, label="CustomModes")
+    link = None
+    if args.from_file:
+        region = pathlib.Path(args.from_file).read_bytes()
+        # The ceiling is the REGION's size, not the file's: an image holds only the bytes
+        # actually used, so using its length would refuse any edit that grows the mode list.
+        base, size = F.CUSTOM_MODES_BASE, custom_modes.CUSTOM_MODES_SIZE
+    else:
+        product_id = resolve_product_id(args.device) if args.device else None
+        link = Link(dry_run=False, verbose=args.verbose, product_id=product_id)
+        link.open()
+        found = read_memory_map(link)
+        if "CustomModes" not in found:
+            raise SystemExit("this watch declares no CustomModes region (Kailash has none) - "
+                              "sport modes are not editable on it")
+        base, size = found["CustomModes"]
+        region = read_flash(link, base, size, label="CustomModes")
 
     decoded = custom_modes.decode(region)
 
@@ -476,6 +491,18 @@ def main():
         else:
             print(f"\ndry-run: {len(body)} bytes would be written to CustomModes "
                   f"(was {len(rebuilt)}) - pass --write to send it")
+        return 0
+
+    if args.from_file:
+        # Same bytes the watch would have received, written where they came from. The
+        # round-trip guard above has already proven the encoder reproduces this region.
+        pathlib.Path(args.from_file).write_bytes(body)
+        if args.json:
+            import json as _json
+            print(_json.dumps({"ok": True, "wrote": True, "changes": changes,
+                               "bytes": len(body)}))
+        else:
+            print(f"\nwritten to {args.from_file} ({len(body)} bytes)")
         return 0
 
     from ambit_pcap import FlashImage

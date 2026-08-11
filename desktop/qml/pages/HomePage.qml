@@ -12,6 +12,8 @@ Flickable {
     clip: true
 
     Component.onCompleted: {
+        // Which watch we are looking at - a real one, or the sample Testing mode serves.
+        DeviceService.refreshDemoMode();
         DeviceService.refresh();
         // Real, 2026-08-08: Garmin detection is a cheap filesystem check (QStorageInfo +
         // one small XML file), not a USB/subprocess round trip like DeviceService's own -
@@ -85,6 +87,29 @@ Flickable {
         anchors.topMargin: Theme.spacingLarge
         width: 480
         spacing: Theme.spacingMedium
+
+        // Testing mode is deliberately loud: a sample watch that looks like a real one is
+        // only useful if it can never be mistaken for one.
+        Rectangle {
+            width: parent.width
+            visible: DeviceService.demoMode
+            height: visible ? demoText.implicitHeight + Theme.spacingMedium : 0
+            radius: Theme.radiusCard
+            color: Theme.card
+            border.width: 1
+            border.color: Theme.primary
+            Text {
+                id: demoText
+                anchors.centerIn: parent
+                width: parent.width - Theme.spacingMedium * 2
+                wrapMode: Text.WordWrap
+                horizontalAlignment: Text.AlignHCenter
+                text: qsTr("Testing mode - this is a sample watch, not a real one. " +
+                            "Turn it off in Settings.")
+                color: Theme.primary
+                font.pixelSize: Theme.fontSizeBody
+            }
+        }
 
         // --- Device hero card: the watch is the hero, only one, per the spec. Real,
         // 2026-08-08 ("home page: instead of ambit it detects an etrex... firmware version,

@@ -80,6 +80,10 @@ class DeviceService : public QObject
     // features need it only to decide whether they CAN run, and probing on every device poll
     // would put real traffic on the wire for a question the OS already answers.
     Q_PROPERTY(bool online READ online NOTIFY onlineChanged)
+    // Testing mode - the backend answers from fixtures instead of USB, so the app can be
+    // explored with no watch attached. Every reply it produces is flagged, so the UI can say
+    // plainly that nothing here is a real device.
+    Q_PROPERTY(bool demoMode READ demoMode NOTIFY demoModeChanged)
 
 public:
     explicit DeviceService(QObject *parent = nullptr);
@@ -139,6 +143,11 @@ public:
     Q_INVOKABLE void fetchTimezones();
 
     bool online() const { return m_online; }
+    bool demoMode() const { return m_demoMode; }
+
+    // POST /api/demo. Refreshes straight after, so the switch is visible immediately.
+    Q_INVOKABLE void setDemoMode(bool enabled);
+    Q_INVOKABLE void refreshDemoMode();
 
 signals:
     void loadingChanged();
@@ -150,10 +159,12 @@ signals:
     void timeSyncChanged();
     void timezonesChanged();
     void onlineChanged();
+    void demoModeChanged();
 
 private:
     QNetworkAccessManager m_network;
     bool m_online = false;
+    bool m_demoMode = false;
     // Auto-sync fires once per connection, not once per poll: the device endpoint is
     // re-read every 10s by the heartbeat, and syncing the clock and re-checking the orbit
     // on each of those would write to the watch continuously.

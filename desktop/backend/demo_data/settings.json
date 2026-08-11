@@ -1,0 +1,267 @@
+{
+  "ok": true,
+  "demo": true,
+  "settings": {
+    "language": {
+      "ok": true,
+      "value": 0,
+      "label": "Language",
+      "kind": "enum",
+      "control": "dropdown",
+      "writable": true,
+      "screen": "general",
+      "path": "sml.DeviceSettings.Units.Language",
+      "choices": [
+        [
+          0,
+          "English"
+        ],
+        [
+          1,
+          "Fran\u00e7ais"
+        ]
+      ]
+    },
+    "units_mode": {
+      "ok": true,
+      "value": 0,
+      "label": "Units",
+      "kind": "enum",
+      "control": "radio",
+      "writable": true,
+      "screen": "units",
+      "path": "sml.DeviceSettings.Units.Mode",
+      "choices": [
+        [
+          0,
+          "Metric"
+        ],
+        [
+          1,
+          "Imperial"
+        ],
+        [
+          2,
+          "Advanced"
+        ]
+      ]
+    },
+    "date_format": {
+      "ok": true,
+      "value": 0,
+      "label": "Date",
+      "kind": "enum",
+      "control": "radio",
+      "writable": true,
+      "screen": "units",
+      "path": "sml.DeviceSettings.Date.Format",
+      "choices": [
+        [
+          0,
+          "DD.MM."
+        ],
+        [
+          1,
+          "MM/DD"
+        ]
+      ]
+    },
+    "time_format": {
+      "ok": true,
+      "value": 0,
+      "label": "Time",
+      "kind": "enum",
+      "control": "radio",
+      "writable": true,
+      "screen": "units",
+      "path": "sml.DeviceSettings.Time.Format",
+      "choices": [
+        [
+          0,
+          "24 hours"
+        ],
+        [
+          1,
+          "12 hours"
+        ]
+      ]
+    },
+    "body_weight": {
+      "ok": true,
+      "value": 74.0,
+      "label": "Weight",
+      "kind": "number",
+      "control": "slider",
+      "writable": true,
+      "screen": "personal",
+      "unit": "kg",
+      "min": 30.0,
+      "max": 250.0,
+      "path": "sml.DeviceSettings.Personal.Weight"
+    },
+    "body_height": {
+      "ok": true,
+      "value": 178,
+      "label": "Height",
+      "kind": "number",
+      "control": "slider",
+      "writable": true,
+      "screen": "personal",
+      "unit": "cm",
+      "min": 89,
+      "max": 241,
+      "path": "sml.DeviceSettings.Personal.Height"
+    },
+    "max_hr": {
+      "ok": true,
+      "value": 186,
+      "label": "Max heart rate",
+      "kind": "number",
+      "control": "slider",
+      "writable": true,
+      "screen": "personal",
+      "unit": "bpm",
+      "min": 30,
+      "max": 240,
+      "path": "sml.DeviceSettings.Personal.MaxHR"
+    },
+    "rest_hr": {
+      "ok": true,
+      "value": 52,
+      "label": "Rest heart rate",
+      "kind": "number",
+      "control": "slider",
+      "writable": true,
+      "screen": "personal",
+      "unit": "bpm",
+      "min": 30,
+      "max": 240,
+      "path": "sml.DeviceSettings.Personal.RestHR"
+    },
+    "activity_level": {
+      "ok": true,
+      "value": 6.0,
+      "label": "Activity class",
+      "kind": "number",
+      "control": "dropdown",
+      "writable": true,
+      "screen": "personal",
+      "min": 1.0,
+      "max": 10.0,
+      "path": "sml.DeviceSettings.Personal.ActivityLevel",
+      "choices": [
+        [
+          2.0,
+          "2 - less than 1 hour"
+        ],
+        [
+          3.0,
+          "3 - more than 1 hour"
+        ],
+        [
+          4.0,
+          "4 - under 30 minutes per week"
+        ],
+        [
+          5.0,
+          "5 - 30-60 minutes per week"
+        ],
+        [
+          6.0,
+          "6 - 1-3 hours per week"
+        ],
+        [
+          7.0,
+          "7 - over 3 hours per week"
+        ],
+        [
+          7.5,
+          "7.5 - 5-7 hours"
+        ],
+        [
+          8.0,
+          "8 - 7-9 hours"
+        ],
+        [
+          8.5,
+          "8.5 - 9-11 hours"
+        ],
+        [
+          9.0,
+          "9 - 11-13 hours"
+        ],
+        [
+          9.5,
+          "9.5 - 13-15 hours"
+        ],
+        [
+          10.0,
+          "10 - over 15 hours"
+        ]
+      ]
+    },
+    "display_contrast": {
+      "ok": true,
+      "value": 50,
+      "label": "Display contrast",
+      "kind": "number",
+      "control": "readonly",
+      "writable": false,
+      "path": "sml.DeviceSettings.Display.Contrast",
+      "note": "Changed on the watch itself: Settings > General > Display > Contrast. No app can write it."
+    },
+    "display_dark": {
+      "ok": true,
+      "value": 1,
+      "label": "Display",
+      "kind": "enum",
+      "control": "radio",
+      "writable": true,
+      "screen": "general",
+      "path": "sml.DeviceSettings.Display.Invert",
+      "choices": [
+        [
+          0,
+          "Light"
+        ],
+        [
+          1,
+          "Dark"
+        ]
+      ]
+    },
+    "backlight_brightness": {
+      "ok": true,
+      "value": 50,
+      "label": "Backlight brightness",
+      "kind": "number",
+      "control": "slider",
+      "writable": true,
+      "screen": "general",
+      "unit": "%",
+      "min": 5,
+      "max": 100,
+      "path": "sml.DeviceSettings.Display.Backlight.Brightness"
+    },
+    "tones": {
+      "ok": true,
+      "value": 1,
+      "label": "Tones",
+      "kind": "bool",
+      "control": "checkbox",
+      "writable": true,
+      "screen": "general",
+      "path": "sml.DeviceSettings.Audio.Mode"
+    },
+    "storm_alarm": {
+      "ok": true,
+      "value": 0,
+      "label": "Storm alarm",
+      "kind": "bool",
+      "control": "checkbox",
+      "writable": true,
+      "screen": "general",
+      "path": "sml.DeviceSettings.AltiBaro.StormAlarm"
+    }
+  }
+}

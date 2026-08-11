@@ -1,0 +1,10 @@
+{
+  "ok": true,
+  "model": "Emu",
+  "name": "Suunto Ambit3 Peak",
+  "serial": "DEMO000000000",
+  "fw_version": "2.4.17",
+  "hw_version": "70.2.17414",
+  "battery_percent": 76,
+  "demo": true
+}

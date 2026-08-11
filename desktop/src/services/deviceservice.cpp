@@ -84,6 +84,43 @@ void DeviceService::setLastError(const QString &friendlyMessage, const QString &
     emit lastErrorChanged();
 }
 
+void DeviceService::refreshDemoMode()
+{
+    QNetworkReply *reply =
+        m_network.get(QNetworkRequest(backendUrl(QStringLiteral("/api/demo"))));
+    connect(reply, &QNetworkReply::finished, this, [this, reply] {
+        reply->deleteLater();
+        if (reply->error() != QNetworkReply::NoError)
+            return;
+        const auto obj = QJsonDocument::fromJson(reply->readAll()).object();
+        const bool on = obj.value(QStringLiteral("enabled")).toBool();
+        if (on == m_demoMode)
+            return;
+        m_demoMode = on;
+        emit demoModeChanged();
+    });
+}
+
+void DeviceService::setDemoMode(bool enabled)
+{
+    QNetworkRequest request(backendUrl(QStringLiteral("/api/demo")));
+    request.setHeader(QNetworkRequest::ContentTypeHeader,
+                      QStringLiteral("application/json"));
+    QJsonObject payload;
+    payload.insert(QStringLiteral("enabled"), enabled);
+    QNetworkReply *reply = m_network.post(request, QJsonDocument(payload).toJson());
+    connect(reply, &QNetworkReply::finished, this, [this, reply] {
+        reply->deleteLater();
+        const auto obj = QJsonDocument::fromJson(reply->readAll()).object();
+        m_demoMode = obj.value(QStringLiteral("enabled")).toBool();
+        emit demoModeChanged();
+        // Switching either way changes what every page is looking at, so re-read now rather
+        // than leaving the previous device's data on screen.
+        m_autoSyncedThisConnection = true;   // never auto-write to a watch on a demo switch
+        refresh();
+    });
+}
+
 void DeviceService::refresh()
 {
     m_pollTimer.stop();

@@ -34,6 +34,7 @@ with an actual write.
 import argparse
 import base64
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -84,6 +85,41 @@ GLONASS_ORBIT_URL = "https://devices.suunto-operations.com/devices/glonassorbit/
 # own retry (Link.open(), 5 tries/2s) only covers the reconnect-permission race, not two of
 # this backend's own requests overlapping - that needs serializing here instead.
 WATCH_LOCK = threading.Lock()
+
+# --- Testing mode ---------------------------------------------------------------------
+# Real request, 2026-08-11 (André): "add on feature on settings: testing mode, where it
+# simulates that an ambit 3 is connected, so people can test it without the watch."
+#
+# When on, every endpoint that would touch USB answers from desktop/backend/demo_data
+# instead. The CustomModes fixture is a GENUINE flash image lifted from a capture, so the
+# real decoder, encoder and round-trip check all run exactly as they do against hardware -
+# a hand-built blob would prove nothing and would drift from the format. See
+# tools/gen_demo_data.py for what is scrubbed and why.
+#
+# Deliberately in-memory and off by default: it is a way to look around the app, not a
+# state anyone should end up in without asking for it. Every reply it produces carries
+# "demo": true so a UI can say so rather than quietly showing fiction.
+DEMO_DIR = Path(__file__).resolve().parent / "demo_data"
+DEMO = {"enabled": False, "custommodes": None}
+
+
+def demo_custom_modes_path():
+    """The demo region on disk, copied to a scratch file the first time it is needed so
+    edits in Testing mode behave like edits on a watch - they persist for the session and
+    are thrown away when the backend restarts."""
+    import tempfile
+    if DEMO["custommodes"] is None:
+        src = DEMO_DIR / "custommodes.bin"
+        fd, path = tempfile.mkstemp(prefix="ambitapp-demo-", suffix=".bin")
+        with os.fdopen(fd, "wb") as out:
+            out.write(src.read_bytes())
+        DEMO["custommodes"] = path
+    return DEMO["custommodes"]
+
+
+def demo_json(name):
+    with open(DEMO_DIR / name) as fh:
+        return json.load(fh)
 
 # Real, 2026-08-09 (App Slot picker's own catalog search) - loaded once and cached rather
 # than shelled out to a subprocess per keystroke: this is a pure local-file lookup (no watch
@@ -197,6 +233,8 @@ class Handler(BaseHTTPRequestHandler):
             self._handle_customodes_row_menu()
         elif self.path.startswith("/api/customodes/capabilities"):
             self._handle_customodes_capabilities()
+        elif self.path == "/api/demo":
+            self._send_json(200, {"ok": True, "enabled": DEMO["enabled"]})
         elif self.path == "/api/agps/status":
             self._handle_agps_status()
         elif self.path == "/api/apps":
@@ -232,6 +270,8 @@ class Handler(BaseHTTPRequestHandler):
             self._handle_settings_write(body)
         elif self.path == "/api/time/sync":
             self._handle_time_sync(body)
+        elif self.path == "/api/demo":
+            self._handle_demo(body)
         elif self.path == "/api/customodes/rename":
             self._handle_customodes_rename(body)
         elif self.path == "/api/customodes/field":
@@ -509,6 +549,9 @@ class Handler(BaseHTTPRequestHandler):
         (hw_version matched HANDOFF.md's independently-documented value exactly once a real
         parsing bug was fixed). Confirmed working against real hardware in this same
         session, unlike most of this backend."""
+        if DEMO["enabled"]:
+            self._send_json(200, demo_json("device.json"))
+            return
         code, out, err = run_tool("device_info.py", ["--json"])
         if code != 0:
             self._send_json(502, {"ok": False, "raw_output": out, "stderr": err})
@@ -588,6 +631,9 @@ class Handler(BaseHTTPRequestHandler):
         entry IDs were confirmed to only ever be looked up fresh per-device, after a real
         bug where a hardcoded ID from one watch's schema silently hit a different field on
         another. Every value in both tables live-verified against real screenshots."""
+        if DEMO["enabled"]:
+            self._send_json(200, demo_json("settings.json"))
+            return
         query = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
         device = query.get("device", [None])[0]
         args = ["--json"]
@@ -662,7 +708,10 @@ class Handler(BaseHTTPRequestHandler):
         tools/custom_modes.py's own to_json() - field names there already match what the
         write endpoints below expect (SETTING_FIELDS' own names, FIELD_TYPES' own names),
         so this needs no separate name-mapping layer."""
-        code, out, err = run_tool("custom_modes.py", ["--json"])
+        # Testing mode decodes the fixture through the SAME tool, via its own --from, so
+        # this path is the real one minus the USB read.
+        args = ["--json"] + (["--from", demo_custom_modes_path()] if DEMO["enabled"] else [])
+        code, out, err = run_tool("custom_modes.py", args)
         info = self._parse_last_json_line(out)
         if info is None:
             self._send_json(502, {"ok": False, "error": "custom_modes.py --json produced "
@@ -753,6 +802,22 @@ class Handler(BaseHTTPRequestHandler):
             "maxValues": catalogue["limits"]["maxValuesPerMultiRow"] if multi else 1,
             "maxSuuntoApps": catalogue["limits"]["maxSuuntoApps"],
         })
+
+    def _handle_demo(self, body):
+        """POST /api/demo {"enabled": bool} - turn Testing mode on or off.
+
+        Turning it OFF throws away the scratch copy of the demo region, so a later session
+        starts from the shipped fixture again rather than from whatever was left behind.
+        """
+        enabled = bool(body.get("enabled"))
+        if not enabled and DEMO["custommodes"]:
+            try:
+                os.unlink(DEMO["custommodes"])
+            except OSError:
+                pass                       # best effort - a stale scratch file harms nothing
+            DEMO["custommodes"] = None
+        DEMO["enabled"] = enabled
+        self._send_json(200, {"ok": True, "enabled": DEMO["enabled"]})
 
     def _handle_customodes_capabilities(self):
         """GET /api/customodes/capabilities?variant=<codename>
@@ -940,6 +1005,11 @@ class Handler(BaseHTTPRequestHandler):
         args = ["--mode", mode, "--edits", json.dumps(edits), "--json"]
         if (body or {}).get("confirm"):
             args.append("--write")
+        # Testing mode edits the demo region image instead of a watch, through the same tool
+        # and the same round-trip guard - so an edit made while trying the app out behaves
+        # exactly like one made on hardware, and persists for the session.
+        if DEMO["enabled"]:
+            args += ["--from", demo_custom_modes_path()]
         code, out, err = run_tool("custom_modes_edit.py", args)
         parsed = self._parse_last_json_line(out)
         if parsed is None:

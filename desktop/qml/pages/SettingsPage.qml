@@ -119,6 +119,52 @@ Flickable {
             }
         }
 
+        // --- Testing mode - real request, 2026-08-11 (André): "add on feature on settings:
+        // testing mode, where it simulates that an ambit 3 is connected, so people can test
+        // it without the watch. for usability could be cool."
+        //
+        // The backend answers from a real captured CustomModes region, so the whole app -
+        // sport modes, the display editor, the row picker - works exactly as it does against
+        // hardware, decoder, encoder and round-trip guard included. Edits persist for the
+        // session and are thrown away when it ends.
+        Card {
+            width: parent.width
+            Column {
+                width: parent.width
+                spacing: Theme.spacingSmall
+                Row {
+                    spacing: Theme.spacingSmall
+                    Icon { glyph: Icons.watch; size: 20; color: Theme.text; anchors.verticalCenter: parent.verticalCenter }
+                    Text { text: qsTr("Testing mode"); font.bold: true; font.pixelSize: Theme.fontSizeBodyLarge; color: Theme.text; anchors.verticalCenter: parent.verticalCenter }
+                }
+                Text {
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    text: qsTr("Pretend an Ambit3 Peak is connected, so you can look around " +
+                                "the app without a watch. Changes are made to a sample watch " +
+                                "and forgotten when you close the app - nothing is written to " +
+                                "a real device.")
+                    color: Theme.mutedText
+                    font.pixelSize: Theme.fontSizeBody
+                }
+                Row {
+                    spacing: Theme.spacingSmall
+                    RoundedSwitch {
+                        anchors.verticalCenter: parent.verticalCenter
+                        checked: DeviceService.demoMode
+                        onToggled: DeviceService.setDemoMode(checked)
+                    }
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: DeviceService.demoMode ? qsTr("On - showing a sample watch")
+                                                     : qsTr("Off")
+                        color: DeviceService.demoMode ? Theme.primary : Theme.mutedText
+                        font.pixelSize: Theme.fontSizeBody
+                    }
+                }
+            }
+        }
+
         // --- General - Suunto-specific (it's reporting the Python backend bridge's own
         // status, which Garmin support has nothing to do with - GarminService talks
         // directly to a mounted filesystem, no backend involved at all). Real, 2026-08-08:
