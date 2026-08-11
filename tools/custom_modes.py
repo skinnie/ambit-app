@@ -327,6 +327,28 @@ def used_extent(data):
     return extent
 
 
+# Value enumerations for display fields whose reading is a code rather than a measurement.
+# Source: Suunto's own "Suunto Apps Developer Manual" (Apr 2, 2015),
+# assets/manuals/SuuntoAppZoneDeveloperManual.pdf, the WATCH VARIABLES tables on pp.24-29.
+# That manual documents the App SCRIPTING namespace (SUUNTO_SWIMMING_PREVIOUS_POOL_LENGTH_
+# STYLE and friends), which is a different namespace from the display-field ids here - it
+# never prints a field id. What it does give, and what is reproduced below, is the meaning of
+# the VALUES, which is the same quantity either way.
+FIELD_VALUE_ENUMS = {
+    # SUUNTO_SWIMMING_PREVIOUS_POOL_LENGTH_STYLE, manual p.28.
+    "FT_SWIM_STYLE": {0: "Other", 1: "Butterfly", 2: "Backstroke", 3: "Breaststroke",
+                      4: "Freestyle", 5: "Drill"},
+}
+
+
+def field_value_label(name, value):
+    """Human-readable reading for a coded field, or None if this field is a plain number.
+
+    Only fields in FIELD_VALUE_ENUMS have one - everything else is a measurement whose value
+    speaks for itself and must not be relabelled."""
+    return FIELD_VALUE_ENUMS.get(name, {}).get(value)
+
+
 def field_type_label(name):
     """Human-readable label for a real FIELD_TYPES name - the curated dict above for every
     FT_*/MT_NONE entry, or a real-but-honest fallback for the PID_RUNNER_GPS_TEMPLATE_*

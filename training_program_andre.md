@@ -2400,3 +2400,35 @@ this format also serves the Ambit 1 and 2 - so the shape may be load-bearing on 
 cannot test. Reproduced literally rather than collapsed. Validated with no normalisation:
 replaying SuuntoLink's own touch/commit pair reproduces BOTH regions byte-exact, 0 differing
 bytes. `--no-stamp` opts out.
+
+## Finding 50: cross-checked against Suunto's own published manual (2026-08-11)
+
+André pointed at `assets/manuals/SuuntoAppZoneDeveloperManual.pdf` - Suunto's public "Suunto
+Apps Developer Manual" (Movescount.com, Apr 2, 2015) - asking whether it describes the display
+fields we had been naming one at a time off the SuuntoLink UI.
+
+It does not, and the reason is worth recording so nobody re-reads it hoping for more. The
+manual documents the App SCRIPTING namespace: `SUUNTO_BIKE_MAX_POWER`, `SUUNTO_LAP_SPD`,
+`SUUNTO_SWIMMING_INTERVAL_DISTANCE` and ~200 others that an App's code can read. A display
+field is a different namespace - apps READ variables, displays SHOW fields - and the manual
+never prints a field id. So it names the quantities behind the six row types we cannot yet
+write, but not the byte to write for any of them.
+
+What it did give:
+
+1. **An independent check on the activity ids.** `assets/activity_types.json` drives the
+   activity picker and its ids are written into real sport modes, so a wrong id names the
+   wrong sport on the watch - and the list came from SuuntoLink's assets, a single source.
+   The manual's table (p.29) is a second one. `tools/verify_activity_types.py` transcribes it
+   verbatim and compares: **all 74 published ids present, none contradicting**, plus 10 ids
+   and 10 wording changes that are newer than 2015 (id 6 was "Swimming", now "Pool swimming"
+   because 83 is Open water swimming; id 28 "Football" is now "American football"; and so on
+   - each recorded with its reason so an unexplained rename would stand out later).
+2. **Value enumerations.** `custom_modes.FIELD_VALUE_ENUMS` now carries the pool-length-style
+   codes (0=other, 1=butterfly, 2=backstroke, 3=breaststroke, 4=freestyle, 5=drill) from
+   p.28, so a UI showing that row can render a word instead of a number.
+3. **Confirmation of four personal-setting ranges** André had read off the SuuntoLink UI and
+   we had coded from his reading alone: height 89-241 cm, max HR 30-240, rest HR 30-240,
+   activity class 1-10 all match the manual exactly. Weight is the one difference - the
+   manual says 30-200 kg, SuuntoLink's UI allows 30-250. The UI wins, since it is what gates
+   the write; the disagreement is recorded rather than resolved.

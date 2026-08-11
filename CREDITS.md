@@ -56,3 +56,27 @@ artwork; this project claims no rights over them and is not affiliated with or e
 Suunto Oy. If that ever becomes a problem, they can be swapped for the generic "Unspecified
 sport" star with no code change - just edit those seven entries in
 `assets/activity_types.json` and re-run `tools/gen_activity_qml.py`.
+
+## Suunto's own published documentation
+
+**Suunto Apps Developer Manual** (Movescount.com, Apr 2, 2015) -
+`assets/manuals/SuuntoAppZoneDeveloperManual.pdf`. Suunto's public developer manual for the
+Suunto Apps scripting language. Two things in this project are checked against it rather than
+only against reverse-engineered material:
+
+- **The activity-id table** (p.29). `tools/verify_activity_types.py` transcribes it verbatim
+  and compares it to `assets/activity_types.json`: all 74 published ids are present and none
+  contradicts us, with 10 ids and 10 wording changes newer than the 2015 manual because our
+  list came from SuuntoLink 4.1.15.
+- **Value enumerations** (pp.24-29, WATCH VARIABLES). `custom_modes.FIELD_VALUE_ENUMS` takes
+  the pool-length-style codes from it. Note the manual documents the App SCRIPTING namespace
+  (`SUUNTO_*` variables), which is NOT the display-field id namespace - it never prints a
+  field id, so it can name a quantity but cannot tell us which byte to write for it.
+
+It also independently confirms four of the personal-setting ranges André read off the
+SuuntoLink UI: height 89-241 cm, max HR 30-240, rest HR 30-240, activity class 1-10. It gives
+weight as 30-200 kg where SuuntoLink's UI allows 30-250; the UI wins, since it is what
+actually gates the write.
+
+The manual is Suunto Oy's document, reproduced here only as a reference for interoperability
+work; this project is not affiliated with or endorsed by Suunto Oy.
