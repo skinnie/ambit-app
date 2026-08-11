@@ -298,7 +298,7 @@ FIELD_TYPE_LABELS = {
     # SuuntoLink groups the FT_SPORT_LAP_* family under "Multisport" and words them
     # "Current activity ..." - matched here so our UI reads the same as the app the
     # owner already knows.
-    "FT_SPORT_LAP_DISTANCE": "Current Activity Distance", "FT_SWIM_LAP_DISTANCE": "Swim Lap Distance",
+    "FT_SPORT_LAP_DISTANCE": "Current activity distance", "FT_SWIM_LAP_DISTANCE": "Swim Lap Distance",
     "FT_SWIM_LAP_RATE": "Swim Stroke Rate", "FT_SWIM_LAP_SWOLF": "Swim SWOLF",
     "FT_SWIM_POOL_STROKES": "Pool Swim Strokes", "FT_SWIM_POOL_PACE": "Pool Swim Pace",
     "FT_SWIM_INT_TIME": "Swim Interval Time", "FT_SWIM_INT_STROKES": "Swim Interval Strokes",
@@ -740,14 +740,28 @@ def _field_to_json(f):
         return field_type_label(FIELD_TYPES.get(t, f"0x{t:04x}"))
     shortcuts = list(f.get("Shortcuts") or [])
     base = f["Type"]
-    values = [{"type": t, "label": label(t)} for t in shortcuts] if base == 0 and shortcuts \
-        else [{"type": base, "label": label(base)}]
+
+    # Type 0 (FT_SHORTCUT) means two different things and the difference is whether the row
+    # carries shortcuts. WITH them it is the marker for a multi-value row and the values are
+    # the shortcuts. WITHOUT them the row is genuinely EMPTY - confirmed 2026-08-11 by André
+    # setting a row to Empty in SuuntoLink and watching it become Type=0/Shortcuts=[].
+    # Labelling both "Shortcut" showed an empty row as if it displayed something called a
+    # shortcut, which is the raw enum name leaking into the UI (André: "on our app it shows
+    # shortcut, can we change to empty").
+    def row_values():
+        if base == 0 and shortcuts:
+            return [{"type": t, "label": label(t)} for t in shortcuts]
+        if base == 0:
+            return [{"type": 0, "label": "Empty"}]
+        return [{"type": base, "label": label(base)}]
+
+    values = row_values()
     idx = f.get("Index")
     return {
         "indexName": f["IndexName"],
         "rowLabel": _ROW_LABELS[idx] if isinstance(idx, int) and idx < len(_ROW_LABELS) else None,
         "type": base,
-        "typeLabel": label(base),
+        "typeLabel": "Empty" if (base == 0 and not shortcuts) else label(base),
         "shortcuts": shortcuts,
         # What the row really displays: the shortcut list when the base type is 0, else the
         # single base value. A UI should render this and ignore `type` unless it needs the
