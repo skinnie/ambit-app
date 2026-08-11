@@ -1,6 +1,12 @@
 import { readSettingsRaw, writeSettingsRaw } from '../native/AmbitUsbModule';
 import { base64ToBytes, bytesToBase64 } from './Base64';
 import { SettingField, decodeSettings } from './AmbitSettingsReader';
+import {
+  AMBIT3_WRITE_TEMPLATES,
+  AMBIT3_KEY_TEMPLATE,
+  AMBIT3_ENUM_VALUES,
+  AMBIT3_BOOL_ENTRIES,
+} from './AmbitSettingsTemplates';
 
 // Real, hardware-confirmed write dance, 2026-08-08: read the full settings blob fresh,
 // patch exactly the bytes for one field (found by its real entry ID, from whichever field
@@ -12,6 +18,103 @@ import { SettingField, decodeSettings } from './AmbitSettingsReader';
 // call itself didn't throw.
 
 const MAGIC = [0x53, 0x42, 0x45, 0x4d, 0x30, 0x31, 0x30, 0x32]; // "SBEM0102"
+
+/** Every entry in an SBEM payload, in wire order: [entryId, data]. */
+function splitEntries(bytes: Uint8Array): { prefix: Uint8Array; entries: Array<[number, Uint8Array]> } | null {
+  const head = findMagic(bytes);
+  if (head < 0) return null;
+  const entries: Array<[number, Uint8Array]> = [];
+  let off = head + 8;
+  while (off + 2 <= bytes.length) {
+    const id = bytes[off];
+    let len = bytes[off + 1];
+    off += 2;
+    if (len === 0xff) {
+      if (off + 4 > bytes.length) break;
+      len = (bytes[off] | (bytes[off + 1] << 8) | (bytes[off + 2] << 16) | (bytes[off + 3] << 24)) >>> 0;
+      off += 4;
+    }
+    entries.push([id, bytes.subarray(off, off + len)]);
+    off += len;
+  }
+  return { prefix: bytes.subarray(0, head), entries };
+}
+
+function encodeEntry(id: number, data: Uint8Array): Uint8Array {
+  // Lengths of 0xff or more use the 4-byte escape, exactly as the reader expects.
+  if (data.length < 0xff) {
+    const out = new Uint8Array(2 + data.length);
+    out[0] = id; out[1] = data.length; out.set(data, 2);
+    return out;
+  }
+  const out = new Uint8Array(6 + data.length);
+  out[0] = id; out[1] = 0xff;
+  out[2] = data.length & 0xff;
+  out[3] = (data.length >>> 8) & 0xff;
+  out[4] = (data.length >>> 16) & 0xff;
+  out[5] = (data.length >>> 24) & 0xff;
+  out.set(data, 6);
+  return out;
+}
+
+/** Whether the watch's CURRENT value for an entry is one we can represent.
+ *
+ * SuuntoLink drops a field from its write template entirely when the answer is no - proven
+ * in the captures, where a watch left holding GpsPositionFormat=15 makes SuuntoLink's own
+ * write shrink and omit that entry. Re-sending a value we cannot interpret, or substituting
+ * a legal one, would both be worse than leaving the field for the watch to keep owning. */
+function representable(entryId: number, data: Uint8Array): boolean {
+  const values = AMBIT3_ENUM_VALUES[entryId];
+  if (values) return data.length >= 1 && values.includes(data[0]);
+  if (AMBIT3_BOOL_ENTRIES.includes(entryId)) return data.length === 1 && (data[0] === 0 || data[0] === 1);
+  return true;
+}
+
+/** SuuntoLink's own 0x1101 payload: the prefix with its last byte flipped 0x00 -> 0x01, the
+ * magic, then only the entries belonging to `screen` - patched where this write changes one.
+ *
+ * This is what keeps the paired phone's BLE bond keys off the wire. The previous version
+ * echoed the entire settings blob back to the watch on every change, IdentityResolvingKey
+ * and EncodingKey included; those entries are on no screen, so they are simply never
+ * emitted here. Mirrors the desktop's build_write_payload(), which is verified byte-exact
+ * against all 134 captured SuuntoLink writes. */
+function buildWritePayload(
+  read: Uint8Array,
+  screen: string,
+  patch: { entryId: number; occurrence: number; data: Uint8Array },
+): Uint8Array | null {
+  const split = splitEntries(read);
+  const wanted = AMBIT3_WRITE_TEMPLATES[screen];
+  if (!split || !wanted) return null;
+
+  const byId = new Map<number, Uint8Array[]>();
+  for (const [id, data] of split.entries) {
+    const list = byId.get(id);
+    if (list) list.push(data); else byId.set(id, [data]);
+  }
+
+  const chunks: Uint8Array[] = [];
+  const prefix = new Uint8Array(split.prefix);
+  if (prefix.length > 0) prefix[prefix.length - 1] = 0x01;
+  chunks.push(prefix, new Uint8Array(MAGIC));
+
+  for (const entryId of wanted) {
+    const occurrences = byId.get(entryId) ?? [];
+    for (let n = 0; n < occurrences.length; n++) {
+      if (entryId === patch.entryId && n === patch.occurrence) {
+        chunks.push(encodeEntry(entryId, patch.data));
+      } else if (representable(entryId, occurrences[n])) {
+        chunks.push(encodeEntry(entryId, occurrences[n]));
+      }
+    }
+  }
+
+  const total = chunks.reduce((n, c) => n + c.length, 0);
+  const out = new Uint8Array(total);
+  let at = 0;
+  for (const c of chunks) { out.set(c, at); at += c.length; }
+  return out;
+}
 
 function findMagic(bytes: Uint8Array): number {
   for (let i = 0; i + MAGIC.length <= bytes.length; i++) {
@@ -113,9 +216,38 @@ export async function writeSetting(
     : (field.signed ? previousView.getInt32(0, true) : previousView.getUint32(0, true));
   const previousValue = field.scale ? previousRaw / field.scale : previousRaw;
 
-  const modified = new Uint8Array(before);
-  encodeField(modified, offset, field, value);
-  await writeSettingsRaw(bytesToBase64(modified));
+  // Build the entry's own new bytes, then send ONLY the screen this field belongs to.
+  //
+  // This used to copy the whole settings blob, patch it and write it all back - which
+  // re-sent the paired phone's BLE bond keys (IdentityResolvingKey / EncodingKey) to the
+  // watch on every single settings change. The desktop stopped doing that on 2026-08-10 by
+  // adopting SuuntoLink's own per-screen templates; this is the same fix, using the same
+  // tables (generated from settings_write.py by tools/gen_android_settings_templates.py, so
+  // they cannot drift apart).
+  //
+  // `isAmbit3` is decided by whether this field table has a screen for the key at all:
+  // Kailash writes one entry at a time over 0x1201 and never goes through here.
+  const screen = AMBIT3_KEY_TEMPLATE[key];
+  const entryStart = offset - (field.byteOffset ?? 0);
+  const entryData = new Uint8Array(before.subarray(entryStart, entryStart + field.byteWidth + (field.byteOffset ?? 0)));
+  encodeField(entryData, field.byteOffset ?? 0, field, value);
+
+  let payload: Uint8Array | null = null;
+  if (screen) {
+    payload = buildWritePayload(before, screen, {
+      entryId: field.entryId,
+      occurrence: 0,
+      data: entryData,
+    });
+  }
+  if (!payload) {
+    // No template for this key. The desktop refuses rather than falling back to the whole
+    // blob, because falling back is exactly the behaviour being removed - and a field on no
+    // screen (Display.Contrast) is one SuuntoLink itself never writes.
+    return { ok: false, key, previousValue, requestedValue: value, confirmedValue: null,
+      error: `${key} has no write template - this setting is not writable from the app` };
+  }
+  await writeSettingsRaw(bytesToBase64(payload));
 
   const after = decodeSettings(await readSettingsRaw(), fields);
   const confirmed = after.find(s => s.key === key);
