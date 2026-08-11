@@ -265,13 +265,11 @@ Flickable {
                     text: qsTr("Reading POIs off the %1...")
                         .arg(HomeViewModel.isGarmin ? qsTr("device") : qsTr("watch"))
                 }
-                Text {
-                    visible: !HomeViewModel.isGarmin && !PoiService.loading && !PoiService.ok
+                ErrorBanner {
                     width: parent.width
-                    wrapMode: Text.WordWrap
-                    color: Theme.error
-                    font.pixelSize: Theme.fontSizeLabel
-                    text: qsTr("Couldn't read POIs: %1").arg(PoiService.lastError)
+                    detail: (!HomeViewModel.isGarmin && !PoiService.loading && !PoiService.ok)
+                            ? PoiService.lastError : ""
+                    context: qsTr("reading POIs from the watch")
                 }
                 Text {
                     visible: !onDevicePoiCard.loading && onDevicePoiCard.onDevicePois.length === 0

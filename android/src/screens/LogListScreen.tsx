@@ -122,7 +122,9 @@ export default function LogListScreen() {
   if (activities.length === 0) {
     return (
       <View style={styles.empty}>
-        <Text style={styles.emptyIcon}>📭</Text>
+        {/* 2026-08-11 (André, A1): was a raw mailbox emoji, which Android renders
+            in full colour (orange) and no style can tint. */}
+        <Icon name="list" size={44} color={theme.mutedText} />
         <Text style={styles.emptyText}>{t.noActivities}</Text>
         <Text style={styles.emptyHint}>{t.connectHint}</Text>
       </View>

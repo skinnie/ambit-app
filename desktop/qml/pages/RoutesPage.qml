@@ -349,13 +349,12 @@ Flickable {
                     color: Theme.mutedText
                     font.pixelSize: Theme.fontSizeLabel
                 }
-                Text {
-                    visible: !HomeViewModel.isGarmin && !onDeviceCard.loading
-                             && RouteService.onWatchRoutes.length === 0
-                             && RouteService.lastError.length > 0
-                    text: qsTr("Couldn't read routes: %1").arg(RouteService.lastError)
-                    color: Theme.error
-                    font.pixelSize: Theme.fontSizeLabel
+                ErrorBanner {
+                    width: parent.width
+                    detail: (!HomeViewModel.isGarmin && !onDeviceCard.loading
+                             && RouteService.onWatchRoutes.length === 0)
+                            ? RouteService.lastError : ""
+                    context: qsTr("reading routes from the watch")
                 }
             }
         }
