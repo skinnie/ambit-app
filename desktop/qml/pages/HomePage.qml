@@ -125,7 +125,13 @@ PageFlickable {
 
             Column {
                 width: parent.width
-                spacing: Theme.spacingMedium
+                // Small on purpose, paired with the info grid's Large rowSpacing below -
+                // André, 2026-08-11: "do the same vertical space on the 3 columns of text".
+                // Measured on screen: the 64px device icon overhangs the header text, so
+                // header-to-row-1 read as ~35px while row-1-to-row-2 was ~19px. 8 here plus
+                // 24 there makes both text gaps ~27px - equal to the eye, which is what was
+                // asked; the token pair is what the theme offers closest to that.
+                spacing: Theme.spacingSmall
 
                 Row {
                     width: parent.width
@@ -248,7 +254,9 @@ PageFlickable {
                     visible: !HomeViewModel.isGarmin
                     columns: 4
                     columnSpacing: Theme.spacingSmall
-                    rowSpacing: Theme.spacingMedium
+                    // Large, paired with the card Column's Small - see its comment: together
+                    // they make the header/row-1/row-2 text gaps visually equal.
+                    rowSpacing: Theme.spacingLarge
 
                     Column {
                         spacing: 2
@@ -363,11 +371,18 @@ PageFlickable {
                     // Qt.openUrlExternally() mechanism as any other "open outside the app"
                     // action, no in-app PDF renderer needed for hardware this old (rule 5).
                     Column {
-                        Layout.preferredWidth: 140
+                        // 110 like GPS orbit above it, not the 140 it had in its old
+                        // separate grid - column 3's width is the max of the two, and the
+                        // extra 30px only pushed Clock further right (André: "clock could
+                        // be a bit closer").
+                        Layout.preferredWidth: 110
                         spacing: 2
                         Text { text: qsTr("Manual"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
                         Text {
-                            text: qsTr("View guide (PDF)")
+                            // "(EN)" not "(PDF)" - André, 2026-08-11: the useful notice is
+                            // that Suunto/Garmin only publish these guides in English, not
+                            // what file format the browser is about to get.
+                            text: qsTr("View guide (EN)")
                             color: Theme.primary
                             font.pixelSize: Theme.fontSizeBody
                             font.underline: true
@@ -422,7 +437,10 @@ PageFlickable {
                         spacing: 2
                         Text { text: qsTr("Manual"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
                         Text {
-                            text: qsTr("View guide (PDF)")
+                            // "(EN)" not "(PDF)" - André, 2026-08-11: the useful notice is
+                            // that Suunto/Garmin only publish these guides in English, not
+                            // what file format the browser is about to get.
+                            text: qsTr("View guide (EN)")
                             color: Theme.primary
                             font.pixelSize: Theme.fontSizeBody
                             font.underline: true
