@@ -110,6 +110,8 @@ Item {
     // resolved one.
     property int currentZoom: zoomLevel
     function _refitZoom() {
+        if (userControlled)
+            return
         if (!_trackBounds || width <= 0 || height <= 0) {
             currentZoom = zoomLevel
             return
@@ -147,8 +149,39 @@ Item {
         return (1 - merc / Math.PI) / 2 * tilesPerSide * tileSize
     }
 
-    readonly property real originX: lonToWorldX(_centerLon) - width / 2
-    readonly property real originY: latToWorldY(_centerLat) - height / 2
+    // Manual panning, in world pixels at the CURRENT zoom - real request 2026-08-11
+    // (André, R2: a bigger map you can move around). Zero by default, so every existing
+    // caller (the thumbnails on Activities/Routes/POIs) renders exactly as before. Applied
+    // here rather than by moving latitude/longitude because originX/originY is the single
+    // place world coordinates become item coordinates: tiles, the track line and the
+    // markers all derive from it, so they pan together for free.
+    property real panX: 0
+    property real panY: 0
+    // Once the user has panned or zoomed, stop re-fitting the view under them.
+    property bool userControlled: false
+
+    readonly property real originX: lonToWorldX(_centerLon) - width / 2 + panX
+    readonly property real originY: latToWorldY(_centerLat) - height / 2 + panY
+
+    // Zoom a step, keeping the panned view anchored: pan is measured in pixels at the
+    // current zoom, so it has to be rescaled when that zoom changes or the map jumps.
+    function zoomBy(steps) {
+        const next = Math.max(1, Math.min(19, currentZoom + steps))
+        if (next === currentZoom)
+            return
+        const factor = Math.pow(2, next - currentZoom)
+        panX *= factor
+        panY *= factor
+        userControlled = true
+        currentZoom = next
+    }
+
+    function resetView() {
+        panX = 0
+        panY = 0
+        userControlled = false
+        _refitZoom()
+    }
 
     Repeater {
         model: {

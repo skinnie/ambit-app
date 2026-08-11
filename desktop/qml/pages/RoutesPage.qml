@@ -104,6 +104,15 @@ Flickable {
                         longitude: center ? center.lon : WeatherService.longitude
                         zoomLevel: center ? 12 : 10
                         trackPoints: RouteService.pendingRoute.track || []
+                        // André, R2: clicking a map opens the big one.
+                        TapHandler {
+                            onTapped: {
+                                bigMap.trackPoints = RouteService.pendingRoute.track || []
+                                bigMap.markers = []
+                                bigMap.trackTitle = RouteService.pendingRoute.name || ""
+                                bigMap.open()
+                            }
+                        }
                     }
                 }
 
@@ -265,6 +274,14 @@ Flickable {
                                 latitude: center ? center.lat : 0
                                 longitude: center ? center.lon : 0
                                 trackPoints: modelData.track || []
+                                TapHandler {
+                                    onTapped: {
+                                        bigMap.trackPoints = modelData.track || []
+                                        bigMap.markers = []
+                                        bigMap.trackTitle = modelData.name || ""
+                                        bigMap.open()
+                                    }
+                                }
                             }
                         }
 
@@ -342,5 +359,13 @@ Flickable {
                 }
             }
         }
+    }
+
+    // One big map for the whole page - real request, 2026-08-11 (André, R2). Shared rather
+    // than one per thumbnail: a route list can hold many maps and each would otherwise carry
+    // its own dialog and its own tile set.
+    MapWindow {
+        id: bigMap
+        anchors.centerIn: parent
     }
 }
