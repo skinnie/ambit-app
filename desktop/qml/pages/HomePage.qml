@@ -525,19 +525,18 @@ PageFlickable {
                 Layout.fillWidth: true
                 Layout.alignment: Qt.AlignTop
                 Layout.preferredWidth: 1  // equal shares; real width comes from fillWidth
-                implicitHeight: thisYearCard.height
-                visible: thisYearCard.activityCount > 0
+                implicitHeight: leftStack.height
+                visible: thisYearCard.activityCount > 0 || funFactCard.factText.length > 0
+
+                Column {
+                    id: leftStack
+                    width: parent.width
+                    spacing: Theme.spacingMedium
 
                 Card {
                     id: thisYearCard
                     width: parent.width
-                    // Same height as its row-mate when they sit side by side - André,
-                    // 2026-08-12: "the this year card the same size as the weather". Two
-                    // unequal cards on one row read as an accident; matching the taller
-                    // one (weather, with its forecast row) makes the row read as designed.
-                    height: column.twoColumn && weatherCard.visible
-                        ? Math.max(implicitHeight, weatherCard.height)
-                        : implicitHeight
+                    visible: activityCount > 0
 
                     // Same per-device source rule as Last Activity below - the year is
                     // whatever the newest activity's year is, matching TotalsPage's own
@@ -587,12 +586,22 @@ PageFlickable {
                         Row {
                             width: parent.width
                             Text {
+                                id: thisYearTitle
                                 text: qsTr("This year")
                                 font.bold: true
                                 color: Theme.text
                             }
-                            Item { width: parent.width - childrenRect.width; height: 1 }
+                            // Explicit spacer width, same as Last Activity's header: an
+                            // empty Item's childrenRect is 0, so the earlier
+                            // parent.width - childrenRect.width spacer filled the whole
+                            // row and shoved the link off the card (caught on screenshot,
+                            // 2026-08-12).
+                            Item {
+                                width: parent.width - thisYearTitle.width - openTotals.width
+                                height: 1
+                            }
                             Text {
+                                id: openTotals
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: qsTr("Open Totals ›")
                                 color: Theme.primary
@@ -637,7 +646,9 @@ PageFlickable {
 
                         // One TotalsFacts line as a teaser - the factual-playful voice of
                         // the Totals page, previewed. distanceLines() puts the best-fitting
-                        // comparison first.
+                        // comparison first. (An equal-height-with-weather variant with more
+                        // lines was tried 2026-08-12 and rejected - "back to the design
+                        // with the spacing"; the space below is the fun-fact card's now.)
                         Text {
                             width: parent.width
                             wrapMode: Text.WordWrap
@@ -651,6 +662,78 @@ PageFlickable {
                             font.pixelSize: Theme.fontSizeCaption
                         }
                     }
+                }
+
+                // "create a second card underneath with some random fun fact from
+                // internet" - André, 2026-08-12, filling the space under This year that
+                // the rejected equal-height experiment left. uselessfacts.jsph.pl: free,
+                // keyless, no tracking, one JSON field. Tap for another; hidden entirely
+                // when offline or before the first fact lands - a card with an error in
+                // it would be the opposite of fun.
+                Card {
+                    id: funFactCard
+                    width: parent.width
+                    visible: factText.length > 0
+
+                    property string factText: ""
+
+                    function fetchFact() {
+                        const xhr = new XMLHttpRequest()
+                        xhr.onreadystatechange = function() {
+                            if (xhr.readyState !== XMLHttpRequest.DONE)
+                                return
+                            try {
+                                const fact = JSON.parse(xhr.responseText).text
+                                if (fact && fact.length > 0)
+                                    funFactCard.factText = fact
+                            } catch (e) { /* offline or a bad reply: card stays as it is */ }
+                        }
+                        xhr.open("GET",
+                                 "https://uselessfacts.jsph.pl/api/v2/facts/random?language=en")
+                        xhr.send()
+                    }
+
+                    Component.onCompleted: fetchFact()
+
+                    HoverHandler { cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: funFactCard.fetchFact() }
+
+                    Column {
+                        width: parent.width
+                        spacing: Theme.spacingSmall
+
+                        Row {
+                            width: parent.width
+                            Text {
+                                id: funFactTitle
+                                text: qsTr("Did you know?")
+                                font.bold: true
+                                color: Theme.text
+                            }
+                            // Explicit spacer width - see the This year header's comment.
+                            Item {
+                                width: parent.width - funFactTitle.width - anotherFact.width
+                                height: 1
+                            }
+                            Text {
+                                id: anotherFact
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: qsTr("Another ›")
+                                color: Theme.primary
+                                font.pixelSize: Theme.fontSizeCaption
+                            }
+                        }
+
+                        Text {
+                            width: parent.width
+                            wrapMode: Text.WordWrap
+                            text: funFactCard.factText
+                            color: Theme.mutedText
+                            font.italic: true
+                            font.pixelSize: Theme.fontSizeLabel
+                        }
+                    }
+                }
                 }
             }
 
