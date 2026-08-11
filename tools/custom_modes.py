@@ -137,6 +137,21 @@ FIELD_TYPES = {
     # confirmed slot 1 is "Beers burned off", which is RuleIdx 0 in the Apps region - so the
     # rule-engine slot ordering above is right as well.
     0x002C: "FT_VERTICAL_SPEED",
+    # All read off SuuntoLink by André, 2026-08-11 - observations, not inference.
+    #
+    # 0x21/0x22 come from his Cycling display 2 bottom row, which the watch stores as
+    # [0x21, 0x22, 0x2C, 0x46] and SuuntoLink lists as [Ascent, Descent, Vertical speed,
+    # Current activity duration]. The last two are independently known ids, so they act as
+    # controls: both land exactly where the stored order puts them, which is what makes the
+    # first two trustworthy rather than merely plausible. (That control matters - the same
+    # question asked of a Pool swimming row showed SuuntoLink listing it in a DIFFERENT
+    # order from storage, so position alone proves nothing without anchors.)
+    0x0021: "FT_ASCENT", 0x0022: "FT_DESCENT",
+    # Sole unknown on its row, so no ordering ambiguity is possible.
+    0x002D: "FT_LAP_NUMBER",
+    # His Running display 5 is a graph, and a graph stores (value, that value's graph,
+    # bottom row) - one pick fills both fields. He picked Running performance.
+    0x00AD: "FT_RUNNING_PERFORMANCE", 0x00B0: "FT_RUNNING_PERFORMANCE_GRAPH",
     # WITHDRAWN 2026-08-11: 0x49/0x4b/0x4d/0x4f were briefly named as the bike-power block by
     # lining our known 0x4a/0x4c/0x4e/0x50 up against SuuntoLink's own row order. The
     # interleave was tidy and the captures fitted - but André then read 0x0043 off SuuntoLink
@@ -201,7 +216,9 @@ FIELD_TYPE_LABELS = {
     "FT_TE": "Training Effect", "FT_EXERCISE_ALTI_GRAPH": "Altitude Graph (exercise)",
     "FT_RULE_ENGINE_0": "Suunto App Slot 1", "FT_RULE_ENGINE_1": "Suunto App Slot 2",
     "FT_RULE_ENGINE_2": "Suunto App Slot 3",
-    "FT_VERTICAL_SPEED": "Vertical speed",
+    "FT_VERTICAL_SPEED": "Vertical speed", "FT_ASCENT": "Ascent", "FT_DESCENT": "Descent",
+    "FT_LAP_NUMBER": "Lap number", "FT_RUNNING_PERFORMANCE": "Running performance",
+    "FT_RUNNING_PERFORMANCE_GRAPH": "Running performance (graph)",
     "FT_RULE_ENGINE_3": "Suunto App Slot 4", "FT_RULE_ENGINE_4": "Suunto App Slot 5",
     "FT_RULE_ENGINE_1_GRAPH": "Suunto App Slot 2 (graph)",
     "FT_RULE_ENGINE_3_GRAPH": "Suunto App Slot 4 (graph)",
@@ -212,10 +229,16 @@ FIELD_TYPE_LABELS = {
     "FT_INTERVAL_VALUE": "Interval Value", "FT_INTERVAL_TITLE": "Interval Title",
     "FT_SPLIT_LAP_DISTANCE": "Split/Lap Distance", "FT_SWIM_STYLE_TITLE": "Swim Style Title",
     "FT_DRILL_TITLE": "Drill Title", "FT_BATTERY_CHARGE": "Battery Charge",
-    "FT_SPORT_LAP_STOPWATCH": "Lap Stopwatch", "FT_SPORT_LAP_AVGSPEED": "Lap Average Speed",
+    # Read off SuuntoLink by André, 2026-08-11. Our own wording ("Lap Stopwatch", "Lap
+    # Average Speed") was a guess from the FT_ symbol and is actively misleading - these are
+    # the CURRENT-ACTIVITY fields of a multisport mode, not lap fields. The ids themselves
+    # were never in doubt (both verified against SuuntoLink's own binary); only our labels
+    # were wrong, which is exactly the kind of error a UI shows the user every day.
+    "FT_SPORT_LAP_STOPWATCH": "Current activity duration",
+    "FT_SPORT_LAP_AVGSPEED": "Current activity avg speed",
     "FT_BIKE_POWER_AVG": "Bike Power (average)", "FT_BIKE_POWER_10S": "Bike Power (10s average)",
     "FT_BIKE_POWER_LAP": "Bike Power (lap average)", "FT_BIKE_POWER_LAP_MAX": "Bike Power (lap max)",
-    "FT_SWIM_STYLE": "Swim Style", "FT_SWIM_STROKES": "Swim Strokes", "FT_SWIM_PACE": "Swim Pace",
+    "FT_SWIM_STYLE": "Previous pool length style",   # SuuntoLink's own wording, André 2026-08-11 "FT_SWIM_STROKES": "Swim Strokes", "FT_SWIM_PACE": "Swim Pace",
     "FT_SWIM_AVG_PACE": "Swim Pace (average)",
     "FT_SWIM_AVG_STROKE_RATE": "Stroke Rate (average)",
     # SuuntoLink groups the FT_SPORT_LAP_* family under "Multisport" and words them

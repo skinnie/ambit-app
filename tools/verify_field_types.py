@@ -71,7 +71,7 @@ def main():
             disagree.append((fid, name, ours))
 
     if args.list:
-        for fid, name in sorted(found.items(), key=lambda kv: kv[1]):
+        for name, fid in sorted(found.items(), key=lambda kv: kv[1]):
             ours = custom_modes.FIELD_TYPES.get(fid)
             flag = "  " if ours == name else ("+ " if ours is None else "! ")
             print(f"  {flag}{fid:#06x}  {name:<28} {'' if ours == name else f'ours={ours}'}")
