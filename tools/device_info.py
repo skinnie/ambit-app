@@ -75,6 +75,10 @@ def main():
     info = read_device_info(link)
     battery = read_battery(link)
 
+    # Remember this watch (serial -> codename/hw) so a later BSL recovery can identify it.
+    import watch_registry
+    watch_registry.record(info)
+
     if args.json:
         import json
         print(json.dumps({**info, "battery_percent": battery}))

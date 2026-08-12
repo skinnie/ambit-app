@@ -65,6 +65,8 @@ def main():
         link.open()
         info = read_device_info(link)
         model, hw = info["model"], info["hw_version"]
+        import watch_registry
+        watch_registry.record(info)  # remember serial -> codename/hw for BSL recovery
 
     if not args.json:
         print(f"  checking {model} / {hw} ...")

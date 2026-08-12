@@ -237,6 +237,21 @@ def flash(path, expect_model, do_commit, stream_only, probe_enter=False, diag=Fa
           + ("  (already in BSL - resume path)" if in_bsl else f"  battery {battery}%"))
     print(f"  file: {HEADER_LEN}B header + {len(payload)}B payload -> {n_chunks} chunks")
 
+    import watch_registry
+    if in_bsl:
+        # A BSL watch hides its codename; identify it from the serial we remembered when it
+        # last connected in app mode. This is what the GUI recovery picker is built on.
+        seen = watch_registry.lookup(info["serial"])
+        if seen:
+            print(f"  registry: this is {seen['product']} ({seen['codename']}) "
+                  f"hw {seen['hw_version']}, last fw {seen.get('last_fw')}")
+        else:
+            print("  registry: serial not recognized - this watch was never connected in "
+                  "app mode, so its model can't be auto-identified in BSL. If you don't have "
+                  "the right image, recover it once with SuuntoLink and we'll remember it.")
+    else:
+        watch_registry.record(info)  # remember serial -> codename/hw for future recovery
+
     if not in_bsl and info["model"] != expect_model:
         raise SystemExit(f"  ABORT: connected model {info['model']!r} != --expect-model "
                          f"{expect_model!r}. Refusing to flash a mismatched image.")
