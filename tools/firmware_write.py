@@ -39,10 +39,24 @@ it goes into BSL, or name the target explicitly:
 """
 
 import argparse
+import json
 import signal
 import struct
 import sys
 import time
+
+# --json progress mode: when on, each phase is emitted as one JSON line on stdout for a GUI
+# front-end to parse (see FIRMWARE_FLASHER_DESIGN.md), instead of the human-readable prints.
+_JSON = False
+
+
+def event(phase, human=None, **fields):
+    """Emit one progress event. In --json mode prints a JSON line; otherwise prints the
+    human string (if given). Always flushed so a GUI reading the pipe sees it live."""
+    if _JSON:
+        print(json.dumps({"phase": phase, **fields}), flush=True)
+    elif human is not None:
+        print(human, flush=True)
 
 from ambit_pcap import encode_message
 from device_info import read_device_info, read_battery
@@ -156,18 +170,19 @@ def do_transfer(link, header, payload):
     every 0x0e01 chunk, each guarded by a SIGALRM watchdog. Raises ChunkStall if a chunk's
     write+ack hangs (e.g. a USB cable jostle stalls the endpoint)."""
     link.sequence = 0
-    print("  0x0102 -> transfer mode (send_recv=1)")
+    event("transfer_mode", "  0x0102 -> transfer mode (send_recv=1)")
     expect_empty(watched(15, raw_command, link, CMD_FW_MODE, b"", send_recv=1),
                  "0x0102 fw-mode ack")
     x = session_tick()
     hdr = struct.pack("<II", x, HEADER_LEN) + header
-    print(f"  0x0e00 -> header announce (X=0x{x:08x})")
+    event("header", f"  0x0e00 -> header announce (X=0x{x:08x})")
     expect_empty(watched(15, raw_command, link, CMD_FW_HEADER, hdr), "0x0e00 header ack")
 
-    print(f"  0x0e01 -> streaming {len(payload)} bytes")
-    print("    (first chunk erases the whole app-flash, ~57 s; then ~0.1 s/chunk)")
+    total = len(payload)
+    event("erase", f"  0x0e01 -> streaming {total} bytes\n    (first chunk erases the whole "
+                   "app-flash, ~57 s; then ~0.1 s/chunk)", total=total)
     sent = 0
-    for i in range(0, len(payload), CHUNK):
+    for i in range(0, total, CHUNK):
         chunk = payload[i:i + CHUNK]
         first = i == 0
         ack_to = 150.0 if first else 20.0   # first chunk waits out the full-region erase
@@ -175,9 +190,12 @@ def do_transfer(link, header, payload):
         expect_empty(watched(dog, raw_command, link, CMD_FW_DATA, chunk, ack_timeout=ack_to),
                      f"0x0e01 chunk at +{i}")
         sent += len(chunk)
-        if (i // CHUNK) % 200 == 0 or sent == len(payload):
-            print(f"\r    {sent}/{len(payload)} B", end="", flush=True)
-    print("\n  streaming complete, every ack was empty (clean).")
+        if (i // CHUNK) % 200 == 0 or sent == total:
+            if _JSON:
+                event("streaming", sent=sent, total=total, percent=round(100 * sent / total, 1))
+            else:
+                print(f"\r    {sent}/{total} B", end="", flush=True)
+    event("streamed", "\n  streaming complete, every ack was empty (clean).")
 
 
 def stream_with_restart(link, header, payload, max_restarts=4):
@@ -193,8 +211,9 @@ def stream_with_restart(link, header, payload, max_restarts=4):
         except ChunkStall as exc:
             if attempt == max_restarts:
                 raise RuntimeError(f"gave up after {max_restarts} restarts: {exc}")
-            print(f"\n  !! USB stall ({exc}) on attempt {attempt + 1} - reopening and "
-                  "restarting the transfer from the start (keep the cable/watch still)")
+            event("restart", f"\n  !! USB stall ({exc}) on attempt {attempt + 1} - reopening "
+                  "and restarting the transfer from the start (keep the cable/watch still)",
+                  attempt=attempt + 1, reason=str(exc))
             try:
                 link = reopen(link)
                 info = watched(10, read_device_info, link)
@@ -232,10 +251,13 @@ def flash(path, expect_model, do_commit, stream_only, probe_enter=False, diag=Fa
     info = read_device_info(link)
     in_bsl = info["model"] == "BSL"
     battery = None if in_bsl else read_battery(link)  # 0x0306 is not answered in BSL
-    print(f"  connected: model {info['model']}  serial {info['serial']}  "
+    event("connected",
+          f"  connected: model {info['model']}  serial {info['serial']}  "
           f"fw {info['fw_version']}  hw {info['hw_version']}"
-          + ("  (already in BSL - resume path)" if in_bsl else f"  battery {battery}%"))
-    print(f"  file: {HEADER_LEN}B header + {len(payload)}B payload -> {n_chunks} chunks")
+          + ("  (already in BSL - resume path)" if in_bsl else f"  battery {battery}%")
+          + f"\n  file: {HEADER_LEN}B header + {len(payload)}B payload -> {n_chunks} chunks",
+          model=info["model"], serial=info["serial"], fw=info["fw_version"],
+          hw=info["hw_version"], battery=battery, in_bsl=in_bsl)
 
     import watch_registry
     if in_bsl:
@@ -243,19 +265,24 @@ def flash(path, expect_model, do_commit, stream_only, probe_enter=False, diag=Fa
         # last connected in app mode. This is what the GUI recovery picker is built on.
         seen = watch_registry.lookup(info["serial"])
         if seen:
-            print(f"  registry: this is {seen['product']} ({seen['codename']}) "
-                  f"hw {seen['hw_version']}, last fw {seen.get('last_fw')}")
+            event("bsl_identified",
+                  f"  registry: this is {seen['product']} ({seen['codename']}) "
+                  f"hw {seen['hw_version']}, last fw {seen.get('last_fw')}", **seen)
         else:
-            print("  registry: serial not recognized - this watch was never connected in "
+            event("bsl_unknown",
+                  "  registry: serial not recognized - this watch was never connected in "
                   "app mode, so its model can't be auto-identified in BSL. If you don't have "
                   "the right image, recover it once with SuuntoLink and we'll remember it.")
     else:
         watch_registry.record(info)  # remember serial -> codename/hw for future recovery
 
     if not in_bsl and info["model"] != expect_model:
+        event("error", None, message=f"connected model {info['model']!r} != expected "
+              f"{expect_model!r}; refusing to flash a mismatched image")
         raise SystemExit(f"  ABORT: connected model {info['model']!r} != --expect-model "
                          f"{expect_model!r}. Refusing to flash a mismatched image.")
     if battery is not None and battery < 30:
+        event("error", None, message=f"battery {battery}% under the 30% floor")
         raise SystemExit(f"  ABORT: battery {battery}% is under the 30% floor for a flash.")
 
     if not do_commit and not stream_only and not probe_enter and not diag:
@@ -264,13 +291,14 @@ def flash(path, expect_model, do_commit, stream_only, probe_enter=False, diag=Fa
         return 0
 
     if in_bsl:
-        print("\n  already in BSL: skipping 0x0202 (resume of an earlier BSL entry)")
+        event("enter_bsl", "\n  already in BSL: skipping 0x0202 (resume of an earlier BSL "
+              "entry)", already=True)
         if probe_enter:
             print("  --probe-enter: nothing to do, the watch is already in BSL.")
             return 0
     else:
         # --- enter the bootloader (device re-enumerates; reopen the handle) ---
-        print("\n  0x0202 -> enter bootloader")
+        event("enter_bsl", "\n  0x0202 -> enter bootloader", already=False)
         expect_empty(raw_command(link, CMD_FW_BOOTLOADER), "0x0202 bootloader-enter ack")
         link, _ = poll_model_reopen(link, "BSL")
         print(f"  watch now in BSL (was {info['model']}), handle reopened")
@@ -307,20 +335,22 @@ def flash(path, expect_model, do_commit, stream_only, probe_enter=False, diag=Fa
     link = stream_with_restart(link, header, payload)
 
     if not do_commit:
-        print("\n  --stream-only: STOPPING before 0x0e03. Nothing has been flashed; the old "
+        event("stream_only_done",
+              "\n  --stream-only: STOPPING before 0x0e03. Nothing has been flashed; the old "
               "firmware is intact. The watch is in BSL now (recoverable - re-run with "
               "--commit to finish, which resumes from here).")
         return 0
 
     # --- the one irreversible step ---
-    print("\n  >>> COMMIT: 0x0e03 (flash) then 0x0200 (reboot) <<<")
+    event("commit", "\n  >>> COMMIT: 0x0e03 (flash) then 0x0200 (reboot) <<<")
     expect_empty(raw_command(link, CMD_FW_COMMIT, ack_timeout=120.0), "0x0e03 commit ack")
     expect_empty(raw_command(link, CMD_FW_REBOOT, ack_timeout=60.0), "0x0200 reboot ack")
-    print("  committed. waiting for the watch to reboot into the application...")
+    event("rebooting", "  committed. waiting for the watch to reboot into the application...")
     time.sleep(3)
     link, after = poll_model_reopen(link, expect_model, tries=60, delay=0.5)
-    print(f"\n  DONE: back in application. model {after['model']}  fw {after['fw_version']}"
-          f"  hw {after['hw_version']}")
+    event("done", f"\n  DONE: back in application. model {after['model']}  "
+          f"fw {after['fw_version']}  hw {after['hw_version']}",
+          model=after["model"], fw=after["fw_version"], hw=after["hw_version"])
     return 0
 
 
@@ -343,9 +373,22 @@ def main():
                          "(brick-proof rehearsal; leaves the watch in BSL)")
     g.add_argument("--commit", action="store_true",
                     help="the full flash including the irreversible commit")
+    ap.add_argument("--json", action="store_true",
+                     help="emit one JSON progress event per line for a GUI front-end, "
+                          "instead of human-readable text (see FIRMWARE_FLASHER_DESIGN.md)")
     args = ap.parse_args()
-    return flash(args.file, args.expect_model, args.commit, args.stream_only,
-                 probe_enter=args.probe_enter)
+
+    global _JSON
+    _JSON = args.json
+    try:
+        return flash(args.file, args.expect_model, args.commit, args.stream_only,
+                     probe_enter=args.probe_enter)
+    except SystemExit:
+        raise
+    except Exception as exc:
+        # Always leave a terminal event so a GUI reading the stream knows it ended, and why.
+        event("error", f"\n  FAILED: {exc}", message=str(exc))
+        return 1
 
 
 if __name__ == "__main__":
