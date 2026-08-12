@@ -30,6 +30,7 @@ ApplicationWindow {
         routes: "pages/RoutesPage.qml",
         pois: "pages/PoisPage.qml",
         backup: "pages/BackupPage.qml",
+        firmware: "pages/FirmwarePage.qml",
         settings: "pages/SettingsPage.qml",
         sportModes: "pages/SportModesPage.qml",
         intervals: "pages/IntervalsPage.qml",

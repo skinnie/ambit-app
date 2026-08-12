@@ -54,6 +54,7 @@ def main():
                           "ambitapp-v2/backend/server.py, not meant for a person to read")
     args = ap.parse_args()
 
+    current_fw = serial = None
     if args.model and args.hw:
         model, hw = args.model, args.hw
     elif args.model or args.hw:
@@ -65,6 +66,7 @@ def main():
         link.open()
         info = read_device_info(link)
         model, hw = info["model"], info["hw_version"]
+        current_fw, serial = info.get("fw_version"), info.get("serial")
         import watch_registry
         watch_registry.record(info)  # remember serial -> codename/hw for BSL recovery
 
@@ -93,6 +95,8 @@ def main():
             "ok": True,
             "model": model,
             "hw_version": hw,
+            "serial": serial,
+            "current_firmware": current_fw,
             "latest_firmware_version": info.get("LatestFirmwareVersion"),
             "upload_date": info.get("FirmwareUploadDate"),
             "release_type": info.get("ReleaseType"),

@@ -83,7 +83,11 @@ def known():
 
 
 if __name__ == "__main__":
-    for w in known():
-        print(f"  {w['product']:16} ({w['codename']})  hw {w.get('hw_version')}  "
-              f"serial {w['serial']}  last fw {w.get('last_fw')}  seen {w.get('last_seen')}")
-    print(f"  registry: {registry_path()}")
+    import sys
+    if "--json" in sys.argv[1:]:
+        print(json.dumps({"ok": True, "watches": known()}))
+    else:
+        for w in known():
+            print(f"  {w['product']:16} ({w['codename']})  hw {w.get('hw_version')}  "
+                  f"serial {w['serial']}  last fw {w.get('last_fw')}  seen {w.get('last_seen')}")
+        print(f"  registry: {registry_path()}")

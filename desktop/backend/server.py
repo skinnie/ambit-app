@@ -259,6 +259,8 @@ class Handler(BaseHTTPRequestHandler):
             self._handle_ble_logs_summary()
         elif self.path == "/api/firmware":
             self._handle_firmware_check()
+        elif self.path == "/api/firmware/known":
+            self._handle_firmware_known()
         elif self.path == "/api/kailash/history":
             self._handle_kailash_history()
         elif self.path == "/api/kailash/tracklog":
@@ -273,6 +275,8 @@ class Handler(BaseHTTPRequestHandler):
             self._handle_customodes_row_menu()
         elif self.path.startswith("/api/customodes/capabilities"):
             self._handle_customodes_capabilities()
+        elif self.path == "/api/customodes/activities":
+            self._handle_customodes_activities()
         elif self.path.startswith("/api/geocode"):
             self._handle_geocode()
         elif self.path == "/api/demo/devices":
@@ -311,7 +315,9 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == "/api/agps/update":
             self._handle_agps_update(body)
         elif self.path == "/api/firmware/download":
-            self._handle_firmware_download()
+            self._handle_firmware_download(body)
+        elif self.path == "/api/firmware/flash":
+            self._stream_firmware_flash(body)
         elif self.path == "/api/backup":
             self._handle_backup_create()
         elif self.path == "/api/restore":
@@ -330,6 +336,10 @@ class Handler(BaseHTTPRequestHandler):
             self._handle_customodes_display_field(body)
         elif self.path == "/api/customodes/displays":
             self._handle_customodes_displays(body)
+        elif self.path == "/api/customodes/mode":
+            self._handle_customodes_mode(body)
+        elif self.path == "/api/customodes/multisport":
+            self._handle_customodes_multisport(body)
         elif self.path == "/api/apps/install":
             self._handle_apps_install(body)
         elif self.path == "/api/pois":
@@ -1319,6 +1329,114 @@ class Handler(BaseHTTPRequestHandler):
             return
         self._send_json(200, {"ok": True, "variant": variant, **row})
 
+    def _handle_customodes_activities(self):
+        """GET /api/customodes/activities
+
+        The sports a mode can be, for the "Select activity" picker - all 84 from
+        assets/activity_types.json, each flagged with whether it is one of the three that
+        can hold several legs (Multisport, Triathlon, Adventure racing), plus the 2-6 leg
+        bounds. All of it SuuntoLink's own, via tools/sport_mode_manage.py --activities.
+
+        Static-file lookup; no watch touched.
+        """
+        code, out, err = run_tool("sport_mode_manage.py", ["--activities", "--json"])
+        parsed = self._parse_last_json_line(out)
+        if parsed is None:
+            self._send_json(502, {"ok": False,
+                                   "error": "sport_mode_manage.py --activities produced "
+                                            "no JSON", "raw_output": out, "stderr": err})
+            return
+        self._send_json(200, parsed)
+
+    def _sport_mode_manage(self, args, body):
+        """Shared plumbing for the two endpoints below.
+
+        Same rehearsal-first contract as every other write here: without confirm:true the
+        tool is dry-run and reports what WOULD change, including the counts the UI shows.
+        In Testing mode the same tool edits the demo region image through the same
+        round-trip guard, so trying the app out behaves exactly like real hardware and the
+        change persists for the session.
+        """
+        args = list(args) + ["--json"]
+        if (body or {}).get("confirm"):
+            args.append("--write")
+        if demo_ambit():
+            args += ["--from", demo_custom_modes_path(), "--variant", DEMO["variant"]]
+        code, out, err = run_tool("sport_mode_manage.py", args)
+        parsed = self._parse_last_json_line(out)
+        if parsed is None:
+            self._send_json(502, {"ok": False,
+                                   "error": "sport_mode_manage.py produced no JSON",
+                                   "raw_output": out, "stderr": err})
+            return
+        # A refusal (over the limit, a mode a multisport still uses, a bad leg count) is a
+        # real answer the UI shows as-is, not a server fault - 200 with ok:false, so the
+        # message reaches the user instead of an HTTP error page.
+        self._send_json(200, parsed)
+
+    def _handle_customodes_mode(self, body):
+        """POST /api/customodes/mode - create or delete ONE single-sport mode.
+
+        Body: {"action": "create"|"delete", "name": str, "activityId": int, "confirm": bool}
+
+        Creating is three region writes and deleting is one; the tool handles both, along
+        with the renumbering that deleting forces (SPORT_MODES legs address modes by
+        position). It refuses to delete a mode a multisport combo still uses, which is what
+        SuuntoLink does. See tools/sport_mode_manage.py and custom_modes_andre.md's
+        2026-08-12 section for where every rule comes from.
+        """
+        action = (body or {}).get("action")
+        name = (body or {}).get("name")
+        if not name or action not in ("create", "delete"):
+            self._send_json(400, {"ok": False,
+                                   "error": 'need a name and action "create" or "delete"'})
+            return
+        if action == "delete":
+            self._sport_mode_manage(["--delete", name], body)
+            return
+        activity = (body or {}).get("activityId")
+        if not isinstance(activity, int):
+            self._send_json(400, {"ok": False,
+                                   "error": "creating a sport mode needs an activityId"})
+            return
+        self._sport_mode_manage(["--create", name, "--activity", str(activity)], body)
+
+    def _handle_customodes_multisport(self, body):
+        """POST /api/customodes/multisport - create, edit or delete a multisport combo.
+
+        Body: {"action": "create"|"edit"|"delete", "name": str, "activityId": int,
+               "legs": [str, ...], "rename": str, "confirm": bool}
+
+        One region write in every case: a combo is purely a SPORT_MODES entry naming
+        existing sport modes in order, with no mode and no displays of its own. `legs` is
+        that order, by mode name, and repeats are allowed - that is how a triathlon gets
+        two transitions.
+        """
+        action = (body or {}).get("action")
+        name = (body or {}).get("name")
+        legs = (body or {}).get("legs") or []
+        activity = (body or {}).get("activityId")
+        if not name or action not in ("create", "edit", "delete"):
+            self._send_json(400, {"ok": False,
+                                   "error": 'need a name and action "create", "edit" or '
+                                            '"delete"'})
+            return
+        if action == "delete":
+            self._sport_mode_manage(["--delete-multisport", name], body)
+            return
+        if not isinstance(legs, list) or not all(isinstance(x, str) for x in legs):
+            self._send_json(400, {"ok": False, "error": "legs must be a list of mode names"})
+            return
+        flag = "--create-multisport" if action == "create" else "--edit-multisport"
+        args = [flag, name]
+        if isinstance(activity, int):
+            args += ["--activity", str(activity)]
+        if legs:
+            args += ["--legs", ",".join(legs)]
+        if action == "edit" and (body or {}).get("rename"):
+            args += ["--rename", body["rename"]]
+        self._sport_mode_manage(args, body)
+
     def _handle_customodes_rename(self, body):
         """POST /api/customodes/rename. Body: {"from": str, "to": str, "confirm": bool}.
         Same rehearsal-first pattern as every other write here - without confirm:true, a
@@ -1565,21 +1683,25 @@ class Handler(BaseHTTPRequestHandler):
             return
         self._send_json(200 if info.get("ok") else 502, info)
 
-    def _handle_firmware_download(self):
-        """Saves the current firmware file locally - for backup only. It cannot be used to
-        flash the watch: nobody has reverse-engineered how a firmware install actually
-        happens over this protocol, and separately the file itself isn't even a real zip
-        (see firmware_check.py's own note) - just a copy kept in case Suunto's server ever
-        stops serving old versions."""
+    def _handle_firmware_download(self, body=None):
+        """POST /api/firmware/download - downloads the official firmware image and returns
+        its local path, which the Firmware page then hands to /api/firmware/flash. With no
+        body it reads the connected (healthy) watch; for recovering a watch already stuck in
+        the bootloader - which reports model "BSL" and can't identify itself - pass
+        {"model": codename, "hw": hw_version} (from the watch registry) so the right image is
+        fetched anyway. The image is a real SFI2ST firmware container, flashed by
+        firmware_write.py - see FIRMWARE_FLASHER_DESIGN.md."""
+        body = body or {}
         FIRMWARE_DIR.mkdir(parents=True, exist_ok=True)
-        code, out, err = run_tool("firmware_check.py", ["--json"])
+        base = ["--json"]
+        if body.get("model") and body.get("hw"):
+            base += ["--model", body["model"], "--hw", body["hw"]]
+        code, out, err = run_tool("firmware_check.py", base)
         if code != 0:
             self._send_json(502, {"ok": False, "raw_output": out, "stderr": err})
             return
-        last_line = out.strip().splitlines()[-1] if out.strip() else ""
-        try:
-            info = json.loads(last_line)
-        except json.JSONDecodeError:
+        info = self._parse_last_json_line(out)
+        if info is None:
             self._send_json(502, {"ok": False, "error": "firmware_check.py --json produced "
                                    "no parseable JSON", "raw_output": out})
             return
@@ -1587,12 +1709,70 @@ class Handler(BaseHTTPRequestHandler):
         version = info.get("latest_firmware_version") or "unknown"
         hw = info.get("hw_version") or "unknown"
         dest = FIRMWARE_DIR / f"{info.get('model', 'watch')}-fw_{version}-{hw}.bin"
-        code, out, err = run_tool("firmware_check.py", ["--json", "--download", str(dest)])
+        code, out, err = run_tool("firmware_check.py", base + ["--download", str(dest)])
         ok = code == 0 and dest.exists()
         self._send_json(200 if ok else 502, {
             "ok": ok, "path": str(dest) if ok else None,
             "size_bytes": dest.stat().st_size if ok else None,
             "raw_output": out, "stderr": err, **info})
+
+    def _handle_firmware_known(self):
+        """GET /api/firmware/known - the watches we've recorded (tools/watch_registry.py),
+        for the recovery picker: a watch stuck in BSL can't name itself, so the user chooses
+        which previously-connected watch to restore. See FIRMWARE_FLASHER_DESIGN.md."""
+        code, out, err = run_tool("watch_registry.py", ["--json"])
+        info = self._parse_last_json_line(out)
+        if info is None:
+            self._send_json(502, {"ok": False, "error": "watch_registry.py --json produced "
+                                   "no parseable JSON", "raw_output": out, "stderr": err})
+            return
+        self._send_json(200, info)
+
+    def _stream_firmware_flash(self, body):
+        """POST /api/firmware/flash - runs the REAL flasher and streams its --json progress
+        as newline-delimited JSON (one event per line) so the Firmware page shows live
+        progress across the ~10-minute flash. Body: {"file": path, "expect_model": codename}.
+        Holds WATCH_LOCK for the whole flash (only one process can own the USB). This is the
+        one irreversible write; the flasher itself carries the safety guards (model/battery
+        checks, abort-before-commit, watchdog+restart) - see firmware_write.py."""
+        file = (body or {}).get("file")
+        model = (body or {}).get("expect_model")
+        if not file or not model:
+            self._send_json(400, {"error": "file and expect_model are required"})
+            return
+        if not Path(file).is_file():
+            self._send_json(404, {"error": f"firmware file not found: {file}"})
+            return
+
+        self.send_response(200)
+        self.send_header("Content-Type", "application/x-ndjson")
+        self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+
+        args = [PYTHON, str(TOOLS_DIR / "firmware_write.py"), file,
+                "--expect-model", model, "--commit", "--json"]
+        with WATCH_LOCK:
+            proc = subprocess.Popen(args, cwd=TOOLS_DIR, stdout=subprocess.PIPE,
+                                    stderr=subprocess.STDOUT, text=True, bufsize=1)
+            try:
+                for line in proc.stdout:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:  # forward only real JSON events; skip the tools' own log lines
+                        json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    try:
+                        self.wfile.write((line + "\n").encode("utf-8"))
+                        self.wfile.flush()
+                    except (BrokenPipeError, ConnectionResetError):
+                        proc.kill()
+                        break
+                proc.wait()
+            finally:
+                if proc.poll() is None:
+                    proc.kill()
 
     def _handle_backup_create(self):
         """Read-only against the watch (`nav` never writes), safe to call any time - the

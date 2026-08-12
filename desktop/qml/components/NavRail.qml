@@ -116,6 +116,18 @@ Rectangle {
             selected: root.currentPage === "sportModes"
             onClicked: root.pageSelected("sportModes")
         }
+        // Firmware update / recovery (2026-08-12) - Suunto-only, like the rest of the
+        // firmware pipeline. Shown when a Suunto watch is connected OR sitting in its
+        // bootloader (recovery), which is exactly when there's something to do; a bricked
+        // watch still enumerates, so anyDevice covers it. Garmin has no such mechanism.
+        NavItem {
+            width: parent.width
+            visible: HomeViewModel.anyDevice && !HomeViewModel.isGarmin
+            glyph: Icons.sync
+            label: qsTr("Firmware")
+            selected: root.currentPage === "firmware"
+            onClicked: root.pageSelected("firmware")
+        }
         // Real, 2026-08-09 ("switch the place of settings and sport modes, being
         // settings at the bottom") - last item in the rail now, on purpose.
         NavItem {
