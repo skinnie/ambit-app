@@ -1565,3 +1565,113 @@ entry to `V3_CHANGELOG.md` rather than rewriting its original 2026-08-07 entry. 
 still-open item surfaced by re-reading `a4d2680`'s own commit message, not resolved here:
 `src/services/UpdateService.ts` exists in the real upstream project but wasn't carried into
 this fork's checkout - flagged for André/Vincent to decide, not silently dropped.
+
+## 2026-08-12: creating and deleting sport modes, and the multisport format
+
+Source: `assets/pcap/removeandaddsportsmodeandmultisport`, André's capture of SuuntoLink
+adding and removing sport modes and building all three kinds of multisport combo, plus the
+screenshots in `assets/pcap/screens/` (`multisport_min2_max6.JPG`,
+`triathlonmin2max6withtransition.JPG`, `adventureracingmin2max6.JPG`, `11countas12.JPG`).
+17 full CustomModes region images, 16 transitions. The decoder read all 17 and the encoder
+rebuilt all 17 byte-exact on the first attempt, so nothing about the *format* needed
+changing - what this capture supplies is the **write choreography and the rules**, which is
+exactly what items 20/21/23 in `BUGS_ANDRE.md` were blocked on.
+
+### The two structures, and why deleting is the interesting half
+
+`EXERCISE_MODES` holds the modes; `SPORT_MODES` is the watch's menu, one entry per
+selectable item, addressing exercise modes **by position**. Delete an exercise mode and
+every position above it shifts down, so every leg index above it has to be decremented.
+The capture proves this directly - deleting `Transition` (position 1) moved `Running` from
+`Exercises=[3]` to `[2]`, `Cycling` from `[2]` to `[1]`, and so on for all seven survivors,
+in one write.
+
+### Creating a single sport mode: three writes
+
+    write 1   the mode appended to EXERCISE_MODES, Displays EMPTY, AppMeta {T1=now, T2=0}
+    write 2   the same mode carrying its 8 default displays, AppMeta {T1, T2=T1+2}
+    write 3   its SPORT_MODES menu entry appended, stamped with the clock at that moment
+
+`Timestamp2 = 0` is therefore a real state, not a missing value: created-but-not-committed.
+This extends `stamp_plan`'s touch-then-commit finding rather than contradicting it. The
+third write's stamp is elapsed work, not a fixed offset - 3 seconds after write 2 for
+`Alpine skiing`, 2 for `Transition` - so `sport_mode_manage.create_sport_mode` takes it as a
+parameter instead of computing it.
+
+**Creating a multisport combo is ONE write and creates no exercise mode at all.** A combo is
+purely a `SPORT_MODES` entry whose `Exercises` list names existing modes in order. Deleting
+one likewise removes only that entry; the sports it used are ordinary modes and stay put.
+This is why item 23 turned out to be much smaller than it looked.
+
+### Two id fields, both "lowest free number"
+
+`CustomModeID` (per exercise mode) and `Order` (per SPORT_MODES entry) are SuuntoLink's
+`getNextModeId`/`getNextGroupId`: the smallest positive integer not currently in use. Both
+modes created in the capture came out with `CustomModeID=1`, because the factory modes carry
+Movescount-era ids in the 60595..60604 range and 1 was free. `Order` is the watch's menu
+order and is **never renumbered** - Trekking keeps `Order=9` while slot 8 is created, deleted
+and re-used by three different modes across the capture.
+
+### The limits, and what actually counts against them
+
+- **10 sport modes**, and a multisport combo spends one of them. This is `countSportModes()`
+  in `sport_mode.js`: the number used is the length of the `SPORT_MODES` list, singles and
+  combos alike. `11countas12.JPG` (10/10 and 1/2) matches save 15 exactly: 9 singles plus
+  one combo.
+- **2 multisport combos**, from `MAX_MULTISPORT_MODES=0x2` in `ui/sport_mode_editor.js`.
+- **2 to 6 legs** per combo, from `MAX_MULTISPORT_SPORT_MODES=0x6` in the same file plus the
+  Create screen's own minimum. Repeats are allowed: `Multisport` in the capture uses
+  `Indoor training` twice, and `Triathlonwtransitionand6` spends two of its six legs on
+  `Transition`.
+- **A transition is not free.** It is an ordinary sport mode you create first (activity
+  **99**, `Transition`), it takes one of the 10 slots, and only then can a combo use it.
+- Exactly **three activities may hold several legs**: `Multisport` (2), `Triathlon` (19),
+  `Adventure racing` (61) - from `activity.js`'s own `getMultisportPhrases()`.
+
+**The one exception**, visible on André's own watch: the factory-fitted `Transition` has
+`ActivityID=1`, not 99, and has **no `SPORT_MODES` entry at all**, so it costs no slot and
+cannot be selected on its own. That is what the earlier note in this document ("the one
+`EXERCISE_MODES_MODE` entry with no `SPORT_MODES` counterpart is `Transition`") was seeing.
+Anything created today is the ActivityID 99 kind and does get a menu entry.
+
+### Resolves the "15 displays but the UI says 8/8" question
+
+Both created modes were born with the **same 8 displays**, byte-identical to each other
+almost six minutes apart, of which exactly one has `Type=10`. Only Type 10 displays are user
+screens; the other seven are the built-in compass/navigation/graph/map/lap views every mode
+carries and no editor shows. Counting only Type 10 reproduces SuuntoLink's own list from
+`11countas12.JPG` exactly - Cycling 5 screens, Run a route 4, Pool swimming 3, Trekking 4,
+and a freshly created mode 1. The old open question was comparing a raw display count
+against a user-screen count.
+
+### Resolves two `UseHw` bits
+
+A new mode's `UseHw` is assembled from `sport_mode.js`'s own per-activity answers, and
+requiring that to match the real bytes for all 9 factory modes plus the 2 created ones -
+11/11 - pins down two bits this document had left open:
+
+- `0x0080` = **cadence pod**, previously not in the list at all. Cycling's real `UseHw` is
+  `0x08C3` and its defaults are bike+cadence+power; `0x0800|0x0040|0x0003` only reaches
+  `0x08C3` if cadence is the remaining `0x0080`.
+- `0x0004` = **UseAccelerometer**, previously "seen set on Running/Trekking/Walk, still
+  unconfirmed which pod/sensor". It is not a sensor at all: `sport_mode.js` exports
+  `useAccelerometer(variant, activity)`, and its true/false answer matches this bit on all
+  11 modes (true for Running, Run a route, Trekking, Mountaineering; false for the rest).
+
+### Where a new mode's settings come from
+
+`sport_mode.js`'s `getActivityDefaults(variant)` - now generated into
+`assets/sportmode_rows.json` as `activityDefaults`, per variant, for all 84 activities
+rather than the two the capture happens to show. It predicts the capture exactly: Alpine
+skiing (activity 20) born `AltiBaroMode=0`/`RecordingInterval=1`, Transition (99) born
+`2`/`10`. `HrHigh`/`HrLow` are written as `0`/`0` even though `defaultSettings()` carries
+120/170 - the same full-rewrite reset already noted on Trekking earlier in this document.
+
+### The tool
+
+`tools/sport_mode_manage.py`, one file for this format per the project's own rule, reusing
+`custom_modes`/`custom_modes_write` and `write_nav`'s `send_plan`. `--selftest` replays the
+capture: each operation is applied to save N and the result must encode byte-for-byte into
+save N+1. **16/16.** It enforces every limit above and refuses to delete a mode a combo
+still uses, which is what SuuntoLink does ("You can't delete this sport mode because it's
+used in one of your multisport modes").

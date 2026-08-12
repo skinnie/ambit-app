@@ -143,6 +143,35 @@ function main() {
     availability[activityId] = perType;
   }
 
+  // --- what a NEWLY CREATED sport mode starts out as ---------------------------------
+  // Real need, 2026-08-12: creating a sport mode means deciding what its settings are
+  // before the user has touched anything, and that is per-activity - the capture
+  // `removeandaddsportsmodeandmultisport` shows a new Alpine skiing born with
+  // AltiBaroMode=0/RecordingInterval=1 and a new Transition with 2/10. Those are not two
+  // arbitrary choices, they are sport_mode.js's own getActivityDefaults() table, so we ask
+  // it for every activity rather than copying the two the capture happens to show.
+  //
+  // getActivityDefaults is variant-dependent (one branch flips the HR-belt default for
+  // pool swimming on the Ambit3 family and Traverse), so it is emitted per variant, next
+  // to the capability rows below.
+  const activityDefaults = {};
+  for (const code of Object.keys(variant.Variant).map(k => variant.Variant[k])) {
+    if (typeof code !== 'string') continue;
+    let table;
+    try { table = sm.getActivityDefaults(code); } catch (e) { continue; }
+    if (!(table instanceof Map)) continue;
+    const per = {};
+    for (const id of activityIds) if (table.has(id)) per[id] = table.get(id);
+    activityDefaults[code] = per;
+  }
+
+  // The three activities that make a SPORT_MODE a multisport combo rather than a single
+  // sport, from activity.js's own getMultisportPhrases() - Multisport (2), Triathlon (19)
+  // and Adventure racing (61). Nothing else may carry more than one leg.
+  const activity_js = require(path.join(LINK, 'activity.js'));
+  const multisportActivities = [...activity_js.getMultisportPhrases().keys()]
+    .sort((a, b) => a - b);
+
   // --- what each watch in the family can do ------------------------------------------
   // Real request, 2026-08-11 (André, item 24): "check on our assets folders if we have info
   // on which devices have which options, and make it adaptable so we don't have to workout
@@ -211,7 +240,18 @@ function main() {
       // between the chosen values on a button press. SuuntoLink's editor caps the
       // checkbox selection at 5 (sport_mode_display_editor.js).
       maxValuesPerMultiRow: 5,
+      // A multisport combo's leg count. Both bounds are SuuntoLink's own: its editor
+      // declares `MAX_MULTISPORT_MODES=0x2, MAX_MULTISPORT_SPORT_MODES=0x6`
+      // (ui/sport_mode_editor.js), and the minimum of two is what its Create screen
+      // enforces - confirmed by André and by the three real 6-leg combos in
+      // assets/pcap/removeandaddsportsmodeandmultisport.
+      minMultisportLegs: 2,
+      maxMultisportLegs: 6,
     },
+    // Which SPORT_MODE activities may carry more than one leg, and what each activity's
+    // freshly-created sport mode starts out as. See the two blocks above.
+    multisportActivities,
+    activityDefaults,
     displayTypes: sm.DisplayType,
     fieldIds: sm.FieldId,
     variants,

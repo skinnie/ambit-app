@@ -7,6 +7,40 @@ they land, on the way to what André/Vincent have been calling "V3": wireless sy
 
 ---
 
+## 2026-08-12: sport-mode creation/deletion and the multisport format, from André's new capture
+
+- **`tools/sport_mode_manage.py`** - new tool, one file for this format per the project's
+  own rule. Creates and deletes sport modes, and creates, edits and deletes multisport
+  combos, reusing `custom_modes`/`custom_modes_write` and `write_nav.send_plan`, with the
+  same "refuse to write what we cannot re-encode byte-exact" gate `custom_modes_edit.py`
+  uses. `--selftest` replays André's `removeandaddsportsmodeandmultisport` capture and
+  reproduces **all 16 real SuuntoLink transitions byte-exact** - the create/delete rules
+  are SuuntoLink's, demonstrably, not ours.
+- **The choreography, from the capture**: creating a sport mode is THREE region writes
+  (append with no displays and `AppMeta {now, 0}`; the same mode with its 8 default
+  displays and `{now, now+2}`; then the `SPORT_MODES` menu entry). Creating a multisport
+  combo is ONE write and creates no exercise mode at all - a combo is purely a
+  `SPORT_MODES` entry pointing at modes that already exist. Deleting a mode renumbers
+  every leg index above it, which is the part that had to be got right.
+- **The limits, now sourced rather than guessed**: 10 sport modes with a combo spending
+  one of them (SuuntoLink's own `countSportModes`), 2 combos, 2-6 legs with repeats
+  allowed, and a transition being an ordinary sport mode (activity 99) you create first
+  that also costs a slot. Only three activities can be containers - Multisport, Triathlon,
+  Adventure racing - from `activity.js`'s `getMultisportPhrases()`.
+- **Two long-open questions closed as a side effect.** `UseHw 0x0004` is
+  **UseAccelerometer**, not an unidentified sensor (`sport_mode.js` exports
+  `useAccelerometer()`, and it matches the bit on all 11 modes), and `0x0080` is the
+  **cadence pod**, which was missing from the list entirely. Separately, the old "Cycling
+  decodes to 15 displays but the UI says 8/8" puzzle is answered: only `Type=10` displays
+  are user screens, and counting just those reproduces SuuntoLink's own per-mode screen
+  counts exactly.
+- **`assets/sportmode_rows.json` regenerated** with three additions, all from SuuntoLink:
+  `activityDefaults` (per variant, per activity - what a freshly created mode starts out
+  as), `multisportActivities`, and the 2/6 leg bounds.
+- Docs: full derivation appended to `custom_modes_andre.md`; `BUGS_ANDRE.md` items 20, 21
+  and 23 updated - the format work is done on all three, what remains is the desktop and
+  Android UI.
+
 ## 2026-08-11: BLE settings writes proven real; a route-write data-loss bug found and fixed; BLE scoped to an off-by-default Experimental Feature, macOS/Windows dropped
 
 - **Settings writes over BLE, visually confirmed**: read the real settings blob, previewed

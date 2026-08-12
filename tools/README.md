@@ -35,6 +35,7 @@ hardware, and they carry the watch serial number.
 | `write_nav.py` | writes to the watch, or simulates; dry-run by default |
 | `sbem_schema.py` | SuuntoLink schema dictionary, names the SBEM payloads |
 | `custom_modes.py` | decodes CustomModes (sport modes): settings, displays, multisport, app rules |
+| `sport_mode_manage.py` | creates/deletes sport modes and builds, edits and deletes multisport combos; enforces the real limits (10 modes, 2 combos, 2-6 legs, transitions cost a slot) and replays `removeandaddsportsmodeandmultisport` byte-exact with `--selftest` |
 | `custom_modes_write.py` | encodes CustomModes' BXml body (inverse of `custom_modes.py`), verified byte-for-byte against real live watch data - see `V3_CHANGELOG.md` |
 | `custom_modes_writeback_test.py` | real-hardware-confirmed write of the CustomModes region (chunk writes + padded hash + commit) - see `V3_CHANGELOG.md` |
 | `apps.py` | decodes the Apps flash region (installed Suunto App bytecode), IDs against SuuntoLink's catalog |
