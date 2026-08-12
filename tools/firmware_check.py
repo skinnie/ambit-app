@@ -104,13 +104,13 @@ def main():
     print(f"  release type     {info.get('ReleaseType')}")
     print(f"  download URL     {info.get('LatestFirmwareURI')}")
     if downloaded_to:
-        # Real, worth knowing before anyone assumes this is a normal archive: despite the
-        # .zip name, the real file is NOT a standard zip - confirmed 2026-08-07, starts with
-        # an "SFI2STmp" magic, `unzip -l` fails outright ("End-of-central-directory
-        # signature not found"). Looks like a proprietary/encrypted Suunto firmware
-        # container - not decoded by this tool.
-        print("  note: despite the .zip name, this is NOT a standard zip archive - starts "
-              "with an 'SFI2' magic and looks encrypted/proprietary. Not decoded here.")
+        # Despite the .zip name the file is NOT a standard zip (starts with the "SFI2ST"
+        # magic; `unzip -l` fails). It is a plain [32-byte header][raw payload] container -
+        # decoded 2026-08-08 and flashed straight to the watch by firmware_write.py, no
+        # SuuntoLink needed. To flash what was just downloaded:
+        #   ./tools/firmware_write.py <FILE> --expect-model <model> --commit
+        print("  note: this is an SFI2ST firmware container (not a zip). Flash it with "
+              "tools/firmware_write.py <file> --expect-model <model> --commit")
 
     return 0
 

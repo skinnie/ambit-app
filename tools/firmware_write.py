@@ -20,6 +20,22 @@ Framing is reproduced exactly from the captures: 0x0102 uses send_recv=1 (not th
 5); the sequence counter is reset to 0 at 0x0102 (0x0e00=1, chunks=2..., commit, reboot),
 as SuuntoLink does. The 0x0e00 prefix's free first u32 is a fresh host tick (proven
 ignored by the watch). The 32-byte header and payload are the file's own bytes, unmodified.
+
+END-TO-END STANDALONE WORKFLOW (no SuuntoLink) - the firmware FILE is obtained by
+`firmware_check.py`, which already talks to Suunto's real device-info service and downloads
+the official image (an SFI2ST container, despite the .zip name):
+
+    # 1. download the latest official firmware for the connected, healthy watch:
+    ./tools/firmware_check.py --download /tmp/emu.zip
+    # 2. flash it:
+    ./tools/firmware_write.py /tmp/emu.zip --expect-model Emu --commit
+
+RECOVERY CAVEAT: a watch stuck in BSL reports model "BSL" (fw 1.6.13, the bootloader), so
+`firmware_check.py` cannot read its real model/hw to pick the right image. Download BEFORE
+it goes into BSL, or name the target explicitly:
+
+    ./tools/firmware_check.py --model Emu --hw 70.2.17414 --download /tmp/emu.zip
+    ./tools/firmware_write.py /tmp/emu.zip --expect-model Emu --commit   # resumes from BSL
 """
 
 import argparse
