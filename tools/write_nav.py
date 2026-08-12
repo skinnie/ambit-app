@@ -47,6 +47,18 @@ PRODUCT_IDS = {
 }
 
 
+def codename_for_pid(pid):
+    """The model codename ('Emu', 'Finch', 'Hoopoe' ...) for a USB product_id, from the
+    PRODUCT_IDS label ('Ambit3 Peak (Emu)' -> 'Emu'). This is how a watch in the bootloader
+    is identified: its device_info model string reads "BSL", but its USB product_id stays
+    model-specific, so the codename (and thus the right firmware) is still known. Returns
+    None for an unknown pid."""
+    label = PRODUCT_IDS.get(pid)
+    if label and "(" in label:
+        return label.rsplit("(", 1)[1].rstrip(")")
+    return None
+
+
 def resolve_product_id(name):
     """`--device NAME` -> a PRODUCT_IDS key, or raises SystemExit with the real candidate
     list if NAME matches none or more than one (an ambiguous match picking the wrong watch
@@ -142,6 +154,7 @@ class Link:
         # (the default) keeps that exact prior behavior; pass a specific key from
         # PRODUCT_IDS to open only that one even with others also connected.
         self.product_id = product_id
+        self.opened_product_id = None  # set by open() to the pid that actually opened
         self.sequence = 0
         self.device = None
         self.sent = []
@@ -175,7 +188,7 @@ class Link:
         delay_s = 0.4
         failures = []
         for attempt in range(1, attempts + 1):
-            found = [(entry, label) for product_id, label in wanted.items()
+            found = [(entry, label, product_id) for product_id, label in wanted.items()
                      for entry in hid.enumerate(VENDOR_ID, product_id)]
             if not found:
                 if attempt < attempts:
@@ -194,12 +207,17 @@ class Link:
                     "no supported Suunto watch on the USB bus. Check the cable, then "
                     "that `lsusb` lists a device whose id starts with 1493:")
             failures = []
-            for entry, label in found:
+            for entry, label, product_id in found:
                 try:
                     self.device = open_hid(hid, entry["path"])
                 except Exception as exc:  # every backend raises its own type here
                     failures.append(f"{entry['path']!r}: {exc}")
                     continue
+                # Which product_id actually opened - the model identity survives even in the
+                # bootloader (a BSL watch keeps its model-specific USB product_id, e.g. Emu
+                # stays 0x001b, only its device_info string becomes "BSL"), so this is how a
+                # bricked watch is identified for recovery. See codename_for_pid().
+                self.opened_product_id = product_id
                 print(f"  watch: {label}")
                 return label
             if attempt < attempts:

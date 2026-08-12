@@ -261,18 +261,24 @@ def flash(path, expect_model, do_commit, stream_only, probe_enter=False, diag=Fa
 
     import watch_registry
     if in_bsl:
-        # A BSL watch hides its codename; identify it from the serial we remembered when it
-        # last connected in app mode. This is what the GUI recovery picker is built on.
+        # A BSL watch's device_info model reads "BSL", but its USB product_id still names the
+        # real model - so we can identify it even if it was never connected before. The
+        # registry (serial -> specs) is a secondary source, e.g. if the pid is ever unknown.
+        usb_model = info.get("usb_model")
         seen = watch_registry.lookup(info["serial"])
-        if seen:
+        if usb_model:
+            event("bsl_identified",
+                  f"  identified from USB: {usb_model}  hw {info['hw_version']}",
+                  codename=usb_model, hw_version=info["hw_version"], source="usb")
+        elif seen:
             event("bsl_identified",
                   f"  registry: this is {seen['product']} ({seen['codename']}) "
-                  f"hw {seen['hw_version']}, last fw {seen.get('last_fw')}", **seen)
+                  f"hw {seen['hw_version']}, last fw {seen.get('last_fw')}",
+                  source="registry", **seen)
         else:
             event("bsl_unknown",
-                  "  registry: serial not recognized - this watch was never connected in "
-                  "app mode, so its model can't be auto-identified in BSL. If you don't have "
-                  "the right image, recover it once with SuuntoLink and we'll remember it.")
+                  "  can't identify this watch (unknown USB product and no registry entry). "
+                  "If you don't have the right image, recover it once with SuuntoLink.")
     else:
         watch_registry.record(info)  # remember serial -> codename/hw for future recovery
 

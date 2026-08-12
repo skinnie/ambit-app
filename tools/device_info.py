@@ -42,11 +42,17 @@ def read_device_info(link):
     # version[2] | (version[3] << 8) - the third component is 16-bit little-endian, not a
     # plain single byte. Caught directly against real hardware: without this, hw_version
     # printed "70.2.6" instead of the real "70.2.17414" HANDOFF.md already documents.
+    # The model codename from the USB product_id, which stays model-specific even in the
+    # bootloader (where `model` above reads "BSL"). This is what lets a bricked watch be
+    # identified for recovery without ever having been connected before.
+    from write_nav import codename_for_pid
+    usb_model = codename_for_pid(getattr(link, "opened_product_id", None))
     return {
         "model": model,
         "serial": serial,
         "fw_version": f"{fw[0]}.{fw[1]}.{fw[2] | (fw[3] << 8)}",
         "hw_version": f"{hw[0]}.{hw[1]}.{hw[2] | (hw[3] << 8)}",
+        "usb_model": usb_model,
     }
 
 

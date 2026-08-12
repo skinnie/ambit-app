@@ -59,9 +59,12 @@ PageFlickable {
             try { d = JSON.parse(xhr.responseText); } catch (e) {}
             if (!d) { root.mode = "error"; root.errorText = qsTr("Couldn't reach the app backend."); return; }
             root.info = d;
-            if (d.model === "BSL") {
-                // A bricked/interrupted watch can't name itself - go to recovery.
-                loadKnown();
+            if (d.in_bsl) {
+                // A watch in the bootloader. Its USB product-id usually still names the
+                // model (d.model set) so we can recover it directly; only load the picker
+                // when even that is unknown.
+                if (!d.model)
+                    loadKnown();
                 root.mode = "recover";
             } else if (d.ok === false) {
                 root.mode = "error";
@@ -239,8 +242,12 @@ PageFlickable {
 
         // --- Recovery (watch in BSL) ---
         Card {
+            id: recoverCard
             width: parent.width
             visible: root.mode === "recover"
+            // The watch's USB product-id usually names the model even in the bootloader, so
+            // we can recover it in one tap; the picker is only for the rare unknown case.
+            readonly property bool identified: root.info && root.info.model ? true : false
             Column {
                 width: parent.width; spacing: Theme.spacingSmall
                 Row {
@@ -254,16 +261,29 @@ PageFlickable {
                 Text {
                     width: parent.width; wrapMode: Text.WordWrap; color: Theme.mutedText
                     font.pixelSize: Theme.fontSizeLabel
-                    text: qsTr("This watch is in its bootloader after an interrupted update. "
-                               + "It can't tell us its model, so pick which watch to restore "
-                               + "from the ones you've connected before.")
+                    text: recoverCard.identified
+                          ? qsTr("This watch is in its bootloader after an interrupted update. "
+                                 + "We recognised it as %1 — restore it to the latest firmware.")
+                              .arg(root.info.model)
+                          : qsTr("This watch is in its bootloader after an interrupted update. "
+                                 + "It can't name itself, so pick which watch to restore from "
+                                 + "the ones you've connected before.")
                 }
 
-                // Known watches -> pick one to recover
+                // Identified from the USB product id -> one tap.
+                RoundedButton {
+                    visible: recoverCard.identified
+                    text: qsTr("Recover this watch")
+                    onClicked: confirm.show(
+                        qsTr("Restore %1 to its latest firmware?").arg(root.info.model),
+                        { model: root.info.model, hw: root.info.hw_version }, root.info.model)
+                }
+
+                // Not identified -> pick from previously-connected watches.
                 RoundedComboBox {
                     id: watchPicker
                     width: parent.width
-                    visible: root.known.length > 0
+                    visible: !recoverCard.identified && root.known.length > 0
                     model: root.known.map(function(w) {
                         return (w.product || w.codename) + "  ·  " + qsTr("serial ") + w.serial;
                     })
@@ -271,8 +291,8 @@ PageFlickable {
                                                root.selectedSerial = root.known[currentIndex].serial
                 }
                 RoundedButton {
-                    visible: root.known.length > 0
-                    text: qsTr("Recover this watch")
+                    visible: !recoverCard.identified && root.known.length > 0
+                    text: qsTr("Recover selected watch")
                     onClicked: {
                         const w = root.known[watchPicker.currentIndex];
                         if (w) confirm.show(qsTr("Restore ") + (w.product || w.codename)
@@ -281,10 +301,10 @@ PageFlickable {
                     }
                 }
 
-                // No known watches -> the friendly SuuntoLink message.
+                // Not identified and none known -> the friendly SuuntoLink message.
                 Text {
                     width: parent.width; wrapMode: Text.WordWrap
-                    visible: root.known.length === 0
+                    visible: !recoverCard.identified && root.known.length === 0
                     color: Theme.text; font.pixelSize: Theme.fontSizeBody
                     text: qsTr("We can't recognise this watch yet. If it was never connected "
                                + "to this app, recover it once with SuuntoLink — after that "

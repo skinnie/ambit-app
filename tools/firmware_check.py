@@ -55,6 +55,7 @@ def main():
     args = ap.parse_args()
 
     current_fw = serial = None
+    in_bsl = False
     if args.model and args.hw:
         model, hw = args.model, args.hw
     elif args.model or args.hw:
@@ -65,7 +66,12 @@ def main():
             print("read-only: the 0x0000 query, nothing is written")
         link.open()
         info = read_device_info(link)
-        model, hw = info["model"], info["hw_version"]
+        # In the bootloader the model string reads "BSL", but the USB product_id still names
+        # the real model - use it so a bricked watch fetches the right firmware even if it was
+        # never connected to this app before.
+        in_bsl = info["model"] == "BSL"
+        model = (info["usb_model"] if in_bsl and info.get("usb_model") else info["model"])
+        hw = info["hw_version"]
         current_fw, serial = info.get("fw_version"), info.get("serial")
         import watch_registry
         watch_registry.record(info)  # remember serial -> codename/hw for BSL recovery
@@ -94,6 +100,7 @@ def main():
         print(json.dumps({
             "ok": True,
             "model": model,
+            "in_bsl": in_bsl,
             "hw_version": hw,
             "serial": serial,
             "current_firmware": current_fw,
