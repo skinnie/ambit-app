@@ -99,5 +99,11 @@ use the same path (unverified — confirm from a capture before a real flash).
 - ✅ Real flasher proven end-to-end on hardware (`firmware_write.py --commit`).
 - ✅ Download step (`firmware_check.py`) wired into the documented workflow.
 - ✅ Watch registry data layer (`watch_registry.py`) + recording on connect.
-- ⬜ GUI Firmware page (progress, recovery picker, the message above).
-- ⬜ `--json` progress mode for `firmware_write.py`.
+- ✅ `--json` progress mode for `firmware_write.py`.
+- ✅ GUI Firmware page (`desktop/qml/pages/FirmwarePage.qml`) + backend endpoints
+  (`/api/firmware/known`, `/api/firmware/flash` streaming) — built, qmllint-clean, needs a
+  real app build + on-hardware run to confirm.
+- ⬜ Verify: does Qt's `XMLHttpRequest` deliver the flash stream incrementally (live
+  progress) or buffer it to the end? If it buffers, swap the streaming read for a small C++
+  `QNetworkAccessManager` service (`readyRead`) or SSE.
+- ⬜ Android: same flow once the desktop one is confirmed.
