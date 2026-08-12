@@ -35,6 +35,7 @@ CMD_NAMES = {
     0x1100: "ambit3_settings",
     0x1200: "ambit3_log_headers",
     0x1201: "ambit3_log_synced",
+    0x0202: "fw_bootloader_enter",  # empty; flips app model -> "BSL", see firmware_flash.py
     0x0102: "fw_mode",  # bookends a firmware transfer, seen once before and once after
     0x0103: "fw_mode_ack",
     0x0E00: "fw_header",  # see firmware_flash.py
