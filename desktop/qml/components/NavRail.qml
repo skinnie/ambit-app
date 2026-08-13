@@ -100,6 +100,21 @@ Rectangle {
             selected: root.currentPage === "intervals"
             onClicked: root.pageSelected("intervals")
         }
+        // Training Program (2026-08-12, "movescount era called them training program.
+        // 2 on a screen on our app") - scheduled, date-gated workouts. Same Suunto-only
+        // gating as Intervals: it rides the identical App-Zone/CustomModes install
+        // mechanism, which neither a Garmin nor a Kailash has.
+        NavItem {
+            width: parent.width
+            // ON HOLD 2026-08-13 - hidden behind FeatureFlags.trainingProgram (default false).
+            // See FeatureFlags.qml and docs/training_program_andre.md Findings 58-61.
+            visible: FeatureFlags.trainingProgram && HomeViewModel.anyDevice
+                     && !HomeViewModel.isGarmin && !HomeViewModel.isKailash
+            glyph: Icons.trainingProgram
+            label: qsTr("Training Program")
+            selected: root.currentPage === "trainingProgram"
+            onClicked: root.pageSelected("trainingProgram")
+        }
         NavItem {
             width: parent.width
             // Kailash excluded, real 2026-08-08: its own memory map reports no CustomModes

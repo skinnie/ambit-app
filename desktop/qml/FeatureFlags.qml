@@ -13,4 +13,13 @@ import QtQuick
 // own Kailash section), so this page assumes the Ambit3/Traverse family throughout.
 QtObject {
     property bool sportModes: true
+
+    // Training Program (date-gated scheduled workouts). ON HOLD 2026-08-13: the feature
+    // works as a scheduled App-Zone workout on a data row, but the native "Training program /
+    // planned moves" (§3.39) and the browsable WORKOUT menu (§3.18) it should really drive are
+    // blocked on one firmware-locked value (the PID_RUNNER_GPS_TEMPLATE_GUIDANCE display-template
+    // ID inside the AES-encrypted firmware) - see docs/training_program_andre.md Findings 58-61.
+    // Kept behind this flag (code intact, page unreachable) until that's resolved; flip to true
+    // to reveal it with no other change.
+    property bool trainingProgram: false
 }
