@@ -571,7 +571,7 @@ class Handler(BaseHTTPRequestHandler):
     # --- writes: dry-run unless the caller explicitly confirms ---
 
     def _handle_poi_add(self, body):
-        """Body: {"name": str, "lat": float, "lon": float}. This was an honest 501 until
+        """Body: {"name": str, "lat": float, "lon": float, "type"?: str/int}. This was an honest 501 until
         2026-08-11: the working implementation existed only in the Android app's native
         ambit3_add_poi_to_watch() (confirmed on real hardware 2026-08-06, Milestone 6).
         write_nav.py's `addpoi` is that same algorithm ported back: read the whole POI
@@ -596,10 +596,13 @@ class Handler(BaseHTTPRequestHandler):
             self._handle_poi_add_ble(name, lat, lon)
             return
 
-        code, out, err = run_tool(
-            "write_nav.py",
-            ["addpoi", "--name", name, "--lat", f"{lat:.7f}", "--lon", f"{lon:.7f}",
-             "--write"])
+        # POI type (icon) - optional; default "Waypoint" (17) if omitted. addpoi validates
+        # the id/name and errors cleanly, so no need to pre-check it here.
+        args = ["addpoi", "--name", name, "--lat", f"{lat:.7f}", "--lon", f"{lon:.7f}", "--write"]
+        poi_type = body.get("type")
+        if poi_type not in (None, ""):
+            args += ["--type", str(poi_type)]
+        code, out, err = run_tool("write_nav.py", args)
         if code != 0:
             self._send_json(502, {"ok": False, "error": (err or out or "").strip()
                                   or "POI write failed", "raw_output": out})
@@ -762,6 +765,22 @@ class Handler(BaseHTTPRequestHandler):
         if status is None:
             return None, "couldn't read orbit status from the watch"
         return status, None
+
+    def _handle_agps_status_ble(self):
+        """The BLE path for GET /api/agps/status - tools/ble_sgee.py. Real, read-only
+        0x0b15 (+ a GlonassSGEE flash read if the watch declares that region)."""
+        sys.path.insert(0, str(TOOLS_DIR))
+        import ble_sgee                                       # noqa: PLC0415
+        try:
+            ble_bridge.bridge.set_dry_run(False)
+            status = ble_sgee.read_status(ble_bridge.bridge)
+        except ble_bridge.BleBridgeError as exc:
+            self._send_json(502, {"ok": False, "error": str(exc)})
+            return
+        except (RuntimeError, TimeoutError) as exc:
+            self._send_json(502, {"ok": False, "error": str(exc)})
+            return
+        self._send_json(200, {"ok": True, "transport": "ble", **status})
 
     def _handle_agps_update(self, body):
         """Body: {"confirm": bool}. Real request 2026-08-07 ("it is not validity, it is

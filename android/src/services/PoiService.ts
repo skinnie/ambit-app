@@ -155,6 +155,7 @@ export interface AddPoiState {
 export async function addPoiToWatch(
   name: string, lat: number, lon: number,
   onState: (s: AddPoiState) => void,
+  type: number = 17,  // Ambit POI type byte 0-17 (icon); default 17 = Waypoint
 ): Promise<void> {
   onState({ phase: 'connecting' });
   try {
@@ -166,7 +167,7 @@ export async function addPoiToWatch(
 
   onState({ phase: 'writing' });
   try {
-    await addPoi(name, lat, lon);
+    await addPoi(name, lat, lon, type);
     await clearPoiCache(); // real watch state just changed - see below
     onState({ phase: 'done' });
   } catch (e: any) {

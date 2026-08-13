@@ -24,6 +24,20 @@ import { ViewModeToggle } from '../components/ui/ViewModeToggle';
 // separate tap-through "Map" button/TrackMapScreen this screen briefly had was removed -
 // the preview already IS the map, immediately, matching desktop's own PoisPage.qml (a live
 // MapView per item, no tap-through screen at all).
+// The 18 Ambit POI type bytes (the icon the watch shows), from Lars's "Types of Poi.md"
+// (assets/Lars) - the single source is tools/ambit_format.py's WAYPOINT_TYPES; array index ==
+// the type id 0-17. Default "Waypoint" (17), what the watch itself uses.
+const POI_TYPE_NAMES = [
+  'Building', 'Cave', 'Camp', 'Car', 'Crossroads', 'Beginning', 'End', 'Food', 'Forest',
+  'Geocache', 'Lodging', 'Meadow', 'Mountain', 'Sight', 'Road', 'Rock', 'Water', 'Waypoint',
+];
+// Material Symbols glyph per POI type (the icon the watch shows), same index. Codepoints from
+// tools/subset_material_symbols.py, rendered with the bundled MaterialSymbolsRounded font
+// (android/app/src/main/assets/fonts/). Cave/Rock use elevation / filter_hdr (no exact glyph).
+const POI_TYPE_GLYPHS = [
+  '\uea40', '\uf6e7', '\uea68', '\ue531', '\uebac', '\ue57b', '\uf06e', '\ue56c', '\uea99', '\ue87a', '\ue53a', '\uf205', '\ue3f7', '\ue3b0', '\ueacd', '\ue3df', '\ue798', '\ue0c8',
+];
+
 export default function PoiScreen() {
   const theme = useV3Theme();
   const styles = createStyles(theme);
@@ -31,6 +45,7 @@ export default function PoiScreen() {
   const [poiName, setPoiName] = useState('');
   const [poiLat, setPoiLat]   = useState('');
   const [poiLon, setPoiLon]   = useState('');
+  const [poiType, setPoiType] = useState(17);  // Ambit POI type byte 0-17 (icon)
   const [poiState, setPoiState] = useState<AddPoiState>({ phase: 'idle' });
   const poiBusy = poiState.phase === 'connecting' || poiState.phase === 'writing';
 
@@ -87,7 +102,7 @@ export default function PoiScreen() {
       return;
     }
     try {
-      await addPoiToWatch(poiName.trim(), parsedLat, parsedLon, setPoiState);
+      await addPoiToWatch(poiName.trim(), parsedLat, parsedLon, setPoiState, poiType);
       setPoiState(s => {
         if (s.phase === 'done') {
           setPoiName('');
@@ -164,6 +179,18 @@ export default function PoiScreen() {
             <FieldRow icon="map" value={poiLon} onChangeText={setPoiLon} placeholder={t.poiLon} keyboardType="numbers-and-punctuation" editable={!poiBusy} />
           </View>
         </View>
+        {/* POI type (the icon the watch shows) - a horizontal chip picker, default Waypoint. */}
+        <Text style={styles.typeLabel}>{t.poiType}</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ gap: v3Spacing.small, paddingVertical: 2 }}>
+          {POI_TYPE_NAMES.map((name, i) => (
+            <TouchableOpacity key={i} disabled={poiBusy} onPress={() => setPoiType(i)}
+              style={[styles.typeChipRow, poiType === i && styles.typeChipSel]}>
+              <Text style={[styles.typeGlyph, poiType === i && styles.typeChipTextSel]}>{POI_TYPE_GLYPHS[i]}</Text>
+              <Text style={[styles.typeChipText, poiType === i && styles.typeChipTextSel]}>{name}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
         <View style={{ marginTop: v3Spacing.small }}>
           <TrackPreview
             points={hasValidCoords ? [{ lat: parsedLat, lon: parsedLon }] : []}
@@ -244,4 +271,14 @@ const createStyles = (t: ReturnType<typeof useV3Theme>) => StyleSheet.create({
     backgroundColor: t.primary + '1F', borderWidth: 1, borderColor: t.primary,
   },
   exportBtnText: { color: t.primary, fontWeight: '600', fontSize: v3Type.label },
+  typeLabel: { fontSize: v3Type.label, color: t.mutedText, marginTop: v3Spacing.small, marginBottom: 4 },
+  typeChipRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingVertical: 6, paddingHorizontal: 12, borderRadius: 999,
+    borderWidth: 1, borderColor: t.mutedText + '55',
+  },
+  typeGlyph: { fontFamily: 'MaterialSymbolsRounded', fontSize: 16, color: t.text },
+  typeChipSel: { backgroundColor: t.primary, borderColor: t.primary },
+  typeChipText: { color: t.text, fontSize: v3Type.label },
+  typeChipTextSel: { color: t.background, fontWeight: '700' },
 });

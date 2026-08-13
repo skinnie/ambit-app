@@ -1251,12 +1251,15 @@ static uint8_t *ambit3_build_poi_write_payload(
  * the first real use as a test, same spirit as the route write.
  * `name` must be non-empty. Returns 0 on success, -1 on failure.
  */
-int ambit3_add_poi_to_watch(ambit_object_t *object, const char *name, double lat, double lon)
+int ambit3_add_poi_to_watch(ambit_object_t *object, const char *name, double lat, double lon, int type)
 {
     if (object == NULL || object->driver_data == NULL || name == NULL || name[0] == '\0') {
         LOG_ERROR("ambit3_add_poi_to_watch: invalid arguments");
         return -1;
     }
+    /* POI type byte 0-17 (the icon the watch shows). Out of range -> 17 ("Waypoint"),
+     * what the watch itself uses, so a bad value never corrupts the record. */
+    if (type < 0 || type > 17) type = 17;
 
     uint8_t *poi_reply = NULL;
     size_t poi_reply_len = 0;
@@ -1307,7 +1310,7 @@ int ambit3_add_poi_to_watch(ambit_object_t *object, const char *name, double lat
     *p++ = 0; /* empty route_name */
     memcpy(p, stamp, stamp_len); p += stamp_len; *p++ = 0;
     *p++ = 0;  /* route_index */
-    *p++ = 17; /* type = WAYPOINT_TYPE_DEFAULT */
+    *p++ = (uint8_t)type; /* POI type (icon); default 17 = Waypoint, validated above */
     *p++ = 0;  /* sub_type */
     *p++ = 0;  /* type_index */
     *p++ = 1;  /* flags */

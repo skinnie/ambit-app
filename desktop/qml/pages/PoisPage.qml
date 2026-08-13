@@ -52,6 +52,19 @@ PageFlickable {
     property real poiLat: WeatherService.latitude
     property real poiLon: WeatherService.longitude
 
+    // POI type (the icon the watch shows). The 18 Ambit type bytes, from Lars's
+    // "Types of Poi.md" (assets/Lars) - the single source is tools/ambit_format.py's
+    // WAYPOINT_TYPES; index in this list == the type id 0-17. Default "Waypoint" (17), what
+    // the watch itself uses. The watch renders a distinct icon per type; the app shows the
+    // name (the font is subsetted, so no per-type glyph here).
+    property int poiType: 17
+    readonly property var poiTypeNames: [
+        qsTr("Building"), qsTr("Cave"), qsTr("Camp"), qsTr("Car"), qsTr("Crossroads"),
+        qsTr("Beginning"), qsTr("End"), qsTr("Food"), qsTr("Forest"), qsTr("Geocache"),
+        qsTr("Lodging"), qsTr("Meadow"), qsTr("Mountain"), qsTr("Sight"), qsTr("Road"),
+        qsTr("Rock"), qsTr("Water"), qsTr("Waypoint")
+    ]
+
     Column {
         id: column
         anchors.horizontalCenter: parent.horizontalCenter
@@ -89,6 +102,25 @@ PageFlickable {
                     width: parent.width
                     placeholderText: qsTr("Name this POI")
                     onTextChanged: root.poiName = text
+                }
+
+                Row {
+                    width: parent.width
+                    spacing: Theme.spacingSmall
+                    // The selected type's own watch icon, updating live as the type changes.
+                    Icon {
+                        anchors.verticalCenter: parent.verticalCenter
+                        glyph: Icons.poiTypeGlyphs[root.poiType]
+                        size: 24
+                        color: Theme.text
+                    }
+                    RoundedComboBox {
+                        id: poiTypeBox
+                        width: parent.width - 40
+                        model: root.poiTypeNames
+                        currentIndex: root.poiType
+                        onActivated: (i) => root.poiType = i
+                    }
                 }
 
                 PlaceSearchBar {
@@ -246,7 +278,7 @@ PageFlickable {
                                 "Waypoints_" + safeName + ".gpx",
                                 PoiService.buildWaypointGpx(root.poiName, root.poiLat, root.poiLon))
                         } else {
-                            PoiService.addPoi(root.poiName, root.poiLat, root.poiLon)
+                            PoiService.addPoi(root.poiName, root.poiLat, root.poiLon, root.poiType)
                         }
                     }
                 }

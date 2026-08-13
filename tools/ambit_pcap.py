@@ -10,6 +10,14 @@ from ambit_format import crc16_ccitt_false
 
 PCAP_MAGIC_LE = 0xA1B2C3D4
 LINKTYPE_USBPCAP = 249
+# Linux usbmon captures (e.g. Lars's 2017 firmware pcaps): a different per-packet header than
+# Windows USBPcap. 220 = LINKTYPE_USB_LINUX_MMAPPED (64-byte usbmon "s" header), 189 =
+# LINKTYPE_USB_LINUX (48-byte, the older non-mmapped header). In both, the URB data follows the
+# header; epnum (byte 10) carries the endpoint + direction bit, len_cap (u32 @ 36) the captured
+# byte count. Same downstream reassembly (messages()) once the URB payload is extracted.
+LINKTYPE_USB_LINUX = 189
+LINKTYPE_USB_LINUX_MMAPPED = 220
+USBMON_HDR_LEN = {LINKTYPE_USB_LINUX: 48, LINKTYPE_USB_LINUX_MMAPPED: 64}
 
 CMD_NAMES = {
     0x0000: "device_info",
@@ -73,8 +81,9 @@ def usb_payloads(path):
     if magic != PCAP_MAGIC_LE:
         raise ValueError(f"{path}: unexpected pcap magic 0x{magic:08x}")
     linktype, = struct.unpack("<I", data[20:24])
-    if linktype != LINKTYPE_USBPCAP:
-        raise ValueError(f"{path}: linktype {linktype}, expected {LINKTYPE_USBPCAP}")
+    usbmon_hdr = USBMON_HDR_LEN.get(linktype)
+    if linktype != LINKTYPE_USBPCAP and usbmon_hdr is None:
+        raise ValueError(f"{path}: linktype {linktype}, expected 249 (USBPcap) or 220/189 (usbmon)")
 
     off = 24
     while off + 16 <= len(data):
@@ -82,10 +91,17 @@ def usb_payloads(path):
         off += 16
         rec = data[off:off + incl]
         off += incl
-        if len(rec) < 28:
-            continue
-        hdr_len, = struct.unpack("<H", rec[:2])
-        yield rec[21], rec[hdr_len:]
+        if usbmon_hdr is None:                       # Windows USBPcap
+            if len(rec) < 28:
+                continue
+            hdr_len, = struct.unpack("<H", rec[:2])
+            yield rec[21], rec[hdr_len:]
+        else:                                        # Linux usbmon (220/189)
+            if len(rec) < usbmon_hdr:
+                continue
+            len_cap, = struct.unpack("<I", rec[36:40])
+            # rec[10] = epnum with the direction bit (0x80 = IN), which messages() reads.
+            yield rec[10], rec[usbmon_hdr:usbmon_hdr + len_cap]
 
 
 def messages(path):

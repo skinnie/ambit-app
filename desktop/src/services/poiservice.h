@@ -56,7 +56,10 @@ public:
     QVariantList onWatchPois() const { return m_onWatchPois; }
 
     Q_INVOKABLE void refresh();
-    Q_INVOKABLE void addPoi(const QString &name, double lat, double lon);
+    // `type` is the Ambit POI type byte 0-17 (the icon the watch shows); default 17
+    // ("Waypoint"). The default keeps the GPX-reimport callers (which have no Ambit type)
+    // working unchanged - only the manual add-POI form passes a chosen type.
+    Q_INVOKABLE void addPoi(const QString &name, double lat, double lon, int type = 17);
     Q_INVOKABLE void importGpxFile(const QUrl &fileUrl);
     // A single real <wpt> GPX, for LocalFileService.saveText() - built locally (no backend
     // round trip) since a one-point GPX needs nothing the watch/network has to supply beyond

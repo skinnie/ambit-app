@@ -702,8 +702,12 @@ def poi_write_payload_add(reply, new_record):
     return SBEM_WRITE_PREFIX + F.SBEM_MAGIC + header + body
 
 
-def build_poi_record(name, lat, lon, stamp=None):
+def build_poi_record(name, lat, lon, stamp=None, type_=F.WAYPOINT_TYPE_DEFAULT):
     """One POI as the SBEM entry-0x55 body the watch stores, for poi_write_payload_add().
+
+    `type_` is the Ambit POI type byte (0-17, see F.WAYPOINT_TYPES) - the icon the watch
+    shows for this POI. Defaults to 17 ("Waypoint"), what the watch writes for a POI it
+    creates itself.
 
     Layout, field for field the same as the Android app's ambit3_add_poi_to_watch()
     (device_driver_ambit3.c) - the path Milestone 6 confirmed working against the real
@@ -726,7 +730,7 @@ def build_poi_record(name, lat, lon, stamp=None):
     record = name.encode() + b"\0"
     record += b"\0"                       # empty route_name
     record += stamp.encode() + b"\0"
-    record += bytes([0, F.WAYPOINT_TYPE_DEFAULT, 0, 0, 1])
+    record += bytes([0, type_, 0, 0, 1])
     record += int(round(lat * 1e7)).to_bytes(4, "little", signed=True)
     record += int(round(lon * 1e7)).to_bytes(4, "little", signed=True)
     return record
@@ -748,6 +752,11 @@ def run_addpoi(args):
         raise SystemExit("addpoi: --lat and --lon are required")
     if not (-90.0 <= args.lat <= 90.0) or not (-180.0 <= args.lon <= 180.0):
         raise SystemExit(f"addpoi: {args.lat}, {args.lon} is not a coordinate on Earth")
+    try:
+        poi_type = (F.waypoint_type_id(args.type) if args.type is not None
+                    else F.WAYPOINT_TYPE_DEFAULT)
+    except ValueError as e:
+        raise SystemExit(f"addpoi: {e}")
 
     link = Link(dry_run=not args.write, verbose=args.verbose, product_id=args.product_id)
     if args.write:
@@ -761,10 +770,11 @@ def run_addpoi(args):
     existing = ([data for entry_id, data in F.sbem_entries(pois)
                  if entry_id == POI_ENTRY]
                 if pois and F.SBEM_MAGIC in pois else [])
-    record = build_poi_record(args.name.strip(), args.lat, args.lon)
+    record = build_poi_record(args.name.strip(), args.lat, args.lon, type_=poi_type)
     payload = poi_write_payload_add(pois, record)
     link.command(CMD_POI_WRITE, payload)
     print(f"POI {args.name.strip()!r} ({args.lat:.6f}, {args.lon:.6f}) "
+          f"type={F.waypoint_type_name(poi_type)} "
           f"{'written' if args.write else 'would be written'}, "
           f"{len(existing)} existing preserved")
     return 0
@@ -1055,6 +1065,11 @@ def main():
                         help="addpoi: latitude, decimal degrees")
     parser.add_argument("--lon", type=float, metavar="DEG",
                         help="addpoi: longitude, decimal degrees")
+    parser.add_argument("--type", metavar="ID_OR_NAME", default=None,
+                        help="addpoi: POI type - a 0-17 id or a name (Building, Cave, Camp, "
+                             "Car, Crossroads, Beginning, End, Food, Forest, Geocache, "
+                             "Lodging, Meadow, Mountain, Sight, Road, Rock, Water, Waypoint). "
+                             "Default Waypoint (17), what the watch itself uses.")
     parser.add_argument("--write", action="store_true",
                         help="actually emits; without this option nothing is sent")
     parser.add_argument("--meta", metavar="CAPTURE",

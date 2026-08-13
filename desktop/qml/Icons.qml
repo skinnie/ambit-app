@@ -46,4 +46,10 @@ QtObject {
     readonly property string weatherSnowy: ""
     readonly property string weatherThunderstorm: ""
     readonly property string wind: ""
+
+    // POI type icons (the icon the watch shows for each of the 18 Ambit POI types),
+    // indexed by the type id 0-17 (F.WAYPOINT_TYPES order). Material Symbols glyphs added
+    // to the font subset by tools/subset_material_symbols.py - see it for the
+    // type->glyph->codepoint table (Cave/Rock use elevation / filter_hdr, no exact glyph).
+    readonly property var poiTypeGlyphs: ["\uea40", "\uf6e7", "\uea68", "\ue531", "\uebac", "\ue57b", "\uf06e", "\ue56c", "\uea99", "\ue87a", "\ue53a", "\uf205", "\ue3f7", "\ue3b0", "\ueacd", "\ue3df", "\ue798", "\ue0c8"]
 }

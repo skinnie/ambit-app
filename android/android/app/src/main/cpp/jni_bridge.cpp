@@ -37,7 +37,7 @@ extern "C" int ambit3_write_route_to_watch(ambit_object_t *object,
 
 // ambit3_add_poi_to_watch() est déclarée dans device_driver_ambit3.c
 extern "C" int ambit3_add_poi_to_watch(ambit_object_t *object,
-                                        const char *name, double lat, double lon);
+                                        const char *name, double lat, double lon, int type);
 
 // ambit3_read_flash_region() / ambit3_read_poi_list_raw() / ambit3_read_object_by_id_raw()
 // sont déclarées dans device_driver_ambit3.c
@@ -666,13 +666,13 @@ Java_com_ambitsyncmodern_usb_AmbitUsbModule_nativeAmbitWriteRoute(
 JNIEXPORT jboolean JNICALL
 Java_com_ambitsyncmodern_usb_AmbitUsbModule_nativeAmbitAddPoi(
         JNIEnv *env, jobject /* thiz */,
-        jstring name, jdouble lat, jdouble lon)
+        jstring name, jdouble lat, jdouble lon, jint type)
 {
     if (!g_device) { LOGE("nativeAmbitAddPoi: Not connected"); return JNI_FALSE; }
 
     const char *name_utf8 = env->GetStringUTFChars(name, nullptr);
-    LOGI("nativeAmbitAddPoi: adding '%s'", name_utf8);
-    int ret = ambit3_add_poi_to_watch(g_device, name_utf8, (double)lat, (double)lon);
+    LOGI("nativeAmbitAddPoi: adding '%s' (type %d)", name_utf8, (int)type);
+    int ret = ambit3_add_poi_to_watch(g_device, name_utf8, (double)lat, (double)lon, (int)type);
     env->ReleaseStringUTFChars(name, name_utf8);
 
     if (ret != 0) { LOGE("ambit3_add_poi_to_watch failed: %d", ret); return JNI_FALSE; }

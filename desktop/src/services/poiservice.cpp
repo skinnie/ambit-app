@@ -85,12 +85,13 @@ void PoiService::refresh()
     });
 }
 
-void PoiService::addPoi(const QString &name, double lat, double lon)
+void PoiService::addPoi(const QString &name, double lat, double lon, int type)
 {
     QJsonObject body;
     body[QStringLiteral("name")] = name;
     body[QStringLiteral("lat")] = lat;
     body[QStringLiteral("lon")] = lon;
+    body[QStringLiteral("type")] = type;
 
     QNetworkRequest req(QUrl(kBackendBase + QStringLiteral("/api/pois")));
     req.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));

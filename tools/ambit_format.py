@@ -110,6 +110,36 @@ ROUTE_INDEX_ENTRY = struct.Struct("<IIIBBBBI")      # 20 B
 
 WAYPOINT_TAIL_MAGIC = 0x0771  # constant across the 42 observed tails
 WAYPOINT_TYPE_DEFAULT = 17    # "Waypoint"; enum on the Ambit side, cf. openambit
+
+# The Ambit POI/waypoint type byte, 0x00-0x11 - the 18 icon groups the watch itself renders.
+# From Lars's "Types of Poi.md" (assets/Lars, 2017 Ambit RE), cross-checked against openambit.
+# Movescount had ~31 finer names (Restaurant/Cafe both map to Food=7, Hostel/Hotel to
+# Lodging=10, Hill/Valley/Cliff to Mountain=12, River/Lake/Coast to Water=16, etc.) but the
+# *watch* only distinguishes these 18 by the type byte, so this is what a POI picker chooses.
+WAYPOINT_TYPES = {
+    0: "Building", 1: "Cave", 2: "Camp", 3: "Car", 4: "Crossroads", 5: "Beginning",
+    6: "End", 7: "Food", 8: "Forest", 9: "Geocache", 10: "Lodging", 11: "Meadow",
+    12: "Mountain", 13: "Sight", 14: "Road", 15: "Rock", 16: "Water", 17: "Waypoint",
+}
+
+
+def waypoint_type_name(type_id):
+    """POI type byte -> human name, falling back to 'Waypoint' for anything unexpected."""
+    return WAYPOINT_TYPES.get(type_id, WAYPOINT_TYPES[WAYPOINT_TYPE_DEFAULT])
+
+
+def waypoint_type_id(value):
+    """Resolve a POI type given either its numeric id or its (case-insensitive) name.
+    Raises ValueError on an unknown name so a CLI/API surfaces it rather than writing 17."""
+    if isinstance(value, int) or (isinstance(value, str) and value.isdigit()):
+        tid = int(value)
+        if tid not in WAYPOINT_TYPES:
+            raise ValueError(f"POI type id {tid} out of range 0-17")
+        return tid
+    for tid, name in WAYPOINT_TYPES.items():
+        if name.lower() == str(value).strip().lower():
+            return tid
+    raise ValueError(f"unknown POI type {value!r}; choose from {list(WAYPOINT_TYPES.values())}")
 ROUTE_INDEX_CONST = 415       # field @8, constant across the 7 observed entries
 
 # The route timestamp (index @4, in seconds) shares its clock with the date in the

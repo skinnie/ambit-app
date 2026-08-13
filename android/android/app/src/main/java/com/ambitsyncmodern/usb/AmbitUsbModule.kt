@@ -91,7 +91,7 @@ class AmbitUsbModule(private val reactContext: ReactApplicationContext) :
         wptLat: DoubleArray, wptLon: DoubleArray, wptName: Array<String>, wptPointIndex: IntArray,
         distanceM: Int, ascentM: Int, descentM: Int, timestampSec: Long
     ): Boolean
-    private external fun nativeAmbitAddPoi(name: String, lat: Double, lon: Double): Boolean
+    private external fun nativeAmbitAddPoi(name: String, lat: Double, lon: Double, type: Int): Boolean
     private external fun nativeAmbitReadRegion(address: Long, length: Long): String?
     private external fun nativeAmbitReadPoiListRaw(): String?
     private external fun nativeAmbitReadDeviceHistoryRaw(): String?
@@ -549,8 +549,10 @@ class AmbitUsbModule(private val reactContext: ReactApplicationContext) :
     // ─── addPoi() ─────────────────────────────────────────────────────────────
     // Ajoute un POI sur la montre en préservant ceux déjà présents. Contrairement
     // à writeRoute(), ne touche pas aux régions Waypoints/Routes de la flash.
+    // `type` is the Ambit POI type byte 0-17 (the icon the watch shows); React Native passes
+    // JS numbers as Double, so it arrives as Double and is narrowed to Int for the JNI call.
     @ReactMethod
-    fun addPoi(name: String, lat: Double, lon: Double, promise: Promise) {
+    fun addPoi(name: String, lat: Double, lon: Double, type: Double, promise: Promise) {
         if (!jniLoaded) {
             promise.reject("JNI_NOT_LOADED", "Native library unavailable")
             return
@@ -561,7 +563,7 @@ class AmbitUsbModule(private val reactContext: ReactApplicationContext) :
         }
         executor.execute {
             try {
-                val ok = nativeAmbitAddPoi(name.trim(), lat, lon)
+                val ok = nativeAmbitAddPoi(name.trim(), lat, lon, type.toInt())
                 if (ok) promise.resolve(true)
                 else promise.reject("POI_ADD_FAILED", "Failed to add POI (see logcat AmbitJNI)")
             } catch (e: Exception) {

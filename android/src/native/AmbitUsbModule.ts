@@ -144,8 +144,10 @@ export function writeRoute(route: NativeRoute): Promise<boolean> {
  * Ajoute un POI, en préservant ceux déjà présents sur la montre.
  * La montre doit déjà être connectée (connect() appelé avant).
  */
-export function addPoi(name: string, lat: number, lon: number): Promise<boolean> {
-  return NativeAmbit.addPoi(name, lat, lon);
+// `type` is the Ambit POI type byte 0-17 (the icon the watch shows); default 17 ("Waypoint"),
+// what the watch itself uses. GPX re-imports (which have no Ambit type) rely on that default.
+export function addPoi(name: string, lat: number, lon: number, type: number = 17): Promise<boolean> {
+  return NativeAmbit.addPoi(name, lat, lon, type);
 }
 
 /**
