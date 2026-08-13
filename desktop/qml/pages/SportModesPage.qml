@@ -907,16 +907,19 @@ PageFlickable {
                 // --- Pods (UseHw bitmask) ---
                 Column {
                     width: parent.width
-                    spacing: 4
+                    spacing: 2
                     Text { text: qsTr("Pods"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
-                    Row {
+                    // Flow, not Row: five pods do not fit one line inside the card, so they wrap
+                    // to the next line rather than spilling past the edge (André, 2026-08-13).
+                    Flow {
+                        width: parent.width
                         spacing: Theme.spacingMedium
                         Repeater {
                             model: root.podBits
                             delegate: Row {
                                 id: podRow
                                 required property var modelData
-                                spacing: 4
+                                spacing: 6
                                 // Only show a pod this watch actually supports (HR belt always).
                                 visible: podRow.modelData.cap === ""
                                          || root.caps[podRow.modelData.cap] === true

@@ -44,5 +44,12 @@ Rectangle {
         id: contentItem
         anchors.fill: parent
         anchors.margins: root.padding
+        // General rule for every card in the app (André, 2026-08-13): content can never spill
+        // past the card's own padded edge. A child wider than the card (a Row that does not
+        // wrap) used to draw outside the rounded rectangle - "the bike pod gets out of its
+        // card". Clipping here guards it everywhere at once; the proper per-case fix is still to
+        // make such content wrap/fit. Popups (ComboBox lists, dialogs) render in the Overlay
+        // layer, not as children here, so this never clips them.
+        clip: true
     }
 }
