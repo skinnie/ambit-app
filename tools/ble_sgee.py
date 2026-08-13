@@ -12,7 +12,9 @@ has no proven reply over this transport).
 
 import sys
 
-from sgee import CMD_GPS_ORBIT_HEAD, decode_orbit_head, glonass_status
+import ambit_format as F
+from sgee import CMD_GPS_ORBIT_HEAD, build_sgee_for_region, decode_orbit_head, glonass_status
+from write_nav import read_memory_map, send_plan
 
 
 def read_status(link):
@@ -22,6 +24,36 @@ def read_status(link):
     status = decode_orbit_head(head)
     status["glonass"] = glonass_status(link)
     return status
+
+
+def write_orbit(link, data_bytes, glonass=False):
+    """Real write: `data_bytes` is a raw ephemeris file (no wrapper), same as `sgee.py`'s
+    own CLI takes as a path - reuses `build_sgee_for_region()`'s bounds-checked plan
+    construction and `send_plan()` unchanged (`commit=False`, matching `sgee.py`'s own
+    convention: this region gets no `CMD_NAV_COMMIT`, unlike Routes/Waypoints). GLONASS's
+    base/size come from the watch's own declared memory map (`read_memory_map()`, the same
+    0x0b21 driver-path read already proven working for routes) rather than a hardcoded
+    address - GpsSGEE's own base/size are already fixed constants (`F.SGEE_BASE`/
+    `F.SGEE_REGION_SIZE`), same as the USB path."""
+    import tempfile
+    with tempfile.NamedTemporaryFile("wb", suffix=".bin", delete=False) as f:
+        f.write(data_bytes)
+        path = f.name
+    try:
+        if glonass:
+            declared = read_memory_map(link)
+            if "GlonassSGEE" not in declared:
+                raise RuntimeError("this watch declares no GlonassSGEE region")
+            base, size = declared["GlonassSGEE"]
+            flash, layout = build_sgee_for_region(path, base, size, "GlonassSGEE")
+        else:
+            flash, layout = build_sgee_for_region(path, F.SGEE_BASE, F.SGEE_REGION_SIZE,
+                                                   "GpsSGEE")
+        send_plan(link, flash, layout, commit=False)
+    finally:
+        import pathlib
+        pathlib.Path(path).unlink(missing_ok=True)
+    return {"ok": True, "wrote": not link.dry_run, "fetched_bytes": len(data_bytes)}
 
 
 def main():

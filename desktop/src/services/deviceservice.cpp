@@ -446,6 +446,16 @@ void DeviceService::pollBleStatus()
             m_bleAttempting = false;
             emit bleStateChanged();
             refresh();
+            // Real bug, found live 2026-08-11: GPS orbit status is only ever checked once,
+            // from HomePage.qml's own Component.onCompleted - if that ran before a BLE
+            // connection existed (the normal case: the page loads with nothing connected,
+            // the user connects afterward), the "couldn't read orbit status" error just sat
+            // there forever with nothing to retry it. checkGpsOrbitStatus() is cheap and
+            // read-only (a single 0x0b15 query), so re-running it here the moment a BLE
+            // watch becomes available is the same "connection just changed, re-ask" logic
+            // refresh() already gets, applied to the one other query that had been missing
+            // it.
+            checkGpsOrbitStatus();
             return;
         }
         if (!m_bleAttempting) {

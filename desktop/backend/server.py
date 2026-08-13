@@ -625,33 +625,36 @@ class Handler(BaseHTTPRequestHandler):
         """GET /api/agps/status - real, read-only 0x0b15 query, no network fetch and
         nothing written. What HomeViewModel shows before any Update tap, and what
         /api/agps/update's offline fallback also reports."""
-        if ble_bridge.bridge.status().get("handshake_done"):
-            self._handle_agps_status_ble()
-            return
-        code, out, err = run_tool("sgee.py", ["--status", "--json"])
-        status = self._parse_last_json_line(out)
+        status, error = self._read_orbit_status()
         if status is None:
-            self._send_json(502, {
-                "ok": False, "error": "couldn't read orbit status from the watch",
-                "raw_output": out, "stderr": err})
+            self._send_json(502, {"ok": False, "error": error})
             return
         self._send_json(200, {"ok": True, **status})
 
-    def _handle_agps_status_ble(self):
-        """The BLE path for GET /api/agps/status - tools/ble_sgee.py. Real, read-only
-        0x0b15 (+ a GlonassSGEE flash read if the watch declares that region)."""
-        sys.path.insert(0, str(TOOLS_DIR))
-        import ble_sgee                                       # noqa: PLC0415
-        try:
-            ble_bridge.bridge.set_dry_run(False)
-            status = ble_sgee.read_status(ble_bridge.bridge)
-        except ble_bridge.BleBridgeError as exc:
-            self._send_json(502, {"ok": False, "error": str(exc)})
-            return
-        except (RuntimeError, TimeoutError) as exc:
-            self._send_json(502, {"ok": False, "error": str(exc)})
-            return
-        self._send_json(200, {"ok": True, "transport": "ble", **status})
+    def _read_orbit_status(self):
+        """Shared by /api/agps/status and /api/agps/update's own initial freshness check -
+        real bug, found live 2026-08-11: /api/agps/update had its OWN hardcoded USB-only
+        `run_tool("sgee.py", ["--status", "--json"])` call, never updated when the BLE path
+        was added to /api/agps/status - so a BLE-connected watch's Home page could show a
+        perfectly correct GPS orbit status, then immediately show "Failed" again the moment
+        the once-per-connection auto-update (DeviceService::fetchDeviceInfo(), matching
+        syncTime()'s own auto-sync) ran and hit this exact same status read a second time
+        via the wrong path. Returns (status_dict, None) or (None, error_message)."""
+        if ble_bridge.bridge.status().get("handshake_done"):
+            sys.path.insert(0, str(TOOLS_DIR))
+            import ble_sgee                                   # noqa: PLC0415
+            try:
+                ble_bridge.bridge.set_dry_run(False)
+                return ble_sgee.read_status(ble_bridge.bridge), None
+            except ble_bridge.BleBridgeError as exc:
+                return None, str(exc)
+            except (RuntimeError, TimeoutError) as exc:
+                return None, str(exc)
+        code, out, err = run_tool("sgee.py", ["--status", "--json"])
+        status = self._parse_last_json_line(out)
+        if status is None:
+            return None, "couldn't read orbit status from the watch"
+        return status, None
 
     def _handle_agps_update(self, body):
         """Body: {"confirm": bool}. Real request 2026-08-07 ("it is not validity, it is
@@ -676,12 +679,10 @@ class Handler(BaseHTTPRequestHandler):
         # device. Default false, i.e. we send GLONASS too wherever the watch supports it.
         gps_only = bool(body.get("gps_only", False))
 
-        code, out, err = run_tool("sgee.py", ["--status", "--json"])
-        watch_status = self._parse_last_json_line(out)
+        watch_status, error = self._read_orbit_status()
         if watch_status is None:
             self._send_json(502, {
-                "ok": False, "error": "couldn't read the watch's current orbit status",
-                "raw_output": out, "stderr": err})
+                "ok": False, "error": error or "couldn't read the watch's current orbit status"})
             return
 
         def fresh(date_str, time_str="00:00:00"):
@@ -693,21 +694,33 @@ class Handler(BaseHTTPRequestHandler):
                 return False
             return (datetime.now(timezone.utc) - dt).total_seconds() < 86400
 
-        def fetch_and_write(url, extra_args):
-            """Download one ephemeris file and hand it to sgee.py. Returns a small result
-            dict; never raises for an offline network, which is a real state rather than an
-            error (see this method's own docstring)."""
+        def fetch_and_write(url, glonass=False):
+            """Download one ephemeris file and hand it to sgee.py (USB) or
+            ble_sgee.write_orbit() (BLE, tools/ble_sgee.py - same bounds-checked
+            build_sgee_for_region()/send_plan() sgee.py itself uses, unchanged). Returns a
+            small result dict; never raises for an offline network, which is a real state
+            rather than an error (see this method's own docstring)."""
             try:
                 with urllib.request.urlopen(url, timeout=30) as resp:
                     data = resp.read()
             except urllib.error.URLError as e:
                 return {"wrote": False, "offline": True,
                         "error": f"couldn't reach the orbital data server: {e}"}
+            if ble_bridge.bridge.status().get("handshake_done"):
+                sys.path.insert(0, str(TOOLS_DIR))
+                import ble_sgee                                # noqa: PLC0415
+                try:
+                    ble_bridge.bridge.set_dry_run(not confirm)
+                    result = ble_sgee.write_orbit(ble_bridge.bridge, data, glonass=glonass)
+                    return {**result, "fetched_bytes": len(data)}
+                except (ble_bridge.BleBridgeError, RuntimeError, TimeoutError) as exc:
+                    return {"ok": False, "wrote": False, "error": str(exc),
+                            "fetched_bytes": len(data)}
             with tempfile.NamedTemporaryFile("wb", suffix=".bin", delete=False) as f:
                 f.write(data)
                 bin_path = f.name
             try:
-                args = [bin_path] + list(extra_args)
+                args = [bin_path] + (["--glonass"] if glonass else [])
                 if confirm:
                     args.append("--write")
                 code, out, err = run_tool("sgee.py", args)
@@ -725,7 +738,7 @@ class Handler(BaseHTTPRequestHandler):
             result["gps"] = {"skipped": True, "reason": "No update needed",
                              "watch_date": watch_status.get("date")}
         else:
-            result["gps"] = fetch_and_write(GPS_ORBIT_URL, [])
+            result["gps"] = fetch_and_write(GPS_ORBIT_URL)
 
         # --- GLONASS ---
         # Capability comes from the WATCH (does it declare a GlonassSGEE region), never
@@ -743,7 +756,7 @@ class Handler(BaseHTTPRequestHandler):
                                  "watch_date": glo.get("date")}
         else:
             result["glonass"] = {"supported": True, **fetch_and_write(
-                GLONASS_ORBIT_URL, ["--glonass"])}
+                GLONASS_ORBIT_URL, glonass=True)}
 
         failed = [k for k in ("gps", "glonass")
                   if result[k].get("ok") is False]

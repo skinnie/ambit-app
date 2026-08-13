@@ -87,7 +87,26 @@ class BleBridge:
     def start(self, forget=False, verbose=True):
         """Spawns the daemon if it isn't already running. Idempotent - a second call while
         one is already up is a no-op, matching `connect()`'s use as "make sure we're
-        listening" rather than "start a new session every tap"."""
+        listening" rather than "start a new session every tap".
+
+        Real bug, hit live and repeatedly, 2026-08-11: the old check here only looked at
+        `self._proc` - a daemon started by ANY OTHER means (a previous backend process
+        that never got torn down cleanly, a manual test run from a terminal, a leftover
+        from an earlier session) was invisible to it, so `start()` would happily spawn a
+        SECOND daemon on top of a live one. Two daemons both trying to register the same
+        GATT application and race for the same watch connection is exactly the kind of
+        split-brain state that made reads intermittently fail/hang with no obvious cause -
+        confirmed live: `pgrep` found two `ble_server.py listen` processes at once after
+        nothing more than a normal app restart. Now checks the control socket itself
+        first (same probe `status()` uses) and adopts an already-live daemon instead of
+        racing it with a new one - `forget`/`verbose` are simply not applied in that case,
+        since a running daemon can't retroactively change how it forgot bonds at
+        startup; if a caller genuinely needs a `--forget` session, `stop()` first."""
+        try:
+            self._request({"op": "status"}, timeout=2.0)
+            return                      # a daemon is already answering - adopt it, don't race it
+        except BleBridgeError:
+            pass                        # nothing there yet - fall through to actually starting one
         with self._lock:
             if self._proc is not None and self._proc.poll() is None:
                 return
