@@ -97,39 +97,29 @@ PageFlickable {
                     font.pixelSize: Theme.fontSizeBody
                 }
 
-                // One line: the selected type's icon (logo), the type dropdown, and the name.
+                // One line: the type dropdown (carrying the selected type's icon as its own
+                // leading logo) and the name. The dropdown is the first element, so its left edge
+                // lines up with the Search and coordinate fields below it (André, 2026-08-13:
+                // "search is not inline with waypoint" - the icon used to sit in its own column and
+                // pushed the dropdown out of alignment).
                 Row {
                     width: parent.width
                     spacing: Theme.spacingSmall
 
-                    // Logo - the selected type's own watch icon, updating live.
-                    Icon {
-                        id: poiTypeIcon
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: 28
-                        glyph: Icons.poiTypeGlyphs[root.poiType]
-                        size: 26
-                        color: Theme.text
-                    }
                     // Type dropdown, same rounded-square shape as the name field. ClickFocus stops
-                    // it grabbing initial focus on load - otherwise it drew its green focused border
-                    // while nothing else was focused (André's "bizarre shading", 2026-08-13). It
-                    // still grows the border on a real click, like the text fields beside it.
-                    // Width 138: snug around the longest name ("Crossroads") with the centred text,
-                    // left padding and arrow all fitting - a tidy bit tighter than before, so the
-                    // name field keeps the rest of the line (André, 2026-08-13).
+                    // it grabbing initial focus on load, and the neutral-grey background override
+                    // keeps it from lighting up green on focus/open (André, 2026-08-13). Width 168
+                    // fits the leading icon + the longest name ("Crossroads") + the arrow.
                     RoundedComboBox {
                         id: poiTypeBox
                         anchors.verticalCenter: parent.verticalCenter
-                        width: 138
+                        width: 168
                         focusPolicy: Qt.ClickFocus
+                        leftPadding: Theme.spacingSmall
+                        rightPadding: indicator.width + Theme.spacingSmall
                         model: root.poiTypeNames
                         currentIndex: root.poiType
                         onActivated: (i) => root.poiType = i
-                        // Keep the border a steady neutral grey - the shared RoundedComboBox turns
-                        // its border green on focus, which here lit up every time the dropdown was
-                        // opened (André's "green shadow when opening", 2026-08-13). Same rounded-
-                        // square shape as the name field, just without the focus recolour.
                         background: Rectangle {
                             implicitHeight: 36
                             radius: Theme.radiusSmall
@@ -137,13 +127,34 @@ PageFlickable {
                             border.width: 1
                             border.color: Theme.mutedText
                         }
+                        // The selected type's own watch icon sits inside, left of the name, and
+                        // updates live - the "logo" now lives in the dropdown itself.
+                        contentItem: Item {
+                            Row {
+                                anchors.left: parent.left
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: Theme.spacingSmall
+                                Icon {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    glyph: Icons.poiTypeGlyphs[poiTypeBox.currentIndex]
+                                    size: 22
+                                    color: Theme.text
+                                }
+                                Text {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    text: poiTypeBox.displayText
+                                    color: Theme.text
+                                    font.pixelSize: Theme.fontSizeBody
+                                    elide: Text.ElideRight
+                                }
+                            }
+                        }
                     }
                     // Name - fills the rest of the line.
                     RoundedTextField {
                         id: poiNameField
                         anchors.verticalCenter: parent.verticalCenter
-                        width: parent.width - poiTypeIcon.width - poiTypeBox.width
-                               - (Theme.spacingSmall * 2)
+                        width: parent.width - poiTypeBox.width - Theme.spacingSmall
                         // The watch stores at most 15 bytes for the name (ambit_format.py
                         // MAX_NAME_BYTES, which truncates on write) - cap the field so what you
                         // type is what the watch keeps, instead of a silent trim (André, 2026-08-13).
