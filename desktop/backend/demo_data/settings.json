@@ -112,6 +112,18 @@
       "max": 241,
       "path": "sml.DeviceSettings.Personal.Height"
     },
+    "birth_date": {
+      "ok": true,
+      "value": 1981,
+      "label": "Birth year",
+      "kind": "number",
+      "control": "year",
+      "writable": true,
+      "screen": "personal",
+      "min": 1900,
+      "max": 2026,
+      "path": "sml.DeviceSettings.Personal.BirthDay"
+    },
     "max_hr": {
       "ok": true,
       "value": 186,
