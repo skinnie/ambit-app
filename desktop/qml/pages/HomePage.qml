@@ -293,8 +293,16 @@ PageFlickable {
                         spacing: Theme.spacingMedium
 
                         RoundedButton {
-                            text: DeviceService.bleAttempting ? qsTr("Connecting…")
-                                                               : qsTr("Connect via Bluetooth")
+                            // Real request, 2026-08-13 (André, live testing: "it is still
+                            // on 'connecting'... maybe we should put a timer no?") - a bare
+                            // "Connecting…" gave no way to tell "still genuinely searching"
+                            // from "stuck". Ticking count only, no hard cutoff - a fresh
+                            // pairing's passkey wait can legitimately run long (see
+                            // DeviceService::connectBle()'s own comment), so this never
+                            // stops the attempt on its own.
+                            text: DeviceService.bleAttempting
+                                ? qsTr("Connecting… (%1s)").arg(DeviceService.bleAttemptSeconds)
+                                : qsTr("Connect via Bluetooth")
                             enabled: !DeviceService.bleAttempting
                             onClicked: DeviceService.connectBle(false)
                         }

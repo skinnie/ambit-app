@@ -453,6 +453,7 @@ void DeviceService::connectBle(bool forget)
     m_bleHandshakeDone = false;
     m_blePendingPasskeyDevice.clear();
     m_bleError.clear();
+    m_bleAttemptSeconds = 0;
     emit bleStateChanged();
 
     QJsonObject body;
@@ -489,6 +490,7 @@ void DeviceService::pollBleStatus()
             emit bleStateChanged();
             return;
         }
+        m_bleAttemptSeconds += 1;
         m_bleSubscribed = obj.value(QStringLiteral("subscribed")).toBool();
         m_bleHandshakeDone = obj.value(QStringLiteral("handshake_done")).toBool();
         const auto pendingVal = obj.value(QStringLiteral("pending_passkey_device"));
@@ -517,6 +519,22 @@ void DeviceService::pollBleStatus()
         }
         if (!m_bleAttempting) {
             return;  // disconnectBle() was called while this request was in flight
+        }
+        // Real request, 2026-08-13 (André, live testing: "it is still on 'connecting'...
+        // I was thinking like a timer to stop the connecting...so we can try something
+        // also"). Cuts off only the NOT-YET-FOUND case (never subscribed at all) - once a
+        // real device has subscribed and this app is just waiting on a passkey or the
+        // handshake, that wait can legitimately run long (the person has to notice the
+        // watch's screen, read six digits, and relay it back) and is left alone. Doesn't
+        // tear the daemon down - it keeps scanning in the background regardless, so a late
+        // connection still completes; this only frees the UI to let the person retry or
+        // use Forget instead of staring at a stuck button.
+        if (!m_bleSubscribed && m_bleAttemptSeconds >= kBleSearchTimeoutS) {
+            m_bleAttempting = false;
+            m_bleError = tr("No watch found within %1s - check it's on the Bluetooth pairing "
+                             "screen and try again").arg(kBleSearchTimeoutS);
+            emit bleStateChanged();
+            return;
         }
         // Keep polling - a fresh pairing's passkey wait can take longer than any single
         // fixed timeout should force it to give up within (the person has to notice the

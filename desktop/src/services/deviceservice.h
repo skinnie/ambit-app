@@ -116,6 +116,7 @@ class DeviceService : public QObject
     // passkey-entry dialog exactly when this is non-empty.
     Q_PROPERTY(QString blePendingPasskeyDevice READ blePendingPasskeyDevice NOTIFY bleStateChanged)
     Q_PROPERTY(QString bleError READ bleError NOTIFY bleStateChanged)
+    Q_PROPERTY(int bleAttemptSeconds READ bleAttemptSeconds NOTIFY bleStateChanged)
 
     // Real decision, 2026-08-11 (André, after a live BLE session this same night hit real
     // reliability trouble - a route write that needed a mid-flight bug fix, and repeated
@@ -232,6 +233,16 @@ public:
     bool bleHandshakeDone() const { return m_bleHandshakeDone; }
     QString blePendingPasskeyDevice() const { return m_blePendingPasskeyDevice; }
     QString bleError() const { return m_bleError; }
+    // Real request, 2026-08-13 (André, live testing: "it is still on 'connecting'...
+    // maybe we should put a timer no?") - a plain "Connecting…" with no elapsed time gave
+    // no way to tell "still genuinely searching" from "stuck". Ticks once per
+    // pollBleStatus() poll (~1s, kBlePollIntervalMs) rather than a separate QElapsedTimer -
+    // deliberately NOT a hard cutoff that cancels the attempt: a fresh pairing's passkey
+    // wait can legitimately take longer than any fixed timeout should force it to give up
+    // within (this file's own connectBle() comment already makes that case). The UI uses
+    // this only to show a growing count and, past a threshold, a hint - never to stop
+    // polling on its own.
+    int bleAttemptSeconds() const { return m_bleAttemptSeconds; }
 
     // Starts ble_server.py (POST /api/ble/connect) and polls /api/ble/status until the
     // handshake completes, a passkey is needed (blePendingPasskeyDevice), or it fails.
@@ -334,6 +345,7 @@ private:
     bool m_bleHandshakeDone = false;
     QString m_blePendingPasskeyDevice;
     QString m_bleError;
+    int m_bleAttemptSeconds = 0;
     bool m_bleExperimentEnabled = false;
     bool m_markSyncedEnabled = false;
     bool m_gpsTrackPodExperimentEnabled = false;
@@ -344,6 +356,9 @@ private:
     // fresh pairing's own passkey wait).
     QTimer m_blePollTimer;
     static constexpr int kBlePollIntervalMs = 1000;
+    // Real request, 2026-08-13 - see pollBleStatus()'s own comment for why this only cuts
+    // off the never-subscribed case, not a passkey wait already in progress.
+    static constexpr int kBleSearchTimeoutS = 30;
     void pollBleStatus();
 
     void setLoading(bool value);
