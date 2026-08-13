@@ -483,6 +483,29 @@ void DeviceService::disconnectBle()
     connect(reply, &QNetworkReply::finished, reply, &QNetworkReply::deleteLater);
 }
 
+void DeviceService::forgetBle()
+{
+    m_blePollTimer.stop();
+    m_bleAttempting = false;
+    m_bleSubscribed = false;
+    m_bleHandshakeDone = false;
+    m_blePendingPasskeyDevice.clear();
+    m_bleError.clear();
+    emit bleStateChanged();
+
+    QNetworkReply *reply =
+        m_network.post(QNetworkRequest(backendUrl(QStringLiteral("/api/ble/forget"))),
+                       QByteArray());
+    connect(reply, &QNetworkReply::finished, this, [this, reply] {
+        reply->deleteLater();
+        const auto obj = QJsonDocument::fromJson(reply->readAll()).object();
+        if (reply->error() != QNetworkReply::NoError || !obj.value(QStringLiteral("ok")).toBool()) {
+            m_bleError = obj.value(QStringLiteral("error")).toString(reply->errorString());
+            emit bleStateChanged();
+        }
+    });
+}
+
 void DeviceService::submitBlePasskey(int passkey)
 {
     QJsonObject body;

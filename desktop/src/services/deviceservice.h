@@ -207,6 +207,12 @@ public:
     // Reports the passkey a human read off the watch's screen back to the pairing agent -
     // see blePendingPasskeyDevice's own comment for why this can't be automated.
     Q_INVOKABLE void submitBlePasskey(int passkey);
+    // Real request, 2026-08-13 ("we need to add a button to forget the watch") - the Linux
+    // side of the bond, reachable from the app instead of only a terminal command. Unlike
+    // connectBle(true), which forgets as a side effect of a NEW pairing attempt, this drops
+    // the bond immediately without also starting one - useful when the watch itself is the
+    // one that needs a fresh "Pair Mobile App" tap next, not this app.
+    Q_INVOKABLE void forgetBle();
 
     bool bleExperimentEnabled() const { return m_bleExperimentEnabled; }
     void setBleExperimentEnabled(bool value);

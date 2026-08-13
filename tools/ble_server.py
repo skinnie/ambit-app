@@ -106,6 +106,17 @@ class ControlSocketServer:
         A fresh pairing needs this: `status`'s "pending_passkey_device" is non-null while
         the watch is showing a 6-digit code and BlueZ is waiting for the KeyboardDisplay
         agent to type it in - see Agent's own docstring for why this can't be automated.
+      {"op": "forget"}
+        -> {"ok": true, "removed": int}
+        Real request, 2026-08-13 (André, live BLE testing: "we need to add a button to
+        forget the watch"). Goes straight at BlueZ through the `bus`/`dbus`/`adapter` this
+        process already holds (same `forget_suunto_bonds()` `listen(--forget)` runs at
+        startup), not through `ble_bridge.BleBridge.stop()`+`start(forget=True)` - that
+        pair only works when THIS backend process is the one that originally spawned the
+        daemon (`self._proc`), and `start()`'s own docstring is explicit that an ADOPTED
+        daemon (started by another process/session, or a plain terminal run) can't be torn
+        down that way. A control-socket op reaches whichever daemon is actually listening,
+        spawned-by-us or not.
 
     `command` calls are serialized with a lock: `ServerLink` (like `write_nav.Link`) only
     tracks one in-flight command's reply at a time, and this socket can have more than one
@@ -113,12 +124,17 @@ class ControlSocketServer:
     subprocess tool calls, applied here instead to concurrent socket requests.
     """
 
-    def __init__(self, link, rx_total, agent=None, path=SOCKET_PATH):
+    def __init__(self, link, rx_total, agent=None, path=SOCKET_PATH,
+                 bus=None, dbus_module=None, adapter=None, glib=None):
         self.link = link
         self.rx_total = rx_total
         self.agent = agent
         self.path = Path(path)
         self._cmd_lock = threading.Lock()
+        self.bus = bus
+        self.dbus_module = dbus_module
+        self.adapter = adapter
+        self.glib = glib
 
     def _handle(self, request):
         op = request.get("op")
@@ -142,6 +158,45 @@ class ControlSocketServer:
                 return {"ok": False, "error": "no pairing agent registered"}
             ok = self.agent.submit_passkey(request.get("passkey"))
             return {"ok": ok} if ok else {"ok": False, "error": "no passkey request pending"}
+        if op == "forget":
+            if self.bus is None or self.adapter is None:
+                return {"ok": False, "error": "no BlueZ handle held by this daemon"}
+            # Real bug, found live 2026-08-13 testing this for the first time: unlike
+            # every other op here, this one makes real synchronous D-Bus calls
+            # (GetManagedObjects/RemoveDevice) - calling those straight from THIS thread
+            # (the control socket's own, not the GLib main loop's) hung every request to
+            # a timeout. "command" never has this problem because `_send()` only ever
+            # schedules work onto the main loop via `GLib.timeout_add` (thread-safe to
+            # call from anywhere) and waits on a plain `threading.Event` - the actual
+            # D-Bus traffic always happens on the main-loop thread. Doing the same here.
+            #
+            # `GLib.idle_add` (tried first) still hung: this laptop's BLE neighborhood is
+            # noisy (dozens of nearby devices - see `consider()`'s own "seen ..." log line
+            # for every one of them), so BlueZ's PropertiesChanged/InterfacesAdded signals
+            # keep the loop busy enough, back-to-back, to starve a
+            # G_PRIORITY_DEFAULT_IDLE source indefinitely. `timeout_add(0, ...)` runs at
+            # G_PRIORITY_DEFAULT instead - the same priority `_send()`'s own pacing
+            # already runs at, proven to actually get scheduled in this exact noisy
+            # environment all night.
+            done = threading.Event()
+            result = {}
+
+            def run():
+                try:
+                    result["removed"] = forget_suunto_bonds(
+                        self.bus, self.dbus_module, self.adapter)
+                    self.link.reset()
+                except Exception as exc:                      # noqa: BLE001
+                    result["error"] = str(exc)
+                done.set()
+                return False                                   # don't repeat
+
+            self.glib.timeout_add(0, run)
+            if not done.wait(25.0):
+                return {"ok": False, "error": "forget timed out on the main loop"}
+            if "error" in result:
+                return {"ok": False, "error": result["error"]}
+            return {"ok": True, "removed": result["removed"]}
         if op == "command":
             try:
                 payload = bytes.fromhex(request.get("payload_hex", ""))
@@ -998,7 +1053,8 @@ def listen(verbose=False, timeout=0, forget=False, serve_socket=True):
     link = ServerLink(notify_chrc, GLib)
 
     if serve_socket:
-        control = ControlSocketServer(link, rx_total, agent=agent)
+        control = ControlSocketServer(link, rx_total, agent=agent,
+                                       bus=bus, dbus_module=dbus, adapter=adapter, glib=GLib)
         threading.Thread(target=control.serve_forever, daemon=True).start()
 
     # Real gap, found testing this live 2026-08-11: BlueZ's GATT server has no

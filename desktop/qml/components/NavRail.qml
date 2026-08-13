@@ -120,9 +120,15 @@ Rectangle {
         // firmware pipeline. Shown when a Suunto watch is connected OR sitting in its
         // bootloader (recovery), which is exactly when there's something to do; a bricked
         // watch still enumerates, so anyDevice covers it. Garmin has no such mechanism.
+        // Real, 2026-08-13 (André, live BLE testing against the Traverse): hidden over
+        // Bluetooth - see ambit_app_never_touch_firmware memory/this project's own standing
+        // rule, a real flash write is the one mistake here that can brick the watch, and
+        // firmware flashing has never been ported to (or hardware-tested over) BLE at all,
+        // unlike every other feature in this nav rail. Cable stays the only way in.
         NavItem {
             width: parent.width
             visible: HomeViewModel.anyDevice && !HomeViewModel.isGarmin
+                     && !DeviceService.bleHandshakeDone
             glyph: Icons.sync
             label: qsTr("Firmware")
             selected: root.currentPage === "firmware"

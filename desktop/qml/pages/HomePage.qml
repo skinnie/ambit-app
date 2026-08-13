@@ -144,6 +144,13 @@ PageFlickable {
                 Row {
                     width: parent.width
                     spacing: Theme.spacingMedium
+                    // Real, 2026-08-13 (André: "when no watch was unplugged it said 'ambit
+                    // 3 peak'... so maybe we have to redo that UI"). deviceDisplayName's own
+                    // static fallback (see HomeViewModel.qml) meant this card kept showing a
+                    // specific model name/icon/status dot for a watch that was never plugged
+                    // in - genuinely misleading, not just an aesthetic gap. Hidden entirely
+                    // once nothing is connected; the emptyState Column below takes its place.
+                    visible: HomeViewModel.connected || HomeViewModel.isGarmin
 
                     // Standing in for the real Ambit3 Peak Sapphire product photo the spec
                     // asks for (from Suunto's own Android app resources) - not pulled in
@@ -202,6 +209,57 @@ PageFlickable {
                     }
                 }
 
+                // --- Empty state, real 2026-08-13 (André, same request as the visible fix
+                // above): no fake watch name/icon/data when nothing is actually connected -
+                // copy only, no button (the existing Bluetooth-connect row right below
+                // already covers that when Experimental Features is on; this text just says
+                // where to look). Mirrors anyDevice's own house rule elsewhere on this page
+                // ("pages that cannot function without a device are hidden, not shown
+                // empty") applied to this card instead of a whole page. ---
+                Column {
+                    width: parent.width
+                    spacing: Theme.spacingMedium
+                    visible: !HomeViewModel.connected && !HomeViewModel.isGarmin
+                             && !DeviceService.demoMode
+
+                    Row {
+                        width: parent.width
+                        spacing: Theme.spacingMedium
+
+                        Rectangle {
+                            width: 64
+                            height: 64
+                            radius: Theme.radiusSmall
+                            color: Theme.background
+                            Icon {
+                                anchors.centerIn: parent
+                                glyph: Icons.watch
+                                size: 32
+                                color: Theme.mutedText
+                            }
+                        }
+
+                        Column {
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: 2
+                            Text {
+                                text: qsTr("No watch connected")
+                                font.pixelSize: Theme.fontSizeTitle
+                                font.bold: true
+                                color: Theme.text
+                            }
+                            Text {
+                                text: DeviceService.bleExperimentEnabled
+                                    ? qsTr("Plug it in via USB, or search for your adventure " +
+                                           "buddy over Bluetooth below.")
+                                    : qsTr("Plug it in via USB to get started.")
+                                color: Theme.mutedText
+                                font.pixelSize: Theme.fontSizeBody
+                            }
+                        }
+                    }
+                }
+
                 // --- Bluetooth connect (Linux/BlueZ only, and Experimental-only - real
                 // decision, 2026-08-11: a live session that same night hit real BlueZ
                 // reliability trouble and a route-write bug (both since fixed - HANDOFF.md
@@ -247,6 +305,33 @@ PageFlickable {
                     }
                 }
 
+                // --- Forget (Bluetooth bond), real 2026-08-13 (André, live BLE testing:
+                // "we need to add a button to forget the watch"). Deliberately its own row,
+                // not folded into the Connect row above: unlike Connect, this is useful
+                // WHILE connected too - the same "always Unpair, never Replace" recovery
+                // PROJECT_RULES.md already recommends on the watch's own menu, now
+                // reachable from the Linux side of the same bond without a terminal. Never
+                // shown for Garmin (no such concept) or in Testing mode (nothing real to
+                // forget). ---
+                Row {
+                    width: parent.width
+                    spacing: Theme.spacingMedium
+                    visible: DeviceService.bleExperimentEnabled && !HomeViewModel.isGarmin
+                             && !DeviceService.demoMode
+
+                    RoundedButton {
+                        text: qsTr("Forget this watch (Bluetooth)")
+                        onClicked: DeviceService.forgetBle()
+                    }
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: qsTr("Drops the Bluetooth pairing on this computer. Pair " +
+                                   "again from the watch's own menu afterward.")
+                        color: Theme.mutedText
+                        font.pixelSize: Theme.fontSizeLabel
+                    }
+                }
+
                 // --- Ambit3 info grid - real, 2026-08-11 ("move clock up, and put the
                 // manual next to hardware", then "reduce spacing between the column of
                 // battery and firmware, allowing GPS orbit to stay in a column next to
@@ -259,7 +344,9 @@ PageFlickable {
                 // rows, which costs the second row nothing - it has a column to spare. ---
                 GridLayout {
                     width: parent.width
-                    visible: !HomeViewModel.isGarmin
+                    // 2026-08-13: hidden entirely while disconnected, alongside the name/
+                    // icon row above - same call as that row's own comment.
+                    visible: !HomeViewModel.isGarmin && HomeViewModel.connected
                     columns: 4
                     columnSpacing: Theme.spacingSmall
                     // Large, paired with the card Column's Small - see its comment: together

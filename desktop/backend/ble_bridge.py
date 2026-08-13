@@ -212,6 +212,22 @@ class BleBridge:
         self.dry_run = result
         return result
 
+    def forget(self):
+        """Real request, 2026-08-13 ("we need to add a button to forget the watch"). Reaches
+        the live daemon over the control socket - see ControlSocketServer's own "forget" op
+        docstring for why this can't be done as stop()+start(forget=True) instead: those two
+        only work on a daemon THIS process spawned, and `is_running()`'s own docstring
+        already covers why that's not a safe assumption to make."""
+        # Real, 2026-08-13: a generous timeout, not the usual few seconds - the underlying
+        # GetManagedObjects()/RemoveDevice() D-Bus calls this makes turned out genuinely
+        # slow on a BLE-noisy machine (dozens of nearby devices - see ControlSocketServer's
+        # own "forget" op comment), confirmed live, not a hang: BlueZ itself is busy
+        # servicing that same noise. Must exceed the daemon's own internal wait
+        # (ble_server.py's ControlSocketServer, 20s) or this gives up first and reports a
+        # false timeout while the daemon is still working.
+        response = self._request({"op": "forget"}, timeout=30.0)
+        return response.get("removed", 0)
+
     def submit_passkey(self, passkey):
         """A fresh pairing needs a human to read a 6-digit passkey off the watch's own
         screen and report it back - see ble_server.py's Agent docstring for why this can't
