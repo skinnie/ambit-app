@@ -405,19 +405,28 @@ def existing_routes_as_gpx(link):
     Callers that want to ADD a route without losing what is already there must read this
     FIRST and pass its result alongside the new route to `build_routes()` - see
     `tools/ble_routes.py`'s `write_route()` for the reference caller."""
+    flash = read_nav_flash(link)
+    header = F.RouteHeader.parse(flash.read(F.ROUTE_BASE, 32))
+    if header.magic != F.ROUTE_HEADER_MAGIC:
+        return []                      # empty/uninitialized database, nothing to preserve
+    return [route_to_gpx(flash, i) for i in range(header.route_count)]
+
+
+def read_nav_flash(link):
+    """Waypoints + Routes, read off the watch into a `FlashImage` - shared by
+    `existing_routes_as_gpx()` and `ble_routes.read_nav_summary()` (server.py's own
+    `/api/nav`, over BLE - real gap, found live 2026-08-11: the write side of routes got
+    ported to BLE the same night this was added, but the LIST side - what RoutesPage.qml
+    actually shows - was missed, so the page looked broken over BLE even though writes
+    worked). Not the full `run_nav()` read (Apps/TrainingProgram/GpsSGEE excluded) - same
+    "only what navigation actually needs" trim that function already applies."""
     waypoints = read_flash(link, F.WAYPOINT_BASE, F.REGIONS[F.WAYPOINT_BASE][1],
                            label="Waypoints")
     routes = read_flash(link, F.ROUTE_BASE, F.REGIONS[F.ROUTE_BASE][1], label="Routes")
     flash = FlashImage()
     flash.write(F.WAYPOINT_BASE, waypoints)
     flash.write(F.ROUTE_BASE, routes)
-    # route_count lives on RouteHeader (F.ROUTE_BASE), not WaypointHeader - real bug,
-    # found live 2026-08-11: WaypointHeader only has waypoint `count`, no `route_count`
-    # attribute at all, matching show_navigation()'s own two-separate-headers read above.
-    header = F.RouteHeader.parse(routes[:32])
-    if header.magic != F.ROUTE_HEADER_MAGIC:
-        return []                      # empty/uninitialized database, nothing to preserve
-    return [route_to_gpx(flash, i) for i in range(header.route_count)]
+    return flash
 
 
 def nav_summary_json(flash):

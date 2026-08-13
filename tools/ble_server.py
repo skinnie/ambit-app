@@ -804,6 +804,22 @@ def start_discovery(bus, dbus, adapter, verbose, on_disconnect=None):
         solicits = SERVICE_UUID.lower() in uuids
         named = any(name.startswith(prefix) for prefix in NAME_PREFIXES)
         addressed = str(device.get("Address", "")).upper().startswith(SUUNTO_OUI)
+        # Real bug, found live 2026-08-11: a genuinely different real Suunto product
+        # ("Suunto Smart Sensor" - presumably a heart-rate strap, not this watch family)
+        # ALSO solicits this exact same NSP service UUID - apparently a shared BLE
+        # framework across Suunto's whole product line, not unique to Ambit3/Traverse/
+        # Kailash. Every real target device already advertises a matching name too
+        # (Kailash's own "Suunto NSP" is in NAME_PREFIXES for exactly this reason), so a
+        # device that HAS a readable name and it does not match ours is confidently NOT
+        # our target, regardless of solicits/OUI - the daemon connected to the sensor
+        # instead of the watch and sat there forever waiting for it to subscribe (it
+        # never would). Only a device with NO advertised name at all still falls back to
+        # solicits/OUI - the one case a name-only check can't rule anything out for.
+        if name and not named:
+            if verbose:
+                print(f"  seen {path.split('/')[-1]} {name} (named, not ours - ignoring "
+                      "despite NSP/OUI match)")
+            return
         if not solicits and not named and not addressed:
             if verbose:
                 print(f"  seen {path.split('/')[-1]} {name or '(no name)'}")

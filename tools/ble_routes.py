@@ -36,9 +36,19 @@ import sys
 import tempfile
 
 from write_nav import (
-    CMD_POI_WRITE, build_routes, check_memory_map, existing_routes_as_gpx, poi_write_payload,
-    read_memory_map, read_pois, send_plan,
+    CMD_POI_WRITE, build_routes, check_memory_map, existing_routes_as_gpx, nav_summary_json,
+    poi_write_payload, read_memory_map, read_nav_flash, read_pois, send_plan,
 )
+
+
+def read_nav_summary(link):
+    """The BLE path for GET /api/nav - real gap, found live 2026-08-11: routes could be
+    written over BLE (write_route(), same night) but the Routes PAGE itself still showed
+    nothing/failed, because listing what's already on the watch (RouteService.cpp's own
+    `onWatchRoutes`, populated from this exact endpoint's "routes" array) was never wired
+    up - only the write side was. Reuses `nav_summary_json()` unchanged against the same
+    `read_nav_flash()` `existing_routes_as_gpx()` already uses."""
+    return nav_summary_json(read_nav_flash(link))
 
 
 def write_route(link, gpx_paths, meta_capture=None, preserve_existing=True):

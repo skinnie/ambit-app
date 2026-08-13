@@ -356,11 +356,35 @@ class Handler(BaseHTTPRequestHandler):
         ("add a map for each gpx"), real per-route point tracks via `nav --json` - one
         already-existing JSON line appended after the human-readable output, decoded from
         the exact same flash data already read for the summary, no extra USB round trip."""
+        if ble_bridge.bridge.status().get("handshake_done"):
+            self._handle_nav_ble()
+            return
         code, out, err = run_tool("write_nav.py", ["nav", "--json"])
         routes = self._parse_last_json_line(out)  # same "last JSON line" convention
         self._send_json(200 if code == 0 else 502, {
             "ok": code == 0, "raw_output": out, "stderr": err,
             "routes": (routes or {}).get("routes", [])})
+
+    def _handle_nav_ble(self):
+        """The BLE path for GET /api/nav - tools/ble_routes.py's read_nav_summary(). Real
+        gap, found live 2026-08-11: route WRITES worked over BLE the same night this was
+        added, but the Routes page itself showed nothing/"failed" because this endpoint -
+        what actually lists on-watch routes - was still USB-only. `raw_output` is left
+        empty; RouteService.cpp's own regex fallback only runs when "routes" is empty,
+        which it deliberately isn't here."""
+        sys.path.insert(0, str(TOOLS_DIR))
+        import ble_routes                                    # noqa: PLC0415
+        try:
+            ble_bridge.bridge.set_dry_run(False)
+            summary = ble_routes.read_nav_summary(ble_bridge.bridge)
+        except ble_bridge.BleBridgeError as exc:
+            self._send_json(502, {"ok": False, "error": str(exc)})
+            return
+        except (RuntimeError, TimeoutError) as exc:
+            self._send_json(502, {"ok": False, "error": str(exc)})
+            return
+        self._send_json(200, {"ok": True, "transport": "ble", "raw_output": "",
+                              "routes": summary.get("routes", [])})
 
     def _handle_activities(self):
         """Recorded moves, as GPX and FIT. Read-only by construction - exercise_log.py's
