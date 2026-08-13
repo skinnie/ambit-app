@@ -118,6 +118,11 @@ PageFlickable {
                         model: root.poiTypeNames
                         currentIndex: root.poiType
                         onActivated: (i) => root.poiType = i
+                        // Open the list just below the box instead of on top of it. Overlapping,
+                        // the popup's rounded rectangle sat over the box's own rounded rectangle
+                        // and the two borders doubled up at the top corners (André, 2026-08-13:
+                        // the open dropdown's "corner issue").
+                        popup.y: poiTypeBox.height
                         background: Rectangle {
                             implicitHeight: 36
                             radius: Theme.radiusSmall
