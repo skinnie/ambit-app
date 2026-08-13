@@ -291,6 +291,8 @@ class Handler(BaseHTTPRequestHandler):
             self._handle_apps_catalog()
         elif self.path == "/api/time/zones":
             self._handle_time_zones()
+        elif self.path == "/api/smartsensor/status":
+            self._handle_smartsensor_status()
         else:
             self.send_response(404)
             self.end_headers()
@@ -308,6 +310,8 @@ class Handler(BaseHTTPRequestHandler):
             self._handle_ble_disconnect()
         elif self.path == "/api/ble/passkey":
             self._handle_ble_passkey(body)
+        elif self.path == "/api/ble/forget":
+            self._handle_ble_forget()
         elif self.path == "/api/routes":
             self._handle_route_write(body)
         elif self.path == "/api/routes/export":
@@ -344,6 +348,8 @@ class Handler(BaseHTTPRequestHandler):
             self._handle_apps_install(body)
         elif self.path == "/api/pois":
             self._handle_poi_add(body)
+        elif self.path == "/api/smartsensor/forget":
+            self._handle_smartsensor_forget()
         else:
             self.send_response(404)
             self.end_headers()
@@ -906,6 +912,26 @@ class Handler(BaseHTTPRequestHandler):
         ble_bridge.bridge.stop()
         self._send_json(200, {"ok": True})
 
+    def _handle_ble_forget(self):
+        """POST /api/ble/forget - real request 2026-08-13 ("we need to add a button to
+        forget the watch"), for exactly the recovery dance PROJECT_RULES.md already
+        recommends for a stuck pairing (always Unpair, never Replace) but that, until now,
+        only the watch's own menu could do - the Linux side of the same bond had no UI
+        equivalent. ble_bridge.BleBridge.forget() reaches the daemon over its control
+        socket regardless of which process spawned it (or if a person started it by hand),
+        unlike stop()+start(forget=True) which only works when this backend is the one
+        that spawned it. No daemon running at all is not an error here - "already
+        forgotten" is a fine outcome for a forget request."""
+        if not ble_bridge.bridge.status().get("running"):
+            self._send_json(200, {"ok": True, "removed": 0})
+            return
+        try:
+            removed = ble_bridge.bridge.forget()
+        except ble_bridge.BleBridgeError as exc:
+            self._send_json(502, {"ok": False, "error": str(exc)})
+            return
+        self._send_json(200, {"ok": True, "removed": removed})
+
     def _handle_ble_passkey(self, body):
         """POST /api/ble/passkey {"passkey": 123456} - a fresh pairing needs this: the
         watch (LE Legacy Passkey Entry, HANDOFF.md Milestone 7 item 16) shows a 6-digit
@@ -1025,6 +1051,37 @@ class Handler(BaseHTTPRequestHandler):
                                    "no parseable JSON", "raw_output": out})
             return
         self._send_json(200, info)
+
+    def _handle_smartsensor_status(self):
+        """GET /api/smartsensor/status - Suunto Smart Sensor (the HR belt) identity/
+        battery/heart-rate, tools/smart_sensor.py, added 2026-08-13. Entirely independent
+        of DeviceService's watch (this is a second, unrelated BLE peripheral) - read-only,
+        real hardware-confirmed. Generous timeout: a just-forgotten belt reconnecting from
+        scratch (no cached GATT database) can genuinely take ~35-45s real BLE discovery
+        time on this hardware; an already-known/connected belt (the common case) is much
+        faster, well under 20s."""
+        code, out, err = run_tool("smart_sensor.py", ["--status", "--json"], timeout=70)
+        info = self._parse_last_json_line(out)
+        if info is None:
+            self._send_json(502, {"ok": False, "error": "smart_sensor.py --json produced "
+                                   "no parseable JSON", "raw_output": out, "stderr": err})
+            return
+        self._send_json(200 if info.get("ok") else 502, info)
+
+    def _handle_smartsensor_forget(self):
+        """POST /api/smartsensor/forget - unpairs/removes the belt from BlueZ entirely
+        (org.bluez.Adapter1.RemoveDevice), tools/smart_sensor.py --forget. Real request,
+        2026-08-13 (André, after testing the paired flow end to end): a way back to a
+        clean slate to re-exercise Pair, with no terminal needed. Not destructive to the
+        belt - it holds no bond secret worth losing (Just Works pairing) - so this is a
+        safely repeatable Bluetooth-side reset, not a real device action."""
+        code, out, err = run_tool("smart_sensor.py", ["--forget", "--json"], timeout=20)
+        info = self._parse_last_json_line(out)
+        if info is None:
+            self._send_json(502, {"ok": False, "error": "smart_sensor.py --json produced "
+                                   "no parseable JSON", "raw_output": out, "stderr": err})
+            return
+        self._send_json(200 if info.get("ok") else 502, info)
 
     def _handle_kailash_history(self):
         """GET /api/kailash/history - Kailash only. Real, read-only 0x1200

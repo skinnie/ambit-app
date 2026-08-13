@@ -175,6 +175,8 @@ qt_add_qml_module(ambitapp
         src/services/tilecachepaths.h
         src/services/tilecacheservice.h
         src/services/tilecacheservice.cpp
+        src/services/smartsensorservice.h
+        src/services/smartsensorservice.cpp
     RESOURCES
         assets/fonts/MaterialSymbolsRounded.ttf
         packaging/icon.png
