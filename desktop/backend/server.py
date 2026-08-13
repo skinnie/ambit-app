@@ -478,9 +478,30 @@ class Handler(BaseHTTPRequestHandler):
         parser for that without a real watch to check the actual field names against risks
         silently showing wrong data - same reasoning as /api/nav, applied honestly rather
         than skipped."""
+        if ble_bridge.bridge.status().get("handshake_done"):
+            self._handle_pois_read_ble()
+            return
         code, out, err = run_tool("write_nav.py", ["pois"])
         self._send_json(200 if code == 0 else 502, {
             "ok": code == 0, "raw_output": out, "stderr": err})
+
+    def _handle_pois_read_ble(self):
+        """The BLE path for GET /api/pois - tools/ble_pois.py's read_pois_summary(). Real
+        gap, found live 2026-08-13 (André: POIs suspected of never having been ported to
+        BLE, same as routes-listing before it) - confirmed true: this endpoint had no BLE
+        branch at all until now."""
+        sys.path.insert(0, str(TOOLS_DIR))
+        import ble_pois                                      # noqa: PLC0415
+        try:
+            ble_bridge.bridge.set_dry_run(False)
+            raw_output = ble_pois.read_pois_summary(ble_bridge.bridge)
+        except ble_bridge.BleBridgeError as exc:
+            self._send_json(502, {"ok": False, "error": str(exc)})
+            return
+        except (RuntimeError, TimeoutError) as exc:
+            self._send_json(502, {"ok": False, "error": str(exc)})
+            return
+        self._send_json(200, {"ok": True, "transport": "ble", "raw_output": raw_output})
 
     def _handle_route_export(self, body):
         """Body: {"index": int}. Real request 2026-08-07 ("replicate the function from our
@@ -530,6 +551,10 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(400, {"error": f"{lat}, {lon} is not a coordinate on Earth"})
             return
 
+        if ble_bridge.bridge.status().get("handshake_done"):
+            self._handle_poi_add_ble(name, lat, lon)
+            return
+
         code, out, err = run_tool(
             "write_nav.py",
             ["addpoi", "--name", name, "--lat", f"{lat:.7f}", "--lon", f"{lon:.7f}",
@@ -539,6 +564,23 @@ class Handler(BaseHTTPRequestHandler):
                                   or "POI write failed", "raw_output": out})
             return
         self._send_json(200, {"ok": True, "raw_output": out})
+
+    def _handle_poi_add_ble(self, name, lat, lon):
+        """The BLE path for POST /api/pois - tools/ble_pois.py's add_poi(). Same gap as
+        the read side (found live 2026-08-13): never ported despite routes/settings/
+        activities all having their own BLE write paths already."""
+        sys.path.insert(0, str(TOOLS_DIR))
+        import ble_pois                                      # noqa: PLC0415
+        try:
+            ble_bridge.bridge.set_dry_run(False)
+            result = ble_pois.add_poi(ble_bridge.bridge, name, lat, lon)
+        except ble_bridge.BleBridgeError as exc:
+            self._send_json(502, {"ok": False, "error": str(exc)})
+            return
+        except (RuntimeError, TimeoutError) as exc:
+            self._send_json(502, {"ok": False, "error": str(exc)})
+            return
+        self._send_json(200, {"ok": True, "transport": "ble", **result})
 
     def _handle_route_write(self, body):
         """Body: {"name": str, "gpx": "<gpx xml text>", "confirm": bool}. Without `confirm`,
