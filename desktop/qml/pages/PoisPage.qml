@@ -111,7 +111,7 @@ PageFlickable {
                     RoundedComboBox {
                         id: poiTypeBox
                         anchors.verticalCenter: parent.verticalCenter
-                        width: 168
+                        width: 158
                         focusPolicy: Qt.ClickFocus
                         leftPadding: Theme.spacingSmall
                         rightPadding: indicator.width + Theme.spacingSmall
@@ -152,7 +152,7 @@ PageFlickable {
                     RoundedTextField {
                         id: poiNameField
                         anchors.verticalCenter: parent.verticalCenter
-                        width: 132
+                        width: 124
                         // The watch stores at most 15 bytes for the name (ambit_format.py
                         // MAX_NAME_BYTES, which truncates on write) - cap the field so what you
                         // type is what the watch keeps, instead of a silent trim (André, 2026-08-13).

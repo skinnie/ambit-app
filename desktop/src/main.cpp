@@ -83,6 +83,13 @@ public:
 // starts the UI.
 int main(int argc, char *argv[])
 {
+    // Qt Quick's distance-field text renderer does SUBPIXEL antialiasing by default, which paints
+    // an orange/blue colour fringe on glyph edges - very visible on bold marks like the POI pin
+    // (André, 2026-08-13: the Waypoint box "has the red corners"). Neither Text.renderType nor the
+    // font engine's subpixel setting (fontconfig rgba) affect it - only this scenegraph knob does.
+    // Must be set before the QGuiApplication/scenegraph reads it. "gray" = grayscale AA, no fringe.
+    qputenv("QSG_DISTANCEFIELD_ANTIALIASING", "gray");
+
     QGuiApplication app(argc, argv);
     app.setOrganizationName(QStringLiteral("Sommet"));
     app.setApplicationName(QStringLiteral("Sommet"));
