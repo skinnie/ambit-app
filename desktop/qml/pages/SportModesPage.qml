@@ -59,9 +59,14 @@ PageFlickable {
     // `cap` gates each pod on this watch's own capability record ("" = always available, like
     // the HR belt). A Traverse reports supportsFootPod/BikePod/PowerPod=false, so only the HR
     // belt shows for it - it has no ANT+ pod support at all. André, 2026-08-17.
+    // Cadence (0x0080) is what makes Cycling's real 0x08C3 add up (0x0800 bike | 0x0080 cadence
+    // | 0x0040 power | 0x0003); gated with the bike pod so it shows on ANT+ watches only.
+    // 0x0004 is deliberately absent - it is UseAccelerometer, which SuuntoLink derives from the
+    // sport itself and never offers as a checkbox.
     readonly property var podBits: [
         { bit: 0x0001, label: qsTr("HR belt"),   cap: "" },
         { bit: 0x0040, label: qsTr("Power pod"), cap: "supportsPowerPod" },
+        { bit: 0x0080, label: qsTr("Cadence"),   cap: "supportsBikePod" },
         { bit: 0x0100, label: qsTr("Foot pod"),  cap: "supportsFootPod" },
         { bit: 0x0800, label: qsTr("Bike pod"),  cap: "supportsBikePod" },
     ]
@@ -909,21 +914,27 @@ PageFlickable {
                     width: parent.width
                     spacing: 2
                     Text { text: qsTr("Pods"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
-                    // Flow, not Row: five pods do not fit one line inside the card, so they wrap
-                    // to the next line rather than spilling past the edge (André, 2026-08-13).
-                    Flow {
+                    // Reactive, no fixed gap (André, 2026-08-13): each pod takes an equal share of
+                    // the card width, so all pods stay on ONE line at any window/device width
+                    // rather than overflowing or wrapping. The label elides only if a device is
+                    // genuinely too narrow. This is the multi-device-safe alternative to picking a
+                    // spacing number that "just fits" one width.
+                    Row {
+                        id: podsRow
                         width: parent.width
-                        spacing: Theme.spacingMedium
                         Repeater {
                             model: root.podBits
                             delegate: Row {
                                 id: podRow
                                 required property var modelData
-                                spacing: 6
+                                width: podsRow.width / root.podBits.length
+                                spacing: Theme.spacingSmall
                                 // Only show a pod this watch actually supports (HR belt always).
                                 visible: podRow.modelData.cap === ""
                                          || root.caps[podRow.modelData.cap] === true
                                 RoundedCheckBox {
+                                    id: podCheck
+                                    anchors.verticalCenter: parent.verticalCenter
                                     checked: modeColumn.mode ? (modeColumn.mode.useHw & podRow.modelData.bit) !== 0 : false
                                     enabled: !modeColumn.busy
                                     onToggled: {
@@ -935,6 +946,8 @@ PageFlickable {
                                 }
                                 Text {
                                     anchors.verticalCenter: parent.verticalCenter
+                                    width: podRow.width - podCheck.width - podRow.spacing
+                                    elide: Text.ElideRight
                                     text: podRow.modelData.label
                                     color: Theme.text
                                     font.pixelSize: Theme.fontSizeLabel

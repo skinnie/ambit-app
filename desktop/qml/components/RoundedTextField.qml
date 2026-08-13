@@ -20,6 +20,10 @@ TextField {
     selectionColor: Theme.primary
     selectedTextColor: Theme.card
     verticalAlignment: Text.AlignVCenter
+    // General rule for every text-input box in the app (André, 2026-08-13): the typed text and
+    // its placeholder are horizontally centered. One place, so every RoundedTextField follows -
+    // the same single-source approach as Theme colors and the Card clip rule.
+    horizontalAlignment: TextInput.AlignHCenter
     leftPadding: Theme.spacingSmall
     rightPadding: Theme.spacingSmall
 
