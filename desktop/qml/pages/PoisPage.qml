@@ -98,10 +98,8 @@ PageFlickable {
                 }
 
                 // One line: the type dropdown (carrying the selected type's icon as its own
-                // leading logo) and the name. The dropdown is the first element, so its left edge
-                // lines up with the Search and coordinate fields below it (André, 2026-08-13:
-                // "search is not inline with waypoint" - the icon used to sit in its own column and
-                // pushed the dropdown out of alignment).
+                // leading logo), the name, and the place search - all three inline (André,
+                // 2026-08-13: "type + name + search all inline").
                 Row {
                     width: parent.width
                     spacing: Theme.spacingSmall
@@ -150,11 +148,11 @@ PageFlickable {
                             }
                         }
                     }
-                    // Name - fills the rest of the line.
+                    // Name - between the type and the search on the same line.
                     RoundedTextField {
                         id: poiNameField
                         anchors.verticalCenter: parent.verticalCenter
-                        width: parent.width - poiTypeBox.width - Theme.spacingSmall
+                        width: 132
                         // The watch stores at most 15 bytes for the name (ambit_format.py
                         // MAX_NAME_BYTES, which truncates on write) - cap the field so what you
                         // type is what the watch keeps, instead of a silent trim (André, 2026-08-13).
@@ -162,14 +160,16 @@ PageFlickable {
                         placeholderText: qsTr("Name this POI")
                         onTextChanged: root.poiName = text
                     }
-                }
-
-                PlaceSearchBar {
-                    width: parent.width
-                    onPlaceChosen: (lat, lon) => {
-                        root.poiLat = lat
-                        root.poiLon = lon
-                        addMap.resetView()
+                    // Place search - fills the rest of the same line.
+                    PlaceSearchBar {
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: parent.width - poiTypeBox.width - poiNameField.width
+                               - (Theme.spacingSmall * 2)
+                        onPlaceChosen: (lat, lon) => {
+                            root.poiLat = lat
+                            root.poiLon = lon
+                            addMap.resetView()
+                        }
                     }
                 }
 
