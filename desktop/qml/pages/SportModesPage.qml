@@ -285,6 +285,23 @@ PageFlickable {
     readonly property real autolapUnitDivisor: autolapUsesMiles ? 1609.344 : 1000
     readonly property string autolapUnitSuffix: autolapUsesMiles ? qsTr("mi") : qsTr("km")
 
+    // Interval-timer time thresholds are stored as whole seconds and shown as m:ss (SuuntoLink's
+    // own "mm ' ss"); distance thresholds reuse the Autolap unit handling above.
+    function parseMmSs(text) {
+        var s = ("" + text).trim().replace("'", ":");
+        if (s.indexOf(":") >= 0) {
+            var parts = s.split(":");
+            return (parseInt(parts[0] || "0", 10) * 60) + parseInt(parts[1] || "0", 10);
+        }
+        return parseInt(s || "0", 10);
+    }
+    function formatMmSs(seconds) {
+        var s = Math.max(0, Math.round(seconds));
+        var m = Math.floor(s / 60);
+        var r = s % 60;
+        return m + ":" + (r < 10 ? "0" : "") + r;
+    }
+
     Text {
         visible: HomeViewModel.isKailash
         anchors.horizontalCenter: parent.horizontalCenter
@@ -737,6 +754,152 @@ PageFlickable {
                                 "HrHigh": parseInt(hrHighField.text || "0"),
                                 "HrLimitsUse": hrLimitsSwitch.checked ? 1 : 0,
                             })
+                        }
+                    }
+                }
+
+                // --- Interval timer - real SuuntoLink UI (assets/pcap/screens/ambit3 screens
+                // sports modes/intervaltimerseconds.JPG): "Use interval timer", a Time(m:ss) /
+                // Distance selector for the High and Low thresholds, and Repetitions. The byte
+                // encoding is proven byte-exact against real captures - see tools/interval_timer.py.
+                // Writes immediately on Set, like Autolap/HR (staging is displays-only).
+                Column {
+                    id: intervalCol
+                    width: parent.width
+                    spacing: 6
+                    readonly property var it: modeColumn.mode ? modeColumn.mode.intervalTimer : null
+                    readonly property bool isTime: itTypeBox.currentIndex === 0
+
+                    Text { text: qsTr("Interval timer"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel }
+
+                    Row {
+                        spacing: 6
+                        RoundedSwitch {
+                            id: itSwitch
+                            anchors.verticalCenter: parent.verticalCenter
+                            enabled: !modeColumn.busy
+                            Binding {
+                                target: itSwitch; property: "checked"
+                                value: intervalCol.it ? intervalCol.it.enabled : false
+                            }
+                        }
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: qsTr("Use interval timer")
+                            color: Theme.text; font.pixelSize: Theme.fontSizeLabel
+                        }
+                    }
+
+                    // Type / High / Low / Reps, shown only when enabled (as Autolap's value is).
+                    Column {
+                        visible: itSwitch.checked
+                        spacing: 6
+
+                        Row {
+                            spacing: 6
+                            Text {
+                                width: 44; anchors.verticalCenter: parent.verticalCenter
+                                text: qsTr("Type"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel
+                            }
+                            RoundedComboBox {
+                                id: itTypeBox
+                                width: 150
+                                enabled: !modeColumn.busy
+                                model: [qsTr("Time (m:ss)"), qsTr("Distance")]
+                                Binding {
+                                    target: itTypeBox; property: "currentIndex"
+                                    value: (intervalCol.it && intervalCol.it.type === "distance") ? 1 : 0
+                                }
+                            }
+                        }
+
+                        Row {
+                            spacing: 6
+                            Text {
+                                width: 44; anchors.verticalCenter: parent.verticalCenter
+                                text: qsTr("High"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel
+                            }
+                            RoundedTextField {
+                                id: itHighField
+                                width: 90
+                                enabled: !modeColumn.busy
+                                Binding {
+                                    target: itHighField; property: "text"; when: !itHighField.activeFocus
+                                    value: !intervalCol.it ? "" : (intervalCol.isTime
+                                        ? root.formatMmSs(intervalCol.it.high)
+                                        : (intervalCol.it.high / root.autolapUnitDivisor).toFixed(2))
+                                }
+                            }
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                visible: !intervalCol.isTime
+                                text: root.autolapUnitSuffix
+                                color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel
+                            }
+                        }
+
+                        Row {
+                            spacing: 6
+                            Text {
+                                width: 44; anchors.verticalCenter: parent.verticalCenter
+                                text: qsTr("Low"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel
+                            }
+                            RoundedTextField {
+                                id: itLowField
+                                width: 90
+                                enabled: !modeColumn.busy
+                                Binding {
+                                    target: itLowField; property: "text"; when: !itLowField.activeFocus
+                                    value: !intervalCol.it ? "" : (intervalCol.isTime
+                                        ? root.formatMmSs(intervalCol.it.low)
+                                        : (intervalCol.it.low / root.autolapUnitDivisor).toFixed(2))
+                                }
+                            }
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                visible: !intervalCol.isTime
+                                text: root.autolapUnitSuffix
+                                color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel
+                            }
+                        }
+
+                        Row {
+                            spacing: 6
+                            Text {
+                                width: 44; anchors.verticalCenter: parent.verticalCenter
+                                text: qsTr("Reps"); color: Theme.mutedText; font.pixelSize: Theme.fontSizeLabel
+                            }
+                            RoundedTextField {
+                                id: itRepsField
+                                width: 90
+                                enabled: !modeColumn.busy
+                                validator: IntValidator { bottom: 1; top: 999 }
+                                Binding {
+                                    target: itRepsField; property: "text"; when: !itRepsField.activeFocus
+                                    value: intervalCol.it ? intervalCol.it.repetitions : 99
+                                }
+                            }
+                        }
+                    }
+
+                    RoundedButton {
+                        text: modeColumn.busy ? qsTr("Saving...") : qsTr("Set")
+                        enabled: modeColumn.mode && !modeColumn.busy
+                        onClicked: {
+                            var reps = parseInt(itRepsField.text || "99", 10)
+                            if (isNaN(reps) || reps < 1) reps = 99
+                            if (!itSwitch.checked) {
+                                CustomModesService.setIntervalTimer(modeColumn.mode.name,
+                                    false, "time", 0, 0, reps)
+                                return
+                            }
+                            var isTime = itTypeBox.currentIndex === 0
+                            var high = isTime ? root.parseMmSs(itHighField.text)
+                                : Math.round(parseFloat(itHighField.text || "0") * root.autolapUnitDivisor)
+                            var low = isTime ? root.parseMmSs(itLowField.text)
+                                : Math.round(parseFloat(itLowField.text || "0") * root.autolapUnitDivisor)
+                            CustomModesService.setIntervalTimer(modeColumn.mode.name, true,
+                                isTime ? "time" : "distance", high, low, reps)
                         }
                     }
                 }

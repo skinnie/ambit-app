@@ -81,6 +81,10 @@ void CustomModesService::refresh()
             row[QStringLiteral("hrLimitsUse")] = mode.value(QStringLiteral("hrLimitsUse")).toInt();
             row[QStringLiteral("recordingInterval")] =
                 mode.value(QStringLiteral("recordingInterval")).toInt();
+            // The Interval Timer object ({enabled, type, high, low, repetitions}) passed
+            // straight through - SportModesPage binds its whole section to mode.intervalTimer.
+            row[QStringLiteral("intervalTimer")] =
+                mode.value(QStringLiteral("intervalTimer")).toObject().toVariantMap();
 
             QVariantList displays;
             for (const auto &d : mode.value(QStringLiteral("displays")).toArray()) {
@@ -315,6 +319,45 @@ void CustomModesService::writeField(const QString &mode, const QVariantMap &fiel
             setLastError(reply->error() != QNetworkReply::NoError
                 ? QStringLiteral("POST /api/customodes/field: %1").arg(reply->errorString())
                 : QStringLiteral("POST /api/customodes/field: %1").arg(
+                    obj.value(QStringLiteral("error")).toString(QStringLiteral("write not confirmed"))));
+        } else {
+            setLastError(QString());
+        }
+        refresh();
+    });
+}
+
+void CustomModesService::setIntervalTimer(const QString &mode, bool enabled, const QString &type,
+                                          int high, int low, int repetitions)
+{
+    setWritingMode(mode);
+
+    QNetworkRequest request(backendUrl(QStringLiteral("/api/customodes/interval-timer")));
+    request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
+    QJsonObject body;
+    body[QStringLiteral("mode")] = mode;
+    body[QStringLiteral("enabled")] = enabled;
+    if (enabled) {
+        body[QStringLiteral("type")] = type;
+        body[QStringLiteral("high")] = high;
+        body[QStringLiteral("low")] = low;
+    }
+    body[QStringLiteral("repetitions")] = repetitions;
+    body[QStringLiteral("confirm")] = true;
+
+    QNetworkReply *reply = m_network.post(request, QJsonDocument(body).toJson(QJsonDocument::Compact));
+    connect(reply, &QNetworkReply::finished, this, [this, reply, mode] {
+        reply->deleteLater();
+        if (m_writingMode == mode)
+            setWritingMode(QString());
+
+        const auto obj = QJsonDocument::fromJson(reply->readAll()).object();
+        const bool writeOk = (reply->error() == QNetworkReply::NoError)
+            && obj.value(QStringLiteral("ok")).toBool();
+        if (!writeOk) {
+            setLastError(reply->error() != QNetworkReply::NoError
+                ? QStringLiteral("POST /api/customodes/interval-timer: %1").arg(reply->errorString())
+                : QStringLiteral("POST /api/customodes/interval-timer: %1").arg(
                     obj.value(QStringLiteral("error")).toString(QStringLiteral("write not confirmed"))));
         } else {
             setLastError(QString());

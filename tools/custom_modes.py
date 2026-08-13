@@ -781,6 +781,25 @@ def _field_to_json(f):
     }
 
 
+def _interval_timer_json(settings):
+    """The mode's Interval Timer as a UI needs it: {enabled, type, high, low, repetitions}.
+    Decoded from IntTimerFlags/IntTimerCount and the interval slots - the full slot's own Type
+    (1=Time/mm'ss, 0=Distance/km) and Len (the "high" threshold), and the third slot's MaxLimit
+    (the "low" threshold). Time values are whole seconds, distance values are meters. See
+    tools/interval_timer.py (the writer) for the byte-exact derivation from real SuuntoLink
+    captures - this only surfaces what decode_settings() already parsed."""
+    slots = settings.get("IntervalSlots") or []
+    full = slots[0] if len(slots) > 0 else {}
+    low_slot = slots[2] if len(slots) > 2 else {}
+    return {
+        "enabled": settings.get("IntTimerFlags") == 1,
+        "type": "time" if full.get("Type") == 1 else "distance",
+        "high": full.get("Len", 0),
+        "low": low_slot.get("MaxLimit", 0),
+        "repetitions": settings.get("IntTimerCount", 0),
+    }
+
+
 def _displays_to_json(displays, variant=None):
     """One mode's own real Displays list, JSON-shaped - `index` stays the raw 0-based
     position (writeDisplayField's own addressing needs this unchanged), `screenNumber` is
@@ -845,6 +864,7 @@ def to_json(result, variant=None):
             "autoScrolling": s.get("AutoScrolling"),
             "intTimerFlags": s.get("IntTimerFlags"),
             "intTimerCount": s.get("IntTimerCount"),
+            "intervalTimer": _interval_timer_json(s),
             "backlightMode": s.get("BacklightModeName"),
             "displayMode": s.get("DisplayModeName"),
             "quickNavigation": s.get("QuickNavigationName"),

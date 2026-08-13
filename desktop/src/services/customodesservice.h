@@ -82,6 +82,12 @@ public:
     // (Autolap, HrHigh, HrLow, HrLimitsUse, UseHw, ...) to their new integer values.
     Q_INVOKABLE void writeField(const QString &mode, const QVariantMap &fields);
 
+    // POST /api/customodes/interval-timer, confirm:true. Sets a mode's on-watch Interval
+    // Timer. `type` is "time" (high/low in seconds) or "distance" (high/low in meters); when
+    // disabling, type/high/low are ignored. Same busy/refresh handling as writeField.
+    Q_INVOKABLE void setIntervalTimer(const QString &mode, bool enabled, const QString &type,
+                                      int high, int low, int repetitions);
+
     // POST /api/customodes/display-field, confirm:true. `newType` is a FIELD_TYPES name
     // (e.g. "FT_HEART_RATE_CURR") - real, live-confirmed finding: `type`, not `index`, is
     // what actually selects the rendered content for the common case (see this class's

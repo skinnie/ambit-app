@@ -396,6 +396,8 @@ class Handler(BaseHTTPRequestHandler):
             self._handle_customodes_rename(body)
         elif self.path == "/api/customodes/field":
             self._handle_customodes_field(body)
+        elif self.path == "/api/customodes/interval-timer":
+            self._handle_customodes_interval_timer(body)
         elif self.path == "/api/customodes/display-field":
             self._handle_customodes_display_field(body)
         elif self.path == "/api/customodes/displays":
@@ -1822,6 +1824,36 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(502, {"ok": False, "error": "custom_modes_field_write_test.py "
                                    "--json produced no parseable JSON", "raw_output": out,
                                    "stderr": err})
+            return
+        self._send_json(200 if info.get("ok") else 502, info)
+
+    def _handle_customodes_interval_timer(self, body):
+        """POST /api/customodes/interval-timer. Body: {"mode": str, "enabled": bool,
+        "type": "time"|"distance", "high": int, "low": int, "repetitions": int,
+        "confirm": bool}. Sets a mode's on-watch Interval Timer via tools/interval_timer.py -
+        high/low are raw stored units (seconds for time, meters for distance), the same as the
+        writer and the decoder expose. Same rehearsal-first (--json without --write) pattern as
+        every other write here; only writes when confirm is true."""
+        mode = body.get("mode")
+        if not mode or "enabled" not in body:
+            self._send_json(400, {"error": "missing \"mode\" or \"enabled\""})
+            return
+        args = ["--mode", mode]
+        args.append("--enable" if body.get("enabled") else "--disable")
+        if body.get("enabled"):
+            args += ["--type", str(body.get("type", "time")),
+                     "--high", str(int(body.get("high", 0))),
+                     "--low", str(int(body.get("low", 0)))]
+        if body.get("repetitions") is not None:
+            args += ["--reps", str(int(body.get("repetitions")))]
+        args.append("--json")
+        if bool(body.get("confirm", False)):
+            args.append("--write")
+        code, out, err = run_tool("interval_timer.py", args)
+        info = self._parse_last_json_line(out)
+        if info is None:
+            self._send_json(502, {"ok": False, "error": "interval_timer.py --json produced no "
+                                   "parseable JSON", "raw_output": out, "stderr": err})
             return
         self._send_json(200 if info.get("ok") else 502, info)
 
