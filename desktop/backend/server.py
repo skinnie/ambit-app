@@ -379,6 +379,9 @@ class Handler(BaseHTTPRequestHandler):
         indices no longer mean the same activity, and the caller has to ask again with 0."""
         query = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
         known_count = query.get("known_count", ["0"])[0]
+        if ble_bridge.bridge.status().get("handshake_done"):
+            self._handle_activities_ble(int(known_count))
+            return
         with tempfile.TemporaryDirectory() as tmpdir:
             code, out, err = run_tool(
                 "exercise_log.py",
@@ -402,6 +405,46 @@ class Handler(BaseHTTPRequestHandler):
                               if master_path.exists() else len(activities))
             self._send_json(200, {"ok": True, "activities": activities,
                                    "total_entries": total_entries, "raw_output": out})
+
+    def _handle_activities_ble(self, known_count):
+        """The BLE path for GET /api/activities - tools/ble_activities.py. Same real
+        decode as USB (to_gpx()/to_fit(), unchanged), the ExerciseLog region read directly
+        via the driver-path command() proven reliable for routes tonight - no temp
+        directory needed since this calls the encode functions in-process instead of
+        shelling out to exercise_log.py's own file-writing CLI mode.
+
+        Real note from live testing: this region can be large and the read is currently
+        slow over BLE (many small round trips - confirmed correct, CRC-clean throughout,
+        just not fast yet). No client-facing timeout added here on purpose - better to let
+        it finish than fail a real read; a caller that wants a bound should set its own."""
+        sys.path.insert(0, str(TOOLS_DIR))
+        import ble_activities                                # noqa: PLC0415
+        try:
+            ble_bridge.bridge.set_dry_run(False)
+            master, entries = ble_activities.read_activities(ble_bridge.bridge, known_count)
+        except ble_bridge.BleBridgeError as exc:
+            self._send_json(502, {"ok": False, "error": str(exc)})
+            return
+        except (RuntimeError, TimeoutError) as exc:
+            self._send_json(502, {"ok": False, "error": str(exc)})
+            return
+        activities = []
+        count = known_count
+        for header, samples in entries:
+            count += 1
+            fit_bytes = None
+            try:
+                fit_bytes = ble_activities.to_fit(header, samples)
+            except Exception:                                # noqa: BLE001 - GPX is the primary format; a FIT-encode edge case shouldn't fail the whole activity
+                pass
+            activities.append({
+                "index": count,
+                "gpx": ble_activities.to_gpx(header, samples),
+                "fit_base64": (base64.b64encode(fit_bytes).decode("ascii")
+                               if fit_bytes else None),
+            })
+        self._send_json(200, {"ok": True, "transport": "ble", "activities": activities,
+                               "total_entries": master["entries"]})
 
     def _handle_pois_read(self):
         """POIs currently on the watch. Raw output, deliberately - unlike routes'
@@ -582,6 +625,9 @@ class Handler(BaseHTTPRequestHandler):
         """GET /api/agps/status - real, read-only 0x0b15 query, no network fetch and
         nothing written. What HomeViewModel shows before any Update tap, and what
         /api/agps/update's offline fallback also reports."""
+        if ble_bridge.bridge.status().get("handshake_done"):
+            self._handle_agps_status_ble()
+            return
         code, out, err = run_tool("sgee.py", ["--status", "--json"])
         status = self._parse_last_json_line(out)
         if status is None:
@@ -590,6 +636,22 @@ class Handler(BaseHTTPRequestHandler):
                 "raw_output": out, "stderr": err})
             return
         self._send_json(200, {"ok": True, **status})
+
+    def _handle_agps_status_ble(self):
+        """The BLE path for GET /api/agps/status - tools/ble_sgee.py. Real, read-only
+        0x0b15 (+ a GlonassSGEE flash read if the watch declares that region)."""
+        sys.path.insert(0, str(TOOLS_DIR))
+        import ble_sgee                                       # noqa: PLC0415
+        try:
+            ble_bridge.bridge.set_dry_run(False)
+            status = ble_sgee.read_status(ble_bridge.bridge)
+        except ble_bridge.BleBridgeError as exc:
+            self._send_json(502, {"ok": False, "error": str(exc)})
+            return
+        except (RuntimeError, TimeoutError) as exc:
+            self._send_json(502, {"ok": False, "error": str(exc)})
+            return
+        self._send_json(200, {"ok": True, "transport": "ble", **status})
 
     def _handle_agps_update(self, body):
         """Body: {"confirm": bool}. Real request 2026-08-07 ("it is not validity, it is
