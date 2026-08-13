@@ -22,9 +22,12 @@ ComboBox {
 
     background: Rectangle {
         implicitHeight: 36
-        radius: Theme.radiusCard
+        // Same rounded-square shape as RoundedTextField (radiusSmall, not radiusCard) and the
+        // same focus-border growth - a dropdown is an input control, so it should read as one,
+        // matching the text fields it sits beside (André, 2026-08-13).
+        radius: Theme.radiusSmall
         color: Theme.card
-        border.width: 1
+        border.width: root.activeFocus ? 2 : 1
         // Real, 2026-08-10 ("the contour of the buttons when not selected...they are
         // black...not that visible") - see RoundedButton.qml's own comment on this same
         // fix across the Rounded* family.

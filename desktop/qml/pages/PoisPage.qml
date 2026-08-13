@@ -97,29 +97,59 @@ PageFlickable {
                     font.pixelSize: Theme.fontSizeBody
                 }
 
-                RoundedTextField {
-                    id: poiNameField
-                    width: parent.width
-                    placeholderText: qsTr("Name this POI")
-                    onTextChanged: root.poiName = text
-                }
-
+                // One line: the selected type's icon (logo), the type dropdown, and the name.
                 Row {
                     width: parent.width
                     spacing: Theme.spacingSmall
-                    // The selected type's own watch icon, updating live as the type changes.
+
+                    // Logo - the selected type's own watch icon, updating live.
                     Icon {
+                        id: poiTypeIcon
                         anchors.verticalCenter: parent.verticalCenter
+                        width: 28
                         glyph: Icons.poiTypeGlyphs[root.poiType]
-                        size: 24
+                        size: 26
                         color: Theme.text
                     }
+                    // Type dropdown, same rounded-square shape as the name field. ClickFocus stops
+                    // it grabbing initial focus on load - otherwise it drew its green focused border
+                    // while nothing else was focused (André's "bizarre shading", 2026-08-13). It
+                    // still grows the border on a real click, like the text fields beside it.
+                    // Width 138: snug around the longest name ("Crossroads") with the centred text,
+                    // left padding and arrow all fitting - a tidy bit tighter than before, so the
+                    // name field keeps the rest of the line (André, 2026-08-13).
                     RoundedComboBox {
                         id: poiTypeBox
-                        width: parent.width - 40
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 138
+                        focusPolicy: Qt.ClickFocus
                         model: root.poiTypeNames
                         currentIndex: root.poiType
                         onActivated: (i) => root.poiType = i
+                        // Keep the border a steady neutral grey - the shared RoundedComboBox turns
+                        // its border green on focus, which here lit up every time the dropdown was
+                        // opened (André's "green shadow when opening", 2026-08-13). Same rounded-
+                        // square shape as the name field, just without the focus recolour.
+                        background: Rectangle {
+                            implicitHeight: 36
+                            radius: Theme.radiusSmall
+                            color: Theme.card
+                            border.width: 1
+                            border.color: Theme.mutedText
+                        }
+                    }
+                    // Name - fills the rest of the line.
+                    RoundedTextField {
+                        id: poiNameField
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: parent.width - poiTypeIcon.width - poiTypeBox.width
+                               - (Theme.spacingSmall * 2)
+                        // The watch stores at most 15 bytes for the name (ambit_format.py
+                        // MAX_NAME_BYTES, which truncates on write) - cap the field so what you
+                        // type is what the watch keeps, instead of a silent trim (André, 2026-08-13).
+                        maximumLength: 15
+                        placeholderText: qsTr("Name this POI")
+                        onTextChanged: root.poiName = text
                     }
                 }
 
