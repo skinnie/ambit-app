@@ -7,6 +7,33 @@ they land, on the way to what André/Vincent have been calling "V3": wireless sy
 
 ---
 
+## 2026-08-13: native Training program (planned moves) breakthrough + Suunto nomenclature
+
+Two related pieces of work; see `training_program_andre.md` Finding 59 and its Nomenclature
+block for detail.
+
+- **Nomenclature made coherent with Suunto's own manual terms**, across the docs: **Training
+  program / planned moves** (§3.39, native dated targets in the `TrainingProgram` flash
+  region), **Interval workouts** (§3.18), **Suunto Apps** (§3.35). "Training plan" was our own
+  drift and is retired. This also disambiguates the two features that had collided under the
+  name "Training Program".
+- **The Finding 58 desktop feature is a scheduled *Suunto App*, not a §3.39 Training program** —
+  a workout gated on `SUUNTO_DAYS_AFTER_1_1_2000`, pinned to a sport-mode data field. Its page/
+  service/routes (and `tools/training_plan.py`) are mislabelled; rename pending, feature set
+  aside by André for now.
+- **Native Training program / planned moves — real progress on the harder, previously-walled
+  feature** (`tools/training_program.py`, the native region):
+  - The region write is now **proven firmware-accepted** — the 0x0b21 `TrainingProgram` hash
+    (empty sentinel when erased) changes after a write to SHA256 of the used extent, exactly.
+    Findings 30–32 never ran this check; the write mechanism was never the problem.
+  - **The header base date is a packed calendar date `[u16 year][u8 month][u8 day]`**, decoded
+    from `TrainingProgramAreaConverter::createBinary` (its date helper is a Julian-Day-Number →
+    Gregorian converter). Every prior test wrote a raw timestamp there, so the firmware read a
+    garbage date — the real reason the feature never surfaced.
+  - A decompile-correct, firmware-accepted write still did not surface a Today target on
+    hardware; remaining suspects are a same-day date match, per-item validity, or an
+    app-triggered re-parse. Region restored to empty; watch left clean.
+
 ## 2026-08-12: sport-mode creation/deletion and the multisport format, from André's new capture
 
 - **`tools/sport_mode_manage.py`** - new tool, one file for this format per the project's

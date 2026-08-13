@@ -41,7 +41,7 @@ Suunto app apks are also present in assets folder
 
 During this migration the following features were lost for the ambit line up
 - Sports mode customization via bluetooth (ambit 3 and traverse/traverse alpha only)
-- Training plan creation
+- Training program creation (planned moves)
 - Route sync via bluetooth (cloud to watch) (ambit 3 and traverse/traverse alpha only)
 - POI sync via bluetooth (cloud to watch) (ambit 3 and traverse/traverse alpha only)
 - Personal information including body metrics synced and changed via bluetooth (ambit 3 and traverse/traverse alpha only)

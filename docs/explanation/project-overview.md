@@ -43,15 +43,15 @@ for technical information, not a demand.
 
 The Suunto Ambit (2012), Ambit2 (2013), Ambit3 (2014), Traverse (2015) and Kailash (2015)
 were designed around **Movescount**, a web service where routes, points of interest,
-sport-mode configuration, training plans and structured workouts were authored and then
+sport-mode configuration, training programs and interval workouts were authored and then
 synced to the watch over Bluetooth or cable.
 
 Movescount was retired in 2021. These models are supported in the **Suunto app** for orbital
 GPS data and activity upload, while route, POI and sport-mode transfer moved to
 **SuuntoLink** over the cable. The Kailash synced with the separate iOS-only 7R app rather
 than with Movescount, and is not supported in the Suunto app. Two capabilities that depended
-on Movescount's authoring service — training plans and guided/interval workouts — have no
-current equivalent.
+on Movescount's authoring service — training programs (planned moves) and interval workouts —
+have no current equivalent.
 
 This project documents the wire protocol and on-device data formats of these watches and
 implements them in open code, so an owner can move their own data without a service account.
@@ -242,8 +242,8 @@ serialiser is shared — so it is scoped implementation work, not research. Noth
 | Sport-mode / display customisation, wireless | Moved to SuuntoLink over cable | ✅ **Yes**, cable and Bluetooth | Rename, autolap, HR limits, sensor pods, per-display field editing. Byte-exact against what the official tool writes. Ambit3 confirmed; Traverse family not yet mapped. |
 | Personal info / body metrics sync, wireless | Not carried over | 🟡 **Partly** | The personal-profile fields (gender, weight, height, max/rest HR, activity level, birthday) are read and decoded live. The write channel works and is used for other settings, but these fields are not exposed in either UI yet. No format blocker — UI work. |
 | Daily steps / activity trend | Not carried over | 🟡 **Read path found, live-tested** | The watch stores it, and it is reachable with the same query machinery already used for the logbook. Read confirmed on hardware; not yet surfaced in either app. |
-| Training plans / planned moves | Not carried over | 🔬 **Format understood, one unknown left** | The dedicated flash region is decoded: a small header plus fixed-size items (day offset, activity id, move id, distance, duration, intensity, name). An experimental writer exists. **Open:** how the header packs its base date, with no reference traffic to check against, since the authoring service no longer exists. One safe hardware trial would close it. |
-| Guided / interval workouts (browsable menu, live segment graph) | Not carried over | ❌ **Blocked** | These are not watch-app bytecode but sport-mode rules carrying a declarative trigger structure the firmware interprets natively. **Open:** the trigger byte encoding cannot be confirmed, because there is no traffic left anywhere to observe it in. The authoring half is solved — the workout description schema round-trips through this project's own generator. |
+| Training programs / planned moves | Not carried over | 🔬 **Format decoded, region write firmware-accepted; not yet surfaced on-watch** | The dedicated flash region is fully decoded: header base date is a packed [year u16][month u8][day u8] calendar date (Finding 59), items carry day offset / activity id / move id / distance / duration / intensity / name. The write is proven firmware-accepted (0x0b21 hash matches). **Open:** a decompile-correct, accepted write still did not surface a planned move under TIME → [Next] — remaining suspects are per-item validity, an app-triggered re-parse, or a same-day date match. |
+| Interval workouts (browsable WORKOUT menu, live segment graph, §3.18) | Not carried over | ❌ **Blocked** | These are not watch-app bytecode but sport-mode rules carrying a declarative trigger structure the firmware interprets natively. **Open:** the trigger byte encoding cannot be confirmed, because there is no traffic left anywhere to observe it in. The authoring half is solved — the workout description schema round-trips through this project's own generator. |
 | Watch apps (App Zone) | SuuntoLink still installs apps from its bundled catalogue; the authoring compiler is gone | 🟡 **Install yes, authoring no** | Installing a catalogue app with this project's tooling works and renders on hardware. **Open:** binaries from the surviving community compiler are accepted by the watch but never execute, even a trivial one-line app. There is no compiler whose output runs on this firmware. |
 | Orbital / AGPS data | Kept (Suunto app and SuuntoLink) | ✅ **Yes**, using the manufacturer's own service | The write is byte-exact against reference traffic and hardware-confirmed. **The data still comes from the manufacturer** — a real dependency, not a replacement. |
 | Activity upload and storage | Kept for these models via the Suunto app; the Movescount analysis layer is gone | ✅ **Local alternative** | Local library, GPX/FIT export, and OAuth2 upload to Strava, Runalyze, Livelox and Intervals.icu, at the user's choice. |
@@ -254,8 +254,8 @@ serialiser is shared — so it is scoped implementation work, not research. Noth
 **Legend:** ✅ implemented · 🟡 partially implemented, no technical blocker · 🔬 understood, one
 unknown left · ❌ blocked on an unresolved unknown.
 
-The two capabilities still blocked — guided workouts and training plans — are the two whose
-authoring lived on a service that no longer runs. There is nothing left to observe for
+The two capabilities still blocked — interval workouts and training programs (planned moves) —
+are the two whose authoring lived on a service that no longer runs. There is nothing left to observe for
 either, which is why they are open questions rather than pending implementation. See
 [`SUUNTO_DEV_REQUESTS.md`](https://github.com/skinnie/ambit-app/blob/main/SUUNTO_DEV_REQUESTS.md) for exactly what information would close
 them.
