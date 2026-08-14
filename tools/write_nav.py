@@ -530,7 +530,14 @@ def run_nav(args):
             except RuntimeError as exc:
                 print(f"  skipped {name}: this watch does not declare it ({exc})")
             continue
-        regions[name] = read_flash(link, base, size, label=name)
+        try:
+            regions[name] = read_flash(link, base, size, label=name)
+        except RuntimeError as exc:
+            # A region the watch declares in its memory map but nonetheless cannot fully
+            # serve over 0x0b17 - seen on Kailash, whose nav layout differs from the Ambit3
+            # family (Routes/POIs are hidden for it in the app anyway). Skip it with a warning
+            # rather than letting one region's short reply sink the whole read.
+            print(f"  skipped {name}: read failed ({exc})")
 
     flash = FlashImage()
     for base, (name, _, _) in sorted(F.REGIONS.items()):
