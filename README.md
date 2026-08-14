@@ -210,10 +210,42 @@ Whenever you do flash — desktop or Android — make sure the **phone/computer,
 interrupt it.
 
 ## License and credits
+## Legal & licenses
 
-[GPLv3](LICENSE) - the same license as [openambit](https://github.com/openambitproject/openambit),
-whose real, working `libambit` this project checks its own reverse-engineering against
-throughout.
+Independent, unofficial software — **not affiliated with, endorsed by, or supported by Suunto or
+Garmin.** Suunto, Ambit, Traverse, Kailash, Garmin and eTrex are trademarks of their respective
+owners, used here only to describe compatibility.
 
 See [`docs/reference/credits.md`](docs/reference/credits.md) for the people and projects this work builds on: openambit,
 opensportsync, marguslt, sebchastang, the Suunto forum community, and wanarun.net.
+This software is provided **as is, without warranty of any kind** — you are responsible for
+anything that happens to your device (see the firmware notes above).
+
+Licensed under the **[GNU GPLv3](LICENSE)** — the same license as
+[openambit](https://github.com/openambitproject/openambit), whose `libambit` this project's
+protocol work is checked against throughout. Because it is GPLv3, the full source is this
+repository; you may use, study, modify and redistribute it under the same license.
+
+- **Desktop** links **Qt 6** under the **LGPLv3** (dynamically linked — you may relink it against
+  your own build of Qt).
+- **Android** uses **React Native** and its ecosystem (**MIT**).
+
+## Credits
+
+Built on the real work of others:
+
+- **[openambit](https://github.com/openambitproject/openambit)** — `libambit`, the reference the
+  USB/BLE protocol work is checked against (GPLv3).
+- **opensportsync** — the starting point for the Android app.
+- **marguslt** — firmware-download recipe, gists, openmoves.
+- **sebchastang** — published Suunto App Zone interval-training scripts.
+- **[iwanders/gps_track_pod](https://github.com/iwanders/gps_track_pod)** — Suunto GPS Track Pod
+  support (MIT), vendored in `tools/vendor/gpspod/`.
+- the **Suunto forum community** and **wanarun.net**.
+
+Data & assets:
+
+- Map data © **OpenStreetMap** contributors, under the **Open Database License (ODbL)**. Tiles:
+  **CyclOSM** / OpenStreetMap France, standard OSM, and **IGN Géoplateforme** (France).
+- Weather by **[Open-Meteo](https://open-meteo.com/)** (CC BY 4.0).
+- Icons: **Google Material Symbols** (Apache License 2.0).

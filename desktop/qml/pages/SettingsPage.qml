@@ -1551,21 +1551,32 @@ PageFlickable {
                     color: Theme.mutedText
                     font.pixelSize: Theme.fontSizeCaption
                     text: qsTr("Independent, unofficial software - not affiliated with, " +
-                                "endorsed by, or supported by Suunto or Garmin. Map data © " +
-                                "OpenStreetMap contributors. Icons: Google Material " +
-                                "Symbols (Apache License 2.0).")
+                                "endorsed by, or supported by Suunto or Garmin. Suunto, " +
+                                "Ambit, Traverse, Kailash, Garmin and eTrex are trademarks of " +
+                                "their respective owners, used here only to describe " +
+                                "compatibility.")
                 }
                 Text {
                     width: parent.width
                     wrapMode: Text.WordWrap
                     color: Theme.mutedText
                     font.pixelSize: Theme.fontSizeCaption
-                    // Real text, not a placeholder - matches LICENSE and CREDITS.md at the
-                    // repo root, which existed before this was wired into the app itself
-                    // (found 2026-08-07: added to the repo, never surfaced here - fixed).
+                    // Matches LICENSE at the repo root and the Credits section of the README.
                     text: qsTr("Licensed under the GNU GPLv3, the same license as openambit, " +
-                                "whose real, working libambit this project's own protocol " +
-                                "work is checked against throughout.")
+                                "whose libambit this project's protocol work is checked " +
+                                "against throughout. The desktop app links Qt 6 under the " +
+                                "LGPLv3; the Android app uses React Native (MIT).")
+                }
+                Text {
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    color: Theme.mutedText
+                    font.pixelSize: Theme.fontSizeCaption
+                    text: qsTr("Map data © OpenStreetMap contributors, under the Open " +
+                                "Database License (ODbL); tiles from CyclOSM / OpenStreetMap " +
+                                "France and IGN Géoplateforme. Weather by Open-Meteo " +
+                                "(CC BY 4.0). Icons: Google Material Symbols (Apache License " +
+                                "2.0). GPS Track Pod support from iwanders/gps_track_pod (MIT).")
                 }
                 Text {
                     width: parent.width
@@ -1576,7 +1587,7 @@ PageFlickable {
                                 "marguslt (firmware-download recipe, gists, openmoves), " +
                                 "sebchastang (published Suunto App Zone interval-training " +
                                 "scripts), the Suunto forum community, and wanarun.net. " +
-                                "Full credits in CREDITS.md.")
+                                "Full credits and licenses in the project README.")
                 }
             }
         }
