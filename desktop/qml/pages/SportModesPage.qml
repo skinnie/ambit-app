@@ -445,7 +445,11 @@ PageFlickable {
 
                 Item {
                     width: parent.width
-                    height: 44
+                    // Content-driven, not a fixed 44: most modes are two lines (name +
+                    // display count) and the badge sets the height, but a mode that is used
+                    // by a multisport AND absent from the watch menu (the factory Transition)
+                    // carries two extra note lines. A fixed 44 clipped those inside the Card.
+                    height: Math.max(44, infoColumn.implicitHeight)
 
                     Row {
                         anchors.left: parent.left
@@ -465,6 +469,7 @@ PageFlickable {
                         }
 
                         Column {
+                            id: infoColumn
                             anchors.verticalCenter: parent.verticalCenter
                             spacing: 2
                             Text {
@@ -787,6 +792,18 @@ PageFlickable {
                                 target: itSwitch; property: "checked"
                                 value: intervalCol.it ? intervalCol.it.enabled : false
                             }
+                            // Turning it OFF has nothing to configure, so it commits the
+                            // disable right away (like Autolap's switch) rather than needing
+                            // the Set button - which is why Set only shows while enabled.
+                            // Turning it ON just reveals the fields; Set writes the values.
+                            onToggled: {
+                                if (!checked && modeColumn.mode) {
+                                    var reps = parseInt(itRepsField.text || "99", 10)
+                                    if (isNaN(reps) || reps < 1) reps = 99
+                                    CustomModesService.setIntervalTimer(modeColumn.mode.name,
+                                        false, "time", 0, 0, reps)
+                                }
+                            }
                         }
                         Text {
                             anchors.verticalCenter: parent.verticalCenter
@@ -888,16 +905,14 @@ PageFlickable {
                     }
 
                     RoundedButton {
+                        // Only shown while enabled: turning the switch off already commits the
+                        // disable, so Set exists purely to write the Type/High/Low/Reps values.
+                        visible: itSwitch.checked
                         text: modeColumn.busy ? qsTr("Saving...") : qsTr("Set")
                         enabled: modeColumn.mode && !modeColumn.busy
                         onClicked: {
                             var reps = parseInt(itRepsField.text || "99", 10)
                             if (isNaN(reps) || reps < 1) reps = 99
-                            if (!itSwitch.checked) {
-                                CustomModesService.setIntervalTimer(modeColumn.mode.name,
-                                    false, "time", 0, 0, reps)
-                                return
-                            }
                             var isTime = itTypeBox.currentIndex === 0
                             var high = isTime ? root.parseMmSs(itHighField.text)
                                 : Math.round(parseFloat(itHighField.text || "0") * root.autolapUnitDivisor)
