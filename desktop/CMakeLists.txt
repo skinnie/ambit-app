@@ -90,6 +90,7 @@ qt_add_qml_module(ambitapp
         qml/Icons.qml
         qml/ActivityTypes.qml
         qml/components/Card.qml
+        qml/components/SommetMark.qml
         qml/components/PageFlickable.qml
         qml/components/ErrorBanner.qml
         qml/components/MapWindow.qml
@@ -143,6 +144,9 @@ qt_add_qml_module(ambitapp
         qml/pages/RoutesPage.qml
         qml/pages/PoisPage.qml
         qml/pages/BackupPage.qml
+        qml/pages/FirmwarePage.qml
+        qml/pages/WatchSettingsPage.qml
+        qml/pages/SmartSensorPage.qml
         qml/pages/SettingsPage.qml
         qml/pages/SportModesPage.qml
         qml/pages/IntervalsPage.qml

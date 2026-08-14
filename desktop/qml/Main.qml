@@ -31,6 +31,8 @@ ApplicationWindow {
         pois: "pages/PoisPage.qml",
         backup: "pages/BackupPage.qml",
         firmware: "pages/FirmwarePage.qml",
+        watchSettings: "pages/WatchSettingsPage.qml",
+        smartSensor: "pages/SmartSensorPage.qml",
         settings: "pages/SettingsPage.qml",
         sportModes: "pages/SportModesPage.qml",
         intervals: "pages/IntervalsPage.qml",

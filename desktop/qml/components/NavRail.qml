@@ -131,6 +131,18 @@ Rectangle {
             selected: root.currentPage === "sportModes"
             onClicked: root.pageSelected("sportModes")
         }
+        // Watch settings (2026-08-14, André: "create a new menu/window for it, after sports
+        // modes") - the cable-written on-watch settings, moved out of the Settings page to
+        // their own item. Suunto-only and needs a connected watch to read/write, so gated the
+        // same way the Settings card that held it was (visible: !isGarmin) plus anyDevice.
+        NavItem {
+            width: parent.width
+            visible: HomeViewModel.anyDevice && !HomeViewModel.isGarmin
+            glyph: Icons.watch
+            label: qsTr("Watch settings")
+            selected: root.currentPage === "watchSettings"
+            onClicked: root.pageSelected("watchSettings")
+        }
         // Firmware update / recovery (2026-08-12) - Suunto-only, like the rest of the
         // firmware pipeline. Shown when a Suunto watch is connected OR sitting in its
         // bootloader (recovery), which is exactly when there's something to do; a bricked
@@ -148,6 +160,17 @@ Rectangle {
             label: qsTr("Firmware")
             selected: root.currentPage === "firmware"
             onClicked: root.pageSelected("firmware")
+        }
+        // Suunto Smart Sensor (2026-08-14, André: "Create a card/menu for it, after firmware")
+        // - the HR belt, a standalone BLE peripheral independent of any watch, so it is not
+        // gated on a connected watch (same as it was always shown in Settings). Reuses the
+        // activities glyph (worn during exercise); the label tells it apart.
+        NavItem {
+            width: parent.width
+            glyph: Icons.activities
+            label: qsTr("Smart Sensor")
+            selected: root.currentPage === "smartSensor"
+            onClicked: root.pageSelected("smartSensor")
         }
         // GPS Track Pod (2026-08-12, "just blind, as experimental") - a separate, standalone
         // Suunto GPS logger, not a watch, so its own visibility is NOT gated on
