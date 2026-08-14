@@ -467,6 +467,9 @@ class Handler(BaseHTTPRequestHandler):
         ("add a map for each gpx"), real per-route point tracks via `nav --json` - one
         already-existing JSON line appended after the human-readable output, decoded from
         the exact same flash data already read for the summary, no extra USB round trip."""
+        if demo_ambit():
+            self._send_json(200, demo_json("nav.json"))
+            return
         if ble_bridge.bridge.status().get("handshake_done"):
             self._handle_nav_ble()
             return
@@ -512,6 +515,9 @@ class Handler(BaseHTTPRequestHandler):
         the caller compares it against what it thinks it knows; if the watch's log ever
         shrank (wrapped/reset) since the caller's known_count was recorded, old cached
         indices no longer mean the same activity, and the caller has to ask again with 0."""
+        if demo_ambit():
+            self._send_json(200, demo_json("activities.json"))
+            return
         query = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
         known_count = query.get("known_count", ["0"])[0]
         # Experimental "mark synced workouts as synced" toggle (Settings, OFF by default).
@@ -603,6 +609,9 @@ class Handler(BaseHTTPRequestHandler):
         parser for that without a real watch to check the actual field names against risks
         silently showing wrong data - same reasoning as /api/nav, applied honestly rather
         than skipped."""
+        if demo_ambit():
+            self._send_json(200, demo_json("pois.json"))
+            return
         if ble_bridge.bridge.status().get("handshake_done"):
             self._handle_pois_read_ble()
             return
@@ -819,6 +828,9 @@ class Handler(BaseHTTPRequestHandler):
         """GET /api/agps/status - real, read-only 0x0b15 query, no network fetch and
         nothing written. What HomeViewModel shows before any Update tap, and what
         /api/agps/update's offline fallback also reports."""
+        if demo_ambit():
+            self._send_json(200, demo_json("agps_status.json"))
+            return
         status, error = self._read_orbit_status()
         if status is None:
             self._send_json(502, {"ok": False, "error": error})
@@ -882,6 +894,15 @@ class Handler(BaseHTTPRequestHandler):
         4. If the download succeeds, runs sgee.py against it - with --write only if
            confirmed, same rehearsal-first pattern as routes.
         """
+        if demo_ambit():
+            # Testing mode: no watch and no network write. The sample watch's stored orbit
+            # (agps_status.json) is yesterday's, so an update would fetch+write - simulate a
+            # successful update so the Update button demonstrates its "Updated" outcome.
+            self._send_json(200, {"ok": True, "wrote": True,
+                                  "watch_date": demo_json("agps_status.json").get("date"),
+                                  "gps": {"wrote": True},
+                                  "glonass": {"supported": False}})
+            return
         confirm = bool(body.get("confirm", False))
         # Real, 2026-08-10 (André: "on kailash settings, give the option to disable it,
         # name it ephemeris gps only"). An APP preference, not a field on the watch - the
@@ -1211,6 +1232,9 @@ class Handler(BaseHTTPRequestHandler):
         tools/firmware_check.py, added 2026-08-07 (see V3_CHANGELOG.md). Read-only: this
         only asks Suunto's own device-info service what's available, nothing is downloaded
         or written to the watch here."""
+        if demo_ambit():
+            self._send_json(200, demo_json("firmware.json"))
+            return
         code, out, err = run_tool("firmware_check.py", ["--json"])
         if code != 0:
             self._send_json(502, {"ok": False, "raw_output": out, "stderr": err})
