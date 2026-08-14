@@ -17,7 +17,6 @@ PageFlickable {
 
     Component.onCompleted: {
         BackupService.refresh();
-        BackupService.checkFirmware();
     }
 
     FolderDialog {
@@ -194,70 +193,9 @@ PageFlickable {
             }
         }
 
-        // --- Firmware backup - added 2026-08-07, see V3_CHANGELOG.md. Also Suunto-specific
-        // (its own text says so - "Suunto's own official app") - same reasoning as the two
-        // Cards above, hidden for the same real, 2026-08-08 request. ---
-        Card {
-            width: parent.width
-            visible: !HomeViewModel.isGarmin
-            Column {
-                width: parent.width
-                spacing: Theme.spacingSmall
-
-                Text { text: qsTr("Firmware"); font.bold: true; color: Theme.text }
-
-                Text {
-                    width: parent.width
-                    wrapMode: Text.WordWrap
-                    color: Theme.error
-                    font.pixelSize: Theme.fontSizeLabel
-                    font.bold: true
-                    text: qsTr("For backup only - this cannot be used to flash the watch. " +
-                                "There is no known way to install firmware over this " +
-                                "protocol; the only supported way to update the watch is " +
-                                "Suunto's own official app. Saved purely as a local copy in " +
-                                "case Suunto's server ever stops serving this version.")
-                }
-
-                Text {
-                    visible: BackupService.firmwareCheckOk
-                    color: Theme.text
-                    font.pixelSize: Theme.fontSizeBody
-                    text: qsTr("Latest available: %1 (uploaded %2)")
-                        .arg(BackupService.firmwareLatestVersion)
-                        .arg(BackupService.firmwareUploadDate)
-                }
-                Text {
-                    visible: !BackupService.firmwareCheckOk && !BackupService.firmwareLoading
-                    color: Theme.mutedText
-                    font.pixelSize: Theme.fontSizeLabel
-                    text: qsTr("Couldn't check for firmware yet.")
-                }
-
-                Row {
-                    spacing: Theme.spacingSmall
-                    RoundedButton {
-                        text: BackupService.firmwareLoading ? qsTr("Working…") : qsTr("Check again")
-                        enabled: !BackupService.firmwareLoading
-                        onClicked: BackupService.checkFirmware()
-                    }
-                    RoundedButton {
-                        text: qsTr("Download for backup")
-                        enabled: !BackupService.firmwareLoading && BackupService.firmwareCheckOk
-                        onClicked: BackupService.downloadFirmware()
-                    }
-                }
-
-                Text {
-                    visible: BackupService.firmwareActionText.length > 0
-                    width: parent.width
-                    wrapMode: Text.WordWrap
-                    font.pixelSize: Theme.fontSizeCaption
-                    color: BackupService.firmwareActionOk ? Theme.success : Theme.error
-                    text: BackupService.firmwareActionText
-                }
-            }
-        }
+        // Firmware backup ("Download for backup") moved to the Firmware page 2026-08-14
+        // (André) so everything firmware lives in one place; it is still backed by the same
+        // BackupService.* download logic, just rendered there now.
 
         // --- Garmin backup - real, 2026-08-08 ("backups gpx from Garmin\GPX ... both
         // from internal memory and sdcard to a folder that user should choose, by
