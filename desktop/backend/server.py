@@ -271,7 +271,28 @@ class Handler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", 0))
         return json.loads(self.rfile.read(length)) if length else {}
 
+    def _guard_local(self):
+        """Reject cross-origin / DNS-rebinding requests. This backend is a localhost-only
+        bridge that can read and WRITE the watch and touch the filesystem, so a web page the
+        user merely visits must not be able to drive it (drive-by CSRF), and a hostname an
+        attacker resolves to 127.0.0.1 must not either (DNS rebinding). The app's own callers
+        - Qt's QNetworkAccessManager and QML XMLHttpRequest - send neither a web (http/https)
+        Origin nor a foreign Host, and OAuth loopback callbacks are top-level navigations with
+        no Origin, so all of them pass untouched. Returns True to proceed, else answers 403."""
+        host = (self.headers.get("Host") or "").rsplit(":", 1)[0].strip().lower().strip("[]")
+        if host and host not in ("127.0.0.1", "localhost", "::1"):
+            self._send_json(403, {"ok": False, "error": "forbidden host"})
+            return False
+        origin = (self.headers.get("Origin") or "").strip().lower()
+        if origin.startswith(("http://", "https://")) \
+                and not origin.startswith(("http://127.0.0.1", "http://localhost")):
+            self._send_json(403, {"ok": False, "error": "forbidden origin"})
+            return False
+        return True
+
     def do_GET(self):
+        if not self._guard_local():
+            return
         if self.path == "/api/health":
             self._send_json(200, {"ok": True})
         elif self.path == "/api/nav":
@@ -333,6 +354,8 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
 
     def do_POST(self):
+        if not self._guard_local():
+            return
         try:
             body = self._read_json_body()
         except json.JSONDecodeError as e:
