@@ -506,11 +506,14 @@ const fr = {
   aboutDisclaimer:
     "Sommet est un projet personnel, indépendant et open source. Il n'est ni affilié à, " +
     "ni approuvé, ni sponsorisé par Suunto Oy ou Garmin Ltd. Suunto, Ambit, Traverse, " +
-    "Garmin, eTrex, ainsi que tout autre nom de produit ou marque mentionné dans " +
+    "Kailash, Garmin, eTrex, ainsi que tout autre nom de produit ou marque mentionné dans " +
     "l'application, sont des marques déposées ou non déposées de leurs détenteurs " +
     "respectifs (Suunto Oy et Garmin Ltd.) ; elles ne sont utilisées ici que pour décrire " +
     "la compatibilité avec ces appareils. Tous droits réservés à leurs propriétaires " +
-    "respectifs.",
+    "respectifs. Fourni « tel quel », sans aucune garantie. Sous licence GNU GPLv3 ; " +
+    "développé avec React Native (MIT). Données cartographiques © contributeurs " +
+    "OpenStreetMap (ODbL) ; météo par Open-Meteo (CC BY 4.0) ; icônes Google Material " +
+    "Symbols (Apache 2.0).",
   aboutCreditsSection: 'Remerciements',
   aboutCreditsIntro:
     "Ce projet s'appuie sur le travail réel d'autres personnes, sans qui la " +
@@ -1189,10 +1192,13 @@ const en: typeof fr = {
   aboutDisclaimer:
     "Sommet is an independent, open-source personal project. It is not affiliated " +
     "with, endorsed by, or sponsored by Suunto Oy or Garmin Ltd. Suunto, Ambit, Traverse, " +
-    "Garmin, eTrex, and any other product name or trademark referenced in this app are " +
-    "registered or unregistered trademarks of their respective owners (Suunto Oy and " +
+    "Kailash, Garmin, eTrex, and any other product name or trademark referenced in this app " +
+    "are registered or unregistered trademarks of their respective owners (Suunto Oy and " +
     "Garmin Ltd.), used here only to describe compatibility with those devices. All " +
-    "rights reserved to their respective owners.",
+    "rights reserved to their respective owners. Provided as is, without warranty of any " +
+    "kind. Licensed under the GNU GPLv3; built with React Native (MIT). Map data © " +
+    "OpenStreetMap contributors (ODbL); weather by Open-Meteo (CC BY 4.0); icons by Google " +
+    "Material Symbols (Apache 2.0).",
   aboutCreditsSection: 'Credits',
   aboutCreditsIntro:
     "This project stands on real prior work by other people, without which the protocol " +

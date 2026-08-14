@@ -57,12 +57,29 @@ export const CREDITS: CreditEntry[] = [
     url: 'https://forum.suunto.com/topic/7592',
     description:
       'The documented, confirmed-real mechanism for adding a compiled Suunto App to ' +
-      "SuuntoLink's own catalog.",
+      "SuuntoLink's own catalog, and much shared knowledge besides.",
   },
   {
     name: 'wanarun.net',
     url: 'https://wanarun.net',
     description:
       'Independent confirmation of the structured-workout JSON schema this project targets.',
+  },
+  {
+    name: 'OpenStreetMap',
+    url: 'https://www.openstreetmap.org/copyright',
+    description:
+      'Map data © OpenStreetMap contributors, under the Open Database License (ODbL). ' +
+      'Tiles from CyclOSM / OpenStreetMap France, standard OSM, and IGN Géoplateforme.',
+  },
+  {
+    name: 'Open-Meteo',
+    url: 'https://open-meteo.com/',
+    description: 'Weather data (CC BY 4.0).',
+  },
+  {
+    name: 'Google Material Symbols',
+    url: 'https://github.com/google/material-design-icons',
+    description: 'The icon set (Apache License 2.0).',
   },
 ];
