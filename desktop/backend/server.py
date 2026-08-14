@@ -1179,6 +1179,15 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(502, {"ok": False, "error": "firmware_check.py --json produced "
                                    "no parseable JSON", "raw_output": out})
             return
+        # firmware_check.py reports the model as a codename ("Emu", "Jabiru", ...); add the
+        # friendly product name so the Firmware page reads "Suunto Ambit 3 Peak", consistent
+        # with Home and Watch settings, instead of falling back to the codename.
+        if info.get("model") and not info.get("product"):
+            sys.path.insert(0, str(TOOLS_DIR))
+            import row_bridge                                    # noqa: PLC0415
+            row = row_bridge.load_rows().get("variants", {}).get(info["model"], {})
+            if row.get("productName"):
+                info["product"] = row["productName"]
         self._send_json(200, info)
 
     def _handle_smartsensor_status(self):

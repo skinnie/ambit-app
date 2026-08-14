@@ -1,0 +1,14 @@
+{
+ "ok": true,
+ "model": "Emu",
+ "in_bsl": false,
+ "hw_version": "70.2.17414",
+ "serial": "DEMO000000000",
+ "current_firmware": "2.4.17",
+ "latest_firmware_version": "2.4.17",
+ "upload_date": "2016-05-24",
+ "release_type": "Release",
+ "download_url": "",
+ "downloaded_to": null,
+ "product": "Suunto Ambit 3 Peak"
+}
