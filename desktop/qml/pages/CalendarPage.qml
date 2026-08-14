@@ -94,8 +94,8 @@ Item {
     // Test, 2026-08-11: raised from the original 16/30 (right for a dot sitting under the
     // day number) once the circle started sitting ON the number instead - the smallest
     // circle needs to comfortably fit two digits without the text spilling past its edge.
-    readonly property int minDotSize: 26
-    readonly property int maxDotSize: 36
+    readonly property int minDotSize: 34
+    readonly property int maxDotSize: 46
     function dotSizeFor(daySeconds) {
         if (root.maxDaySeconds <= 0) return root.minDotSize
         const t = Math.min(1, daySeconds / root.maxDaySeconds)
@@ -253,7 +253,7 @@ Item {
                                         readonly property int activityCount:
                                             modelData ? modelData.activities.length : 0
                                         width: parent.width / 7
-                                        height: 48
+                                        height: 62
 
                                         // Test, 2026-08-11 (André: "circles being on the day,
                                         // without for sure opaquing the day, instead of
@@ -268,7 +268,7 @@ Item {
                                         // elsewhere in this app, not a new contrast rule.
                                         Item {
                                             anchors.centerIn: parent
-                                            width: root.maxDotSize + 8
+                                            width: root.maxDotSize + 12
                                             height: width
                                             visible: modelData !== null
 
