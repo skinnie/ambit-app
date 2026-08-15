@@ -179,6 +179,34 @@ export function readMemoryMapRaw(): Promise<string> {
   return NativeAmbit.readMemoryMapRaw();
 }
 
+// ─── Firmware flasher (THE ONE WRITE THAT CAN BRICK) ───────────────────────────
+export interface FirmwarePlan {
+  deviceInfoJson: string;   // JSON from getDeviceInfo (model/serial/fw/hw/battery)
+  headerLen: number;        // always 32
+  payloadLen: number;
+  chunks: number;
+}
+
+/** Reads the .sfi at `path` and checks it against the connected watch WITHOUT sending
+ * anything (the desktop's safe "dry connection"). Path is content-agnostic - pickGpxFile()
+ * returns a cached copy of any picked file, whose bytes are validated by the SFI2ST magic. */
+export function firmwarePreflight(path: string): Promise<FirmwarePlan> {
+  return NativeAmbit.firmwarePreflight(path);
+}
+
+/** THE LIVE FLASH. `confirm` must be true (the UI gates it behind an explicit confirmation).
+ * `commit=false` streams the whole image but stops before the irreversible commit - the watch
+ * stays in BSL, fully recoverable. Progress arrives as 'AmbitFirmwarePhase' events. */
+export function firmwareFlash(path: string, commit: boolean, confirm: boolean): Promise<any> {
+  return NativeAmbit.firmwareFlash(path, commit, confirm);
+}
+
+/** Subscribe to firmware-flash phase updates. Returns an unsubscribe function. */
+export function onFirmwarePhase(cb: (e: { phase: string; message: string }) => void): () => void {
+  const sub = emitter.addListener('AmbitFirmwarePhase', cb);
+  return () => sub.remove();
+}
+
 /**
  * Kailash only. Reads the watch's raw sml.DeviceHistory reply (0x1200, entry 0x67) in
  * base64 - visited cities/countries, travel stats, and a real activity-mode logbook bundled

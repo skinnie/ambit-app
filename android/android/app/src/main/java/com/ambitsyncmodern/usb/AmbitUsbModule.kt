@@ -95,6 +95,10 @@ class AmbitUsbModule(private val reactContext: ReactApplicationContext) :
     private external fun nativeAmbitReadRegion(address: Long, length: Long): String?
     private external fun nativeAmbitReadPoiListRaw(): String?
     private external fun nativeAmbitReadMemoryMapRaw(): String?
+    // Firmware flasher (firmware_flash_android.c). THE ONE WRITE THAT CAN BRICK.
+    private external fun nativeAmbitFwEnterBsl(): Boolean
+    private external fun nativeAmbitFwReboot(): Boolean
+    private external fun nativeAmbitFwStream(header: ByteArray, payload: ByteArray, doCommit: Boolean): Boolean
     private external fun nativeAmbitReadDeviceHistoryRaw(): String?
     private external fun nativeAmbitReadDeviceLogRaw(): String?
     private external fun nativeAmbitReadSettingsRaw(): String?
@@ -113,6 +117,9 @@ class AmbitUsbModule(private val reactContext: ReactApplicationContext) :
     // null = "first found", the pre-switcher behaviour. Set from JS via selectDevice(); connect()
     // prefers it, falling back to the first match if that watch is no longer attached.
     @Volatile private var selectedDeviceName: String? = null
+    // Kept so a firmware re-enumeration reopen can close the dead connection before opening the
+    // re-enumerated one (normal connect() left this local; the flasher needs to manage it).
+    private var currentConnection: android.hardware.usb.UsbDeviceConnection? = null
     private var pendingConnectPromise: Promise? = null
     private var pendingPickGpxPromise: Promise? = null
     private var pendingSaveAsPromise: Promise? = null
@@ -627,6 +634,146 @@ class AmbitUsbModule(private val reactContext: ReactApplicationContext) :
                 else promise.reject("MEMMAP_READ_FAILED", "Failed to read memory map (see logcat AmbitJNI)")
             } catch (e: Exception) {
                 promise.reject("MEMMAP_READ_ERROR", e.message ?: "Unknown error")
+            }
+        }
+    }
+
+    // ─── Firmware flasher ─────────────────────────────────────────────────────
+    // THE ONE WRITE THAT CAN BRICK. Faithful port of the desktop's proven firmware_write.py.
+    // The live flash is only reachable via firmwareFlash(..., confirm=true) - the UI gates it
+    // behind an explicit confirmation for a supervised session. NOT hardware-tested on Android.
+    //
+    // Entering the bootloader (0x0202) and the final reboot (0x0200) make the watch
+    // re-enumerate on USB; only this Kotlin layer (UsbManager) can re-acquire the device, so
+    // it orchestrates the native steps across those re-enumerations.
+
+    private fun emitFwPhase(phase: String, message: String, extra: WritableMap? = null) {
+        val params = (extra ?: Arguments.createMap()).apply {
+            putString("phase", phase)
+            putString("message", message)
+        }
+        reactContext.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+            .emit("AmbitFirmwarePhase", params)
+    }
+
+    /** Opens a device and inits libambit on it, closing any previously-tracked connection.
+     * Returns true on success. Used both by connect() and the firmware re-enumeration reopen. */
+    private fun openAndInitDevice(device: UsbDevice): Boolean {
+        val usbManager = reactContext.getSystemService(Context.USB_SERVICE) as UsbManager
+        if (!usbManager.hasPermission(device)) return false
+        val connection = usbManager.openDevice(device) ?: return false
+        val iface = device.getInterface(0)
+        connection.claimInterface(iface, true)
+        var epIn = -1; var epOut = -1
+        for (i in 0 until iface.endpointCount) {
+            val ep = iface.getEndpoint(i)
+            val ib = ep.type == UsbConstants.USB_ENDPOINT_XFER_INT || ep.type == UsbConstants.USB_ENDPOINT_XFER_BULK
+            if (!ib) continue
+            if (ep.direction == UsbConstants.USB_DIR_IN && epIn == -1) epIn = ep.address
+            if (ep.direction == UsbConstants.USB_DIR_OUT && epOut == -1) epOut = ep.address
+        }
+        if (epIn == -1) { connection.close(); return false }
+        if (!nativeAmbitInit(connection.fileDescriptor, epIn, epOut, device.vendorId, device.productId)) {
+            connection.close(); return false
+        }
+        try { currentConnection?.close() } catch (_: Exception) {}
+        currentConnection = connection
+        currentDevice = device
+        return true
+    }
+
+    /** After a 0x0202/0x0200 re-enumeration, wait for the same VID:PID watch to reappear (the
+     * BSL bootloader keeps the real product_id) and reopen it. Returns true once re-inited. */
+    private fun reopenReenumerated(productId: Int, timeoutMs: Long): Boolean {
+        val usbManager = reactContext.getSystemService(Context.USB_SERVICE) as UsbManager
+        if (jniLoaded) nativeAmbitDisconnect()
+        try { currentConnection?.close() } catch (_: Exception) {}
+        currentConnection = null
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            val dev = usbManager.deviceList.values.firstOrNull {
+                it.vendorId == SUUNTO_VID && it.productId == productId
+            }
+            if (dev != null && usbManager.hasPermission(dev) && openAndInitDevice(dev)) return true
+            Thread.sleep(500)
+        }
+        return false
+    }
+
+    /** Reads the .sfi at `path` and checks it against the connected watch, WITHOUT sending
+     * anything to the watch (the desktop's safe "dry connection"). Resolves a plan object. */
+    @ReactMethod
+    fun firmwarePreflight(path: String, promise: Promise) {
+        if (!jniLoaded) { promise.reject("JNI_NOT_LOADED", "Native library unavailable"); return }
+        executor.execute {
+            try {
+                val bytes = java.io.File(path).readBytes()
+                if (bytes.size <= 32 || !(bytes[0]=='S'.code.toByte() && bytes[1]=='F'.code.toByte() &&
+                        bytes[2]=='I'.code.toByte() && bytes[3]=='2'.code.toByte())) {
+                    promise.reject("FW_BAD_FILE", "Not an SFI2ST firmware container"); return@execute
+                }
+                val payloadLen = bytes.size - 32
+                val chunks = (payloadLen + 511) / 512
+                val infoJson = nativeAmbitGetDeviceInfo()
+                val out = Arguments.createMap().apply {
+                    putString("deviceInfoJson", infoJson)
+                    putInt("headerLen", 32)
+                    putInt("payloadLen", payloadLen)
+                    putInt("chunks", chunks)
+                }
+                promise.resolve(out)
+            } catch (e: Exception) {
+                promise.reject("FW_PREFLIGHT_ERROR", e.message ?: "preflight failed")
+            }
+        }
+    }
+
+    /** THE LIVE FLASH. `confirm` MUST be true or it refuses. `commit=false` streams the whole
+     * image but stops before the irreversible 0x0e03 (recoverable - watch stays in BSL). The
+     * caller (Firmware screen) only passes confirm=true after an explicit user confirmation. */
+    @ReactMethod
+    fun firmwareFlash(path: String, commit: Boolean, confirm: Boolean, promise: Promise) {
+        if (!jniLoaded) { promise.reject("JNI_NOT_LOADED", "Native library unavailable"); return }
+        if (!confirm) { promise.reject("FW_NOT_CONFIRMED", "firmwareFlash requires explicit confirm=true"); return }
+        val pid = currentDevice?.productId
+        if (pid == null) { promise.reject("FW_NOT_CONNECTED", "connect to the watch first"); return }
+        executor.execute {
+            try {
+                val bytes = java.io.File(path).readBytes()
+                val header = bytes.copyOfRange(0, 32)
+                val payload = bytes.copyOfRange(32, bytes.size)
+
+                emitFwPhase("enter_bsl", "Entering bootloader (0x0202)…")
+                if (!nativeAmbitFwEnterBsl()) { promise.reject("FW_BSL_FAILED", "0x0202 enter-BSL failed"); return@execute }
+
+                emitFwPhase("reopen_bsl", "Waiting for the watch to re-enumerate in BSL…")
+                if (!reopenReenumerated(pid, 40000)) {
+                    promise.reject("FW_REOPEN_BSL_FAILED", "watch did not reappear in BSL (re-grant USB permission if prompted)")
+                    return@execute
+                }
+
+                emitFwPhase("streaming", if (commit) "Flashing… (do not disconnect)" else "Streaming (stream-only, will not commit)…")
+                if (!nativeAmbitFwStream(header, payload, commit)) {
+                    promise.reject("FW_STREAM_FAILED", "streaming failed - watch is in BSL, restartable")
+                    return@execute
+                }
+
+                if (!commit) {
+                    emitFwPhase("stream_only_done", "Stream complete, NOT committed. Watch is in BSL (recoverable).")
+                    promise.resolve(Arguments.createMap().apply { putBoolean("committed", false); putBoolean("inBsl", true) })
+                    return@execute
+                }
+
+                emitFwPhase("reboot", "Rebooting to the application (0x0200)…")
+                nativeAmbitFwReboot()
+                val back = reopenReenumerated(pid, 40000)
+                val info = if (back) nativeAmbitGetDeviceInfo() else "{}"
+                emitFwPhase("done", if (back) "Flash complete." else "Flashed; reboot not yet confirmed.")
+                promise.resolve(Arguments.createMap().apply {
+                    putBoolean("committed", true); putBoolean("rebooted", back); putString("deviceInfoJson", info)
+                })
+            } catch (e: Exception) {
+                promise.reject("FW_FLASH_ERROR", e.message ?: "flash failed")
             }
         }
     }

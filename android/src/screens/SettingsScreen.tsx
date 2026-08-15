@@ -92,6 +92,7 @@ function readOnlyValue(row: DecodedSetting): string {
 }
 
 export default function SettingsScreen() {
+  const navigation = useNavigation<any>();
   const theme = useV3Theme();
   const styles = createStyles(theme);
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
@@ -548,6 +549,21 @@ export default function SettingsScreen() {
           that this card doesn't apply to Garmin at all (no AmbitSettings protocol there),
           so it's hidden while one's attached rather than shown with a "Read Settings"
           button that would just fail. ── */}
+      {!isGarminAttached && (
+      <View style={styles.section}>
+        <View style={styles.cardHead}>
+          <IconBadge icon="watch" />
+          <Text style={styles.cardTitle}>Firmware</Text>
+        </View>
+        <Text style={styles.sectionDesc}>
+          Flash watch firmware over USB. Advanced and irreversible — intended for a supervised
+          session. Opens the firmware tool.
+        </Text>
+        <Button label="Open firmware tool" icon="upload" variant="outline"
+          onPress={() => navigation.navigate('Firmware')} style={{ marginTop: 10 }} />
+      </View>
+      )}
+
       {!isGarminAttached && (
       <View style={styles.section}>
         <View style={styles.cardHead}>

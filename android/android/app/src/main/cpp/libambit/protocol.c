@@ -39,6 +39,13 @@
 #define READ_POLL_INTERVAL 100  // ms
 #define READ_POLL_RETRY    (READ_TIMEOUT / READ_POLL_INTERVAL)
 
+// Firmware flash only: a data chunk triggers a flash-page erase the watch acks only when it
+// finishes (~50-57 s on the Emu/Kailash/Traverse), far past the 20 s normal ceiling. The
+// firmware flasher raises this before streaming and restores it after; 0 means "use
+// READ_TIMEOUT" so every other command is unchanged. See firmware_flash_android.c.
+static int g_read_timeout_override_ms = 0;
+void libambit_protocol_set_read_timeout(int ms) { g_read_timeout_override_ms = ms; }
+
 typedef struct __attribute__((__packed__)) ambit_msg_header_s {
     uint8_t UId;
     uint8_t UL;
@@ -235,7 +242,9 @@ static int protocol_write_packet(ambit_object_t *object, uint8_t *data)
 static int protocol_read_packet(ambit_object_t *object, uint8_t *data)
 {
     int i, res = -1;
-    for (i=0; i<READ_POLL_RETRY; i++) {
+    int timeout_ms = g_read_timeout_override_ms > 0 ? g_read_timeout_override_ms : READ_TIMEOUT;
+    int retries = timeout_ms / READ_POLL_INTERVAL;
+    for (i=0; i<retries; i++) {
         res = hid_read(object->handle, data, 64);
         if (res != 0) {
             break;

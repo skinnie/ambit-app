@@ -21,6 +21,7 @@ import GarminRouteScreen from './src/screens/GarminRouteScreen';
 import GarminPoiScreen from './src/screens/GarminPoiScreen';
 import BackupScreen from './src/screens/BackupScreen';
 import SportModesScreen from './src/screens/SportModesScreen';
+import FirmwareScreen from './src/screens/FirmwareScreen';
 import TotalsScreen from './src/screens/TotalsScreen';
 import CalendarScreen from './src/screens/CalendarScreen';
 import SmartSensorScreen from './src/screens/SmartSensorScreen';
@@ -55,6 +56,7 @@ export type RootStackParamList = {
   // Real, 2026-08-08 - Ambit3-only (Kailash's own memory map has no CustomModes region),
   // HomeScreen only routes here for that device type - see SportModesScreen.tsx.
   SportModes: undefined;
+  Firmware: undefined;
   // Activity-analytics views (2026-08-13, port of desktop TotalsPage/CalendarPage). Both are
   // derived purely from the local activity DB, so they're reachable any time (no device
   // needed) - launched from the Activities screen header, not the device-gated Home shell.
@@ -197,6 +199,11 @@ function AppShell() {
             name="SportModes"
             component={SportModesScreen}
             options={{ title: t.sportModesScreenTitle }}
+          />
+          <Stack.Screen
+            name="Firmware"
+            component={FirmwareScreen}
+            options={{ title: 'Firmware' }}
           />
           <Stack.Screen
             name="Totals"

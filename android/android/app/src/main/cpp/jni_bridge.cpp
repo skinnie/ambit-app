@@ -44,6 +44,12 @@ extern "C" int ambit3_add_poi_to_watch(ambit_object_t *object,
 extern "C" int ambit3_read_flash_region(ambit_object_t *object, uint32_t address, uint32_t length, uint8_t *out_buffer);
 extern "C" int ambit3_read_poi_list_raw(ambit_object_t *object, uint8_t **out, size_t *out_len);
 extern "C" int ambit3_read_memory_map_raw(ambit_object_t *object, uint8_t **out, size_t *out_len);
+// Firmware flasher (firmware_flash_android.c). See its header comment for the re-enumeration
+// dance Kotlin orchestrates around these.
+extern "C" int ambit3_fw_enter_bsl(ambit_object_t *object);
+extern "C" int ambit3_fw_reboot(ambit_object_t *object);
+extern "C" int ambit3_fw_stream(ambit_object_t *object, const uint8_t *header, size_t header_len,
+                                const uint8_t *payload, size_t payload_len, int do_commit);
 extern "C" int ambit3_read_object_by_id_raw(ambit_object_t *object, uint8_t entry_id, uint8_t **out, size_t *out_len);
 extern "C" int ambit3_read_settings_raw(ambit_object_t *object, uint8_t **out, size_t *out_len);
 extern "C" int ambit3_write_settings_raw(ambit_object_t *object, const uint8_t *data, size_t datalen, uint8_t **out, size_t *out_len);
@@ -763,6 +769,50 @@ Java_com_ambitsyncmodern_usb_AmbitUsbModule_nativeAmbitReadMemoryMapRaw(
     std::string b64 = (raw && rawlen > 0) ? base64Encode(raw, rawlen) : std::string();
     free(raw);  // same equivalence as nativeAmbitReadPoiListRaw's own free(), see its comment
     return env->NewStringUTF(b64.c_str());
+}
+
+/* ─── Firmware flasher ────────────────────────────────────────────────────────
+ * THE ONE WRITE THAT CAN BRICK. These three are called by Kotlin's firmwareFlash()
+ * orchestrator across USB re-enumerations - see firmware_flash_android.c's header. Each acts
+ * on whatever g_device is currently open (Kotlin re-inits g_device after each re-enumeration).
+ */
+JNIEXPORT jboolean JNICALL
+Java_com_ambitsyncmodern_usb_AmbitUsbModule_nativeAmbitFwEnterBsl(
+        JNIEnv *env, jobject /* thiz */)
+{
+    if (!g_device) { LOGE("nativeAmbitFwEnterBsl: Not connected"); return JNI_FALSE; }
+    return ambit3_fw_enter_bsl(g_device) == 0 ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_ambitsyncmodern_usb_AmbitUsbModule_nativeAmbitFwReboot(
+        JNIEnv *env, jobject /* thiz */)
+{
+    if (!g_device) { LOGE("nativeAmbitFwReboot: Not connected"); return JNI_FALSE; }
+    return ambit3_fw_reboot(g_device) == 0 ? JNI_TRUE : JNI_FALSE;
+}
+
+/* Streams header + payload to a watch already in BSL. doCommit=false stops before the
+ * irreversible 0x0e03 (recoverable); doCommit=true flashes. Blocks for minutes. */
+JNIEXPORT jboolean JNICALL
+Java_com_ambitsyncmodern_usb_AmbitUsbModule_nativeAmbitFwStream(
+        JNIEnv *env, jobject /* thiz */, jbyteArray header, jbyteArray payload, jboolean doCommit)
+{
+    if (!g_device) { LOGE("nativeAmbitFwStream: Not connected"); return JNI_FALSE; }
+    if (!header || !payload) { LOGE("nativeAmbitFwStream: null header/payload"); return JNI_FALSE; }
+
+    jsize hlen = env->GetArrayLength(header);
+    jsize plen = env->GetArrayLength(payload);
+    jbyte *hbytes = env->GetByteArrayElements(header, nullptr);
+    jbyte *pbytes = env->GetByteArrayElements(payload, nullptr);
+
+    LOGI("nativeAmbitFwStream: header=%d payload=%d commit=%d", (int)hlen, (int)plen, (int)doCommit);
+    int ret = ambit3_fw_stream(g_device, (const uint8_t *)hbytes, (size_t)hlen,
+                               (const uint8_t *)pbytes, (size_t)plen, doCommit ? 1 : 0);
+
+    env->ReleaseByteArrayElements(header, hbytes, JNI_ABORT);
+    env->ReleaseByteArrayElements(payload, pbytes, JNI_ABORT);
+    return ret == 0 ? JNI_TRUE : JNI_FALSE;
 }
 
 /**
