@@ -203,7 +203,23 @@ static enum ambit3_fw_gen get_ambit3_fw_gen(ambit_device_info_t *device_info)
         break;
     }
 
-    abort();
+    // No generation matched. This happens for the BSL bootloader, which reports fw 1.0.0.0 -
+    // OLDER than every table entry - so init() during a firmware re-enumeration reached here
+    // and abort()ed (real crash, 2026-08-15, flashing a Traverse in BSL). The fw_gen only
+    // selects driver params for normal sync; the firmware flasher sends raw opcodes and never
+    // uses them, so fall back to the oldest generation of the watch's own family instead of
+    // crashing - same "don't abort, use the safe fallback" fix the Kailash 0x2a case got.
+    LOG_WARNING("get_ambit3_fw_gen: no generation matched product 0x%x fw %d.%d.%d.%d - "
+                "defaulting to the family's oldest generation (BSL/too-old firmware)",
+                device_info->product_id,
+                device_info->fw_version[0], device_info->fw_version[1],
+                device_info->fw_version[2], device_info->fw_version[3]);
+    switch (device_info->product_id) {
+      case 0x2c: return AMBIT3_VERT_FW_GEN1;
+      case 0x2b:
+      case 0x2d: return TRAVERSE_FW_GEN1;
+      default:   return AMBIT3_FW_GEN1;
+    }
 }
 
 /**

@@ -98,7 +98,7 @@ class AmbitUsbModule(private val reactContext: ReactApplicationContext) :
     // Firmware flasher (firmware_flash_android.c). THE ONE WRITE THAT CAN BRICK.
     private external fun nativeAmbitFwEnterBsl(): Boolean
     private external fun nativeAmbitFwReboot(): Boolean
-    private external fun nativeAmbitFwStream(header: ByteArray, payload: ByteArray, doCommit: Boolean): Boolean
+    private external fun nativeAmbitFwStream(header: ByteArray, payload: ByteArray, doCommit: Boolean, resume: Boolean): Boolean
     private external fun nativeAmbitReadDeviceHistoryRaw(): String?
     private external fun nativeAmbitReadDeviceLogRaw(): String?
     private external fun nativeAmbitReadSettingsRaw(): String?
@@ -682,20 +682,36 @@ class AmbitUsbModule(private val reactContext: ReactApplicationContext) :
         return true
     }
 
-    /** After a 0x0202/0x0200 re-enumeration, wait for the same VID:PID watch to reappear (the
-     * BSL bootloader keeps the real product_id) and reopen it. Returns true once re-inited. */
+    /** After a 0x0202/0x0200 re-enumeration, wait for the same VID:PID watch to reappear as a
+     * DIFFERENT USB instance (the re-enumerated device gets a new /dev path) and reopen it. The
+     * device-name check is essential: right after 0x0202 the OLD app-mode instance lingers in
+     * deviceList for a moment, and opening it (same name) makes the next command fail - the real
+     * bug seen 2026-08-15. So we first wait for the device to DETACH, then for the new instance. */
     private fun reopenReenumerated(productId: Int, timeoutMs: Long): Boolean {
         val usbManager = reactContext.getSystemService(Context.USB_SERVICE) as UsbManager
+        val oldName = currentDevice?.deviceName
         if (jniLoaded) nativeAmbitDisconnect()
         try { currentConnection?.close() } catch (_: Exception) {}
         currentConnection = null
         val deadline = System.currentTimeMillis() + timeoutMs
+        // Phase 1: wait for the old instance to disappear (re-enumeration actually started).
+        while (System.currentTimeMillis() < deadline) {
+            val stillThere = usbManager.deviceList.values.any {
+                it.vendorId == SUUNTO_VID && it.productId == productId && it.deviceName == oldName
+            }
+            if (!stillThere) break
+            Thread.sleep(300)
+        }
+        // Phase 2: wait for the re-enumerated instance (a new /dev name) and open it.
         while (System.currentTimeMillis() < deadline) {
             val dev = usbManager.deviceList.values.firstOrNull {
-                it.vendorId == SUUNTO_VID && it.productId == productId
+                it.vendorId == SUUNTO_VID && it.productId == productId && it.deviceName != oldName
             }
-            if (dev != null && usbManager.hasPermission(dev) && openAndInitDevice(dev)) return true
-            Thread.sleep(500)
+            if (dev != null && usbManager.hasPermission(dev)) {
+                Thread.sleep(400)  // small settle after attach before opening
+                if (openAndInitDevice(dev)) return true
+            }
+            Thread.sleep(400)
         }
         return false
     }
@@ -743,17 +759,25 @@ class AmbitUsbModule(private val reactContext: ReactApplicationContext) :
                 val header = bytes.copyOfRange(0, 32)
                 val payload = bytes.copyOfRange(32, bytes.size)
 
-                emitFwPhase("enter_bsl", "Entering bootloader (0x0202)…")
-                if (!nativeAmbitFwEnterBsl()) { promise.reject("FW_BSL_FAILED", "0x0202 enter-BSL failed"); return@execute }
+                // A watch already in BSL (an interrupted earlier transfer) reports model "BSL".
+                // Then we skip 0x0202 + the re-enumeration and re-stream from offset 0 (resume),
+                // exactly as SuuntoLink does - see the resumefirmwarekailash capture.
+                val alreadyBsl = nativeAmbitGetDeviceInfo().contains("\"model\":\"BSL\"")
 
-                emitFwPhase("reopen_bsl", "Waiting for the watch to re-enumerate in BSL…")
-                if (!reopenReenumerated(pid, 40000)) {
-                    promise.reject("FW_REOPEN_BSL_FAILED", "watch did not reappear in BSL (re-grant USB permission if prompted)")
-                    return@execute
+                if (alreadyBsl) {
+                    emitFwPhase("resume_bsl", "Watch already in bootloader — resuming from the start…")
+                } else {
+                    emitFwPhase("enter_bsl", "Entering bootloader (0x0202)…")
+                    if (!nativeAmbitFwEnterBsl()) { promise.reject("FW_BSL_FAILED", "0x0202 enter-BSL failed"); return@execute }
+                    emitFwPhase("reopen_bsl", "Waiting for the watch to re-enumerate in BSL…")
+                    if (!reopenReenumerated(pid, 40000)) {
+                        promise.reject("FW_REOPEN_BSL_FAILED", "watch did not reappear in BSL (re-grant USB permission if prompted)")
+                        return@execute
+                    }
                 }
 
                 emitFwPhase("streaming", if (commit) "Flashing… (do not disconnect)" else "Streaming (stream-only, will not commit)…")
-                if (!nativeAmbitFwStream(header, payload, commit)) {
+                if (!nativeAmbitFwStream(header, payload, commit, alreadyBsl)) {
                     promise.reject("FW_STREAM_FAILED", "streaming failed - watch is in BSL, restartable")
                     return@execute
                 }

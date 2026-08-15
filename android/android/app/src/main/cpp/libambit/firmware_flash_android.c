@@ -41,6 +41,8 @@
 // A chunk that triggers a flash-page erase acks only when the erase finishes (~50-57 s seen
 // on Emu/Kailash/Traverse). 120 s covers the worst with margin.
 #define FW_ERASE_ACK_MS   120000
+// How many times to re-send a single data chunk whose write/ack glitched before giving up.
+#define FW_CHUNK_RETRIES  5
 
 extern void libambit_protocol_set_read_timeout(int ms);
 
@@ -91,14 +93,23 @@ int ambit3_fw_reboot(ambit_object_t *object)
 int ambit3_fw_stream(ambit_object_t *object,
                      const uint8_t *header, size_t header_len,
                      const uint8_t *payload, size_t payload_len,
-                     int do_commit)
+                     int do_commit, int resume)
 {
     if (object == NULL || header == NULL || header_len != FW_HEADER_LEN) return -1;
 
-    // 0x0102: enter transfer mode. The sequence counter resets to 0 here so the header goes
-    // out as seq 1 and the first chunk as seq 2 - the exact numbering in the real captures.
-    object->sequence_no = 0;
-    if (fw_cmd(object, FW_CMD_MODE, NULL, 0) != 0) { LOG_ERROR("firmware: 0x0102 failed"); return -1; }
+    if (resume) {
+        // The watch is ALREADY in BSL (an interrupted transfer). SuuntoLink then skips both
+        // 0x0202 and 0x0102 and just re-streams the whole file from offset 0 - confirmed in
+        // the real resumefirmwarekailash capture (HEADER, then chunks, no MODE first). Match
+        // the header's own sequence number from the normal path (seq 1).
+        object->sequence_no = 1;
+        LOG_INFO("firmware: RESUME - watch already in BSL, skipping 0x0202/0x0102");
+    } else {
+        // 0x0102: enter transfer mode. The sequence counter resets to 0 here so the header goes
+        // out as seq 1 and the first chunk as seq 2 - the exact numbering in the real captures.
+        object->sequence_no = 0;
+        if (fw_cmd(object, FW_CMD_MODE, NULL, 0) != 0) { LOG_ERROR("firmware: 0x0102 failed"); return -1; }
+    }
 
     // 0x0e00 header: pack("<II", X, 32) + the file's own 32-byte header. X is a free host tick
     // the watch ignores (proven across captures); synthesize one like the desktop's session_tick.
@@ -124,8 +135,20 @@ int ambit3_fw_stream(ambit_object_t *object,
     for (size_t off = 0; off < payload_len; off += FW_CHUNK, idx++) {
         size_t clen = payload_len - off;
         if (clen > FW_CHUNK) clen = FW_CHUNK;
-        if (fw_cmd(object, FW_CMD_DATA, payload + off, clen) != 0) {
-            LOG_ERROR("firmware: chunk %zu/%zu failed - watch left in BSL (restartable)", idx + 1, n_chunks);
+        // Per-chunk retry: a single chunk's write/ack can glitch transiently over USB-OTG (a
+        // real failure at ~chunk 2200 of a Traverse->Emu stream, 2026-08-15). The desktop
+        // recovers a stall by restarting the whole transfer; here we first retry the chunk in
+        // place a few times (cheap, no re-erase) - the bootloader accepts a re-sent chunk since
+        // its write pointer hasn't advanced on a failed ack. Only give up after FW_CHUNK_RETRIES.
+        int sent = -1;
+        for (int attempt = 0; attempt <= FW_CHUNK_RETRIES; attempt++) {
+            sent = fw_cmd(object, FW_CMD_DATA, payload + off, clen);
+            if (sent == 0) break;
+            LOG_WARNING("firmware: chunk %zu/%zu attempt %d failed, retrying", idx + 1, n_chunks, attempt + 1);
+        }
+        if (sent != 0) {
+            LOG_ERROR("firmware: chunk %zu/%zu failed after %d retries - watch left in BSL (restartable)",
+                      idx + 1, n_chunks, FW_CHUNK_RETRIES);
             ok = -1;
             break;
         }
