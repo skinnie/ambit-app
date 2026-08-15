@@ -897,7 +897,17 @@ Java_com_ambitsyncmodern_usb_AmbitUsbModule_nativeAmbitReadPersonalSettings(
          << "\"backlight_brightness\":"   << (int)ps->backlight_brightness  << ","
          << "\"display_dark\":"           << (int)ps->display_is_negative   << ","
          << "\"alti_baro_mode\":"         << (int)ps->alti_baro_mode        << ","
-         << "\"storm_alarm\":"            << (int)ps->storm_alarm
+         << "\"storm_alarm\":"            << (int)ps->storm_alarm           << ","
+         // Personal profile + compass declination (Ambit 1/2 read-only; no write exists in
+         // the protocol - confirmed: no 0x0b01 in any Movescount capture). weight is kg*0.01,
+         // length is height in cm, is_male 1/0, compass_declination in the watch's own units.
+         << "\"weight\":"                 << (int)ps->weight                << ","
+         << "\"birth_year\":"             << (int)ps->birthyear             << ","
+         << "\"gender\":"                 << (int)ps->is_male               << ","
+         << "\"height\":"                 << (int)ps->length                << ","
+         << "\"max_hr\":"                 << (int)ps->max_hr                << ","
+         << "\"rest_hr\":"                << (int)ps->rest_hr               << ","
+         << "\"fitness_level\":"          << (int)ps->fitness_level
          << "}";
     libambit_personal_settings_free(ps);
     return env->NewStringUTF(json.str().c_str());

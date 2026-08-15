@@ -32,6 +32,8 @@ interface PersonalField {
   key: string;
   kind: 'bool' | 'enum' | 'number';
   choices?: SettingChoice[];
+  // Raw-int -> display-value multiplier (e.g. weight is stored as kg*100). Default 1.
+  scale?: number;
 }
 
 const AMBIT12_PERSONAL_FIELDS: PersonalField[] = [
@@ -59,6 +61,16 @@ const AMBIT12_PERSONAL_FIELDS: PersonalField[] = [
   { key: 'backlight_brightness', kind: 'number' },
   { key: 'display_dark', kind: 'bool' },
   { key: 'storm_alarm', kind: 'bool' },
+  // Personal profile - present in the legacy struct (personal.c), surfaced read-only. These
+  // are the fields a user recognises from the watch's own "Personal" menu. Ambit 1/2 have no
+  // settings-write command in the protocol (no 0x0b01 in any real capture), so display only.
+  { key: 'gender', kind: 'enum', choices: [{ value: 1, label: 'Male' }, { value: 0, label: 'Female' }] },
+  { key: 'birth_year', kind: 'number' },
+  { key: 'weight', kind: 'number', scale: 0.01 },   // stored as kg*100
+  { key: 'height', kind: 'number' },                // cm
+  { key: 'max_hr', kind: 'number' },                // bpm
+  { key: 'rest_hr', kind: 'number' },               // bpm
+  { key: 'fitness_level', kind: 'number' },
 ];
 
 /** Decodes the JSON from readPersonalSettings() (native/AmbitUsbModule.ts) into the same
@@ -68,10 +80,17 @@ export function decodePersonalSettings(json: string): DecodedSetting[] {
   let obj: Record<string, unknown>;
   try { obj = JSON.parse(json); } catch { return []; }
   const out: DecodedSetting[] = [];
+  const thisYear = new Date().getFullYear();
   for (const f of AMBIT12_PERSONAL_FIELDS) {
     const v = obj[f.key];
     if (typeof v !== 'number') continue;
-    out.push({ key: f.key, path: f.key, kind: f.kind, value: v, choices: f.choices });
+    // Profile fields are often unset on a watch (0) or hold a placeholder; only show a value
+    // that's actually plausible, so the display never renders nonsense for a blank profile.
+    if ((f.key === 'weight' || f.key === 'height' || f.key === 'max_hr' || f.key === 'rest_hr'
+         || f.key === 'fitness_level') && v === 0) continue;
+    if (f.key === 'birth_year' && (v < 1900 || v > thisYear)) continue;
+    const value = f.scale ? Math.round(v * f.scale * 10) / 10 : v;
+    out.push({ key: f.key, path: f.key, kind: f.kind, value, choices: f.choices });
   }
   return out;
 }
