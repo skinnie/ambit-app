@@ -65,6 +65,17 @@ cd ambit-app
 - **[evelbulgroz/suunto-t6-sync](https://github.com/evelbulgroz/suunto-t6-sync)** — Suunto
   T6/T6c/T6d read support (MIT), vendored in `tools/vendor/suunto_t6_sync/`; basis for the
   experimental T6 heart-rate export and GPS-Track-Pod merge.
+- **App Zone workout examples** — real published App-Zone interval scripts the workout findings
+  were checked against: [claha/suunto](https://github.com/claha/suunto) (its `Suunto.mod(STEP,N)`
+  repeat encoding), [follesoe/suunto-ambit-intervals](https://github.com/follesoe/suunto-ambit-intervals),
+  [hefler/SuuntoApps](https://github.com/hefler/SuuntoApps),
+  [AdamHodgson/Suunto-Interval-Training](https://github.com/AdamHodgson/Suunto-Interval-Training),
+  [Httqm/Suunto](https://github.com/Httqm/Suunto).
+- **[ruvido/goambit](https://github.com/ruvido/goambit)** & **[AlexLBraits/ambit2gpx](https://github.com/AlexLBraits/ambit2gpx)**
+  — independent implementations of the same cloud-free USB paths (route upload / activity read),
+  confirming they're real.
+- **[mihaildemidoff/suunto-sml-model](https://github.com/mihaildemidoff/suunto-sml-model)** —
+  a JAXB model of Suunto's SML format, a reference for the exercise-log work.
 - the **Suunto forum community** and **wanarun.net**.
 
 1. On your Android device, open the [latest release](https://github.com/skinnie/sommet/releases/latest)

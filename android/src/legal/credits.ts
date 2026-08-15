@@ -53,6 +53,27 @@ export const CREDITS: CreditEntry[] = [
       'heart-rate export and GPS-Track-Pod merge.',
   },
   {
+    name: 'App Zone workout examples',
+    url: 'https://github.com/claha/suunto',
+    description:
+      'Real published App-Zone interval scripts the structured-workout findings were checked ' +
+      'against — claha/suunto, follesoe/suunto-ambit-intervals, hefler/SuuntoApps, ' +
+      'AdamHodgson/Suunto-Interval-Training and Httqm/Suunto.',
+  },
+  {
+    name: 'ruvido/goambit & AlexLBraits/ambit2gpx',
+    url: 'https://github.com/ruvido/goambit',
+    description:
+      'Independent implementations of the same cloud-free USB paths (route upload / activity ' +
+      'read), confirming those paths are real.',
+  },
+  {
+    name: 'mihaildemidoff/suunto-sml-model',
+    url: 'https://github.com/mihaildemidoff/suunto-sml-model',
+    description:
+      "A JAXB model of Suunto's SML activity format, a reference for the exercise-log work.",
+  },
+  {
     name: 'Pavel Samokha and the Suunto forum community',
     url: 'https://forum.suunto.com/topic/7592',
     description:
