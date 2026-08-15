@@ -94,6 +94,7 @@ class AmbitUsbModule(private val reactContext: ReactApplicationContext) :
     private external fun nativeAmbitAddPoi(name: String, lat: Double, lon: Double, type: Int): Boolean
     private external fun nativeAmbitReadRegion(address: Long, length: Long): String?
     private external fun nativeAmbitReadPoiListRaw(): String?
+    private external fun nativeAmbitReadMemoryMapRaw(): String?
     private external fun nativeAmbitReadDeviceHistoryRaw(): String?
     private external fun nativeAmbitReadDeviceLogRaw(): String?
     private external fun nativeAmbitReadSettingsRaw(): String?
@@ -605,6 +606,27 @@ class AmbitUsbModule(private val reactContext: ReactApplicationContext) :
                 else promise.reject("POI_READ_FAILED", "Failed to read POI list (see logcat AmbitJNI)")
             } catch (e: Exception) {
                 promise.reject("POI_READ_ERROR", e.message ?: "Unknown error")
+            }
+        }
+    }
+
+    // Per-device navigation port (2026-08-15): the raw 0x0b21 memory-map reply (region table
+    // with each region's own start+size). Parsed in TS (MemoryMap.ts) like write_nav.py's
+    // read_memory_map(), so routes/POIs read from the addresses the watch declares - a
+    // Traverse's bases differ from the Ambit3 Peak's. Read-only.
+    @ReactMethod
+    fun readMemoryMapRaw(promise: Promise) {
+        if (!jniLoaded) {
+            promise.reject("JNI_NOT_LOADED", "Native library unavailable")
+            return
+        }
+        executor.execute {
+            try {
+                val b64 = nativeAmbitReadMemoryMapRaw()
+                if (b64 != null) promise.resolve(b64)
+                else promise.reject("MEMMAP_READ_FAILED", "Failed to read memory map (see logcat AmbitJNI)")
+            } catch (e: Exception) {
+                promise.reject("MEMMAP_READ_ERROR", e.message ?: "Unknown error")
             }
         }
     }

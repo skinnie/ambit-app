@@ -1535,6 +1535,34 @@ int ambit3_read_poi_list_raw(ambit_object_t *object, uint8_t **out, size_t *out_
     return libambit_protocol_command(object, AMBIT3_CMD_POI_READ, zero4, sizeof(zero4), out, out_len, 0);
 }
 
+/*
+ * Reads the watch's raw memory-map reply (0x0b21, four zero bytes), the SBEM0102 blob that
+ * declares which flash regions this particular watch has and where they live -
+ * "Waypoints\0<hash>\0<u32 start><u32 size>", "Routes\0...", "CustomModes\0...", etc. Every
+ * Ambit3-family / Traverse / Kailash watch answers this, and the addresses genuinely differ
+ * per device (a Traverse's Routes base is not the Ambit3 Peak's) - which is exactly why the
+ * TS side must ask the watch rather than hardcode AMBIT3_*_BASE.
+ *
+ * This mirrors the companion project's tools/write_nav.py read_memory_map() exactly: the bare
+ * 0x0b21 command with a 4-zero payload, reply parsed on the far side (MemoryMap.ts) with the
+ * same region-name scan + <II> unpack. The bare command is used (not the get_memory_maps()
+ * SBEM-request/waypoint-count-key path) so TS sees the whole reply and can pick up regions the
+ * C parser skips (GlonassSGEE, TrackLog). Decoding stays in TS on purpose, same discipline as
+ * ambit3_read_poi_list_raw / ambit3_read_object_by_id_raw above.
+ *
+ * *out is allocated by libambit_protocol_command(); caller frees with plain free() (same
+ * equivalence as ambit3_read_poi_list_raw's caller - see its comment in jni_bridge.cpp).
+ * Returns 0 on success, -1 on failure.
+ */
+int ambit3_read_memory_map_raw(ambit_object_t *object, uint8_t **out, size_t *out_len)
+{
+    if (object == NULL || out == NULL || out_len == NULL) return -1;
+    uint8_t zero4[4] = { 0, 0, 0, 0 };
+    *out = NULL;
+    *out_len = 0;
+    return libambit_protocol_command(object, ambit_command_ambit3_memory_map, zero4, sizeof(zero4), out, out_len, 0);
+}
+
 #define AMBIT3_CMD_LOG_HEADERS 0x1200
 
 /*

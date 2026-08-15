@@ -5,8 +5,8 @@ import { parseRouteGpx, nearestPointIndex, RoutePoint } from './RouteGpxParser';
 import { simplifyRoute } from './RouteSimplify';
 import {
   decodeNavigation, navigationToGpx, WatchNavigation, WatchRoute, WatchWaypoint,
-  AMBIT3_WAYPOINT_BASE, AMBIT3_WAYPOINT_REGION_SIZE, AMBIT3_ROUTE_BASE, AMBIT3_ROUTE_REGION_SIZE,
 } from './RouteReader';
+import { readNavBases } from './MemoryMap';
 
 // AMBIT3_MAX_ROUTE_POINTS / AMBIT3_MAX_NAME_BYTES from
 // android/app/src/main/cpp/libambit/device_driver_ambit3_navigation.h —
@@ -220,9 +220,10 @@ async function clearNavigationCache(): Promise<void> {
 export async function readOnWatchNavigation(): Promise<WatchNavigation> {
   await connect();
   try {
+    const bases = await readNavBases();
     const [waypointsB64, routesB64] = await Promise.all([
-      readRegion(AMBIT3_WAYPOINT_BASE, AMBIT3_WAYPOINT_REGION_SIZE),
-      readRegion(AMBIT3_ROUTE_BASE, AMBIT3_ROUTE_REGION_SIZE),
+      readRegion(bases.waypointBase, bases.waypointSize),
+      readRegion(bases.routeBase, bases.routeSize),
     ]);
     const data = decodeNavigation(waypointsB64, routesB64);
     await AsyncStorage.setItem(NAV_CACHE_KEY, JSON.stringify(data)).catch(() => {});
@@ -280,9 +281,10 @@ export async function exportNavigationToGpx(
 
   onState({ phase: 'reading' });
   try {
+    const bases = await readNavBases();
     const [waypointsB64, routesB64] = await Promise.all([
-      readRegion(AMBIT3_WAYPOINT_BASE, AMBIT3_WAYPOINT_REGION_SIZE),
-      readRegion(AMBIT3_ROUTE_BASE, AMBIT3_ROUTE_REGION_SIZE),
+      readRegion(bases.waypointBase, bases.waypointSize),
+      readRegion(bases.routeBase, bases.routeSize),
     ]);
     const nav = decodeNavigation(waypointsB64, routesB64);
     if (nav.routes.length === 0 && nav.waypoints.length === 0) {

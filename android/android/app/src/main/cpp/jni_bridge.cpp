@@ -43,6 +43,7 @@ extern "C" int ambit3_add_poi_to_watch(ambit_object_t *object,
 // sont déclarées dans device_driver_ambit3.c
 extern "C" int ambit3_read_flash_region(ambit_object_t *object, uint32_t address, uint32_t length, uint8_t *out_buffer);
 extern "C" int ambit3_read_poi_list_raw(ambit_object_t *object, uint8_t **out, size_t *out_len);
+extern "C" int ambit3_read_memory_map_raw(ambit_object_t *object, uint8_t **out, size_t *out_len);
 extern "C" int ambit3_read_object_by_id_raw(ambit_object_t *object, uint8_t entry_id, uint8_t **out, size_t *out_len);
 extern "C" int ambit3_read_settings_raw(ambit_object_t *object, uint8_t **out, size_t *out_len);
 extern "C" int ambit3_write_settings_raw(ambit_object_t *object, const uint8_t *data, size_t datalen, uint8_t **out, size_t *out_len);
@@ -732,6 +733,35 @@ Java_com_ambitsyncmodern_usb_AmbitUsbModule_nativeAmbitReadPoiListRaw(
     // not included here) is verified to be exactly `if (data) free(data);`, so plain free()
     // is equivalent and avoids pulling in protocol.h just for this.
     free(raw);
+    return env->NewStringUTF(b64.c_str());
+}
+
+/**
+ * nativeAmbitReadMemoryMapRaw
+ *
+ * Per-device navigation port (2026-08-15). Returns the watch's raw 0x0b21 memory-map reply,
+ * base64-encoded - the region table (Waypoints/Routes/CustomModes/Apps/GlonassSGEE/...) with
+ * each region's own start+size. TS (MemoryMap.ts) parses it exactly like the companion
+ * project's tools/write_nav.py read_memory_map(), so routes/POIs read from the addresses the
+ * watch declares instead of the hardcoded Ambit3 Peak bases (which are wrong on a Traverse).
+ * Null on failure.
+ */
+JNIEXPORT jstring JNICALL
+Java_com_ambitsyncmodern_usb_AmbitUsbModule_nativeAmbitReadMemoryMapRaw(
+        JNIEnv *env, jobject /* thiz */)
+{
+    if (!g_device) { LOGE("nativeAmbitReadMemoryMapRaw: Not connected"); return nullptr; }
+
+    uint8_t *raw = nullptr;
+    size_t rawlen = 0;
+    int ret = ambit3_read_memory_map_raw(g_device, &raw, &rawlen);
+    if (ret != 0) {
+        LOGE("ambit3_read_memory_map_raw failed: %d", ret);
+        return nullptr;
+    }
+    LOGI("nativeAmbitReadMemoryMapRaw(0x0b21): %zu raw bytes", rawlen);
+    std::string b64 = (raw && rawlen > 0) ? base64Encode(raw, rawlen) : std::string();
+    free(raw);  // same equivalence as nativeAmbitReadPoiListRaw's own free(), see its comment
     return env->NewStringUTF(b64.c_str());
 }
 

@@ -1,6 +1,6 @@
 import RNFS from 'react-native-fs';
 import { connect, disconnect, readRegion, saveFileAs } from '../native/AmbitUsbModule';
-import { AMBIT3_WAYPOINT_BASE, AMBIT3_WAYPOINT_REGION_SIZE, AMBIT3_ROUTE_BASE, AMBIT3_ROUTE_REGION_SIZE } from './RouteReader';
+import { readNavBases } from './MemoryMap';
 import * as ApiDropbox from './ApiDropbox';
 import * as ApiGoogleDrive from './ApiGoogleDrive';
 import * as ApiOneDrive from './ApiOneDrive';
@@ -41,9 +41,10 @@ export async function createNavBackup(): Promise<void> {
   await ensureDir();
   await connect();
   try {
+    const bases = await readNavBases();
     const [waypointsB64, routesB64] = await Promise.all([
-      readRegion(AMBIT3_WAYPOINT_BASE, AMBIT3_WAYPOINT_REGION_SIZE),
-      readRegion(AMBIT3_ROUTE_BASE, AMBIT3_ROUTE_REGION_SIZE),
+      readRegion(bases.waypointBase, bases.waypointSize),
+      readRegion(bases.routeBase, bases.routeSize),
     ]);
     const prefix = String(Date.now());
     await RNFS.writeFile(`${BACKUPS_DIR}/${prefix}_waypoints.bin`, waypointsB64, 'base64');
@@ -86,9 +87,12 @@ export function backupsFolderPath(): string {
 export async function backupNavToFile(): Promise<void> {
   await connect();
   try {
+    // Per-device region bases from the watch's own 0x0b21 map (not the hardcoded Ambit3
+    // offsets), so a Traverse backs up its real Waypoints/Routes regions.
+    const bases = await readNavBases();
     const [waypointsB64, routesB64] = await Promise.all([
-      readRegion(AMBIT3_WAYPOINT_BASE, AMBIT3_WAYPOINT_REGION_SIZE),
-      readRegion(AMBIT3_ROUTE_BASE, AMBIT3_ROUTE_REGION_SIZE),
+      readRegion(bases.waypointBase, bases.waypointSize),
+      readRegion(bases.routeBase, bases.routeSize),
     ]);
     const bundle = JSON.stringify({
       format: 'ambit-nav-backup',

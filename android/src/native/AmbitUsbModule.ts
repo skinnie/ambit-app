@@ -168,6 +168,18 @@ export function readPoiListRaw(): Promise<string> {
 }
 
 /**
+ * Reads the watch's raw 0x0b21 memory-map reply in base64 — the region table declaring
+ * where Waypoints/Routes/CustomModes/Apps/… live on THIS watch. Decoding is in TS
+ * (MemoryMap.ts), mirroring tools/write_nav.py read_memory_map(). Per-device navigation
+ * port (2026-08-15): a Traverse's region bases differ from the Ambit3 Peak's, so callers
+ * ask the watch instead of using the hardcoded AMBIT3_*_BASE constants. Watch must already
+ * be connected. Read-only.
+ */
+export function readMemoryMapRaw(): Promise<string> {
+  return NativeAmbit.readMemoryMapRaw();
+}
+
+/**
  * Kailash only. Reads the watch's raw sml.DeviceHistory reply (0x1200, entry 0x67) in
  * base64 - visited cities/countries, travel stats, and a real activity-mode logbook bundled
  * in the same reply. Decoding happens in TS (KailashHistoryReader.ts), the same split
