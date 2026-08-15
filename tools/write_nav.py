@@ -1024,17 +1024,30 @@ def run_query(args):
     descriptor = descriptor_for_product_id(args.product_id) if not args.from_capture else None
     if args.action == "settings":
         return 0 if show_settings(payload, args.all, args.redact, descriptor) is not None else 1
-    return 0 if show_entries(payload, interesting, args.all, args.redact, descriptor) is not None else 1
+    # For POIs, a reply with no SBEM0102 payload is not an error - it means the watch has zero
+    # POIs (read_pois()'s own docstring already notes this). Real bug, 2026-08-15: a Traverse
+    # with 0 waypoints returned no payload, show_entries() read that as "cannot answer" -> exit
+    # 1 -> the desktop /api/pois 502'd and the POIs page errored. `empty_is_ok` makes an empty
+    # POI database a valid empty result. (settings keeps the strict behaviour: there, an empty
+    # reply genuinely can't distinguish a paired from an unpaired watch.)
+    return 0 if show_entries(payload, interesting, args.all, args.redact, descriptor,
+                             empty_is_ok=(args.action == "pois")) is not None else 1
 
 
-def show_entries(payload, interesting, show_all=False, redacted=False, descriptor=None):
+def show_entries(payload, interesting, show_all=False, redacted=False, descriptor=None,
+                 empty_is_ok=False):
     """Names and decodes a reply's SBEM entries. Returns None when the schema is missing,
     for the same reason show_settings() does: an unnamed dump must not read as an answer.
+    With `empty_is_ok` (POIs), a reply carrying no SBEM0102 payload is a real empty database,
+    not a failure - reported as zero records (return 0) rather than None.
     """
     import sbem_schema
 
     head = payload.find(sbem_schema.MAGIC)
     if head < 0:
+        if empty_is_ok:
+            print("  no POIs on this watch (empty database)")
+            return 0
         print("  no SBEM0102 payload in the reply")
         return None
     descriptor = descriptor or sbem_schema.default_descriptor()
