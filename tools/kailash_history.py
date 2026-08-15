@@ -85,8 +85,32 @@ DEVICE_LOG_REQUEST = (bytes.fromhex("00000000") + (1).to_bytes(2, "little")
 # IDs mean something different-sized in the two schemas (0x55/0x5e here) while leaving others
 # looking fine by coincidence - real, reproducible, silent corruption, not a crash. Kailash
 # needs its own real descriptor explicitly, not the generic Ambit3-reference lookup.
-KAILASH_DESCRIPTOR = (sbem_schema.ASSETS / "APK" / "kailash" / "Suunto 7R" / "Container"
-                       / "Documents" / "descr+79DC39510E000100+2.0.5")
+KAILASH_DESCRIPTOR_NAME = "descr+79DC39510E000100+2.0.5"
+
+
+def _find_kailash_descriptor():
+    """Locate this Kailash's real SBEM schema descriptor (descr+SERIAL+FW) wherever it lives.
+
+    It originally came from a real 7R app-container extraction, so that path is preferred, but
+    the identical file also ships in other real extractions in assets/ (SuuntoLink keeps its
+    own copy under `WIndows apps/Suuntolink/`). Real bug, 2026-08-15: hardcoding only the 7R
+    container path meant a checkout that had the descriptor under a *different* assets folder
+    reported it "missing" and every Kailash history/tracklog read 502'd, even though a valid
+    same-serial/same-fw descriptor was right there. Glob for it instead: exact serial+fw
+    anywhere under assets/ first, then any descriptor for this serial, else fall back to the
+    canonical 7R path so the "missing" error still names where it's meant to come from."""
+    primary = (sbem_schema.ASSETS / "APK" / "kailash" / "Suunto 7R" / "Container"
+               / "Documents" / KAILASH_DESCRIPTOR_NAME)
+    if primary.exists():
+        return primary
+    for pattern in (KAILASH_DESCRIPTOR_NAME, "descr+79DC39510E000100+*"):
+        matches = sorted(sbem_schema.ASSETS.rglob(pattern))
+        if matches:
+            return matches[0]
+    return primary
+
+
+KAILASH_DESCRIPTOR = _find_kailash_descriptor()
 
 
 def read_history(link, warn=print):

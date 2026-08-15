@@ -362,9 +362,15 @@ def main():
 
     if args.json:
         activities = split_into_activities(points, sessions)
-        print(json.dumps({"ok": True, "activities": activities} if activities
-                          else {"ok": False, "error": "no real-looking points found"}))
-        return 0 if activities else 1
+        # An empty TrackLog is a real, valid state - a freshly reset watch, one whose 7R app
+        # already drained its log, or (real, 2026-08-15) one just re-flashed: after André
+        # flashed this Kailash to fw 2.0.5 its TrackLog read back empty and the Home "Travel
+        # History" card showed a scary "server replied: Bad Gateway" because empty was reported
+        # as ok:false -> 502. Empty is not an error: report ok with an empty list so the card
+        # shows a plain "no travel history yet" instead. A genuine read failure still surfaces
+        # as an exception (non-zero exit + stderr), which the caller renders differently.
+        print(json.dumps({"ok": True, "activities": activities}))
+        return 0
 
     print(f"{len(points)} real-looking GPS record(s) found")
     for p in points[:20]:
