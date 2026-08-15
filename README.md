@@ -55,6 +55,17 @@ cd ambit-app
 ### Android
 
 **The recommended path is to install the prebuilt APK — you do not need to build anything.**
+- **[openambit](https://github.com/openambitproject/openambit)** — `libambit`, the reference the
+  USB/BLE protocol work is checked against (GPLv3).
+- **opensportsync** — the starting point for the Android app.
+- **marguslt** — firmware-download recipe, gists, openmoves.
+- **sebchastang** — published Suunto App Zone interval-training scripts.
+- **[iwanders/gps_track_pod](https://github.com/iwanders/gps_track_pod)** — Suunto GPS Track Pod
+  support (MIT), vendored in `tools/vendor/gpspod/`.
+- **[evelbulgroz/suunto-t6-sync](https://github.com/evelbulgroz/suunto-t6-sync)** — Suunto
+  T6/T6c/T6d read support (MIT), vendored in `tools/vendor/suunto_t6_sync/`; basis for the
+  experimental T6 heart-rate export and GPS-Track-Pod merge.
+- the **Suunto forum community** and **wanarun.net**.
 
 1. On your Android device, open the [latest release](https://github.com/skinnie/sommet/releases/latest)
    and download `app-release-testing.apk`.

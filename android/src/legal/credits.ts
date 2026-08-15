@@ -39,6 +39,20 @@ export const CREDITS: CreditEntry[] = [
       "maintained through Movescount's actual 2022 shutdown.",
   },
   {
+    name: 'iwanders/gps_track_pod',
+    url: 'https://github.com/iwanders/gps_track_pod',
+    description:
+      'Suunto GPS Track Pod support (MIT), the basis for this app’s GPS Track Pod ' +
+      'integration.',
+  },
+  {
+    name: 'evelbulgroz/suunto-t6-sync',
+    url: 'https://github.com/evelbulgroz/suunto-t6-sync',
+    description:
+      'Suunto T6/T6c/T6d read support (MIT), the basis for this app’s experimental T6 ' +
+      'heart-rate export and GPS-Track-Pod merge.',
+  },
+  {
     name: 'Pavel Samokha and the Suunto forum community',
     url: 'https://forum.suunto.com/topic/7592',
     description:

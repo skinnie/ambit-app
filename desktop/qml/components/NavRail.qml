@@ -134,6 +134,36 @@ Rectangle {
             selected: root.currentPage === "firmware"
             onClicked: root.pageSelected("firmware")
         }
+        // GPS Track Pod (2026-08-12, "just blind, as experimental") - a separate, standalone
+        // Suunto GPS logger, not a watch, so its own visibility is NOT gated on
+        // HomeViewModel.anyDevice/family the way every other item above is - it neither
+        // needs nor cares whether a watch is connected. Gated purely on the Settings
+        // toggle, off by default, since none of it has ever been hardware-confirmed - see
+        // GpsTrackPodPage.qml's own banner.
+        NavItem {
+            width: parent.width
+            visible: DeviceService.gpsTrackPodExperimentEnabled
+            // Reuses Icons.sync rather than adding an unverified new glyph codepoint - the
+            // label text tells the two apart, and this whole feature is already
+            // "don't guess where a real answer isn't available" territory.
+            glyph: Icons.sync
+            label: qsTr("GPS Track Pod")
+            selected: root.currentPage === "gpsTrackPod"
+            onClicked: root.pageSelected("gpsTrackPod")
+        }
+        // Suunto T6 (2026-08-14, "implement Suunto t6 ... only as experimental") - a
+        // separate, older Suunto heart-rate training computer (no GPS), not one of the
+        // watches. Same built-blind, Settings-gated, off-by-default treatment as the GPS
+        // Track Pod above - see SuuntoT6Page.qml's own banner. Reuses Icons.activities (worn
+        // during exercise); the label tells it apart.
+        NavItem {
+            width: parent.width
+            visible: DeviceService.suuntoT6ExperimentEnabled
+            glyph: Icons.activities
+            label: qsTr("Suunto T6")
+            selected: root.currentPage === "suuntoT6"
+            onClicked: root.pageSelected("suuntoT6")
+        }
         // Real, 2026-08-09 ("switch the place of settings and sport modes, being
         // settings at the bottom") - last item in the rail now, on purpose.
         NavItem {

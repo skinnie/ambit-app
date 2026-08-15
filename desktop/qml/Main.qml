@@ -36,6 +36,8 @@ ApplicationWindow {
         intervals: "pages/IntervalsPage.qml",
         totals: "pages/TotalsPage.qml",
         calendar: "pages/CalendarPage.qml",
+        gpsTrackPod: "pages/GpsTrackPodPage.qml",
+        suuntoT6: "pages/SuuntoT6Page.qml",
     })
 
     // Testing mode's simulated eTrex, wired here rather than in Settings: the device stays

@@ -143,6 +143,14 @@ class DeviceService : public QObject
     Q_PROPERTY(bool markSyncedEnabled READ markSyncedEnabled
                WRITE setMarkSyncedEnabled NOTIFY markSyncedEnabledChanged)
 
+    // Suunto T6 family (2026-08-14, "implement Suunto t6 ... only as experimental") - a
+    // different, older Suunto product from the watches this app targets (a 2004-2010
+    // heart-rate training computer, no GPS - the track came from a separate GPS Track Pod).
+    // Integrated built-blind exactly like the GPS Track Pod above; same "opt in knowing it
+    // has never been hardware-confirmed" reasoning. Persisted via QSettings.
+    Q_PROPERTY(bool suuntoT6ExperimentEnabled READ suuntoT6ExperimentEnabled
+               WRITE setSuuntoT6ExperimentEnabled NOTIFY suuntoT6ExperimentEnabledChanged)
+
 public:
     explicit DeviceService(QObject *parent = nullptr);
 
@@ -249,6 +257,9 @@ public:
     bool markSyncedEnabled() const { return m_markSyncedEnabled; }
     void setMarkSyncedEnabled(bool value);
 
+    bool suuntoT6ExperimentEnabled() const { return m_suuntoT6ExperimentEnabled; }
+    void setSuuntoT6ExperimentEnabled(bool value);
+
 signals:
     void loadingChanged();
     void backendReachableChanged();
@@ -259,6 +270,8 @@ signals:
     void timeSyncChanged();
     void timezonesChanged();
     void onlineChanged();
+    void gpsTrackPodExperimentEnabledChanged();
+    void suuntoT6ExperimentEnabledChanged();
     void demoModeChanged();
     void bleStateChanged();
     void bleExperimentEnabledChanged();
@@ -323,6 +336,8 @@ private:
     QString m_bleError;
     bool m_bleExperimentEnabled = false;
     bool m_markSyncedEnabled = false;
+    bool m_gpsTrackPodExperimentEnabled = false;
+    bool m_suuntoT6ExperimentEnabled = false;
     // Polls /api/ble/status while connectBle() is in progress - separate from
     // m_pollTimer/m_heartbeatTimer (those poll /api/device, which only starts answering
     // once a BLE watch has actually subscribed; this tracks getting there, including a

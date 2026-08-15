@@ -1159,6 +1159,37 @@ PageFlickable {
                     text: qsTr("Create/list/restore backups from the Backup page in the " +
                                 "main navigation - not duplicated here.")
                 }
+
+                // Suunto T6 (2026-08-14, "implement Suunto t6 ... only as experimental") - an
+                // older Suunto heart-rate training computer (no GPS), read built-blind like
+                // the GPS Track Pod above. Its export can be merged with a GPS Track Pod
+                // recording of the same session - see SuuntoT6Page.qml's own banner.
+                Text {
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    topPadding: Theme.spacingSmall
+                    text: qsTr("Suunto T6 (built blind - no real device has ever confirmed " +
+                                "this works). Turning this on adds a \"Suunto T6\" page that " +
+                                "exports the watch's heart-rate logs and can merge them with a " +
+                                "GPS Track Pod track.")
+                    color: Theme.mutedText
+                    font.pixelSize: Theme.fontSizeBody
+                }
+                Row {
+                    spacing: Theme.spacingSmall
+                    RoundedSwitch {
+                        anchors.verticalCenter: parent.verticalCenter
+                        checked: DeviceService.suuntoT6ExperimentEnabled
+                        onToggled: DeviceService.suuntoT6ExperimentEnabled = checked
+                    }
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: DeviceService.suuntoT6ExperimentEnabled ? qsTr("On") : qsTr("Off")
+                        color: DeviceService.suuntoT6ExperimentEnabled
+                               ? Theme.primary : Theme.mutedText
+                        font.pixelSize: Theme.fontSizeBody
+                    }
+                }
             }
         }
 

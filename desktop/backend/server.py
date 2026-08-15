@@ -76,7 +76,26 @@ PYTHON = sys.executable
 BACKUP_DIR = Path.home() / "AmbitAppBackups"
 FIRMWARE_DIR = BACKUP_DIR / "firmware"
 
-# Confirmed live and fully unauthenticated, 2026-08-05 (sgee_andre.md) - no AppKey/account
+# Training Program (2026-08-12, "movescount era called them training program") - saved plans
+# are user documents (authored offline, kept across sessions, re-installable as dates roll
+# by), so they live in the user's home like backups do, not inside the repo. One JSON file
+# per plan, the same schema tools/training_plan.py documents.
+PLANS_DIR = Path.home() / "AmbitAppPlans"
+
+# GPS Track Pod (2026-08-12, "just blind, as experimental") - retrieved GPX tracks and
+# diagnostic log bundles both land here, same "a real place in the user's home" reasoning as
+# BACKUP_DIR/PLANS_DIR above. See tools/gps_track_pod.py's own module docstring for why this
+# whole feature is marked experimental: built without a real device to test against.
+GPSTRACKPOD_DIR = Path.home() / "AmbitAppBackups" / "gpstrackpod"
+
+# Suunto T6 (2026-08-14, "implement Suunto t6 ... only as experimental") - exported heart-rate
+# logs (FIT + a JSON sample sidecar for the merge) land here; merged GPS+HR activities land in
+# the sibling folder. Same built-blind, no-real-device-to-test-against reasoning as the GPS
+# Track Pod above - see tools/suunto_t6.py's own module docstring.
+SUUNTOT6_DIR = Path.home() / "AmbitAppBackups" / "suuntot6"
+LEGACYMERGE_DIR = Path.home() / "AmbitAppBackups" / "legacy-merged"
+
+# Confirmed live and fully unauthenticated, 2026-08-05 (docs/sgee_andre.md) - no AppKey/account
 # needed, unlike the rest of that host's API surface.
 GPS_ORBIT_URL = "https://devices.suunto-operations.com/devices/gpsorbit/binary"
 # Real, 2026-08-10 (sgee_andre.md's "GLONASS on the Kailash"): the same service serves
@@ -347,6 +366,18 @@ class Handler(BaseHTTPRequestHandler):
             self._handle_apps_catalog()
         elif self.path == "/api/time/zones":
             self._handle_time_zones()
+        elif self.path == "/api/gpstrackpod/status":
+            self._handle_gpstrackpod_status()
+        elif self.path == "/api/gpstrackpod/tracks":
+            self._handle_gpstrackpod_tracks()
+        elif self.path == "/api/suuntot6/status":
+            self._handle_suuntot6_status()
+        elif self.path == "/api/suuntot6/logs":
+            self._handle_suuntot6_logs()
+        elif self.path == "/api/legacymerge/sources":
+            self._handle_legacymerge_sources()
+        elif self.path == "/api/legacymerge/devices":
+            self._handle_legacymerge_devices()
         elif self.path == "/api/smartsensor/status":
             self._handle_smartsensor_status()
         else:
@@ -412,6 +443,16 @@ class Handler(BaseHTTPRequestHandler):
             self._handle_apps_import(body)
         elif self.path == "/api/pois":
             self._handle_poi_add(body)
+        elif self.path == "/api/gpstrackpod/retrieve":
+            self._handle_gpstrackpod_retrieve(body)
+        elif self.path == "/api/gpstrackpod/logs":
+            self._handle_gpstrackpod_logs()
+        elif self.path == "/api/suuntot6/retrieve":
+            self._handle_suuntot6_retrieve(body)
+        elif self.path == "/api/legacymerge/run":
+            self._handle_legacymerge_run(body)
+        elif self.path == "/api/legacymerge/live":
+            self._handle_legacymerge_live(body)
         elif self.path == "/api/smartsensor/forget":
             self._handle_smartsensor_forget()
         else:
@@ -2089,6 +2130,361 @@ class Handler(BaseHTTPRequestHandler):
                                    "no parseable JSON", "raw_output": out, "stderr": err})
             return
         self._send_json(200 if info.get("ok") else 502, info)
+
+    # --- Training Program (tools/training_plan.py - see its docstring for the whole
+    # design: workouts scheduled on calendar dates as date-gated Suunto Apps, the
+    # from-scratch replacement for Movescount's own "Training programs") -----------------
+
+    @staticmethod
+    def _plan_id(name):
+        slug = "".join(c if c.isalnum() else "-" for c in (name or "").lower()).strip("-")
+        while "--" in slug:
+            slug = slug.replace("--", "-")
+        return slug or datetime.now(timezone.utc).strftime("plan-%Y%m%d-%H%M%S")
+
+    def _handle_trainingprogram_list(self):
+        """GET /api/trainingprogram - saved plans, newest-edited first. Pure local disk,
+        no watch, no network."""
+        plans = []
+        if PLANS_DIR.is_dir():
+            for path in PLANS_DIR.glob("*.json"):
+                try:
+                    with open(path) as f:
+                        plan = json.load(f)
+                except (OSError, json.JSONDecodeError):
+                    continue  # an unreadable file shouldn't hide every other plan
+                plans.append({"id": path.stem, "name": plan.get("name", path.stem),
+                              "entries": plan.get("entries", []),
+                              "updatedAt": plan.get("updatedAt", "")})
+        plans.sort(key=lambda p: p["updatedAt"], reverse=True)
+        self._send_json(200, {"ok": True, "plans": plans})
+
+    def _handle_trainingprogram_save(self, body):
+        """POST /api/trainingprogram - body {"plan": {name, entries}}. Same name = same
+        file, so re-saving an edited plan updates it rather than multiplying copies."""
+        plan = body.get("plan") or {}
+        if not isinstance(plan.get("entries"), list):
+            self._send_json(400, {"ok": False, "error": "plan needs an \"entries\" list"})
+            return
+        plan_id = self._plan_id(plan.get("name"))
+        plan["updatedAt"] = datetime.now(timezone.utc).isoformat()
+        PLANS_DIR.mkdir(parents=True, exist_ok=True)
+        with open(PLANS_DIR / f"{plan_id}.json", "w") as f:
+            json.dump(plan, f, indent=2)
+        self._send_json(200, {"ok": True, "id": plan_id})
+
+    def _handle_trainingprogram_delete(self, body):
+        plan_id = body.get("id") or ""
+        path = PLANS_DIR / f"{plan_id}.json"
+        # resolve() guard: an id like "../foo" must never reach outside PLANS_DIR
+        if not plan_id or PLANS_DIR.resolve() not in path.resolve().parents:
+            self._send_json(400, {"ok": False, "error": "bad plan id"})
+            return
+        path.unlink(missing_ok=True)
+        self._send_json(200, {"ok": True})
+
+    def _handle_trainingprogram_install(self, body):
+        """POST /api/trainingprogram/install. Body: {"plan": {...}, "mode": int,
+        "display": int, "field": int, "confirm": bool}.
+
+        confirm:false compiles only (live community compiler - internet, no watch) and
+        returns the real packing: which dates land in which app and each compiled size.
+        That IS the honest dry-run here: compilation is the step that can fail on content
+        (workout too long for one app slot), and it touches no flash.
+
+        confirm:true compiles then installs each app in sequence onto the SAME
+        mode/display/field via workout_install.py - the row then cycles through the
+        program's apps the same way SuuntoLink's own multi-shortcut rows work (Finding 44).
+        Every hardware-proven fix in that tool (used-extent hash, no 0x0b04, Type/Shortcut
+        invariant, single IAMRULE magic) applies unchanged. Stops at the first failed
+        install and reports how far it got - the watch is left with N valid installed apps,
+        not half of one."""
+        plan = body.get("plan") or {}
+        mode, display, field = body.get("mode"), body.get("display"), body.get("field")
+        confirm = bool(body.get("confirm", False))
+        if not isinstance(plan.get("entries"), list) or not plan["entries"]:
+            self._send_json(400, {"ok": False, "error": "plan has no entries"})
+            return
+        if confirm and (mode is None or display is None or field is None):
+            self._send_json(400, {"ok": False, "error": "missing \"mode\", \"display\", "
+                                   "or \"field\""})
+            return
+
+        out_dir = Path(tempfile.mkdtemp(prefix="ambitapp-plan-"))
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+            json.dump(plan, f)
+            plan_path = f.name
+        try:
+            # Compiles go to the live community compiler - one HTTP round-trip per app plus
+            # the packing back-off's retries, so give it longer than run_tool's default.
+            code, out, err = run_tool(
+                "training_plan.py",
+                [plan_path, "--compile", "--out-dir", str(out_dir), "--json"], timeout=600)
+            info = self._parse_last_json_line(out)
+            if info is None or not info.get("ok"):
+                self._send_json(502, {"ok": False, "error": (info or {}).get(
+                    "error", "training_plan.py produced no parseable JSON"),
+                    "raw_output": out, "stderr": err})
+                return
+            apps = info["apps"]
+            if not confirm:
+                self._send_json(200, {"ok": True, "dryRun": True, "apps": apps})
+                return
+
+            installed = []
+            for app in apps:
+                code, out, err = run_tool(
+                    "workout_install.py",
+                    [app["path"], "--mode", str(mode), "--display", str(display),
+                     "--field", str(field), "--json", "--write"])
+                result = self._parse_last_json_line(out)
+                if result is None or not result.get("ok"):
+                    self._send_json(502, {
+                        "ok": False, "installed": installed, "failedApp": app["name"],
+                        "error": (result or {}).get("error",
+                                                     "workout_install.py gave no JSON"),
+                        "raw_output": out, "stderr": err})
+                    return
+                installed.append({"name": app["name"], "dates": app["dates"],
+                                  "binaryLength": app["binaryLength"]})
+            self._send_json(200, {"ok": True, "installed": installed})
+        finally:
+            Path(plan_path).unlink(missing_ok=True)
+            for p in out_dir.glob("*.json"):
+                p.unlink(missing_ok=True)
+            out_dir.rmdir()
+
+    # --- GPS Track Pod (2026-08-12, "just blind, as experimental") - see
+    # tools/gps_track_pod.py's own module docstring for why this whole feature is marked
+    # experimental and read-only: nobody on this project owns the hardware, so none of it
+    # has ever been checked against a real device. WATCH_LOCK still applies (via run_tool())
+    # even though this is a different physical device from "the watch" everywhere else -
+    # no reason two USB operations should ever run concurrently through this backend. ---
+
+    def _handle_gpstrackpod_status(self):
+        """GET /api/gpstrackpod/status - device info + status, or a clean "not connected"
+        rather than a stack trace if nothing is plugged in."""
+        code, out, err = run_tool("gps_track_pod.py", ["--status", "--json"])
+        result = self._parse_last_json_line(out)
+        if result is None:
+            self._send_json(502, {"ok": False,
+                                   "error": "gps_track_pod.py produced no JSON",
+                                   "raw_output": out, "stderr": err})
+            return
+        self._send_json(200, result)
+
+    def _handle_gpstrackpod_tracks(self):
+        """GET /api/gpstrackpod/tracks - every track currently on the device."""
+        code, out, err = run_tool("gps_track_pod.py", ["--list", "--json"])
+        result = self._parse_last_json_line(out)
+        if result is None:
+            self._send_json(502, {"ok": False,
+                                   "error": "gps_track_pod.py produced no JSON",
+                                   "raw_output": out, "stderr": err})
+            return
+        self._send_json(200, result)
+
+    def _handle_gpstrackpod_retrieve(self, body):
+        """POST /api/gpstrackpod/retrieve. Body: {"index": int} (-1 for every track).
+        Writes GPX file(s) into GPSTRACKPOD_DIR and returns their paths - same
+        write-to-a-real-folder-in-the-user's-home shape as backups/plans elsewhere."""
+        index = body.get("index")
+        if not isinstance(index, int):
+            self._send_json(400, {"ok": False, "error": "missing \"index\" (int, -1 for all)"})
+            return
+        GPSTRACKPOD_DIR.mkdir(parents=True, exist_ok=True)
+        code, out, err = run_tool(
+            "gps_track_pod.py",
+            ["--retrieve", str(index), "--out-dir", str(GPSTRACKPOD_DIR), "--json"])
+        result = self._parse_last_json_line(out)
+        if result is None:
+            self._send_json(502, {"ok": False,
+                                   "error": "gps_track_pod.py produced no JSON",
+                                   "raw_output": out, "stderr": err})
+            return
+        self._send_json(200 if result.get("ok") else 502, result)
+
+    def _handle_gpstrackpod_logs(self):
+        """POST /api/gpstrackpod/logs - the "Send logs" button. Runs a real diagnostic
+        session (status, tracks, the device's own internal log if it offers one) through
+        gpspod's own raw-USB-packet recorder and writes the result into GPSTRACKPOD_DIR.
+        Nothing is sent anywhere automatically - this only writes a local file for the user
+        to attach by hand, same shape as LogService::reportProblem() elsewhere in this app."""
+        GPSTRACKPOD_DIR.mkdir(parents=True, exist_ok=True)
+        log_path = GPSTRACKPOD_DIR / time.strftime("gpstrackpod-log-%Y%m%d-%H%M%S.json.gz")
+        code, out, err = run_tool(
+            "gps_track_pod.py", ["--send-logs", str(log_path), "--json"], timeout=300)
+        result = self._parse_last_json_line(out)
+        if result is None:
+            self._send_json(502, {"ok": False,
+                                   "error": "gps_track_pod.py produced no JSON",
+                                   "raw_output": out, "stderr": err})
+            return
+        self._send_json(200 if result.get("ok") else 502, result)
+
+    # Suunto T6 + legacy merge (2026-08-14, "implement Suunto t6 ... only as experimental").
+    # Same thin pass-through shape as the gpstrackpod handlers above: run the tool with --json,
+    # forward its final JSON line. See tools/suunto_t6.py / tools/legacy_merge.py docstrings for
+    # why this whole corner is built blind (nobody on this project owns a T6).
+
+    def _handle_suuntot6_status(self):
+        """GET /api/suuntot6/status - device info, or a clean "not present"."""
+        code, out, err = run_tool("suunto_t6.py", ["--status", "--json"])
+        result = self._parse_last_json_line(out)
+        if result is None:
+            self._send_json(502, {"ok": False, "error": "suunto_t6.py produced no JSON",
+                                   "raw_output": out, "stderr": err})
+            return
+        self._send_json(200, result)
+
+    def _handle_suuntot6_logs(self):
+        """GET /api/suuntot6/logs - training logs on the device."""
+        code, out, err = run_tool("suunto_t6.py", ["--list", "--json"])
+        result = self._parse_last_json_line(out)
+        if result is None:
+            self._send_json(502, {"ok": False, "error": "suunto_t6.py produced no JSON",
+                                   "raw_output": out, "stderr": err})
+            return
+        self._send_json(200 if result.get("ok") else 502, result)
+
+    def _handle_suuntot6_retrieve(self, body):
+        """POST /api/suuntot6/retrieve. Body: {"index": int, "format": "fit"|"xml"}. Writes the
+        export (+ a JSON sample sidecar, for the merge) into SUUNTOT6_DIR."""
+        index = body.get("index")
+        fmt = body.get("format", "fit")
+        if not isinstance(index, int):
+            self._send_json(400, {"ok": False, "error": "missing \"index\" (int)"})
+            return
+        if fmt not in ("fit", "xml"):
+            self._send_json(400, {"ok": False, "error": "format must be \"fit\" or \"xml\""})
+            return
+        SUUNTOT6_DIR.mkdir(parents=True, exist_ok=True)
+        out_path = SUUNTOT6_DIR / f"suunto_t6_{index}.{fmt}"
+        args = ["--retrieve", str(index), "--out", str(out_path), "--format", fmt, "--json"]
+        if fmt == "fit":
+            args += ["--samples-out", str(SUUNTOT6_DIR / f"suunto_t6_{index}.json")]
+        code, out, err = run_tool("suunto_t6.py", args)
+        result = self._parse_last_json_line(out)
+        if result is None:
+            self._send_json(502, {"ok": False, "error": "suunto_t6.py produced no JSON",
+                                   "raw_output": out, "stderr": err})
+            return
+        self._send_json(200 if result.get("ok") else 502, result)
+
+    def _handle_legacymerge_sources(self):
+        """GET /api/legacymerge/sources - the GPS Track Pod tracks (GPSTRACKPOD_DIR/*.gpx) and
+        T6 exports (SUUNTOT6_DIR/*.json) already on disk, for the merge picker."""
+        def _listing(directory, pattern):
+            if not directory.exists():
+                return []
+            return [{"name": p.name, "path": str(p)}
+                    for p in sorted(directory.glob(pattern), reverse=True)]
+        self._send_json(200, {"ok": True,
+                              "pod": _listing(GPSTRACKPOD_DIR, "*.gpx"),
+                              "t6": _listing(SUUNTOT6_DIR, "*.json")})
+
+    def _handle_legacymerge_devices(self):
+        """GET /api/legacymerge/devices - what's plugged in RIGHT NOW, for the device-first
+        merge. Someone with both a T6 and a GPS Track Pod plugs them at the same time (they
+        use different USB transports, so they don't conflict); this reads both live so they
+        can pick a T6 log and a Pod track directly instead of exporting to files first."""
+        _, t6_out, _ = run_tool("suunto_t6.py", ["--status", "--json"])
+        t6_status = self._parse_last_json_line(t6_out) or {}
+        t6_present = bool(t6_status.get("present"))
+        t6_logs = []
+        if t6_present:
+            _, out, _ = run_tool("suunto_t6.py", ["--list", "--json"])
+            t6_logs = (self._parse_last_json_line(out) or {}).get("logs", [])
+
+        _, pod_out, _ = run_tool("gps_track_pod.py", ["--status", "--json"])
+        pod_status = self._parse_last_json_line(pod_out) or {}
+        pod_present = bool(pod_status.get("ok"))
+        pod_tracks = []
+        if pod_present:
+            _, out, _ = run_tool("gps_track_pod.py", ["--list", "--json"])
+            pod_tracks = (self._parse_last_json_line(out) or {}).get("tracks", [])
+
+        self._send_json(200, {"ok": True,
+                              "t6": {"present": t6_present, "logs": t6_logs},
+                              "pod": {"present": pod_present, "tracks": pod_tracks}})
+
+    def _handle_legacymerge_live(self, body):
+        """POST /api/legacymerge/live. Body: {"t6_index": int, "pod_index": int,
+        "format": "gpx"|"fit"}. Retrieves the chosen T6 log and Pod track live off both
+        devices, then merges them in one action - the device-first path (André, 2026-08-15:
+        "if the gps pod is connected, just read and select directly the activity we want to
+        merge"). Written into LEGACYMERGE_DIR."""
+        t6_index = body.get("t6_index")
+        pod_index = body.get("pod_index")
+        fmt = body.get("format", "gpx")
+        if not isinstance(t6_index, int) or not isinstance(pod_index, int):
+            self._send_json(400, {"ok": False,
+                                   "error": "need integer \"t6_index\" and \"pod_index\""})
+            return
+        if fmt not in ("gpx", "fit"):
+            self._send_json(400, {"ok": False, "error": "format must be \"gpx\" or \"fit\""})
+            return
+        SUUNTOT6_DIR.mkdir(parents=True, exist_ok=True)
+        GPSTRACKPOD_DIR.mkdir(parents=True, exist_ok=True)
+        LEGACYMERGE_DIR.mkdir(parents=True, exist_ok=True)
+
+        # 1) T6 log -> a JSON sample sidecar the merge reads.
+        t6_json = SUUNTOT6_DIR / f"suunto_t6_{t6_index}.json"
+        _, out, err = run_tool("suunto_t6.py", [
+            "--retrieve", str(t6_index), "--out", str(SUUNTOT6_DIR / f"suunto_t6_{t6_index}.fit"),
+            "--format", "fit", "--samples-out", str(t6_json), "--json"])
+        r = self._parse_last_json_line(out)
+        if r is None or not r.get("ok"):
+            self._send_json(502, {"ok": False, "error": "reading the T6 log failed",
+                                   "detail": r, "stderr": err})
+            return
+
+        # 2) Pod track -> GPX.
+        pod_gpx = GPSTRACKPOD_DIR / f"gpstrackpod_{pod_index}.gpx"
+        _, out, err = run_tool("gps_track_pod.py", [
+            "--retrieve", str(pod_index), "--out", str(pod_gpx), "--json"])
+        r = self._parse_last_json_line(out)
+        if r is None or not r.get("ok"):
+            self._send_json(502, {"ok": False, "error": "reading the GPS Track Pod failed",
+                                   "detail": r, "stderr": err})
+            return
+
+        # 3) Merge the two.
+        out_path = LEGACYMERGE_DIR / f"suunto_t6_{t6_index}+pod_{pod_index}.{fmt}"
+        _, out, err = run_tool("legacy_merge.py", [
+            "--pod-gpx", str(pod_gpx), "--t6-json", str(t6_json),
+            "--out", str(out_path), "--format", fmt, "--json"])
+        result = self._parse_last_json_line(out)
+        if result is None:
+            self._send_json(502, {"ok": False, "error": "legacy_merge.py produced no JSON",
+                                   "raw_output": out, "stderr": err})
+            return
+        self._send_json(200 if result.get("ok") else 502, result)
+
+    def _handle_legacymerge_run(self, body):
+        """POST /api/legacymerge/run. Body: {"pod_gpx": path, "t6_json": path,
+        "format": "gpx"|"fit"}. Aligns the two on time (auto-align default) and writes a merged
+        GPS+HR activity into LEGACYMERGE_DIR."""
+        pod_gpx = body.get("pod_gpx")
+        t6_json = body.get("t6_json")
+        fmt = body.get("format", "gpx")
+        if not pod_gpx or not t6_json:
+            self._send_json(400, {"ok": False, "error": "need \"pod_gpx\" and \"t6_json\""})
+            return
+        if fmt not in ("gpx", "fit"):
+            self._send_json(400, {"ok": False, "error": "format must be \"gpx\" or \"fit\""})
+            return
+        LEGACYMERGE_DIR.mkdir(parents=True, exist_ok=True)
+        out_path = LEGACYMERGE_DIR / (Path(t6_json).stem + f"-merged.{fmt}")
+        code, out, err = run_tool("legacy_merge.py", [
+            "--pod-gpx", str(pod_gpx), "--t6-json", str(t6_json),
+            "--out", str(out_path), "--format", fmt, "--json"])
+        result = self._parse_last_json_line(out)
+        if result is None:
+            self._send_json(502, {"ok": False, "error": "legacy_merge.py produced no JSON",
+                                   "raw_output": out, "stderr": err})
+            return
+        self._send_json(200 if result.get("ok") else 502, result)
 
     def _handle_firmware_download(self, body=None):
         """POST /api/firmware/download - downloads the official firmware image and returns

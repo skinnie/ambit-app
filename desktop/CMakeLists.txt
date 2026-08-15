@@ -146,6 +146,9 @@ qt_add_qml_module(ambitapp
         qml/pages/SettingsPage.qml
         qml/pages/SportModesPage.qml
         qml/pages/IntervalsPage.qml
+        qml/pages/TrainingProgramPage.qml
+        qml/pages/GpsTrackPodPage.qml
+        qml/pages/SuuntoT6Page.qml
     # Step 10+ pages/components get added here as they're built - each spec step should
     # compile independently, so this list grows incrementally rather than all at once.
     SOURCES
@@ -188,6 +191,8 @@ qt_add_qml_module(ambitapp
         src/services/tilecacheservice.cpp
         src/services/smartsensorservice.h
         src/services/smartsensorservice.cpp
+        src/services/trainingprogramservice.h
+        src/services/trainingprogramservice.cpp
     RESOURCES
         assets/fonts/MaterialSymbolsRounded.ttf
         packaging/icon.png

@@ -26,6 +26,12 @@ DeviceService::DeviceService(QObject *parent) : QObject(parent)
     // watch's per-move synced flag.
     m_markSyncedEnabled =
         QSettings().value(QStringLiteral("experimental/markSynced"), false).toBool();
+    // Off by default - see this property's own header comment (built blind, never
+    // hardware-confirmed).
+    m_gpsTrackPodExperimentEnabled =
+        QSettings().value(QStringLiteral("experimental/gpsTrackPod"), false).toBool();
+    m_suuntoT6ExperimentEnabled =
+        QSettings().value(QStringLiteral("experimental/suuntoT6"), false).toBool();
     m_pollTimer.setSingleShot(true);
     connect(&m_pollTimer, &QTimer::timeout, this, &DeviceService::refresh);
 
@@ -598,4 +604,13 @@ void DeviceService::setMarkSyncedEnabled(bool value)
     m_markSyncedEnabled = value;
     QSettings().setValue(QStringLiteral("experimental/markSynced"), value);
     emit markSyncedEnabledChanged();
+}
+
+void DeviceService::setSuuntoT6ExperimentEnabled(bool value)
+{
+    if (m_suuntoT6ExperimentEnabled == value)
+        return;
+    m_suuntoT6ExperimentEnabled = value;
+    QSettings().setValue(QStringLiteral("experimental/suuntoT6"), value);
+    emit suuntoT6ExperimentEnabledChanged();
 }
