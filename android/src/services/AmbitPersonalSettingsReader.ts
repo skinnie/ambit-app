@@ -15,9 +15,12 @@ import { DecodedSetting, SettingChoice } from './AmbitSettingsReader';
 //     (assets/Movescount_Emu/ServerFiles/data/schema-settings) — its enum option meanings
 //     (Backlight Mode 0-4, AltiBaro 0-2, etc.), which are shared across the Ambit family.
 //
-// READ-ONLY: libambit implements no personal-settings write (only the unused 0x0b01 command
-// id exists), so the UI shows these values but offers no editing for Ambit 1/2 — the same
-// "prove it, don't brick it" caution the Ambit3 write path already follows.
+// READ-ONLY here for now — but NOT because the watch can't be written. SuuntoLink (which
+// replaced Moveslink for these watches) DOES write their personal settings via its
+// BluebirdDriver; openambit/opensportsync just never implemented the write (they only define
+// the unused 0x0b01 id). To make our own write byte-exact we need a SuuntoLink Ambit 1/2
+// settings-change USB capture to reverse-engineer, the same way the Ambit3 0x1101 write was
+// proven — obtainable once the hardware is in hand. Until then, display only.
 
 const LANGUAGES: SettingChoice[] = [
   { value: 0, label: 'Dansk' }, { value: 1, label: 'Deutsch' }, { value: 2, label: 'English' },
