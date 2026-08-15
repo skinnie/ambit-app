@@ -787,7 +787,16 @@ def read_memory_map(link):
     # region from the watch rather than trusting F.CUSTOM_MODES_BASE, the same discipline
     # the GLONASS work used. A watch without a region simply yields no entry (Kailash has no
     # CustomModes at all), which callers must handle rather than assume.
-    for match in re.finditer(rb"(Waypoints|Routes|GpsSGEE|GlonassSGEE|CustomModes|Apps)\x00", reply):
+    # ExerciseLog/EventLog/TrackLog added 2026-08-15: the watch declares them in the same
+    # 0x0b21 map, but only the six nav/settings regions were listed here, so a caller that
+    # needed a log region's real per-device base (exercise_log.py) fell back to a hardcoded
+    # Ambit3-Peak address and crashed on watches that put their log elsewhere - the Traverse's
+    # ExerciseLog is not at the Peak's 0x27ac40 at all. Resolving it from the watch, the same
+    # discipline the nav regions already use, is the fix. A watch that doesn't declare a given
+    # region simply yields no entry, which callers must handle rather than assume.
+    for match in re.finditer(
+            rb"(Waypoints|Routes|GpsSGEE|GlonassSGEE|CustomModes|Apps|ExerciseLog|EventLog|TrackLog)\x00",
+            reply):
         cursor = match.end()
         end = reply.index(b"\0", cursor)          # hash in hexadecimal
         start, size = struct.unpack("<II", reply[end + 1:end + 9])

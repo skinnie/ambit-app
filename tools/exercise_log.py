@@ -853,7 +853,7 @@ def main():
         with open(args.from_file, "rb") as f:
             data = f.read()
     else:
-        from write_nav import Link, read_flash
+        from write_nav import Link, read_flash, read_memory_map
         link = Link(dry_run=False, verbose=False)
         if args.mark_synced:
             print("reading flash (0x0b17); --mark-synced will then write the synced flag "
@@ -861,36 +861,44 @@ def main():
         else:
             print("read-only: 0x0b17 reads flash, nothing is written")
         link.open()
-        # Real fix, 2026-08-07 - this used to always read the full EXERCISE_LOG_SIZE
-        # (5,526,464 bytes) regardless of how much is actually used, which is why this was
-        # slow ("blazing fast" on the real Android app, minutes here for the same watch) -
-        # confirmed with real numbers, not a guess: on the reference watch, the master
-        # header's own next_free_address says only 46,364 bytes are real (a 119x
-        # difference). Read a small probe first to learn the real boundary, then read only
-        # that much (+8KB margin - next_free_address marks where new data gets appended
-        # next, not necessarily the exact byte the last entry's own tail ends at).
-        probe = read_flash(link, EXERCISE_LOG_BASE, 1024, label="ExerciseLog (header)")
+        # Resolve the ExerciseLog region from the watch's own 0x0b21 memory map rather than
+        # trusting the hardcoded Ambit3-Peak address - the same per-device discipline the nav
+        # regions already use. Real bug, 2026-08-15: the Traverse keeps its ExerciseLog at
+        # 0x2b7cd0, not the Peak's 0x27ac40, so the hardcoded read hit unmapped flash and
+        # crashed ("0x0b17 ...: short reply") - and every activity read 502'd on a Traverse.
+        # Falls back to the reference constants for a watch that declares no such region.
+        log_base, log_size = read_memory_map(link).get(
+            "ExerciseLog", (EXERCISE_LOG_BASE, EXERCISE_LOG_SIZE))
+        # Real fix, 2026-08-07 - this used to always read the full log region regardless of
+        # how much is actually used, which is why this was slow ("blazing fast" on the real
+        # Android app, minutes here for the same watch) - confirmed with real numbers, not a
+        # guess: on the reference watch, the master header's own next_free_address says only
+        # 46,364 bytes are real (a 119x difference). Read a small probe first to learn the
+        # real boundary, then read only that much (+8KB margin - next_free_address marks where
+        # new data gets appended next, not necessarily the exact byte the last entry ends at).
+        probe = read_flash(link, log_base, 1024, label="ExerciseLog (header)")
         probe_master = parse_master_header(probe)
-        needed = probe_master["next_free_address"] - EXERCISE_LOG_BASE + 8192
-        needed = max(1024, min(EXERCISE_LOG_SIZE, needed))
-        data = read_flash(link, EXERCISE_LOG_BASE, needed, label="ExerciseLog")
+        needed = probe_master["next_free_address"] - log_base + 8192
+        needed = max(1024, min(log_size, needed))
+        data = read_flash(link, log_base, needed, label="ExerciseLog")
 
         # Correctness net for the read-less-than-everything optimization above:
         # logical_read()'s own wraparound handling (for a log old enough to have filled
         # the whole region and wrapped at least once) assumes `data` spans the declared
-        # EXERCISE_LOG_SIZE - true again once this reads less than that. Not expected to
-        # ever fire on a watch synced anywhere near regularly (this reference watch uses
-        # 46KB of 5.3MB - nowhere close to wrapping), but "probably fine" isn't the same
-        # as bounds-checked, so this actually verifies it by fully walking the entries
-        # before committing to the fast read, and falls back to the real, always-correct
-        # full read rather than risk silently-truncated data.
+        # region size - true again once this reads less than that. Not expected to ever fire
+        # on a watch synced anywhere near regularly (46KB of 5.3MB - nowhere close to
+        # wrapping), but "probably fine" isn't the same as bounds-checked, so this actually
+        # verifies it by fully walking the entries before committing to the fast read, and
+        # falls back to the real, always-correct full read rather than risk truncated data.
         try:
-            entries = list(walk_entries(data, skip_count=args.known_count))
+            entries = list(walk_entries(data, mem_start=log_base, mem_size=log_size,
+                                        skip_count=args.known_count))
         except (IndexError, struct.error) as exc:
             print(f"  fast read parsed incompletely ({exc}) - falling back to a full "
                   f"region read")
-            data = read_flash(link, EXERCISE_LOG_BASE, EXERCISE_LOG_SIZE, label="ExerciseLog")
-            entries = list(walk_entries(data, skip_count=args.known_count))
+            data = read_flash(link, log_base, log_size, label="ExerciseLog")
+            entries = list(walk_entries(data, mem_start=log_base, mem_size=log_size,
+                                        skip_count=args.known_count))
     if args.from_file:
         entries = list(walk_entries(data, skip_count=args.known_count))
 
