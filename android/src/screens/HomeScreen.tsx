@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
   Alert, ActivityIndicator, useWindowDimensions, ScrollView, Linking,
@@ -28,6 +28,8 @@ import { kailashDeviceProvider } from '../services/devices/KailashDeviceProvider
 import { ambitBleDeviceProvider } from '../services/devices/AmbitBleDeviceProvider';
 import { decodeDeviceHistory, KailashHistory } from '../services/KailashHistoryReader';
 import { decodeDeviceLog, realTrackPoints, deviceLogToGpx, KailashDeviceLog } from '../services/KailashDeviceLogReader';
+import { getAllActivities, ActivityRecord } from '../database/db';
+import { distanceLines } from '../services/TotalsFacts';
 import { APP_VERSION } from '../config/version';
 import { manualUrlFor, garminManualUrlFor } from '../config/manuals';
 import { t } from '../i18n';
@@ -186,6 +188,38 @@ export default function HomeScreen() {
   const [selectedWatch, setSelectedWatch] = useState<string | null>(null);   // USB path of active cabled watch
   const [connectedBleAddress, setConnectedBleAddress] = useState<string | null>(null); // MAC of active BLE watch
   const [garminInfo, setGarminInfo] = useState<GarminConnectResult | null>(null);
+
+  // Locally-synced activities, for the desktop-parity "This year" + "Last Activity" cards
+  // (HomePage.qml). Read from the same local DB the Activities/Totals screens use - no watch
+  // round-trip, works disconnected. Refreshed on focus so a fresh sync shows up here too.
+  const [activities, setActivities] = useState<ActivityRecord[]>([]);
+  useFocusEffect(useCallback(() => {
+    getAllActivities().then(setActivities).catch(() => {});
+  }, []));
+
+  // "This year" = the most recent year that has data (matches desktop/TotalsScreen: a January
+  // visit still shows last year's real numbers rather than zeros).
+  const thisYear = useMemo(() => {
+    let year = -1;
+    for (const a of activities) {
+      const y = new Date(a.date).getFullYear();
+      if (!isNaN(y) && y > year) year = y;
+    }
+    if (year < 0) return null;
+    let meters = 0, seconds = 0, count = 0;
+    for (const a of activities) {
+      if (new Date(a.date).getFullYear() !== year) continue;
+      meters += a.distance_m || 0;
+      seconds += a.duration_s || 0;
+      count += 1;
+    }
+    const facts = distanceLines(meters);
+    return { year, meters, seconds, count, teaser: facts.length > 0 ? facts[0] : '' };
+  }, [activities]);
+
+  // Newest activity, for the "Last Activity" card. getAllActivities() is already sorted by
+  // date DESC (db.ts), so the first row is the most recent.
+  const lastActivity = activities.length > 0 ? activities[0] : null;
 
   // Cabled + paired watches merged into the switcher's unified shape (see SwitcherWatch).
   const allWatches: SwitcherWatch[] = [
@@ -622,63 +656,11 @@ export default function HomeScreen() {
   const statusTone: 'muted' | 'alert' = statusPhase === 'error' ? 'alert' : 'muted';
 
   // ── Device area render (searching/connecting/timeout/error states) ───────
-  if (phase === 'searching' || phase === 'timeout') {
-    return (
-      <View style={styles.deviceFlowContainer}>
-        <View style={styles.deviceFlowLogo}>
-          <Logo size={Math.round(56 * deviceFlowScale)} />
-          <Badge label={`v${APP_VERSION}`} />
-          {/* Real, 2026-08-10 ("under the icon put AmbitApp and a funny quote... even for
-              the logo") - the very first thing shown on launch, while the app is still
-              looking for the watch. */}
-          {phase === 'searching' && (
-            <Text style={[styles.deviceFlowTagline, deviceFlowTaglineScale(deviceFlowScale), { color: theme.mutedText }]}>
-              {t.homeTagline}
-            </Text>
-          )}
-        </View>
-        {phase === 'searching' ? (
-          <>
-            <ActivityIndicator size="large" color={theme.text} />
-            <Text style={[styles.deviceFlowTitle, deviceFlowTitleScale(deviceFlowScale)]}>{t.homeSearchingTitle}</Text>
-          </>
-        ) : (
-          <Text style={[styles.deviceFlowTitle, deviceFlowTitleScale(deviceFlowScale)]}>{t.homeNoDeviceTitle}</Text>
-        )}
-        <View style={styles.deviceFlowButtons}>
-          {phase === 'timeout' && (
-            <Button label={t.homeConnectRetryBtn} onPress={startSearching} variant="text" grow={false} />
-          )}
-          {/* Multi-watch switcher (2026-08-16): one direct-connect button per already-paired
-              watch, so a Bluetooth-only user can pick which of several paired watches to reach
-              (nothing is cabled to auto-connect). The generic pair button below stays for
-              pairing a brand-new watch. */}
-          {bondedWatches.map(b => (
-            <Button
-              key={b.address}
-              label={t.homeBleConnectWatchBtn(watchPillName(b.name))}
-              onPress={() => handleBleConnectRef.current(b.address)}
-              variant="text"
-              grow={false}
-            />
-          ))}
-          <Button label={t.homeBleConnectBtn} onPress={() => handleBleConnectRef.current()} variant="text" grow={false} />
-          {/* Activities are stored locally and don't depend on a device being
-              connected — don't trap the user behind the search/timeout screen
-              if all they want is to look at what's already synced. */}
-          <Button label={t.viewActivities} onPress={() => navigation.navigate('LogList')} variant="text" grow={false} />
-        </View>
-        {/* Real, 2026-08-10 ("you can remove the pair device later, doesn't make sense") -
-            "Connect device later" led to a whole separate near-empty screen whose only real
-            purpose was reaching Settings without a device connected - that's reachable
-            directly now, no detour through an extra phase. */}
-        <TouchableOpacity style={styles.settingsBtn} onPress={() => navigation.navigate('Settings')} activeOpacity={0.75}>
-          <Icon name="settings" size={19} color={theme.text} />
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
+  // searching / timeout are now rendered INSIDE the unified card page below (desktop parity:
+  // Home is always the card dashboard, with a "No watch connected / Searching…" hero card
+  // holding the connect options, instead of a separate full-screen splash). Only the two
+  // transient states below (actively connecting, and a connect error) keep a focused
+  // full-screen treatment.
   if (phase === 'connecting') {
     const msg = deviceType === 'garmin' && waitingSeconds !== null
       ? t.garminWaitingForMount(waitingSeconds)
@@ -728,7 +710,9 @@ export default function HomeScreen() {
     );
   }
 
-  // phase === 'connected' from here on
+  // Unified card page from here on (searching / timeout / connected all render it - desktop
+  // parity). `connected` gates the parts that genuinely need a live watch.
+  const connected = phase === 'connected';
 
   // v3.0 UI port - the persistent nav shell (NavRail.qml's real pattern: a fixed item list,
   // visibility gated by connected-device type, selection by string id). Garmin routes to
@@ -736,10 +720,12 @@ export default function HomeScreen() {
   // comment on why those are separate from Route/Poi) instead of Ambit's Route/Poi. Kailash
   // excludes Routes/POIs/Sport Modes, same real reasoning as the ActionTile grid below already
   // encoded (Kailash's own memory map has no route-following feature or CustomModes region).
+  // Device-specific destinations only appear once a watch is connected (nothing to act on
+  // otherwise) - Home/Activities/Settings are always reachable.
   const navItems: NavShellItem[] = [
     { id: 'home', label: t.homeNavHome, icon: 'mountain', onPress: () => {} },
     { id: 'activities', label: t.viewActivities, icon: 'list', onPress: () => navigation.navigate('LogList') },
-    ...(deviceType === 'garmin'
+    ...(!connected ? [] : deviceType === 'garmin'
       ? [
           { id: 'routes', label: t.homeRoutesBtn, icon: 'route' as const, onPress: () => garminInfo && navigation.navigate('GarminRoute', { info: garminInfo }) },
           { id: 'pois', label: t.homePoisBtn, icon: 'poi' as const, onPress: () => garminInfo && navigation.navigate('GarminPoi', { info: garminInfo }) },
@@ -750,8 +736,8 @@ export default function HomeScreen() {
             { id: 'pois', label: t.homePoisBtn, icon: 'poi' as const, onPress: () => navigation.navigate('Poi') },
           ]
         : []),
-    { id: 'backup', label: t.backupButton, icon: 'backup', onPress: () => navigation.navigate('Backup') },
-    ...(deviceType === 'ambit' && !isKailash(ambitInfo)
+    ...(connected ? [{ id: 'backup', label: t.backupButton, icon: 'backup' as const, onPress: () => navigation.navigate('Backup') }] : []),
+    ...(connected && deviceType === 'ambit' && !isKailash(ambitInfo)
       ? [{ id: 'sportModes', label: t.sportModesButton, icon: 'watch' as const, onPress: () => navigation.navigate('SportModes') }]
       : []),
     { id: 'settings', label: t.settingsTitle, icon: 'settings', onPress: () => navigation.navigate('Settings') },
@@ -781,13 +767,48 @@ export default function HomeScreen() {
       <Icon
         name={deviceType === 'garmin' ? 'etrex' : 'watch'}
         size={Math.round((winWidth < winHeight ? 48 : 40) * (deviceType === 'garmin' ? 1.1 : 1))}
-        color={theme.text}
+        color={connected ? theme.text : theme.mutedText}
       />
 
       {/* ── Device info cards. Portrait: one centered column. Roomy/landscape: a
           side-by-side wrapping row (each card sized to share the width), so the space
           is used instead of stretching one card per line. ── */}
       <View style={[styles.cardStack, roomy && styles.cardStackRoomy]}>
+      {/* ── Disconnected hero card (searching / no-watch). Desktop parity: the "No watch
+          connected / Searching…" state lives in a card on the dashboard, holding the connect
+          options + multi-watch switcher, instead of a separate full-screen splash. ── */}
+      {!connected && (
+        <Card style={[roomy ? styles.deviceCardRoomyFull : styles.deviceCardCol, styles.deviceCardInner]}>
+          <Text style={[styles.deviceName, v3TextStyle]}>
+            {phase === 'searching' ? t.homeSearchingTitle : t.homeNoDeviceTitle}
+          </Text>
+          <Text style={[styles.deviceSub, v3MutedStyle]}>
+            {phase === 'searching' ? t.homeTagline : t.homeNoDeviceSub}
+          </Text>
+          {phase === 'searching' && (
+            <View style={{ marginTop: 12 }}>
+              <ActivityIndicator size="small" color={theme.text} />
+            </View>
+          )}
+          {/* Multi-watch switcher (2026-08-16): one direct-connect button per already-paired
+              watch, so a Bluetooth-only user can pick which of several paired watches to reach. */}
+          <View style={styles.heroButtons}>
+            {phase === 'timeout' && (
+              <Button label={t.homeConnectRetryBtn} onPress={startSearching} variant="text" grow={false} />
+            )}
+            {bondedWatches.map(b => (
+              <Button
+                key={b.address}
+                label={t.homeBleConnectWatchBtn(watchPillName(b.name))}
+                onPress={() => handleBleConnectRef.current(b.address)}
+                variant="text"
+                grow={false}
+              />
+            ))}
+            <Button label={t.homeBleConnectBtn} onPress={() => handleBleConnectRef.current()} variant="text" grow={false} />
+          </View>
+        </Card>
+      )}
       {deviceType === 'garmin' && garminInfo && (() => {
         const vol = garminInfo.volumes.find(v => v.hasGarminDeviceXml) ?? garminInfo.volumes[0];
         return (
@@ -981,6 +1002,39 @@ export default function HomeScreen() {
       )}
       </View>
 
+      {/* ── This year - desktop HomePage.qml's headline totals surfaced on Home, and a
+          doorway to the Totals screen. Uses locally-synced activities (no watch needed);
+          hidden until there's at least one. ── */}
+      {thisYear && thisYear.count > 0 && (
+        <View style={[styles.weatherWrap, roomy && styles.weatherWrapRoomy]}>
+          <Card style={styles.deviceCardInner}>
+            <TouchableOpacity activeOpacity={0.8} onPress={() => navigation.navigate('Totals')}>
+              <View style={styles.cardTitleRow}>
+                <Text style={[styles.deviceName, v3TextStyle]}>{t.homeThisYearTitle}</Text>
+                <Text style={[styles.cardLink, { color: theme.primary }]}>{t.homeOpenTotals}</Text>
+              </View>
+              <View style={styles.statRow}>
+                <View style={styles.statCol}>
+                  <Text style={[styles.statLabel, v3MutedStyle]}>{t.homeStatDistance}</Text>
+                  <Text style={[styles.statValue, v3TextStyle]}>{fmtKm(thisYear.meters)}</Text>
+                </View>
+                <View style={styles.statCol}>
+                  <Text style={[styles.statLabel, v3MutedStyle]}>{t.homeStatTime}</Text>
+                  <Text style={[styles.statValue, v3TextStyle]}>{fmtDuration(thisYear.seconds)}</Text>
+                </View>
+                <View style={styles.statCol}>
+                  <Text style={[styles.statLabel, v3MutedStyle]}>{t.homeStatActivities}</Text>
+                  <Text style={[styles.statValue, v3TextStyle]}>{thisYear.count}</Text>
+                </View>
+              </View>
+              {thisYear.teaser.length > 0 && (
+                <Text style={[styles.teaser, v3MutedStyle]}>{thisYear.teaser}</Text>
+              )}
+            </TouchableOpacity>
+          </Card>
+        </View>
+      )}
+
       {/* ── Weather - real, 2026-08-09 (v3.0 UI port, "replicate the desktop version
           feature wise"). Same real placement as HomePage.qml: right after the device hero
           card(s), before the actions row. Collapses to nothing on its own (renders null)
@@ -999,10 +1053,41 @@ export default function HomeScreen() {
         <WeatherCard />
       </View>
 
+      {/* ── Last Activity - desktop HomePage.qml's card, the newest locally-synced move, a
+          doorway to the Activities list. Info only (no map, per desktop's own designer pass). ── */}
+      {lastActivity && (
+        <View style={[styles.weatherWrap, roomy && styles.weatherWrapRoomy]}>
+          <Card style={styles.deviceCardInner}>
+            <TouchableOpacity activeOpacity={0.8} onPress={() => navigation.navigate('LogList')}>
+              <View style={styles.cardTitleRow}>
+                <Text style={[styles.deviceName, v3TextStyle]}>{t.homeLastActivityTitle}</Text>
+                <Text style={[styles.cardLink, { color: theme.primary }]}>{t.homeOpenActivities}</Text>
+              </View>
+              <View style={styles.lastActivityRow}>
+                <Icon name="list" size={26} color={theme.primary} />
+                <View style={styles.lastActivityInfo}>
+                  <Text style={[styles.lastActivityName, v3TextStyle]}>
+                    {lastActivity.activity_type || t.homeUntitledActivity}
+                  </Text>
+                  <Text style={[styles.deviceSub, v3MutedStyle]}>{fmtDate(lastActivity.date)}</Text>
+                </View>
+              </View>
+              <View style={styles.statRow}>
+                <Text style={[styles.lastActivityStat, v3TextStyle]}>{fmtKm(lastActivity.distance_m)}</Text>
+                <Text style={[styles.lastActivityStat, v3TextStyle]}>{fmtDuration(lastActivity.duration_s)}</Text>
+                {lastActivity.d_plus > 0 && (
+                  <Text style={[styles.lastActivityStat, v3TextStyle]}>{Math.round(lastActivity.d_plus)} m ↑</Text>
+                )}
+              </View>
+            </TouchableOpacity>
+          </Card>
+        </View>
+      )}
+
       {/* ── Actions : uniquement les actions réelles (sync/GPS) - Routes/POIs/Backup/
           Sport Modes/Settings sont maintenant des destinations du NavShell ci-dessus,
           pas des actions sur cette carte (v3.0 UI port, 2026-08-09). ── */}
-      {deviceType === 'garmin' ? (
+      {connected && (deviceType === 'garmin' ? (
         <View style={[styles.actionsRow, roomy && styles.actionsRowRoomy]}>
           <ActionTile
             icon="sync"
@@ -1034,10 +1119,10 @@ export default function HomeScreen() {
             disabled={isBusy}
           />
         </View>
-      )}
+      ))}
 
       {/* ── Statut ── */}
-      <StatusLine text={statusText} tone={statusTone} />
+      {connected && <StatusLine text={statusText} tone={statusTone} />}
 
     </ScrollView>
     </NavShell>
@@ -1045,6 +1130,21 @@ export default function HomeScreen() {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+// Desktop-parity formatters for the This year / Last Activity cards (match TotalsScreen).
+function fmtKm(meters: number): string {
+  const km = meters / 1000;
+  return `${km.toLocaleString('en-GB', { maximumFractionDigits: km >= 100 ? 0 : 1 })} km`;
+}
+function fmtDuration(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+function fmtDate(iso: string): string {
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+}
 
 function deviceFlowTitleScale(scale: number) {
   return { fontSize: Math.round(16 * scale), lineHeight: Math.round(23 * scale) };
@@ -1290,6 +1390,65 @@ function createStyles(t: ReturnType<typeof useV3Theme>) {
       justifyContent: 'center',
       gap: 6,
       marginTop: 10,
+    },
+    heroButtons: {
+      alignItems: 'center',
+      gap: 4,
+      marginTop: 12,
+      width: '100%',
+    },
+    // ── This year / Last Activity cards (desktop-parity) ──
+    cardTitleRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      width: '100%',
+    },
+    cardLink: {
+      fontSize: 11.5,
+      fontWeight: '600',
+    },
+    statRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 28,
+      marginTop: 12,
+      width: '100%',
+    },
+    statCol: {
+      alignItems: 'flex-start',
+    },
+    statLabel: {
+      fontSize: 11,
+      marginBottom: 2,
+    },
+    statValue: {
+      fontSize: 16,
+      fontWeight: '700',
+    },
+    teaser: {
+      fontSize: 11.5,
+      fontStyle: 'italic',
+      marginTop: 12,
+      width: '100%',
+    },
+    lastActivityRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      marginTop: 12,
+      width: '100%',
+    },
+    lastActivityInfo: {
+      flex: 1,
+      alignItems: 'flex-start',
+    },
+    lastActivityName: {
+      fontSize: 14,
+      fontWeight: '700',
+    },
+    lastActivityStat: {
+      fontSize: 12.5,
     },
     timeSyncText: {
       fontSize: 12,
