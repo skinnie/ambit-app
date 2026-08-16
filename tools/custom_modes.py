@@ -959,12 +959,21 @@ def main():
         with open(args.from_file, "rb") as f:
             data = f.read()
     else:
-        from write_nav import Link, read_flash
+        from write_nav import Link, read_flash, read_memory_map
         link = Link(dry_run=False, verbose=not args.json)
         if not args.json:
             print("read-only: 0x0b17 reads flash, nothing is written")
         link.open()
-        data = read_flash(link, CUSTOM_MODES_BASE, CUSTOM_MODES_SIZE, label="CustomModes")
+        # Resolve the CustomModes region from the watch's own 0x0b21 memory map rather than the
+        # hardcoded Ambit3-Peak base - the same per-device discipline the ExerciseLog/nav reads
+        # already use. The Traverse keeps its CustomModes at a different offset, so reading the
+        # Peak's 0x002000 returned an empty/garbage region ("0 sport modes on a Traverse").
+        base, size = read_memory_map(link).get("CustomModes", (CUSTOM_MODES_BASE, CUSTOM_MODES_SIZE))
+        if base == 0xFFFFFFFF or size == 0:
+            # This watch declares no CustomModes region - nothing to decode, not an error.
+            data = b""
+        else:
+            data = read_flash(link, base, size, label="CustomModes")
         if args.save:
             with open(args.save, "wb") as f:
                 f.write(data)
