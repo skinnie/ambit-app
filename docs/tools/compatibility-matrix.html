@@ -1,0 +1,590 @@
+<!--
+  Interactive device/feature compatibility matrix — scratch tool for watch-test sessions.
+
+  This is a static file: it cannot read git live. The title field below is seeded with
+  the branch name at the time this file was last generated ("bluetoothdesktop"); it's a
+  plain editable text input after that. Regenerate the file to reseed it.
+
+  This tool is a companion to ../reference/compatibility.md (the canonical, ritual-fed
+  record per CLAUDE.md). Nothing here is canonical until "Copy as Markdown" is pasted
+  into that file after a real watch-test session.
+-->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ambit-app — compatibility matrix</title>
+<style>
+  :root {
+    --bg: #ffffff; --fg: #1b1f23; --muted: #6b7280; --border: #d0d7de;
+    --head-bg: #f6f8fa; --accent: #0969da;
+    --ok-bg: #d9f5df; --ok-fg: #116329;
+    --partial-bg: #fff2cc; --partial-fg: #8a5a00;
+    --broken-bg: #ffdce0; --broken-fg: #a4172c;
+    --untested-bg: #f3f4f6; --untested-fg: #57606a;
+    --na-bg: repeating-linear-gradient(45deg,#eceff2,#eceff2 6px,#e2e5e9 6px,#e2e5e9 12px);
+    --na-fg: #8b949e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0d1117; --fg: #e6edf3; --muted: #9198a1; --border: #30363d;
+      --head-bg: #161b22; --accent: #4493f8;
+      --ok-bg: #123626; --ok-fg: #56d364;
+      --partial-bg: #3a2e05; --partial-fg: #e3b341;
+      --broken-bg: #3c1418; --broken-fg: #ff7b72;
+      --untested-bg: #161b22; --untested-fg: #8b949e;
+      --na-bg: repeating-linear-gradient(45deg,#161b22,#161b22 6px,#0d1117 6px,#0d1117 12px);
+      --na-fg: #6e7681;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--fg); font: 14px/1.4 -apple-system, "Segoe UI", Roboto, sans-serif;
+    margin: 0; padding: 20px;
+  }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: 12px; margin: 0 0 16px; }
+  .toolbar {
+    display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 14px;
+    padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--head-bg);
+  }
+  .toolbar label { font-size: 12px; color: var(--muted); }
+  .toolbar input[type=text] {
+    font: inherit; padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px;
+    background: var(--bg); color: var(--fg); min-width: 240px;
+  }
+  button {
+    font: inherit; padding: 6px 12px; border: 1px solid var(--border); border-radius: 6px;
+    background: var(--bg); color: var(--fg); cursor: pointer;
+  }
+  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  button:hover { filter: brightness(0.95); }
+  .spacer { flex: 1; }
+  .legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin-bottom: 10px; }
+  .legend span.swatch { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:4px; vertical-align:-1px; }
+  .table-wrap { overflow: auto; border: 1px solid var(--border); border-radius: 8px; max-height: 78vh; }
+  table { border-collapse: separate; border-spacing: 0; font-size: 12.5px; min-width: 100%; }
+  th, td { border-bottom: 1px solid var(--border); border-right: 1px solid var(--border); padding: 4px 6px; white-space: nowrap; }
+  thead th {
+    position: sticky; top: 0; background: var(--head-bg); z-index: 2; text-align: center; font-weight: 600;
+  }
+  thead tr.group-row th { top: 0; z-index: 3; }
+  thead tr.device-row th { top: 27px; z-index: 3; font-weight: 500; font-size: 11.5px; }
+  tbody th.feature-cell {
+    position: sticky; left: 0; background: var(--bg); z-index: 1; text-align: left;
+    font-weight: 500; max-width: 260px; white-space: normal; border-right: 1px solid var(--border);
+  }
+  tbody th.feature-cell input[type=text] {
+    font: inherit; width: 100%; border: none; background: transparent; color: var(--fg);
+  }
+  tbody th.feature-cell .del {
+    float: right; color: var(--muted); cursor: pointer; font-size: 11px; border: none; background: none; padding: 0 2px;
+  }
+  td.cell { text-align: center; padding: 2px 4px; }
+  .cellwrap { display: flex; flex-direction: column; gap: 2px; align-items: stretch; }
+  select {
+    font: inherit; font-size: 11.5px; padding: 2px 3px; border-radius: 4px; border: 1px solid var(--border);
+    background: var(--bg); color: var(--fg); width: 100%;
+  }
+  select.theo { border-style: dashed; }
+  select.v-ok { background: var(--ok-bg); color: var(--ok-fg); }
+  select.v-partial { background: var(--partial-bg); color: var(--partial-fg); }
+  select.v-broken { background: var(--broken-bg); color: var(--broken-fg); }
+  select.v-untested { background: var(--untested-bg); color: var(--untested-fg); }
+  select.v-na { background: var(--na-bg); color: var(--na-fg); }
+  select.v-blank { background: var(--bg); color: var(--muted); }
+  .date-input {
+    font-size: 11px; padding: 1px 2px; border: 1px solid var(--border); border-radius: 4px;
+    background: var(--bg); color: var(--fg); width: 100%;
+  }
+  .info-dot {
+    display: inline-block; margin-left: 3px; font-size: 10px; color: var(--accent); cursor: help;
+  }
+  .group-usb-note { font-weight: 400; font-size: 10.5px; color: var(--muted); display:block; }
+  .addrow-row td { text-align: left; padding: 6px; }
+  .footer-note { margin-top: 10px; font-size: 11.5px; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<h1>ambit-app — compatibility matrix</h1>
+<p class="sub">Scratch testing tool. Saves to this browser's localStorage only. Feeds
+  <code>docs/reference/compatibility.md</code> via "Copy as Markdown" — nothing here is
+  canonical until it's pasted there.</p>
+
+<div class="toolbar">
+  <label for="title">Title (branch / feature):</label>
+  <input type="text" id="title" value="bluetoothdesktop">
+  <div class="spacer"></div>
+  <label><input type="checkbox" id="includeAndroid"> include Android table in export</label>
+  <button class="primary" id="btnCopyMd">Copy as Markdown</button>
+  <button id="btnDownloadMd">Download .md</button>
+  <button id="btnReset">Reset all data</button>
+</div>
+
+<div class="legend">
+  <span><span class="swatch" style="background:var(--ok-bg)"></span>✅ works</span>
+  <span><span class="swatch" style="background:var(--partial-bg)"></span>⚠️ partial</span>
+  <span><span class="swatch" style="background:var(--broken-bg)"></span>❌ broken</span>
+  <span><span class="swatch" style="background:var(--untested-bg)"></span>— not tested</span>
+  <span><span class="swatch" style="background:var(--na-bg)"></span>n/a not applicable</span>
+  <span>dashed border = theoretical (editable default) · solid = confirmed in practice</span>
+</div>
+
+<div class="table-wrap">
+  <table id="matrix">
+    <thead></thead>
+    <tbody></tbody>
+  </table>
+</div>
+
+<p class="footer-note" id="lastUpdated"></p>
+
+<script>
+(function () {
+  "use strict";
+  var STORAGE_KEY = "ambitapp.compat-matrix.v1";
+  var GEN_BRANCH = "bluetoothdesktop";
+
+  var OPTIONS = [
+    { v: "", label: "— (unset)" },
+    { v: "✅", label: "✅ works" },
+    { v: "⚠️", label: "⚠️ partial" },
+    { v: "❌", label: "❌ broken" },
+    { v: "—", label: "— not tested" },
+    { v: "n/a", label: "n/a" }
+  ];
+
+  var DEVICE_GROUPS = [
+    {
+      key: "suunto", group: "Suunto", platforms: ["desktop", "android"],
+      devices: [
+        { id: "bluebird", label: "Ambit (Bluebird)" },
+        { id: "duck", label: "Ambit2 (Duck)" },
+        { id: "colibri", label: "Ambit2 S (Colibri)" },
+        { id: "greentit", label: "Ambit2 R (Greentit)" },
+        { id: "emu", label: "Ambit3 Peak (Emu)" },
+        { id: "finch", label: "Ambit3 Sport (Finch)" },
+        { id: "ibisbill", label: "Ambit3 Run (Ibisbill)" },
+        { id: "kaka", label: "Ambit3 Vertical (Kaka)" },
+        { id: "jabiru", label: "Traverse (Jabiru)" },
+        { id: "loon", label: "Traverse Alpha (Loon)" },
+        { id: "hoopoe", label: "Kailash (Hoopoe)" }
+      ]
+    },
+    {
+      key: "garmin", group: "Garmin", platforms: ["usb"],
+      devices: [
+        { id: "etrex10", label: "eTrex 10" },
+        { id: "etrex20", label: "eTrex 20" },
+        { id: "etrex20x", label: "eTrex 20x" },
+        { id: "etrex30", label: "eTrex 30" },
+        { id: "etrex30x", label: "eTrex 30x" },
+        { id: "etrex22x", label: "eTrex 22x" },
+        { id: "etrex32x", label: "eTrex 32x" }
+      ]
+    }
+  ];
+
+  var PLATFORM_LABEL = { desktop: "Desktop", android: "Android", usb: "USB" };
+
+  var DEFAULT_FEATURES = [
+    ["pairing_handshake", "Device pairing / BLE handshake"],
+    ["device_info_read", "Device info read (fw/hw/model)"],
+    ["battery_status_read", "Battery / status read"],
+    ["route_sync_read", "Route sync — read"],
+    ["route_sync_write", "Route sync — write"],
+    ["poi_sync", "POI / waypoint sync"],
+    ["sport_mode_create", "Sport mode — create"],
+    ["sport_mode_delete", "Sport mode — delete"],
+    ["multisport_edit", "Multisport — create/edit/delete"],
+    ["custom_modes_read", "Custom modes / display fields — read"],
+    ["custom_modes_write", "Custom modes / display fields — write"],
+    ["settings_read", "Settings — read"],
+    ["settings_write", "Settings — write"],
+    ["time_sync", "Time sync"],
+    ["firmware_version_check", "Firmware version check"],
+    ["firmware_flash_write", "Firmware flash / write"],
+    ["exercise_log_download", "Exercise log — download"],
+    ["exercise_log_export", "Exercise log — GPX/FIT export"],
+    ["apps_appzone_install", "Apps / App Zone install"],
+    ["workout_install_build", "Workout install / build"],
+    ["training_program_sync", "Training program sync"],
+    ["gps_orbit_sgee_push", "GPS orbit / SGEE push"],
+    ["gps_track_pod", "GPS track pod"],
+    ["backup_restore", "Backup & restore"],
+    ["ble_diagnostics_pcap", "BLE diagnostics / pcap capture (dev)"],
+    ["kailash_home_location", "Kailash Home Location write"],
+    ["garmin_usb_import", "Garmin USB import (activities/routes/POIs)"]
+  ];
+
+  // Known changelog claims, not yet logged via the ritual — info tooltip only, never pre-filled.
+  var KNOWN_CLAIMS = {
+    "pairing_handshake::emu::desktop": "Changelog: confirmed live pairing on Ambit3 Peak (Emu). Not yet logged via the ritual — confirm here to make it official.",
+    "device_info_read::emu::desktop": "Changelog: confirmed live device-info read on Emu.",
+    "firmware_version_check::emu::desktop": "Changelog: confirmed live firmware version check on Emu.",
+    "firmware_flash_write::emu::desktop": "Changelog: real firmware flash proven hardware-side on Emu (2.4.17-70.2.17414).",
+    "sport_mode_create::emu::desktop": "Changelog: sport mode create proven byte-exact vs 16 real captures on Emu.",
+    "sport_mode_delete::emu::desktop": "Changelog: sport mode delete proven byte-exact vs real captures on Emu.",
+    "multisport_edit::emu::desktop": "Changelog: multisport create/edit/delete proven byte-exact vs real captures on Emu.",
+    "settings_write::emu::desktop": "Changelog: settings write round-trip confirmed on Emu.",
+    "exercise_log_download::emu::desktop": "Changelog: exercise log download confirmed on Emu.",
+    "gps_orbit_sgee_push::emu::desktop": "Changelog: GPS orbit/SGEE push confirmed on real hardware (Emu).",
+    "custom_modes_write::emu::desktop": "Changelog: custom modes write confirmed on Emu.",
+    "kailash_home_location::hoopoe::desktop": "Changelog: Home Location read/write confirmed via real BLE captures (fw 2.0.5) on Kailash.",
+    "kailash_home_location::hoopoe::android": "Changelog: Home Location read/write confirmed on Android against real Kailash hardware.",
+    "settings_read::hoopoe::android": "Changelog: Android settings read confirmed on Kailash.",
+    "settings_write::hoopoe::android": "Changelog: Android settings write confirmed on Kailash.",
+    "garmin_usb_import::etrex10::usb": "Changelog: Garmin USB import confirmed on real eTrex 10 hardware.",
+    "garmin_usb_import::etrex30::usb": "Changelog: Garmin USB import confirmed on real eTrex 30 hardware."
+  };
+
+  // Rule-based theoretical defaults. Returns an option value, or null to fall through to "—".
+  function theoreticalFor(featureId, deviceId, platform) {
+    var group = deviceId.indexOf("etrex") === 0 ? "garmin" : "suunto";
+
+    if (group === "garmin") {
+      return featureId === "garmin_usb_import" ? "✅" : "n/a";
+    }
+    if (featureId === "garmin_usb_import") return "n/a"; // Suunto devices don't speak Garmin USB import
+
+    // Kailash has no CustomModes region.
+    if (deviceId === "hoopoe" && (featureId === "sport_mode_create" || featureId === "sport_mode_delete" ||
+        featureId === "multisport_edit" || featureId === "custom_modes_read" || featureId === "custom_modes_write")) {
+      return "n/a";
+    }
+    // Kailash Home Location is Kailash-only.
+    if (featureId === "kailash_home_location" && deviceId !== "hoopoe") return "n/a";
+
+    // Ambit3 Run has no multisport.
+    if (featureId === "multisport_edit" && deviceId === "ibisbill") return "n/a";
+
+    // GLONASS/SGEE ephemeris only on Vertical, Traverse, Traverse Alpha.
+    if (featureId === "gps_orbit_sgee_push" && ["kaka", "jabiru", "loon"].indexOf(deviceId) === -1) {
+      return "⚠️";
+    }
+
+    // Legacy Ambit1/2 family: pre-SBEM, read-only settings driver, no known sport-mode create/delete support.
+    var legacy = ["bluebird", "duck", "colibri", "greentit"];
+    if (legacy.indexOf(deviceId) !== -1) {
+      if (featureId === "settings_write" || featureId === "sport_mode_create" ||
+          featureId === "sport_mode_delete" || featureId === "multisport_edit" ||
+          featureId === "firmware_flash_write" || featureId === "training_program_sync") {
+        return "—";
+      }
+    }
+
+    // Android platform gaps (per project backlog: no Firmware/Intervals/Calendar/TrainingProgram/
+    // GpsTrackPod/Totals screens yet, and can't create/delete sport modes).
+    if (platform === "android") {
+      var androidGaps = ["firmware_version_check", "firmware_flash_write", "training_program_sync",
+        "gps_track_pod", "sport_mode_create", "sport_mode_delete", "multisport_edit"];
+      if (androidGaps.indexOf(featureId) !== -1) return "❌";
+    }
+
+    if (featureId === "ble_diagnostics_pcap") return "—"; // dev-only row, no default claim
+
+    return "✅"; // default optimistic theoretical: this project targets full protocol parity
+  }
+
+  function cellKey(rowId, deviceId, platform) { return rowId + "::" + deviceId + "::" + platform; }
+
+  function loadState() {
+    var raw = null;
+    try { raw = localStorage.getItem(STORAGE_KEY); } catch (e) {}
+    if (raw) {
+      try { return JSON.parse(raw); } catch (e) {}
+    }
+    return {
+      title: GEN_BRANCH,
+      rows: DEFAULT_FEATURES.map(function (f) { return { id: f[0], label: f[1], builtin: true }; }),
+      cells: {},
+      lastUpdated: null
+    };
+  }
+
+  function saveState() {
+    state.lastUpdated = new Date().toISOString();
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) {}
+    renderFooter();
+  }
+
+  function getCell(rowId, deviceId, platform) {
+    var key = cellKey(rowId, deviceId, platform);
+    if (!state.cells[key]) {
+      state.cells[key] = {
+        theoretical: theoreticalFor(rowId, deviceId, platform) || "—",
+        confirmed: "",
+        confirmedDate: "",
+        _theoreticalIsDefault: true
+      };
+    }
+    return state.cells[key];
+  }
+
+  function classForValue(v) {
+    if (v === "✅") return "v-ok";
+    if (v === "⚠️") return "v-partial";
+    if (v === "❌") return "v-broken";
+    if (v === "—") return "v-untested";
+    if (v === "n/a") return "v-na";
+    return "v-blank";
+  }
+
+  var state = loadState();
+
+  var titleInput = document.getElementById("title");
+  titleInput.value = state.title || GEN_BRANCH;
+  titleInput.addEventListener("input", function () {
+    state.title = titleInput.value;
+    saveState();
+  });
+
+  function buildOptionsHtml(selected) {
+    return OPTIONS.map(function (o) {
+      return '<option value="' + o.v + '"' + (o.v === selected ? " selected" : "") + '>' + o.label + '</option>';
+    }).join("");
+  }
+
+  function renderHead() {
+    var thead = document.querySelector("#matrix thead");
+    var groupRow = document.createElement("tr");
+    groupRow.className = "group-row";
+    var corner = document.createElement("th");
+    corner.rowSpan = 2;
+    corner.textContent = "Feature";
+    corner.style.position = "sticky";
+    corner.style.left = "0";
+    corner.style.zIndex = "4";
+    groupRow.appendChild(corner);
+
+    var deviceRow = document.createElement("tr");
+    deviceRow.className = "device-row";
+
+    DEVICE_GROUPS.forEach(function (g) {
+      var colCount = g.devices.length * g.platforms.length;
+      var th = document.createElement("th");
+      th.colSpan = colCount;
+      th.innerHTML = g.group + (g.key === "garmin" ? '<span class="group-usb-note">USB only — no BLE, no Android app</span>' : "");
+      groupRow.appendChild(th);
+
+      g.devices.forEach(function (d) {
+        g.platforms.forEach(function (p) {
+          var dth = document.createElement("th");
+          dth.textContent = d.label + " — " + PLATFORM_LABEL[p];
+          deviceRow.appendChild(dth);
+        });
+      });
+    });
+
+    thead.appendChild(groupRow);
+    thead.appendChild(deviceRow);
+  }
+
+  function removeRow(rowId) {
+    state.rows = state.rows.filter(function (r) { return r.id !== rowId; });
+    Object.keys(state.cells).forEach(function (k) {
+      if (k.indexOf(rowId + "::") === 0) delete state.cells[k];
+    });
+    saveState();
+    renderBody();
+  }
+
+  function renderBody() {
+    var tbody = document.querySelector("#matrix tbody");
+    tbody.innerHTML = "";
+
+    state.rows.forEach(function (row) {
+      var tr = document.createElement("tr");
+      var th = document.createElement("th");
+      th.className = "feature-cell";
+
+      var delBtn = document.createElement("button");
+      delBtn.className = "del";
+      delBtn.title = "Remove row";
+      delBtn.textContent = "✕";
+      delBtn.addEventListener("click", function () { removeRow(row.id); });
+
+      var labelInput = document.createElement("input");
+      labelInput.type = "text";
+      labelInput.value = row.label;
+      labelInput.addEventListener("input", function () {
+        row.label = labelInput.value;
+        saveState();
+      });
+
+      th.appendChild(delBtn);
+      th.appendChild(labelInput);
+      tr.appendChild(th);
+
+      DEVICE_GROUPS.forEach(function (g) {
+        g.devices.forEach(function (d) {
+          g.platforms.forEach(function (p) {
+            var cell = getCell(row.id, d.id, p);
+            var td = document.createElement("td");
+            td.className = "cell";
+            var wrap = document.createElement("div");
+            wrap.className = "cellwrap";
+
+            var theoSel = document.createElement("select");
+            theoSel.className = "theo " + classForValue(cell.theoretical);
+            theoSel.innerHTML = buildOptionsHtml(cell.theoretical);
+            theoSel.title = "Theoretical support (editable default)";
+            theoSel.addEventListener("change", function () {
+              cell.theoretical = theoSel.value;
+              cell._theoreticalIsDefault = false;
+              theoSel.className = "theo " + classForValue(cell.theoretical);
+              saveState();
+            });
+
+            var confSel = document.createElement("select");
+            confSel.className = classForValue(cell.confirmed);
+            confSel.innerHTML = buildOptionsHtml(cell.confirmed);
+            confSel.title = "Confirmed in practice";
+
+            var dateInput = document.createElement("input");
+            dateInput.type = "date";
+            dateInput.className = "date-input";
+            dateInput.value = cell.confirmedDate || "";
+            dateInput.style.display = cell.confirmed === "✅" ? "" : "none";
+            dateInput.addEventListener("change", function () {
+              cell.confirmedDate = dateInput.value;
+              saveState();
+            });
+
+            confSel.addEventListener("change", function () {
+              cell.confirmed = confSel.value;
+              confSel.className = classForValue(cell.confirmed);
+              if (cell.confirmed === "✅") {
+                if (!cell.confirmedDate) cell.confirmedDate = new Date().toISOString().slice(0, 10);
+                dateInput.value = cell.confirmedDate;
+                dateInput.style.display = "";
+              } else {
+                dateInput.style.display = "none";
+              }
+              saveState();
+            });
+
+            wrap.appendChild(theoSel);
+            wrap.appendChild(confSel);
+            wrap.appendChild(dateInput);
+
+            var claim = KNOWN_CLAIMS[cellKey(row.id, d.id, p)];
+            if (claim) {
+              var info = document.createElement("span");
+              info.className = "info-dot";
+              info.title = claim;
+              info.textContent = "ⓘ";
+              wrap.appendChild(info);
+            }
+
+            td.appendChild(wrap);
+            tr.appendChild(td);
+          });
+        });
+      });
+
+      tbody.appendChild(tr);
+    });
+
+    var addTr = document.createElement("tr");
+    addTr.className = "addrow-row";
+    var addTd = document.createElement("td");
+    var totalCols = 1 + DEVICE_GROUPS.reduce(function (n, g) { return n + g.devices.length * g.platforms.length; }, 0);
+    addTd.colSpan = totalCols;
+    var addBtn = document.createElement("button");
+    addBtn.textContent = "+ Add row";
+    addBtn.addEventListener("click", function () {
+      var id = "custom_" + Date.now();
+      state.rows.push({ id: id, label: "New feature", builtin: false });
+      saveState();
+      renderBody();
+    });
+    addTd.appendChild(addBtn);
+    addTr.appendChild(addTd);
+    tbody.appendChild(addTr);
+  }
+
+  function renderFooter() {
+    var el = document.getElementById("lastUpdated");
+    el.textContent = state.lastUpdated
+      ? "Last saved: " + new Date(state.lastUpdated).toLocaleString()
+      : "Not saved yet.";
+  }
+
+  function buildMarkdown(includeAndroid) {
+    var lines = [];
+    lines.push("**Legend:** ✅ works (date) · ⚠️ partial (see note) · ❌ broken (see note) · — not tested yet · n/a not applicable to that watch");
+    lines.push("");
+
+    function emitTable(heading, group, platform) {
+      lines.push("## " + heading);
+      lines.push("");
+      var header = "| Feature | " + group.devices.map(function (d) { return d.label; }).join(" | ") + " |";
+      var align = "|---|" + group.devices.map(function () { return ":--:"; }).join("|") + "|";
+      lines.push(header);
+      lines.push(align);
+      var notes = [];
+      state.rows.forEach(function (row) {
+        var cells = group.devices.map(function (d) {
+          var c = getCell(row.id, d.id, platform);
+          var v = c.confirmed || "—";
+          if (v === "✅" && c.confirmedDate) v = "✅ (" + c.confirmedDate + ")";
+          return v;
+        });
+        lines.push("| " + row.label + " | " + cells.join(" | ") + " |");
+      });
+      lines.push("");
+    }
+
+    var suunto = DEVICE_GROUPS[0];
+    emitTable("Suunto watches — Desktop", suunto, "desktop");
+    if (includeAndroid) emitTable("Suunto watches — Android", suunto, "android");
+    var garmin = DEVICE_GROUPS[1];
+    emitTable("Garmin devices (USB)", garmin, "usb");
+
+    lines.push("_Exported from compatibility-matrix.html (\"" + (state.title || GEN_BRANCH) + "\") on " + new Date().toISOString().slice(0, 10) + "._");
+    return lines.join("\n");
+  }
+
+  document.getElementById("btnCopyMd").addEventListener("click", function () {
+    var md = buildMarkdown(document.getElementById("includeAndroid").checked);
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(md).then(function () {
+        alert("Copied " + md.length + " characters to clipboard.");
+      }, function () {
+        window.prompt("Copy failed automatically — copy manually:", md);
+      });
+    } else {
+      window.prompt("Copy manually:", md);
+    }
+  });
+
+  document.getElementById("btnDownloadMd").addEventListener("click", function () {
+    var md = buildMarkdown(document.getElementById("includeAndroid").checked);
+    var blob = new Blob([md], { type: "text/markdown" });
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "compatibility-export.md";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  });
+
+  document.getElementById("btnReset").addEventListener("click", function () {
+    if (window.confirm("Clear all saved matrix data in this browser? This cannot be undone.")) {
+      try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}
+      state = loadState();
+      titleInput.value = state.title;
+      renderBody();
+      renderFooter();
+    }
+  });
+
+  renderHead();
+  renderBody();
+  renderFooter();
+})();
+</script>
+</body>
+</html>

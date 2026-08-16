@@ -1,0 +1,85 @@
+site_name: ambit-app
+site_description: Suunto Ambit3/Traverse BLE reverse-engineering — GPX routes without Movescount
+repo_url: https://github.com/skinnie/ambit-app
+repo_name: skinnie/ambit-app
+edit_uri: edit/main/docs/
+
+docs_dir: docs
+site_dir: site
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.indexes
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.tabs.link
+    - content.action.edit
+
+markdown_extensions:
+  - admonition
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight
+
+nav:
+  - Home: index.md
+  - Tutorials:
+      - tutorials/index.md
+      - Getting started: tutorials/getting-started.md
+      - Runbook: tutorials/runbook.md
+      - macOS setup: tutorials/macos-setup.md
+      - Packaging quickstart: tutorials/packaging.md
+  - How-to:
+      - how-to/index.md
+      - Build and run: how-to/build-and-run.md
+      - Use the tools: how-to/using-the-tools.md
+  - Reference:
+      - reference/index.md
+      - Supported devices: reference/supported-devices.md
+      - Compatibility matrix: reference/compatibility.md
+      - Tools format spec: reference/tools-format-spec.md
+      - App spec: reference/ambitapp-spec.md
+      - Changelog (desktop v3): reference/v3-changelog.md
+      - Changelog (Android): reference/android-changelog.md
+      - Credits: reference/credits.md
+  - Explanation:
+      - explanation/index.md
+      - Project overview: explanation/project-overview.md
+      - History: explanation/history.md
+      - Custom modes deep-dive: explanation/custom-modes.md
+      - SGEE / GPS orbit data: explanation/sgee.md
+      - Exercise log format: explanation/exercise-log.md
+      - Training program: explanation/training-program.md
+      - Steps/wellness data: explanation/steps-wellness-data.md
+      - Steps encoding notes: explanation/steps-encoding-checked.md
+      - BLE findings (APK analysis): explanation/ble-findings-apk-analysis.md
+      - Route encoding summary: explanation/route-encoding-summary.md
+      - Route encoding update: explanation/route-encoding-update.md
+      - Orbital data analysis: explanation/orbital-data-analysis.md
+      - OpenAmbit audit: explanation/openambit-audit.md
+      - Ghidra finish plan: explanation/ghidra-finish-plan.md
+      - Kailash BLE findings: explanation/kailash-ble-findings.md
+      - Kailash scoping note: explanation/kailash-scoping-note.md
+      - Firmware flasher design: explanation/firmware-flasher-design.md
+      - Unresolved questions for devs: explanation/unresolved-questions.md
+      - Suunto Cloud API note: explanation/suunto-cloud-api-note.md

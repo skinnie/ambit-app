@@ -3,6 +3,60 @@
 All notable changes to the AmbitApp Android app (fork of `guiguoz/opensportsync`) are
 recorded here, newest first.
 
+## 0.1.1 (2026-08-14)
+
+Desktop→Android feature parity, plus an opt-in **Experimental** batch (App Zone, Intervals,
+Smart Sensor) for community testing. Both apps compile (Android APK + desktop Qt binary).
+
+### New, stable
+
+- **Totals screen.** Yearly hours-outside (GPS activities), distance grouped by sport (tap to
+  feature run/bike, or any sport), and the same sourced "funny equivalents" as desktop (Moon
+  and back, marathons, CO₂, pastéis de nata…). Derived from activities already synced; a year
+  picker only offers years with data. Reached from the Activities screen header. (Energy shows
+  a note — Android's GPX-derived activities carry no kcal yet.)
+- **Calendar screen.** Month grid with a per-sport coloured dot per day, sized by how much was
+  done, grey rest-day dots, today ringed. Uses the same 84-sport colour table as desktop.
+- **Sport modes: create, delete, and multisport.** The Sport Modes screen can now add a sport
+  mode, delete one, and build/delete multisport combos (with an ordered legs picker) — not just
+  rename/edit. Every byte written is **proven byte-exact against SuuntoLink's own captures**
+  (16/16 real transitions replayed in an in-repo test); the region is re-encoded and checked
+  before any write, and re-read after. Cable or Bluetooth. (First real-watch write is gated
+  behind a clear warning — the payload is proven, the on-device write is new on Android.)
+- **Removed Livelox** integration (service, OAuth, deep link, UI) — unused.
+
+### Experimental (opt-in — Settings → Experimental, OFF by default)
+
+Cable-tested, community-feedback features behind one toggle, each with a visible "unproven,
+back up first" warning. Nothing here is on by default.
+
+- **App Zone (Suunto Apps).** Install Suunto Apps onto the watch. AmbitApp ships **no** Suunto
+  content (proprietary, and the App Zone service is long dead) — you **import your own**
+  SuuntoLink `suunto-apps/index.json` (parsed natively into a compact local catalog), then
+  browse/search and install onto a sport-mode screen. The Apps-region build and the
+  CustomModes render shortcut are **proven byte-exact** against SuuntoLink's tooling.
+- **Intervals workout.** Build an interval workout and either (a) generate its App-Zone source,
+  compile it yourself on a third-party community site in your own browser (the app ships **no**
+  compiler key and makes **no** automated call — it only generates the source and opens the
+  public site), then import the compiled result and install it; or (b) write a native planned
+  move. Both flagged unproven: the compiled-app install path has a known unresolved on-hardware
+  "app error", and the planned-move format may not surface on the watch. The generated source
+  and blobs are proven to match the reference tools.
+- **Smart Sensor.** Read a Suunto Smart Sensor HR belt over Bluetooth — manufacturer, model,
+  serial, firmware, battery, live heart rate — and Forget (unpair). Read-only; a separate BLE
+  peripheral, independent of the watch.
+
+### Under the hood
+
+- New native `writeRegion` (C/JNI/Kotlin/TS) — a generic flash-region writer generalising the
+  proven CustomModes writer (used-extent SHA-256 + data-tail, no commit), shared by App Zone
+  and Intervals. New native BLE Smart Sensor module and a native streaming `index.json`
+  extractor. 30 in-repo byte-exact tests cover the sport-mode, App-Zone, App-install,
+  training-program and workout-source codecs.
+- **Desktop parity:** the Qt app's App-Zone picker gained an **Import from SuuntoLink** button
+  + a status/instructions notice (works on Linux too, where SuuntoLink isn't installed — copy
+  the `index.json` over), via new backend `/api/apps/catalog_status` + `/api/apps/import`.
+
 ## 2.5.15 (2026-08-09)
 
 Settings for the whole Ambit family, and a tidier settings screen.

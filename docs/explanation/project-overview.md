@@ -34,7 +34,7 @@ independently created software to exchange data with a device its owner already 
 
 If you represent the manufacturer and something here concerns you, the maintainers would
 rather hear it directly and fix it than have you guess at our intent — see
-[`SUUNTO_DEV_REQUESTS.md`](SUUNTO_DEV_REQUESTS.md), which is a standing, good-faith request
+[`SUUNTO_DEV_REQUESTS.md`](https://github.com/skinnie/ambit-app/blob/main/SUUNTO_DEV_REQUESTS.md), which is a standing, good-faith request
 for technical information, not a demand.
 
 ---
@@ -77,7 +77,7 @@ The on-device navigation database format is fully documented: memory map, record
 the coordinate projection, the route-simplification pass and the closing region hashes,
 including two ordering quirks that are reproduced exactly so that data written by this
 project is indistinguishable from data the watch already accepts. The specification is in
-[`tools/README.md`](tools/README.md).
+[`tools/README.md`](https://github.com/skinnie/ambit-app/blob/main/tools/README.md).
 
 ---
 
@@ -257,7 +257,7 @@ unknown left · ❌ blocked on an unresolved unknown.
 The two capabilities still blocked — guided workouts and training plans — are the two whose
 authoring lived on a service that no longer runs. There is nothing left to observe for
 either, which is why they are open questions rather than pending implementation. See
-[`SUUNTO_DEV_REQUESTS.md`](SUUNTO_DEV_REQUESTS.md) for exactly what information would close
+[`SUUNTO_DEV_REQUESTS.md`](https://github.com/skinnie/ambit-app/blob/main/SUUNTO_DEV_REQUESTS.md) for exactly what information would close
 them.
 
 ---
@@ -375,25 +375,25 @@ hardware you own, at your own risk; see the licence text for the full disclaimer
 
 | Document | Contents |
 |---|---|
-| [`HANDOFF.md`](HANDOFF.md) | **Start here.** Full project state, milestone by milestone, with every derivation and dated finding. |
-| [`tools/README.md`](tools/README.md) | The format specification: memory map, structures, coordinate formula, simplification, hashes, field schema. |
-| [`RUNBOOK.md`](RUNBOOK.md) | Step-by-step instructions for whoever physically has the watch. |
-| [`history.md`](history.md) | Watch-family background, codenames, timeline, adjacent open-source projects. |
-| [`AMBITAPP_SPEC.md`](AMBITAPP_SPEC.md) | Design language and feature spec for the apps. |
-| [`desktop/README.md`](desktop/README.md), [`android/README.md`](android/README.md) | Per-app architecture, build instructions, and the current gap lists. |
-| [`KAILASH-BLE-FINDINGS.md`](KAILASH-BLE-FINDINGS.md) | The Kailash Bluetooth protocol. |
-| [`SUUNTO_DEV_REQUESTS.md`](SUUNTO_DEV_REQUESTS.md) | A good-faith request for the specific technical information that would close the two remaining blocked features. |
-| [`unresolved_questions_for_devs.md`](unresolved_questions_for_devs.md) | Open protocol questions, kept shareable standalone. |
+| [`HANDOFF.md`](https://github.com/skinnie/ambit-app/blob/main/HANDOFF.md) | **Start here.** Full project state, milestone by milestone, with every derivation and dated finding. |
+| [`tools/README.md`](https://github.com/skinnie/ambit-app/blob/main/tools/README.md) | The format specification: memory map, structures, coordinate formula, simplification, hashes, field schema. |
+| [Runbook](../tutorials/runbook.md) | Step-by-step instructions for whoever physically has the watch. |
+| [History](history.md) | Watch-family background, codenames, timeline, adjacent open-source projects. |
+| [App spec](../reference/ambitapp-spec.md) | Design language and feature spec for the apps. |
+| [`desktop/README.md`](https://github.com/skinnie/ambit-app/blob/main/desktop/README.md), [`android/README.md`](https://github.com/skinnie/ambit-app/blob/main/android/README.md) | Per-app architecture, build instructions, and the current gap lists. |
+| [Kailash BLE findings](kailash-ble-findings.md) | The Kailash Bluetooth protocol. |
+| [`SUUNTO_DEV_REQUESTS.md`](https://github.com/skinnie/ambit-app/blob/main/SUUNTO_DEV_REQUESTS.md) | A good-faith request for the specific technical information that would close the two remaining blocked features. |
+| [Unresolved questions](unresolved-questions.md) | Open protocol questions, kept shareable standalone. |
 
 ---
 
 ## Licence and credits
 
-[GPLv3](LICENSE), the same licence as
+[GPLv3](https://github.com/skinnie/ambit-app/blob/main/LICENSE), the same licence as
 [openambit](https://github.com/openambitproject/openambit), whose `libambit` this project
 checks its own work against throughout.
 
-See [`CREDITS.md`](CREDITS.md) — openambit,
+See [Credits](../reference/credits.md) — openambit,
 [opensportsync](https://github.com/guiguoz/opensportsync),
 [marguslt](https://github.com/marguslt), sebchastang, the Suunto forum community, and
 wanarun.net.

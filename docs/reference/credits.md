@@ -36,6 +36,31 @@ reverse-engineering here would have been possible, or would have taken far longe
   structured-workout JSON schema this project's own workout generator (`tools/workout.py`)
   targets, alongside `openambitproject/openambit#257` and Suunto's own French tutorial.
 
+- **The App-Zone interval/workout example authors** - real, published App-Zone-language
+  workout apps this project's structured-workout findings (Findings 8-11) were checked against.
+  Chief among them **[claha/suunto](https://github.com/claha/suunto)**, whose Python generator
+  encodes a repeat block as one `Suunto.mod(STEP, N)` conditional per step-position - a
+  concrete technique dissected in `docs/explanation/training-program.md` - and alongside it
+  **[follesoe/suunto-ambit-intervals](https://github.com/follesoe/suunto-ambit-intervals)**,
+  **[hefler/SuuntoApps](https://github.com/hefler/SuuntoApps)**,
+  **[AdamHodgson/Suunto-Interval-Training](https://github.com/AdamHodgson/Suunto-Interval-Training)**,
+  and **[Httqm/Suunto](https://github.com/Httqm/Suunto)** (kept as a reference copy under
+  `githubprojects/Suunto`). These examples let this project confirm the App-Zone step/target
+  model against real code rather than reverse-engineered material alone.
+
+- **[ruvido/goambit](https://github.com/ruvido/goambit)** and
+  **[AlexLBraits/ambit2gpx](https://github.com/AlexLBraits/ambit2gpx)** - independent
+  implementations of the exact cloud-free USB paths this project reverse-engineered:
+  `goambit` uploads GPX routes to an Ambit3 Peak over direct USB (this project's own route-write
+  path), and `ambit2gpx` reads activities off an Ambit over USB and writes GPX (this project's
+  activity-read path). This project's tooling was developed independently of them, but their
+  existence is real, working confirmation that these paths are genuine and need no Movescount
+  cloud.
+
+- **[mihaildemidoff/suunto-sml-model](https://github.com/mihaildemidoff/suunto-sml-model)** -
+  a JAXB (XML-binding) model of Suunto's SML activity format, an independent reference point
+  for this project's own exercise-log / SML work.
+
 If anyone belongs on this list and isn't here, that's an omission to fix, not a judgment -
 say so and it'll be corrected.
 
