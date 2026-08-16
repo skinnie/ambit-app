@@ -781,7 +781,7 @@ def _field_to_json(f):
     }
 
 
-def _displays_to_json(displays):
+def _displays_to_json(displays, variant=None):
     """One mode's own real Displays list, JSON-shaped - `index` stays the raw 0-based
     position (writeDisplayField's own addressing needs this unchanged), `screenNumber` is
     the real 1-based number the user would actually see on the watch (None for a built-in
@@ -789,7 +789,12 @@ def _displays_to_json(displays):
     is which."""
     templates = [d["TemplateName"] for d in displays]
     tail_len = system_tail_length(templates)
-    real_count = len(displays) - tail_len
+    # Cap the real (user-configurable) screens at what the watch actually allows. The Traverse
+    # keeps 4 real screens then a long built-in tail (map/compass/navigate/graph...) that the
+    # Ambit3 tail-signature doesn't match, so system_tail_length() alone left all 17 "real"
+    # ("17 display(s)" on a Traverse). max_displays_for_variant() (Jabiru/Loon -> 4) is the
+    # confirmed SuuntoLink ceiling; the extras beyond it are built-in screens.
+    real_count = min(len(displays) - tail_len, max_displays_for_variant(variant))
     out = []
     for i, disp in enumerate(displays):
         is_built_in = i >= real_count
@@ -809,7 +814,7 @@ def _displays_to_json(displays):
     return out
 
 
-def to_json(result):
+def to_json(result, variant=None):
     """A JSON-friendly view of decode()'s own result dict, for backend/server.py - added
     2026-08-08 alongside the real CustomModes write tools (custom_modes_rename_test.py/
     custom_modes_field_write_test.py/custom_modes_display_field_write_test.py). Every field
@@ -843,7 +848,7 @@ def to_json(result):
             "backlightMode": s.get("BacklightModeName"),
             "displayMode": s.get("DisplayModeName"),
             "quickNavigation": s.get("QuickNavigationName"),
-            "displays": _displays_to_json(mode["Displays"]),
+            "displays": _displays_to_json(mode["Displays"], variant),
             "rules": mode["Rules"],
         })
 
@@ -955,15 +960,18 @@ def main():
             for k, v in sorted(FIELD_TYPES.items())]}))
         return 0
 
+    variant = None   # a raw --from dump carries no watch identity; default-cap displays
     if args.from_file:
         with open(args.from_file, "rb") as f:
             data = f.read()
     else:
-        from write_nav import Link, read_flash, read_memory_map
+        from write_nav import Link, read_flash, read_memory_map, codename_for_pid
         link = Link(dry_run=False, verbose=not args.json)
         if not args.json:
             print("read-only: 0x0b17 reads flash, nothing is written")
         link.open()
+        # The connected watch's codename (e.g. "Jabiru") drives the per-mode display cap below.
+        variant = codename_for_pid(link.opened_product_id)
         # Resolve the CustomModes region from the watch's own 0x0b21 memory map rather than the
         # hardcoded Ambit3-Peak base - the same per-device discipline the ExerciseLog/nav reads
         # already use. The Traverse keeps its CustomModes at a different offset, so reading the
@@ -982,7 +990,7 @@ def main():
 
     result = decode(data)
     if args.json:
-        print(json.dumps(to_json(result)))
+        print(json.dumps(to_json(result, variant)))
     else:
         show(result, verbose=args.displays)
     return 0
