@@ -10,6 +10,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useV3Theme } from './src/theme/v3';
 import { ThemeModeProvider, useThemeMode } from './src/theme/ThemeModeContext';
 import { ExperimentalProvider } from './src/config/ExperimentalContext';
+import { DemoProvider } from './src/config/DemoContext';
 import HomeScreen from './src/screens/HomeScreen';
 import LogListScreen from './src/screens/LogListScreen';
 import MapScreen from './src/screens/MapScreen';
@@ -106,7 +107,9 @@ export default function App() {
   return (
     <ThemeModeProvider>
       <ExperimentalProvider>
-        <AppShell />
+        <DemoProvider>
+          <AppShell />
+        </DemoProvider>
       </ExperimentalProvider>
     </ThemeModeProvider>
   );

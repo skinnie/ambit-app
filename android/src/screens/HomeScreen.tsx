@@ -31,6 +31,7 @@ import { decodeDeviceLog, realTrackPoints, deviceLogToGpx, KailashDeviceLog } fr
 import { getAllActivities, ActivityRecord } from '../database/db';
 import { distanceLines } from '../services/TotalsFacts';
 import { APP_VERSION } from '../config/version';
+import { useDemo } from '../config/DemoContext';
 import { manualUrlFor, garminManualUrlFor } from '../config/manuals';
 import { t } from '../i18n';
 import Icon from '../components/ui/Icon';
@@ -102,6 +103,7 @@ export default function HomeScreen() {
   const theme = useV3Theme();
   const styles = createStyles(theme);
   const navigation = useNavigation<Nav>();
+  const demo = useDemo();
   // deviceName/deviceSub keep their existing font metrics (createStyles(theme) above still
   // owns size/weight/spacing) - these two exist only because deviceName/deviceSub are style
   // *objects* (not just color), so overriding color needs a second style-array entry rather
@@ -446,6 +448,9 @@ export default function HomeScreen() {
 
   function startSearching() {
     stopSearchTimers();
+    // Testing mode: don't hunt for a real watch - the demo effect below already presents the
+    // chosen sample device as connected.
+    if (demoEnabledRef.current) return;
     setPhase('searching');
     setConnectError(undefined);
     // Populate the picker up front so paired (BLE) watches are offerable on the no-device
@@ -471,6 +476,32 @@ export default function HomeScreen() {
   }
   const startSearchingRef = useRef(startSearching);
   startSearchingRef.current = startSearching;
+
+  // Testing mode (ported from desktop): when on, short-circuit the whole connect flow and
+  // present the chosen sample device as connected, so the app can be explored without a watch.
+  // When turned off, resume the normal USB/BLE search.
+  const demoEnabledRef = useRef(demo.enabled);
+  demoEnabledRef.current = demo.enabled;
+  useEffect(() => {
+    if (demo.enabled) {
+      stopSearchTimers();
+      setBleConnected(false);
+      bleConnectedRef.current = false;
+      setBleTransportActive(false);
+      setGarminInfo(null);
+      setDeviceType('ambit');
+      setAmbitInfo(demo.device);
+      setKailashHistory(null);
+      setKailashTrack(null);
+      setConnectError(undefined);
+      setPhase('connected');
+    } else if (phaseRef.current === 'connected' && deviceTypeRef.current === 'ambit') {
+      // Was showing the demo device - go back to looking for a real one.
+      setAmbitInfo(null);
+      startSearchingRef.current();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [demo.enabled, demo.variant]);
 
   // Restore the persisted watch choice once, before the first auto-connect (poll() waits on
   // restoredRef). For USB we prime the native selection so the very first connect targets the
@@ -518,6 +549,8 @@ export default function HomeScreen() {
   // another screen). Otherwise (first mount, or the user hadn't connected
   // yet), run the normal search.
   useFocusEffect(useCallback(() => {
+    // Testing mode owns the connection state - don't run the real USB re-check/search.
+    if (demoEnabledRef.current) return () => {};
     // A BLE connection is invisible to detectAttachedDeviceType() (USB-only), so
     // never run the USB re-check while BLE-connected — it would falsely see
     // 'none' and bounce back to the search screen.
@@ -590,6 +623,8 @@ export default function HomeScreen() {
   useEffect(() => {
     function onAttach() {
       stopSearchTimers();
+      // In Testing mode, ignore a real watch being plugged in - the sample device stays.
+      if (demoEnabledRef.current) return;
       // Defer to an active Bluetooth session (2026-08-16): plugging a watch in shouldn't yank
       // the dashboard off the BLE watch you're already using. Just surface the newly-cabled
       // watch in the switcher — tap its pill to switch. Auto-connect-on-plug still works

@@ -12,6 +12,8 @@ import { isMarkSyncedEnabled, setMarkSyncedEnabled as persistMarkSynced } from '
 import {
   getViewMode, setViewMode as persistViewMode, ViewMode, ListSurface,
 } from '../services/ListViewPrefs';
+import { useDemo } from '../config/DemoContext';
+import { DemoDevicePicker } from '../components/ui/DemoDevicePicker';
 import Icon, { IconName } from '../components/ui/Icon';
 import { CREDITS } from '../legal/credits';
 import { DecodedSetting, SettingField, SettingScreen } from '../services/AmbitSettingsReader';
@@ -97,6 +99,8 @@ export default function SettingsScreen() {
   const styles = createStyles(theme);
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { enabled: experimentalEnabled, setEnabled: setExperimentalEnabled } = useExperimental();
+  const demo = useDemo();
+  const [demoPickerOpen, setDemoPickerOpen] = useState(false);
   const { mode, setMode } = useThemeMode();
 
   const [runalyzeKey, setRunalyzeKey]     = useState('');
@@ -493,6 +497,34 @@ export default function SettingsScreen() {
           </View>
         ))}
       </View>
+
+      {/* ── Testing mode (2026-08-16, ported from desktop): pretend a device is connected so
+          the app can be explored without one. Toggle + a picker of the watches the app knows
+          (Ambit3 family / Traverse / Kailash). Default OFF. ── */}
+      <View style={styles.section}>
+        <View style={styles.cardHead}>
+          <IconBadge icon="watch" />
+          <Text style={styles.cardTitle}>{t.testingSection}</Text>
+        </View>
+        <Text style={styles.sectionDesc}>{t.testingDesc}</Text>
+        <View style={[styles.row, { justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }]}>
+          <Text style={[styles.connRowText, { flex: 1, marginRight: 12 }]}>
+            {demo.enabled ? t.testingOnShowing(demo.device.name) : ' '}
+          </Text>
+          <Toggle value={demo.enabled} onValueChange={demo.setEnabled} />
+        </View>
+        {demo.enabled && (
+          <View style={{ marginTop: 10 }}>
+            <Button label={t.testingChange} onPress={() => setDemoPickerOpen(true)} variant="outline" />
+          </View>
+        )}
+      </View>
+      <DemoDevicePicker
+        visible={demoPickerOpen}
+        currentVariant={demo.variant}
+        onPick={demo.setVariant}
+        onClose={() => setDemoPickerOpen(false)}
+      />
 
       {/* ── Experimental (2026-08-14, André: "enable it with a toggle on experimental") ──
           One toggle gates the three unproven, cable-tested, community-feedback features
