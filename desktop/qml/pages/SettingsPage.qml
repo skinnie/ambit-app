@@ -834,11 +834,15 @@ PageFlickable {
             }
         }
 
-        Dialog {
+        ThemedDialog {
             id: intervalsIcuDialog
             title: qsTr("Intervals.icu")
             modal: true
-            anchors.centerIn: parent
+            // Declared inside the scrolled content Column, so centerIn:parent lands at that
+            // Column's off-screen origin ("nothing happens", André 2026-08-16). Center on the
+            // window overlay instead - same fix as HomePage's passkey dialog.
+            parent: Overlay.overlay
+            anchors.centerIn: Overlay.overlay
             standardButtons: Dialog.Close
 
             onOpened: {
@@ -893,11 +897,14 @@ PageFlickable {
             }
         }
 
-        Dialog {
+        ThemedDialog {
             id: runalyzeDialog
             title: qsTr("Runalyze")
             modal: true
-            anchors.centerIn: parent
+            // Nested in the scrolled Column - center on the window overlay so it isn't
+            // positioned at the Column's off-screen origin (André, 2026-08-16).
+            parent: Overlay.overlay
+            anchors.centerIn: Overlay.overlay
             standardButtons: Dialog.Close
 
             onOpened: {
@@ -946,11 +953,14 @@ PageFlickable {
             }
         }
 
-        Dialog {
+        ThemedDialog {
             id: stravaDialog
             title: qsTr("Strava")
             modal: true
-            anchors.centerIn: parent
+            // Nested in the scrolled Column - center on the window overlay so it isn't
+            // positioned at the Column's off-screen origin (André, 2026-08-16).
+            parent: Overlay.overlay
+            anchors.centerIn: Overlay.overlay
             standardButtons: Dialog.Close
 
             onOpened: {
@@ -1028,11 +1038,14 @@ PageFlickable {
         // Restore cloud destinations). Same OAuth shape as stravaDialog above: paste your own
         // registered app's credentials, Connect opens the provider in the browser and the
         // callback returns here. OneDrive uses PKCE, so it has no Client Secret field. ---
-        Dialog {
+        ThemedDialog {
             id: dropboxDialog
             title: qsTr("Dropbox")
             modal: true
-            anchors.centerIn: parent
+            // Nested in the scrolled Column - center on the window overlay so it isn't
+            // positioned at the Column's off-screen origin (André, 2026-08-16).
+            parent: Overlay.overlay
+            anchors.centerIn: Overlay.overlay
             standardButtons: Dialog.Close
 
             onOpened: {
@@ -1104,11 +1117,14 @@ PageFlickable {
             }
         }
 
-        Dialog {
+        ThemedDialog {
             id: googleDriveDialog
             title: qsTr("Google Drive")
             modal: true
-            anchors.centerIn: parent
+            // Nested in the scrolled Column - center on the window overlay so it isn't
+            // positioned at the Column's off-screen origin (André, 2026-08-16).
+            parent: Overlay.overlay
+            anchors.centerIn: Overlay.overlay
             standardButtons: Dialog.Close
 
             onOpened: {
@@ -1181,11 +1197,14 @@ PageFlickable {
             }
         }
 
-        Dialog {
+        ThemedDialog {
             id: oneDriveDialog
             title: qsTr("OneDrive")
             modal: true
-            anchors.centerIn: parent
+            // Nested in the scrolled Column - center on the window overlay so it isn't
+            // positioned at the Column's off-screen origin (André, 2026-08-16).
+            parent: Overlay.overlay
+            anchors.centerIn: Overlay.overlay
             standardButtons: Dialog.Close
 
             onOpened: {
