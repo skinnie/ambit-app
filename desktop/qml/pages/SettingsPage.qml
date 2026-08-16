@@ -39,6 +39,17 @@ PageFlickable {
         return 0
     }
 
+    // Testing-mode device picker - a DIRECT child of the page (like the other dialogs), NOT
+    // nested inside the Testing-mode card. Declared inside a scrolled card it opened positioned
+    // at that card's off-screen origin, so "nothing appeared" (André, 2026-08-16); at page level
+    // with centerIn:parent it centres on the viewport like every other Settings dialog.
+    DemoDevicePicker {
+        id: demoPicker
+        anchors.centerIn: parent
+        current: DeviceService.demoVariant
+        onDeviceChosen: (variant) => DeviceService.setDemoMode(true, variant)
+    }
+
     HomeLocationDialog {
         id: homePicker
         onPicked: (lat, lon) => {
@@ -1544,11 +1555,6 @@ PageFlickable {
                 }
             }
 
-            DemoDevicePicker {
-                id: demoPicker
-                current: DeviceService.demoVariant
-                onDeviceChosen: (variant) => DeviceService.setDemoMode(true, variant)
-            }
         }
 
         // --- Suunto Smart Sensor. Real, 2026-08-13 (André: "add a card on settings to
