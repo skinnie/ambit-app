@@ -18,6 +18,10 @@ import { t, dateLocale } from '../i18n';
 import { useV3Theme } from '../theme/v3';
 import { ActivityThumbnail } from '../components/ActivityThumbnail';
 import Icon, { IconName } from '../components/ui/Icon';
+import { SortBar } from '../components/ui/SortBar';
+import {
+  getViewMode, sortItems, sortKeysFor, SortKey, ViewMode,
+} from '../services/ListViewPrefs';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'LogList'>;
 
@@ -30,6 +34,11 @@ export default function LogListScreen() {
   const [activities, setActivities] = useState<ActivityRecord[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [activeFilter, setActiveFilter] = useState<string>(ALL);
+  // View mode (map/list) is the persisted Settings preference; re-read on focus so a change
+  // in Settings takes effect when the user returns here. Sort is an in-page control.
+  const [viewMode, setViewMode] = useState<ViewMode>('map');
+  const [sortKey, setSortKey] = useState<SortKey>('uploaded');
+  useFocusEffect(useCallback(() => { getViewMode('activities').then(setViewMode); }, []));
 
   // Calendar + Totals are activity-analytics views (desktop TotalsPage/CalendarPage parity).
   // On Android they're reached from here, the Activities screen, rather than the Home nav
@@ -130,12 +139,16 @@ export default function LogListScreen() {
     return [ALL, ...Array.from(types).sort()];
   }, [activities]);
 
-  const filtered = useMemo(
-    () => activeFilter === ALL
+  const filtered = useMemo(() => {
+    const base = activeFilter === ALL
       ? activities
-      : activities.filter(a => a.activity_type === activeFilter),
-    [activities, activeFilter]
-  );
+      : activities.filter(a => a.activity_type === activeFilter);
+    // Sort via the shared comparator (maps ActivityRecord onto the generic Sortable fields).
+    const withKeys = base.map(a => ({
+      a, uploadedAt: a.synced_at, name: a.activity_type, distanceM: a.distance_m, ascentM: a.d_plus,
+    }));
+    return sortItems(withKeys, sortKey).map(x => x.a);
+  }, [activities, activeFilter, sortKey]);
 
   // ─── Rendu ──────────────────────────────────────────────────────────────────
 
@@ -186,6 +199,9 @@ export default function LogListScreen() {
         </ScrollView>
       )}
 
+      {/* Sort control (in-page, per André). Last uploaded / name / distance / ascent. */}
+      <SortBar keys={sortKeysFor('activities')} value={sortKey} onChange={setSortKey} />
+
       <FlatList
         style={styles.list}
         data={filtered}
@@ -206,7 +222,7 @@ export default function LogListScreen() {
             onLongPress={() => confirmDelete(item)}
             activeOpacity={0.75}
           >
-            {!!item.gpx_path && (
+            {viewMode === 'map' && !!item.gpx_path && (
               <View style={styles.cardThumb}>
                 <ActivityThumbnail gpxPath={item.gpx_path} height={72} />
               </View>
