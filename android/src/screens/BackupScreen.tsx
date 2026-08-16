@@ -5,13 +5,8 @@ import {
   runFirmwareCheck, downloadFirmware, BackupState,
 } from '../services/FirmwareBackupService';
 import {
-  createNavBackup, listNavBackups, backupsFolderPath, BackupEntry,
-  uploadNavBackupToCloud, listCloudNavBackups, downloadNavBackupFromCloud,
-  CloudProvider, CloudBackupEntry,
+  createNavBackup, listNavBackups, backupsFolderPath, BackupEntry, backupNavToFile,
 } from '../services/NavBackupService';
-import { isAuthenticated as dropboxIsAuth } from '../services/ApiDropbox';
-import { isAuthenticated as gdriveIsAuth } from '../services/ApiGoogleDrive';
-import { isAuthenticated as onedriveIsAuth } from '../services/ApiOneDrive';
 import { shareFile } from '../native/AmbitUsbModule';
 import { t } from '../i18n';
 import { useV3Theme, v3Spacing, v3Type } from '../theme/v3';
@@ -49,70 +44,25 @@ export default function BackupScreen() {
   }, []);
   useFocusEffect(useCallback(() => { refreshBackups(); }, [refreshBackups]));
 
-  // ── Cloud backup - added 2026-08-12, ports desktop's own BackupPage.qml/
-  // CloudStorageService the same day (see NavBackupService.ts's own header comment on this
-  // section). 'none' means nothing picked yet - the three real choices only become tappable
-  // once connected in Settings → Connections. ──
-  const [cloudProvider, setCloudProvider] = useState<CloudProvider | 'none'>('none');
-  const [dropboxAuth, setDropboxAuth] = useState(false);
-  const [gdriveAuth, setGdriveAuth] = useState(false);
-  const [onedriveAuth, setOnedriveAuth] = useState(false);
-  const [cloudBackups, setCloudBackups] = useState<CloudBackupEntry[]>([]);
-  const [cloudBusy, setCloudBusy] = useState(false);
-  const [cloudActionText, setCloudActionText] = useState<string | undefined>();
-  const [cloudActionOk, setCloudActionOk] = useState(true);
+  // ── Backup database to folder - replaces the cloud-OAuth upload (André, 2026-08-16). Reads
+  // the nav DB and hands it to the system "Save as" picker so the user can drop it in any
+  // folder, including a cloud-sync folder - keyless, no sign-in. ──
+  const [folderBusy, setFolderBusy] = useState(false);
+  const [folderError, setFolderError] = useState<string | undefined>();
+  const [folderInfoOpen, setFolderInfoOpen] = useState(false);
 
-  useFocusEffect(useCallback(() => {
-    dropboxIsAuth().then(setDropboxAuth);
-    gdriveIsAuth().then(setGdriveAuth);
-    onedriveIsAuth().then(setOnedriveAuth);
-  }, []));
-
-  const refreshCloudBackups = useCallback((provider: CloudProvider) => {
-    setCloudBusy(true);
-    listCloudNavBackups(provider)
-      .then(setCloudBackups)
-      .catch((e: any) => setCloudActionText(e?.message ?? t.unknownError))
-      .finally(() => setCloudBusy(false));
-  }, []);
-
-  function handleSelectCloudProvider(provider: CloudProvider | 'none') {
-    setCloudProvider(provider);
-    setCloudActionText(undefined);
-    if (provider !== 'none') refreshCloudBackups(provider);
-  }
-
-  async function handleUploadToCloud(entry: BackupEntry) {
-    if (cloudProvider === 'none' || cloudBusy) return;
-    setCloudBusy(true);
-    setCloudActionText(undefined);
+  async function handleBackupToFolder() {
+    if (folderBusy) return;
+    setFolderBusy(true);
+    setFolderError(undefined);
     try {
-      await uploadNavBackupToCloud(cloudProvider, entry);
-      setCloudActionOk(true);
-      setCloudActionText(t.cloudUploaded);
-      refreshCloudBackups(cloudProvider);
+      await backupNavToFile();
     } catch (e: any) {
-      setCloudActionOk(false);
-      setCloudActionText(e?.message ?? t.unknownError);
+      // The user simply backing out of the "Save as" picker isn't an error.
+      if (e?.code === 'SAVE_AS_CANCELLED') return;
+      setFolderError(e?.message ?? t.unknownError);
     } finally {
-      setCloudBusy(false);
-    }
-  }
-
-  async function handleDownloadFromCloud(entry: CloudBackupEntry) {
-    if (cloudProvider === 'none' || cloudBusy) return;
-    setCloudBusy(true);
-    setCloudActionText(undefined);
-    try {
-      await downloadNavBackupFromCloud(cloudProvider, entry.label);
-      setCloudActionOk(true);
-      setCloudActionText(t.cloudDownloaded);
-      refreshBackups();
-    } catch (e: any) {
-      setCloudActionOk(false);
-      setCloudActionText(e?.message ?? t.unknownError);
-    } finally {
-      setCloudBusy(false);
+      setFolderBusy(false);
     }
   }
 
@@ -190,60 +140,29 @@ export default function BackupScreen() {
               <TouchableOpacity style={styles.shareBtn} onPress={() => handleShareBackup(b)}>
                 <Text style={styles.shareBtnText}>{t.backupShareBtn}</Text>
               </TouchableOpacity>
-              {cloudProvider !== 'none' && (
-                <TouchableOpacity style={styles.shareBtn} disabled={cloudBusy} onPress={() => handleUploadToCloud(b)}>
-                  <Text style={styles.shareBtnText}>{t.cloudUploadBtn}</Text>
-                </TouchableOpacity>
-              )}
             </View>
           </View>
         ))}
         <Text style={styles.restoreNote}>{t.backupRestoreUnavailable}</Text>
       </Section>
 
-      {/* ── Cloud backup - added 2026-08-12 ("implement the ones that the user can set up
-          easily by itself"). Optional second destination for the exact same two files above -
-          see NavBackupService.ts's own header comment on this section. ── */}
-      <Section title={t.cloudBackupSection} description={t.cloudBackupDesc}>
-        <View style={styles.row}>
-          <Button label={t.cloudNone} variant={cloudProvider === 'none' ? 'filled' : 'outline'}
-            grow={false} onPress={() => handleSelectCloudProvider('none')} />
-          <Button label="Dropbox" variant={cloudProvider === 'dropbox' ? 'filled' : 'outline'}
-            grow={false} disabled={!dropboxAuth} onPress={() => handleSelectCloudProvider('dropbox')} />
+      {/* ── Backup database to folder - keyless replacement for the cloud-OAuth upload
+          (André, 2026-08-16). Save the nav DB anywhere via the system picker; point it at a
+          cloud-sync folder and it syncs. ── */}
+      <Section>
+        <View style={styles.folderTitleRow}>
+          <Text style={styles.folderTitle}>{t.backupFolderSection}</Text>
+          <TouchableOpacity style={styles.infoBadge} onPress={() => setFolderInfoOpen(o => !o)} hitSlop={8}>
+            <Text style={styles.infoBadgeText}>i</Text>
+          </TouchableOpacity>
         </View>
+        {folderInfoOpen && <Text style={styles.folderInfoText}>{t.backupFolderInfo}</Text>}
         <View style={styles.row}>
-          <Button label="Google Drive" variant={cloudProvider === 'googledrive' ? 'filled' : 'outline'}
-            grow={false} disabled={!gdriveAuth} onPress={() => handleSelectCloudProvider('googledrive')} />
-          <Button label="OneDrive" variant={cloudProvider === 'onedrive' ? 'filled' : 'outline'}
-            grow={false} disabled={!onedriveAuth} onPress={() => handleSelectCloudProvider('onedrive')} />
+          <Button label={t.backupFolderBtn} variant="filled" loading={folderBusy} disabled={folderBusy}
+            onPress={handleBackupToFolder} />
         </View>
-
-        {!dropboxAuth && !gdriveAuth && !onedriveAuth && (
-          <StatusLine text={t.cloudNoneConnected} />
-        )}
-
-        {cloudProvider !== 'none' && (
-          <>
-            {cloudBusy && <StatusLine text={t.backupNavWorking} />}
-            {!cloudBusy && cloudBackups.length === 0 && <StatusLine text={t.cloudEmpty} />}
-            {cloudBackups.map(entry => (
-              <View key={entry.label} style={styles.backupRow}>
-                <Text style={styles.backupDate}>
-                  {entry.createdAt > 0 ? new Date(entry.createdAt).toLocaleString() : entry.label}
-                </Text>
-                <TouchableOpacity style={styles.shareBtn} disabled={cloudBusy} onPress={() => handleDownloadFromCloud(entry)}>
-                  <Text style={styles.shareBtnText}>{t.cloudDownloadBtn}</Text>
-                </TouchableOpacity>
-              </View>
-            ))}
-            <View style={styles.row}>
-              <Button label={t.cloudRefreshBtn} variant="text" grow={false} loading={cloudBusy}
-                onPress={() => refreshCloudBackups(cloudProvider)} />
-            </View>
-          </>
-        )}
-
-        {!!cloudActionText && <StatusLine text={cloudActionText} tone={cloudActionOk ? undefined : 'alert'} />}
+        {folderBusy && <StatusLine text={t.backupNavWorking} />}
+        {!!folderError && <StatusLine text={folderError} tone="alert" />}
       </Section>
 
       <WarningNote>{t.backupWarning}</WarningNote>
@@ -323,4 +242,14 @@ const createStyles = (t: ReturnType<typeof useV3Theme>) => StyleSheet.create({
   },
   shareBtnText: { color: t.primary, fontWeight: '600', fontSize: v3Type.label },
   restoreNote: { color: t.mutedText, fontSize: v3Type.caption, marginTop: v3Spacing.small, lineHeight: 16 },
+  // "Backup database to folder" section - title + "little i" that toggles the cloud-folder hint.
+  folderTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  folderTitle: { fontSize: v3Type.heading, fontWeight: '700', color: t.text },
+  infoBadge: {
+    width: 15, height: 15, borderRadius: 7.5,
+    borderWidth: 1, borderColor: t.mutedText,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  infoBadgeText: { fontSize: 10, fontWeight: '700', color: t.mutedText, lineHeight: 11 },
+  folderInfoText: { fontSize: v3Type.body, color: t.mutedText, lineHeight: 19, marginTop: 6 },
 });

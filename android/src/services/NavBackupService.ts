@@ -1,5 +1,5 @@
 import RNFS from 'react-native-fs';
-import { connect, disconnect, readRegion } from '../native/AmbitUsbModule';
+import { connect, disconnect, readRegion, saveFileAs } from '../native/AmbitUsbModule';
 import { AMBIT3_WAYPOINT_BASE, AMBIT3_WAYPOINT_REGION_SIZE, AMBIT3_ROUTE_BASE, AMBIT3_ROUTE_REGION_SIZE } from './RouteReader';
 import * as ApiDropbox from './ApiDropbox';
 import * as ApiGoogleDrive from './ApiGoogleDrive';
@@ -70,6 +70,47 @@ export async function listNavBackups(): Promise<BackupEntry[]> {
 
 export function backupsFolderPath(): string {
   return BACKUPS_DIR;
+}
+
+/**
+ * "Backup database to folder" (André, 2026-08-16) - the keyless replacement for the cloud-OAuth
+ * upload. Reads the same two nav regions createNavBackup() does, bundles them into one file, and
+ * hands it to the system "Save as" picker so the user can drop it in any folder - point it at a
+ * Dropbox/OneDrive/Drive sync folder and it syncs, no keys, no sign-in.
+ *
+ * One bundled file (not the two raw .bin) so it's a single tap through one picker; Android backup
+ * is export-only anyway (no raw-region write exists here - see this file's header), so this is a
+ * safety copy, with both regions recoverable from the base64 inside. Throws SAVE_AS_CANCELLED if
+ * the user backs out of the picker - callers treat that as a no-op, not an error.
+ */
+export async function backupNavToFile(): Promise<void> {
+  await connect();
+  try {
+    const [waypointsB64, routesB64] = await Promise.all([
+      readRegion(AMBIT3_WAYPOINT_BASE, AMBIT3_WAYPOINT_REGION_SIZE),
+      readRegion(AMBIT3_ROUTE_BASE, AMBIT3_ROUTE_REGION_SIZE),
+    ]);
+    const bundle = JSON.stringify({
+      format: 'ambit-nav-backup',
+      version: 1,
+      createdAt: Date.now(),
+      routes_b64: routesB64,
+      waypoints_b64: waypointsB64,
+    });
+    const d = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const name = `AmbitApp-nav-backup-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`
+      + `-${pad(d.getHours())}${pad(d.getMinutes())}.ambitbak`;
+    const tmp = `${RNFS.CachesDirectoryPath}/${name}`;
+    await RNFS.writeFile(tmp, bundle, 'utf8');
+    try {
+      await saveFileAs(tmp, name, 'application/octet-stream');
+    } finally {
+      RNFS.unlink(tmp).catch(() => {});
+    }
+  } finally {
+    await disconnect().catch(() => {});
+  }
 }
 
 // ─── Cloud backup - added 2026-08-12 ("implement the ones that the user can set up easily by

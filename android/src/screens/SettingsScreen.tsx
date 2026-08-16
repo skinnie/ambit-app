@@ -128,7 +128,7 @@ export default function SettingsScreen() {
   // four separate always-expanded full-height sections like this screen had. Same real
   // handlers/state above, this only changes which one is visible at a time.
   const [openConnection, setOpenConnection] = useState<
-    'strava' | 'runalyze' | 'intervals' | 'dropbox' | 'googledrive' | 'onedrive' | null
+    'strava' | 'runalyze' | 'intervals' | null
   >(null);
 
   const [mapProvider, setMapProviderState] = useState<MapProvider>('ign');
@@ -750,26 +750,9 @@ export default function SettingsScreen() {
             {intervalsSaved ? `${t.intervalsSection} — ${t.credsStored}` : `${t.intervalsSection} — ${t.connect}`}
           </Text>
         </TouchableOpacity>
-        {/* Dropbox / Google Drive / OneDrive - added 2026-08-12, Backup & Restore cloud
-            destinations (see NavBackupService.ts / BackupScreen.tsx). */}
-        <TouchableOpacity style={styles.connRow} activeOpacity={0.7} onPress={() => setOpenConnection('dropbox')}>
-          <View style={[styles.connDot, { backgroundColor: dropboxAuth ? theme.success : theme.mutedText }]} />
-          <Text style={styles.connRowText}>
-            {dropboxAuth ? `Dropbox — ${t.cloudConnectedStatus}` : `Dropbox — ${t.connect}`}
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.connRow} activeOpacity={0.7} onPress={() => setOpenConnection('googledrive')}>
-          <View style={[styles.connDot, { backgroundColor: gdriveAuth ? theme.success : theme.mutedText }]} />
-          <Text style={styles.connRowText}>
-            {gdriveAuth ? `Google Drive — ${t.cloudConnectedStatus}` : `Google Drive — ${t.connect}`}
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.connRow} activeOpacity={0.7} onPress={() => setOpenConnection('onedrive')}>
-          <View style={[styles.connDot, { backgroundColor: onedriveAuth ? theme.success : theme.mutedText }]} />
-          <Text style={styles.connRowText}>
-            {onedriveAuth ? `OneDrive — ${t.cloudConnectedStatus}` : `OneDrive — ${t.connect}`}
-          </Text>
-        </TouchableOpacity>
+        {/* Dropbox / Google Drive / OneDrive rows removed (André, 2026-08-16): cloud backup is
+            now just "save to a folder" on the Backup screen (point it at a cloud sync folder),
+            so there's no OAuth "connection" to set up here anymore. */}
       </View>
 
       <Modal visible={openConnection === 'strava'} animationType="slide" transparent onRequestClose={() => setOpenConnection(null)}>
@@ -857,90 +840,6 @@ export default function SettingsScreen() {
               )}
             </View>
             {intervalsSaved && <StatusLine text={t.credsStored} />}
-            <Button label={t.closeBtn} variant="text" onPress={() => setOpenConnection(null)} style={{ marginTop: 12 }} />
-          </View>
-        </View>
-      </Modal>
-
-      {/* ── Dropbox / Google Drive / OneDrive connect modals - added 2026-08-12, Backup &
-          Restore cloud destinations (see NavBackupService.ts). ── */}
-      <Modal visible={openConnection === 'dropbox'} animationType="slide" transparent onRequestClose={() => setOpenConnection(null)}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalBox}>
-            <Text style={styles.cardTitle}>Dropbox</Text>
-            <Text style={styles.sectionDesc}>{t.cloudDropboxDesc}</Text>
-            {dropboxAuth ? (
-              <>
-                <Chip icon="check" label={t.cloudConnectedStatus} />
-                <View style={styles.row}>
-                  <Button label={t.cloudDisconnectBtn} variant="text" grow={false} onPress={handleDropboxDisconnect} />
-                </View>
-              </>
-            ) : (
-              <>
-                <FieldRow icon="key" value={dropboxClientId} onChangeText={setDropboxClientId}
-                  placeholder={t.cloudAppKeyPlaceholder} autoCapitalize="none" autoCorrect={false} />
-                <FieldRow icon="key" value={dropboxClientSecret} onChangeText={setDropboxClientSecret}
-                  placeholder={t.cloudAppSecretPlaceholder} autoCapitalize="none" autoCorrect={false} secureTextEntry />
-                <View style={styles.row}>
-                  <Button label={t.connect} variant="filled" onPress={handleDropboxConnect} />
-                </View>
-              </>
-            )}
-            <Button label={t.closeBtn} variant="text" onPress={() => setOpenConnection(null)} style={{ marginTop: 12 }} />
-          </View>
-        </View>
-      </Modal>
-
-      <Modal visible={openConnection === 'googledrive'} animationType="slide" transparent onRequestClose={() => setOpenConnection(null)}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalBox}>
-            <Text style={styles.cardTitle}>Google Drive</Text>
-            <Text style={styles.sectionDesc}>{t.cloudGoogleDriveDesc}</Text>
-            {gdriveAuth ? (
-              <>
-                <Chip icon="check" label={t.cloudConnectedStatus} />
-                <View style={styles.row}>
-                  <Button label={t.cloudDisconnectBtn} variant="text" grow={false} onPress={handleGdriveDisconnect} />
-                </View>
-              </>
-            ) : (
-              <>
-                <FieldRow icon="key" value={gdriveClientId} onChangeText={setGdriveClientId}
-                  placeholder={t.cloudClientIdPlaceholder} autoCapitalize="none" autoCorrect={false} />
-                <FieldRow icon="key" value={gdriveClientSecret} onChangeText={setGdriveClientSecret}
-                  placeholder={t.cloudClientSecretPlaceholder} autoCapitalize="none" autoCorrect={false} secureTextEntry />
-                <View style={styles.row}>
-                  <Button label={t.connect} variant="filled" onPress={handleGdriveConnect} />
-                </View>
-              </>
-            )}
-            <Button label={t.closeBtn} variant="text" onPress={() => setOpenConnection(null)} style={{ marginTop: 12 }} />
-          </View>
-        </View>
-      </Modal>
-
-      <Modal visible={openConnection === 'onedrive'} animationType="slide" transparent onRequestClose={() => setOpenConnection(null)}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalBox}>
-            <Text style={styles.cardTitle}>OneDrive</Text>
-            <Text style={styles.sectionDesc}>{t.cloudOneDriveDesc}</Text>
-            {onedriveAuth ? (
-              <>
-                <Chip icon="check" label={t.cloudConnectedStatus} />
-                <View style={styles.row}>
-                  <Button label={t.cloudDisconnectBtn} variant="text" grow={false} onPress={handleOnedriveDisconnect} />
-                </View>
-              </>
-            ) : (
-              <>
-                <FieldRow icon="key" value={onedriveClientId} onChangeText={setOnedriveClientId}
-                  placeholder={t.cloudClientIdPlaceholder} autoCapitalize="none" autoCorrect={false} />
-                <View style={styles.row}>
-                  <Button label={t.connect} variant="filled" onPress={handleOnedriveConnect} />
-                </View>
-              </>
-            )}
             <Button label={t.closeBtn} variant="text" onPress={() => setOpenConnection(null)} style={{ marginTop: 12 }} />
           </View>
         </View>
