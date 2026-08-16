@@ -70,11 +70,16 @@ project hasn't found a way to drive from App Zone source.
 import argparse
 import json
 import sys
-import urllib.error
-import urllib.request
 
-COMPILE_URL = "https://ambitappscompiler.azurewebsites.net/api/compile"
-COMPILE_KEY = "***REMOVED***"
+# The App Zone source this tool generates is compiled on the community compiler WEBSITE, which
+# the user opens and pastes into themselves - this project never calls that server or carries a
+# key for it (a deliberate choice: the compiler is not ours to invoke on a user's behalf). We
+# only build the paste-ready source locally; the user does the compile step on the site and
+# brings the resulting JSON back.
+#
+# The compiler is proprietary to Suunto, shared by the community at
+# https://forum.suunto.com/topic/7592/ambit-apps-compilation
+COMPILE_SITE_URL = "https://ambitapps.z6.web.core.windows.net/"
 
 DURATION_VARS = {
     "time": "SUUNTO_DURATION",
@@ -240,42 +245,12 @@ def build_compile_request(source, own_vars, name):
     return header + source
 
 
-def compile_source(request_text, verbose=False):
-    req = urllib.request.Request(
-        COMPILE_URL, data=request_text.encode("utf-8"), method="POST",
-        headers={"Content-Type": "text/plain", "x-functions-key": COMPILE_KEY},
-    )
-    if verbose:
-        print("--- POST body ---", file=sys.stderr)
-        print(request_text, file=sys.stderr)
-    try:
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            return json.loads(resp.read().decode("utf-8"))
-    except urllib.error.HTTPError as e:
-        body = e.read().decode("utf-8", "replace")
-        raise RuntimeError(f"compile failed: HTTP {e.code}: {body}") from None
-    except urllib.error.URLError as e:
-        # No HTTP response at all - no connection, DNS failure, timeout. Compiling needs the
-        # live community compiler (this project doesn't run its own); everything else in the
-        # packaged app (building a workout, History, exporting, "Add to SuuntoLink") works
-        # offline, only this network call can't. Caught specifically so the GUI shows a plain
-        # "you're offline" message instead of an unhandled exception / raw 500.
-        raise RuntimeError(
-            "couldn't reach the compiler (ambitappscompiler.azurewebsites.net) - this needs "
-            f"an internet connection; everything else here works offline. ({e.reason})") from None
-
-
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("workout", help="path to a workout JSON file (see this file's docstring"
                                      " for the schema)")
-    ap.add_argument("--print-source", action="store_true", help="print the generated"
-                     " App Zone source and exit, no network call")
-    ap.add_argument("--compile", action="store_true", help="POST the generated source to the"
-                     " live community compiler and print the result")
-    ap.add_argument("--out", metavar="FILE", help="save the compile response JSON here"
-                     " (with --compile)")
-    ap.add_argument("--verbose", action="store_true")
+    ap.add_argument("--out", metavar="FILE", help="save the generated paste-ready source here"
+                     " instead of printing it")
     args = ap.parse_args()
 
     with open(args.workout) as f:
@@ -284,20 +259,16 @@ def main():
     source, own_vars = generate_source(workout)
     request_text = build_compile_request(source, own_vars, workout.get("name", "Workout"))
 
-    if args.print_source or not args.compile:
-        print(request_text)
-        if not args.compile:
-            return 0
-
-    result = compile_source(request_text, verbose=args.verbose)
-    binary = result.get("binary", [])
-    print(f"compiled OK: name={result.get('name')!r} activityId={result.get('activityId')}"
-          f" categoryId={result.get('categoryId')} binary_length={len(binary)}"
-          f" compatibleVariants={result.get('compatibleVariants')}")
     if args.out:
         with open(args.out, "w") as f:
-            json.dump(result, f, indent=2)
-        print(f"wrote {args.out}")
+            f.write(request_text)
+        print(f"wrote {args.out}", file=sys.stderr)
+    else:
+        print(request_text)
+
+    # Compiling happens on the website, by the user - we never call it. Tell them where.
+    print(f"\nCompile this by pasting it at {COMPILE_SITE_URL} , then import the resulting "
+          "JSON back into the Workout Builder.", file=sys.stderr)
     return 0
 
 

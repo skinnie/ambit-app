@@ -31,7 +31,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import suuntolink_catalog
-from workout import build_compile_request, compile_source, generate_source
+from workout import COMPILE_SITE_URL, build_compile_request, generate_source
 
 # Real, 2026-08-08 ("app is installed in some strange directory, please install it in
 # Downloads directory"): was Path.home() / "AmbitWorkouts" (e.g. C:\Users\<user>\AmbitWorkouts
@@ -160,13 +160,19 @@ HTML_PAGE = r"""<!doctype html>
   <button id="themeToggle" onclick="cycleTheme()"></button>
 </h1>
 
-<p>Builds a structured workout and compiles it into a real Suunto App through the live
-community compiler. "Create App" compiles it.</p>
-<p><strong>"Add to SuuntoLink"</strong> (shown once your workout is compiled) appends the
+<p>Builds a structured workout into App Zone source. The actual compile happens on the
+community compiler <strong>website</strong>, which you open and paste into yourself - this
+tool never sends anything to that server. The flow is: <strong>1)</strong> "Get source to
+paste" &rarr; <strong>2)</strong> "Open compiler website", paste, compile, download the
+result JSON &rarr; <strong>3)</strong> "Import compiled JSON" below to bring it back.</p>
+<p><strong>"Add to SuuntoLink"</strong> (shown once you import the compiled JSON) appends the
 result straight into your local SuuntoLink's own app catalog. From there, it shows up in
 <strong>SuuntoLink's own "Add Suunto App"</strong> picker next time you connect the watch -
 that's SuuntoLink's own install step, not something this tool does directly.</p>
 <p>Each creation is saved below so you can come back for it later.</p>
+<p class="hint">The compiler is proprietary to Suunto, shared by the community at
+<a href="https://forum.suunto.com/topic/7592/ambit-apps-compilation" target="_blank">forum.suunto.com/topic/7592</a>.
+This tool does not include or call it - you compile on the website there yourself.</p>
 
 <div id="linuxNote" style="display:none">
   <p class="hint"><strong>Linux note:</strong> SuuntoLink has no native Linux build, so
@@ -197,7 +203,7 @@ that's SuuntoLink's own install step, not something this tool does directly.</p>
 </div>
 
 <div class="row-buttons">
-  <button class="primary" onclick="doCompile()">Create App</button>
+  <button class="primary" onclick="doGetSource()">Get source to paste</button>
 </div>
 
 <details>
@@ -458,15 +464,33 @@ function installButtonHtml(historyIndex) {
   return `<button${cls} onclick="doAddToSuuntoLink(${call}, this)">Add to SuuntoLink</button>`;
 }
 
-async function doCompile() {
+// Hand-off compile: this tool never calls the compiler server itself. It produces the
+// paste-ready source and lets the user compile it on the community website, then import the
+// result back below via "Import compiled JSON".
+const COMPILE_SITE_URL = "__COMPILE_SITE_URL__";
+
+async function doGetSource() {
   const out = document.getElementById("output");
-  out.innerHTML = "compiling...";
-  const workout = currentWorkout();
-  const resp = await fetch("/api/compile", {method: "POST", body: JSON.stringify(workout)});
+  out.innerHTML = "generating...";
+  const resp = await fetch("/api/generate", {method: "POST", body: JSON.stringify(currentWorkout())});
   const data = await resp.json();
   if (!resp.ok) { out.innerHTML = `<p class="result-err">${data.error}</p>`; return; }
-  renderCompiledResult(workout.name, data, data.savedTo ? `Saved to ${data.savedTo}.` : "");
-  saveHistory(workout, data);
+  out.innerHTML = `
+    <h3>Source to compile</h3>
+    <p>Copy this, open the compiler website, paste it in and compile, then download the
+       result JSON and use <strong>"Import compiled JSON"</strong> above to bring it back here.</p>
+    <div class="row-buttons">
+      <button class="primary" onclick="copySource(this)">Copy source</button>
+      <button onclick="window.open(COMPILE_SITE_URL, '_blank')">Open compiler website</button>
+    </div>
+    <pre id="pasteSource">${data.source.replace(/</g, "&lt;")}</pre>`;
+}
+
+function copySource(btn) {
+  const text = document.getElementById("pasteSource").textContent;
+  navigator.clipboard.writeText(text).then(
+    () => { btn.insertAdjacentHTML("afterend", ' <span class="result-ok">Copied.</span>'); },
+    () => { btn.insertAdjacentHTML("afterend", ' <span class="result-err">Copy failed - select the text and copy manually.</span>'); });
 }
 
 function renderCompiledResult(name, data, extraNote) {
@@ -614,7 +638,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(404)
             self.end_headers()
             return
-        body = HTML_PAGE.encode("utf-8")
+        body = HTML_PAGE.replace("__COMPILE_SITE_URL__", COMPILE_SITE_URL).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
@@ -622,7 +646,7 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_POST(self):
-        if self.path not in ("/api/generate", "/api/compile", "/api/add-to-suuntolink"):
+        if self.path not in ("/api/generate", "/api/add-to-suuntolink"):
             self.send_response(404)
             self.end_headers()
             return
@@ -646,22 +670,10 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(400, {"error": f"couldn't generate source: {e}"})
             return
 
-        if self.path == "/api/generate":
-            self._send_json(200, {"source": request_text})
-        else:
-            try:
-                result = compile_source(request_text)
-            except RuntimeError as e:
-                self._send_json(502, {"error": str(e)})
-                return
-            # The compiler's own response always names the app "Ambit App" regardless of what
-            # was compiled (confirmed against assets/Run_compiled.json too - a real example,
-            # same generic name) - SuuntoLink's real UI must let people rename it as a separate
-            # step that has nothing to do with this API call. Overwritten here with the real
-            # workout name so it's actually findable in SuuntoLink's own app picker later.
-            result["name"] = workout.get("name") or result.get("name", "Workout")
-            saved_to = save_compiled(workout.get("name", "Workout"), result)
-            self._send_json(200, {**result, "savedTo": str(saved_to)})
+        # /api/generate is the only workout endpoint now: it returns the paste-ready source.
+        # Compiling is done by the user on the community website (see COMPILE_SITE_URL); this
+        # tool never calls that server.
+        self._send_json(200, {"source": request_text})
 
     def _handle_add_to_suuntolink(self, compiled):
         candidates = suuntolink_catalog.find_index_json()
