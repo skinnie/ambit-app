@@ -101,9 +101,10 @@ a ready-made **Windows `.zip`** (unzip, double-click `ambitapp.exe`) and **macOS
 the first launch shows a one-time "unverified developer" prompt: on macOS right-click the
 app → Open → Open; on Windows click "More info" → "Run anyway".
 
-> **Note:** these desktop downloads currently **launch but can't talk to the watch yet** —
-> the behind-the-scenes engine still has to be bundled in (planned next). To actually use
-> the app against a watch today, build and run it from source with `run-desktop.sh` as below.
+> **Note:** the watch engine (the Python helper) is bundled inside these downloads and the
+> app starts it automatically, so no separate setup is needed. This end-to-end packaging is
+> new and **not yet confirmed against a real watch on Mac/Windows** — if a download misbehaves,
+> building from source with `run-desktop.sh` (below) is the proven path.
 
 To build it yourself (the only path on Linux):
 

@@ -50,12 +50,24 @@ from zoneinfo import available_timezones
 
 import ble_bridge
 
-TOOLS_DIR = Path(__file__).resolve().parent.parent.parent / "tools"
+# When frozen by PyInstaller (the packaged desktop download - see
+# tools/packaging/ambit_backend.spec), __file__ lives inside a temporary extraction dir, not
+# the repo, so the repo-relative paths below don't exist. The spec bundles tools/, the app
+# catalog and the demo data as data files under sys._MEIPASS instead; use those when frozen.
+FROZEN = getattr(sys, "frozen", False)
+if FROZEN:
+    _RES = Path(sys._MEIPASS)  # type: ignore[attr-defined]
+    _BACKEND_DIR = _RES / "backend"
+    TOOLS_DIR = _RES / "tools"
+    CATALOG_DIR = _RES / "data" / "suunto_apps"
+else:
+    _BACKEND_DIR = Path(__file__).resolve().parent
+    TOOLS_DIR = _BACKEND_DIR.parent.parent / "tools"
+    # Real, 2026-08-09 (App Slot picker) - extract_apps_catalog.py's own real, distributable
+    # output (data/suunto_apps/{catalog.json,catalog.bin}), tracked in the repo (unlike
+    # assets/, gitignored research-only) since this actually ships with the app.
+    CATALOG_DIR = _BACKEND_DIR.parent.parent / "data" / "suunto_apps"
 PYTHON = sys.executable
-# Real, 2026-08-09 (App Slot picker) - extract_apps_catalog.py's own real, distributable
-# output (data/suunto_apps/{catalog.json,catalog.bin}), tracked in the repo (unlike
-# assets/, gitignored research-only) since this actually ships with the app.
-CATALOG_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "suunto_apps"
 
 # Step 10 (Backup). write_nav.py's own `nav --save PREFIX` / `restore PREFIX --write` is a
 # real, hardware-tested backup/restore mechanism (see that file's own run_nav()/
@@ -117,7 +129,7 @@ WATCH_LOCK = threading.Lock()
 # Deliberately in-memory and off by default: it is a way to look around the app, not a
 # state anyone should end up in without asking for it. Every reply it produces carries
 # "demo": true so a UI can say so rather than quietly showing fiction.
-DEMO_DIR = Path(__file__).resolve().parent / "demo_data"
+DEMO_DIR = _BACKEND_DIR / "demo_data"
 DEMO = {"enabled": False, "custommodes": None, "variant": "Emu"}
 
 # Which devices Testing mode can pretend to be. Everything here is cross-linked from real
@@ -218,9 +230,14 @@ def run_tool(script, args, timeout=180):
     that means for the specific tool. Serialized across all callers via WATCH_LOCK - see its
     own comment for why."""
     with WATCH_LOCK:
+        # In a normal checkout PYTHON is the real interpreter, so it runs tools/<script>
+        # directly. In the frozen download PYTHON is this same helper's own executable (there
+        # is no separate python), so it can't run a .py file - instead it re-invokes itself
+        # with a "--tool" sentinel (frozen_entry.py) that runpy-runs the requested script.
+        cmd = ([PYTHON, "--tool", str(TOOLS_DIR / script), *args] if FROZEN
+               else [PYTHON, str(TOOLS_DIR / script), *args])
         proc = subprocess.run(
-            [PYTHON, str(TOOLS_DIR / script), *args],
-            cwd=TOOLS_DIR, capture_output=True, text=True, timeout=timeout)
+            cmd, cwd=TOOLS_DIR, capture_output=True, text=True, timeout=timeout)
         return proc.returncode, proc.stdout, proc.stderr
 
 

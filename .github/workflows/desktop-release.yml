@@ -16,10 +16,10 @@
 #   Mac downloads to the published Release. (The separate release.yml already does this for
 #   the Android APK; this file adds desktop to the same Release.)
 #
-# IMPORTANT, honest status: this builds and packages the app so it LAUNCHES. The little
-# behind-the-scenes "engine" that talks to the watch (the Python helper) is NOT bundled in
-# yet - that's the planned next step. Until then the app opens but reports the engine isn't
-# running. See README's "Building and installing" section.
+# The behind-the-scenes "engine" that talks to the watch (the Python helper, server.py) is
+# frozen with PyInstaller into a single "ambit-backend" executable and bundled INSIDE the
+# app, so the download works without Python installed. The C++ app auto-starts it (see
+# desktop/src/services/backendprocess.cpp).
 name: desktop apps
 
 on:
@@ -48,15 +48,29 @@ jobs:
           cmake -S desktop -B desktop/build
           cmake --build desktop/build --config Release
 
+      # Freeze the Python watch helper into a single ambit-backend.exe (no Python needed on
+      # the user's PC). bleak = Bluetooth, hid = USB; see tools/packaging/ambit_backend.spec.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Freeze the watch helper (PyInstaller)
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller bleak hid
+          pyinstaller tools/packaging/ambit_backend.spec --distpath dist/backend --workpath build/pyi
+
       # windeployqt copies the Qt DLLs and QML plugins the app needs into a self-contained
       # folder next to the .exe, so it runs on a PC that has never had Qt installed. --qmldir
-      # points it at our QML so it knows which QML modules to bundle.
-      - name: Bundle Qt runtime next to the app
+      # points it at our QML so it knows which QML modules to bundle. Then drop the frozen
+      # helper into backend\ next to it (where BackendProcess looks for it) and zip it all up.
+      - name: Bundle Qt runtime + helper, then zip
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist\windows\AmbitApp | Out-Null
           Copy-Item desktop\build\Release\ambitapp.exe dist\windows\AmbitApp\
           windeployqt --qmldir desktop\qml --release dist\windows\AmbitApp\ambitapp.exe
+          New-Item -ItemType Directory -Force -Path dist\windows\AmbitApp\backend | Out-Null
+          Copy-Item dist\backend\ambit-backend.exe dist\windows\AmbitApp\backend\
           Compress-Archive -Path dist\windows\AmbitApp\* -DestinationPath dist\AmbitApp-windows.zip
 
       - name: Keep the download
@@ -88,16 +102,31 @@ jobs:
           cmake -S desktop -B desktop/build -DCMAKE_BUILD_TYPE=Release
           cmake --build desktop/build
 
-      # macdeployqt copies the Qt frameworks and QML plugins into the .app so it runs on a
-      # Mac that has never had Qt installed, then -dmg wraps it into the disk image users know.
-      - name: Bundle Qt runtime and make the .dmg
+      # Freeze the Python watch helper into a single ambit-backend (no Python needed on the
+      # user's Mac). bleak = Bluetooth, hid = USB; see tools/packaging/ambit_backend.spec.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Freeze the watch helper (PyInstaller)
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller bleak hid
+          pyinstaller tools/packaging/ambit_backend.spec --distpath dist/backend --workpath build/pyi
+
+      # macdeployqt copies the Qt frameworks and QML plugins into the .app so it runs on a Mac
+      # that has never had Qt installed. Then drop the frozen helper into
+      # Contents/Resources/backend/ (where BackendProcess looks for it) and wrap the .app in a
+      # .dmg with hdiutil.
+      - name: Bundle Qt runtime + helper, then make the .dmg
         run: |
           APP=$(find desktop/build -maxdepth 1 -name "*.app" | head -1)
           echo "Found app bundle: $APP"
-          macdeployqt "$APP" -qmldir=desktop/qml -dmg
+          macdeployqt "$APP" -qmldir=desktop/qml
+          mkdir -p "$APP/Contents/Resources/backend"
+          cp dist/backend/ambit-backend "$APP/Contents/Resources/backend/"
+          chmod +x "$APP/Contents/Resources/backend/ambit-backend"
           mkdir -p dist
-          DMG=$(find "$(dirname "$APP")" -maxdepth 1 -name "*.dmg" | head -1)
-          cp "$DMG" dist/AmbitApp-macos.dmg
+          hdiutil create -volname AmbitApp -srcfolder "$APP" -ov -format UDZO dist/AmbitApp-macos.dmg
 
       - name: Keep the download
         uses: actions/upload-artifact@v4
