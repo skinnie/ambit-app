@@ -34,6 +34,16 @@ assets/
 /assets/*
 !/assets/activity_types.json
 !/assets/sportmode_rows.json
+# desktop/assets is otherwise swept up by the blanket `assets/` rule (which exists for
+# private/proprietary content), but the icon font is an Apache-2.0 asset we subset ourselves
+# and the desktop app needs it to compile - so keep just it and its NOTICE, nothing else in
+# desktop/assets. (Un-ignore each parent dir, re-ignore its contents, then whitelist the file.)
+!desktop/assets/
+desktop/assets/*
+!desktop/assets/fonts/
+desktop/assets/fonts/*
+!desktop/assets/fonts/MaterialSymbolsRounded.ttf
+!desktop/assets/fonts/NOTICE.md
 full-assets/
 # Flash-region dumps from the watch — carry the watch serial number; never commit.
 backups/
