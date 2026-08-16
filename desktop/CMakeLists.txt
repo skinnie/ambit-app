@@ -149,6 +149,8 @@ qt_add_qml_module(ambitapp
     # Step 10+ pages/components get added here as they're built - each spec step should
     # compile independently, so this list grows incrementally rather than all at once.
     SOURCES
+        src/services/backendprocess.h
+        src/services/backendprocess.cpp
         src/services/deviceservice.h
         src/services/deviceservice.cpp
         src/services/logservice.h

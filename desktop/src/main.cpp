@@ -8,6 +8,7 @@
 #include <QQmlApplicationEngine>
 #include <QQmlNetworkAccessManagerFactory>
 
+#include "services/backendprocess.h"
 #include "services/tilecachepaths.h"
 
 namespace {
@@ -85,6 +86,10 @@ int main(int argc, char *argv[])
     QGuiApplication app(argc, argv);
     app.setOrganizationName(QStringLiteral("AmbitApp"));
     app.setApplicationName(QStringLiteral("AmbitApp"));
+
+    // Start the bundled watch helper if this is a packaged download (no-op in a dev build,
+    // where run-desktop.sh starts the Python backend instead). See BackendProcess for why.
+    BackendProcess::startIfBundled(&app);
 
     // Real, 2026-08-09 ("use the android app icon for our desktop app") - same mark as
     // android/src/components/ui/Icon.tsx's "mountain" case, regenerated as a filled
