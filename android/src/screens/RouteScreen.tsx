@@ -1,5 +1,5 @@
-import React, { useCallback, useState } from 'react';
-import { View, Text, StyleSheet, Alert, ScrollView, TouchableOpacity, Modal, Pressable, Linking } from 'react-native';
+import React, { useCallback, useRef, useState } from 'react';
+import { View, Text, StyleSheet, Alert, ScrollView, TouchableOpacity, Modal, Pressable, Linking, useWindowDimensions } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   pickAndParseRoute, uploadRoute, readOnWatchNavigation, getCachedNavigation, exportSingleRouteToGpx,
@@ -38,6 +38,26 @@ export default function RouteScreen() {
   const [pending, setPending] = useState<PendingRoute | null>(null);
   const [picking, setPicking] = useState(false);
   const [plannerOpen, setPlannerOpen] = useState(false);   // route-planner help dialog
+  // Anchor the dialog just below the "i" (like desktop) rather than centering it. We measure the
+  // badge's window position on tap and clamp so the card stays on screen.
+  const { width: winW } = useWindowDimensions();
+  const infoRef = useRef<View>(null);
+  const [anchor, setAnchor] = useState<{ x: number; y: number }>({ x: 12, y: 80 });
+  const CARD_W = Math.min(340, winW - 24);
+  const openPlanner = () => {
+    const node = infoRef.current;
+    if (node && node.measureInWindow) {
+      node.measureInWindow((x, y, _w, h) => {
+        setAnchor({
+          x: Math.max(12, Math.min(x, winW - CARD_W - 12)),
+          y: y + h + 6,
+        });
+        setPlannerOpen(true);
+      });
+    } else {
+      setPlannerOpen(true);
+    }
+  };
   const [sendState, setSendState] = useState<SendRouteState>({ phase: 'idle' });
   const sendBusy = sendState.phase === 'connecting' || sendState.phase === 'writing';
 
@@ -145,7 +165,7 @@ export default function RouteScreen() {
           Links open in the browser (Linking.openURL), matching desktop's RoutesPage. */}
       <Modal visible={plannerOpen} transparent animationType="fade" onRequestClose={() => setPlannerOpen(false)}>
         <Pressable style={styles.backdrop} onPress={() => setPlannerOpen(false)}>
-          <Pressable style={styles.dialogCard} onPress={() => {}}>
+          <Pressable style={[styles.dialogCard, { position: 'absolute', left: anchor.x, top: anchor.y, width: CARD_W }]} onPress={() => {}}>
             <Text style={styles.dialogTitle}>{t.routePlannerTitle}</Text>
             <Text style={styles.dialogText}>{t.routePlannerIntro}</Text>
             {[
@@ -175,7 +195,7 @@ export default function RouteScreen() {
             same affordance as desktop's RoutesPage. */}
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <Text style={styles.cardTitle}>{t.routeSendSection}</Text>
-          <TouchableOpacity style={styles.infoBadge} onPress={() => setPlannerOpen(true)} hitSlop={8}>
+          <TouchableOpacity ref={infoRef} style={styles.infoBadge} onPress={openPlanner} hitSlop={8}>
             <Text style={styles.infoBadgeText}>i</Text>
           </TouchableOpacity>
         </View>
@@ -264,12 +284,10 @@ const createStyles = (t: ReturnType<typeof useV3Theme>) => StyleSheet.create({
   },
   infoBadgeText: { fontSize: 10, fontWeight: '700', color: t.mutedText, lineHeight: 11 },
   // Route-planner help dialog.
-  backdrop: {
-    flex: 1, backgroundColor: '#00000066',
-    justifyContent: 'center', alignItems: 'center', padding: 24,
-  },
+  // Full-screen dimmer only; the card is absolutely positioned near the "i" (padding here would
+  // offset the card's left/top, so keep it at 0).
+  backdrop: { flex: 1, backgroundColor: '#00000066' },
   dialogCard: {
-    width: '100%', maxWidth: 340,
     backgroundColor: t.card, borderRadius: 16,
     borderWidth: 1, borderColor: t.mutedText + '55',
     padding: v3Spacing.medium, gap: v3Spacing.small,
