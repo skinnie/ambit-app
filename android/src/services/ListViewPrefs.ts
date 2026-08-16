@@ -52,11 +52,15 @@ export interface Sortable {
   ascentM?: number;
 }
 
-/** The sort options a given surface offers. POIs are points - only name is meaningful. */
+/** The sort options a given surface offers. Activities have an upload time + full stats;
+ * routes have name/distance/ascent but no on-device upload timestamp; POIs are points, so
+ * only name is meaningful. */
 export function sortKeysFor(surface: ListSurface): SortKey[] {
-  return surface === 'pois'
-    ? ['name']
-    : ['uploaded', 'name', 'distance', 'ascent'];
+  switch (surface) {
+    case 'activities': return ['uploaded', 'name', 'distance', 'ascent'];
+    case 'routes':     return ['name', 'distance', 'ascent'];
+    case 'pois':       return ['name'];
+  }
 }
 
 /** Return a NEW sorted array. "uploaded" is newest-first (most recent upload on top, the

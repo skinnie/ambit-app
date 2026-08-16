@@ -10,6 +10,7 @@ import { useV3Theme, v3Spacing, v3Type } from '../theme/v3';
 import { Card } from '../components/ui/Card';
 import { Button, FieldRow } from '../components/ui/primitives';
 import { TrackPreview } from '../components/TrackPreview';
+import { getViewMode, ViewMode } from '../services/ListViewPrefs';
 
 // v3.0 UI port (2026-08-09, "re do... pois to match entirely desktop") - real structural
 // rebuild matching desktop's own PoisPage.qml: "Add a POI" gets a live pin preview, "Import
@@ -40,6 +41,10 @@ export default function PoiScreen() {
   const [onWatchLoading, setOnWatchLoading] = useState(false);
   const [onWatchError, setOnWatchError] = useState<string | undefined>();
   const [exportingIndex, setExportingIndex] = useState<number | null>(null);
+  // Map/list view (persisted Settings pref). POIs are single points, so no sort control
+  // (name is the only meaningful key) - just the view toggle.
+  const [viewMode, setViewMode] = useState<ViewMode>('map');
+  useFocusEffect(useCallback(() => { getViewMode('pois').then(setViewMode); }, []));
 
   // Real, 2026-08-10 ("it is not upon the watch to give you that, is on the app to store
   // the activities, so they can load almost immediately and just refresh what is new") -
@@ -199,7 +204,7 @@ export default function PoiScreen() {
 
         {!onWatchLoading && onWatch && onWatch.map((poi, i) => (
           <View key={`${poi.name}-${i}`} style={i > 0 ? styles.onWatchItem : { marginTop: v3Spacing.medium, gap: v3Spacing.small }}>
-            <TrackPreview points={[{ lat: poi.latitude, lon: poi.longitude }]} markerOnly height={90} />
+            {viewMode === 'map' && <TrackPreview points={[{ lat: poi.latitude, lon: poi.longitude }]} markerOnly height={90} />}
             <View style={styles.row}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.itemName} numberOfLines={1}>{poi.name}</Text>

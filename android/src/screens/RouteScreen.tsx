@@ -11,6 +11,8 @@ import { useV3Theme, v3Spacing, v3Type } from '../theme/v3';
 import { Card } from '../components/ui/Card';
 import { Button, StatusLine } from '../components/ui/primitives';
 import { TrackPreview } from '../components/TrackPreview';
+import { SortBar } from '../components/ui/SortBar';
+import { getViewMode, sortItems, sortKeysFor, SortKey, ViewMode } from '../services/ListViewPrefs';
 
 // v3.0 UI port (2026-08-09, "re do routes... to match entirely desktop") - real structural
 // rebuild matching desktop's own RoutesPage.qml: an "Import a route" card with a real
@@ -41,6 +43,13 @@ export default function RouteScreen() {
   const [onWatchLoading, setOnWatchLoading] = useState(false);
   const [onWatchError, setOnWatchError] = useState<string | undefined>();
   const [exportingIndex, setExportingIndex] = useState<number | null>(null);
+  // Map/list view (persisted Settings pref) + in-page sort, same pattern as the Activities list.
+  const [viewMode, setViewMode] = useState<ViewMode>('map');
+  const [sortKey, setSortKey] = useState<SortKey>('name');
+  useFocusEffect(useCallback(() => { getViewMode('routes').then(setViewMode); }, []));
+  const sortedOnWatch = onWatch
+    ? sortItems(onWatch.map(r => ({ r, name: r.name, distanceM: r.distanceM, ascentM: r.ascentM })), sortKey).map(x => x.r)
+    : null;
 
   // Real, 2026-08-10 ("it is not upon the watch to give you that, is on the app to store
   // the activities, so they can load almost immediately and just refresh what is new") -
@@ -166,9 +175,13 @@ export default function RouteScreen() {
           <Text style={[styles.itemStats, { marginTop: v3Spacing.small }]}>{t.routeOnWatchEmpty}</Text>
         )}
 
-        {!onWatchLoading && onWatch && onWatch.map((route, i) => (
+        {!onWatchLoading && sortedOnWatch && sortedOnWatch.length > 1 && (
+          <SortBar keys={sortKeysFor('routes')} value={sortKey} onChange={setSortKey} />
+        )}
+
+        {!onWatchLoading && sortedOnWatch && sortedOnWatch.map((route, i) => (
           <View key={`${route.name}-${i}`} style={i > 0 ? styles.onWatchItem : { marginTop: v3Spacing.medium, gap: v3Spacing.small }}>
-            {route.points.length > 1 && <TrackPreview points={route.points.map(p => ({ lat: p.latitude, lon: p.longitude }))} height={120} variableHeight />}
+            {viewMode === 'map' && route.points.length > 1 && <TrackPreview points={route.points.map(p => ({ lat: p.latitude, lon: p.longitude }))} height={120} variableHeight />}
             <View style={styles.row}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.itemName}>{route.name}</Text>
