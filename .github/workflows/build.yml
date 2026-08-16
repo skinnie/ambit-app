@@ -55,8 +55,16 @@ jobs:
         uses: jurplel/install-qt-action@v4
         with:
           version: "6.12.0"
-      - name: Install Ninja + OpenGL headers Qt needs on a headless machine
-        run: sudo apt-get update && sudo apt-get install -y ninja-build libgl1-mesa-dev
+      - name: Install Ninja + the OpenGL/Wayland headers Qt needs on a headless machine
+        # Qt 6.12's Gui component pulls in a Wayland plugin (Qt6DmaBufServerBuffer ->
+        # Qt6WaylandClient -> Wayland); without the Wayland dev libs on the runner, find_package
+        # reports "Gui" NOT FOUND and the whole configure step fails. libwayland-dev provides the
+        # Wayland_Client/Server/Cursor/Egl libraries; the rest are what Qt's Wayland stack expects.
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          ninja-build libgl1-mesa-dev
+          libwayland-dev wayland-protocols libwayland-egl-backend-dev
+          libxkbcommon-dev libvulkan-dev
       - name: Build
         run: |
           cmake -S desktop -B desktop/build -G Ninja
