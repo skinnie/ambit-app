@@ -3,6 +3,7 @@
 #include <QNetworkAccessManager>
 #include <QObject>
 #include <QQmlEngine>
+#include <QUrl>
 #include <QVariantList>
 
 // Step 10. AMBITAPP_SPEC.md: "Backup & Restore. Initially support Routes, POIs." The real
@@ -55,7 +56,9 @@ public:
     bool firmwareActionOk() const { return m_firmwareActionOk; }
 
     Q_INVOKABLE void refresh();
-    Q_INVOKABLE void createBackup();
+    // destFolder empty -> default ~/AmbitAppBackups; otherwise the backup is written straight
+    // into that folder (e.g. a cloud-sync folder), André 2026-08-16.
+    Q_INVOKABLE void createBackup(const QUrl &destFolder = QUrl());
     // confirm=false rehearses (real dry-run through write_nav.py restore, nothing written).
     Q_INVOKABLE void restoreBackup(const QString &prefix, bool confirm);
 

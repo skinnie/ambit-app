@@ -48,23 +48,37 @@ void BackupService::refresh()
     });
 }
 
-void BackupService::createBackup()
+void BackupService::createBackup(const QUrl &destFolder)
 {
     setLoading(true);
     QNetworkRequest req(QUrl(kBackendBase + QStringLiteral("/api/backup")));
     req.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
-    QNetworkReply *reply = m_network.post(req, QByteArray("{}"));
-    connect(reply, &QNetworkReply::finished, this, [this, reply] {
+    // A chosen folder (e.g. a cloud-sync folder) writes the backup straight there; empty means
+    // the default ~/AmbitAppBackups. The folder-save doesn't refresh the local list afterwards
+    // (the files live elsewhere), so remember which case this was.
+    const bool toFolder = destFolder.isValid() && !destFolder.isEmpty();
+    QJsonObject body;
+    if (toFolder)
+        body[QStringLiteral("dir")] = destFolder.toLocalFile();
+    QNetworkReply *reply = m_network.post(req, QJsonDocument(body).toJson(QJsonDocument::Compact));
+    connect(reply, &QNetworkReply::finished, this, [this, reply, toFolder] {
         reply->deleteLater();
         setLoading(false);
         const auto doc = QJsonDocument::fromJson(reply->readAll());
         const auto obj = doc.object();
         m_lastActionOk = obj.value(QStringLiteral("ok")).toBool();
-        m_lastActionText = m_lastActionOk
-            ? QStringLiteral("Backed up to %1").arg(obj.value(QStringLiteral("label")).toString())
-            : obj.value(QStringLiteral("stderr")).toString();
+        if (!m_lastActionOk) {
+            m_lastActionText = obj.value(QStringLiteral("stderr")).toString();
+        } else if (toFolder) {
+            m_lastActionText = QStringLiteral("Saved a backup to the folder");
+        } else {
+            m_lastActionText = QStringLiteral("Backed up to %1")
+                .arg(obj.value(QStringLiteral("label")).toString());
+        }
         emit lastActionChanged();
-        if (m_lastActionOk)
+        // Only the default location feeds the "Existing backups" list; a folder-save lives
+        // wherever the user pointed it (their cloud folder), so there's nothing to refresh.
+        if (m_lastActionOk && !toFolder)
             refresh();
     });
 }

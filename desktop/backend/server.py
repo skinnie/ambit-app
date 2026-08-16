@@ -342,7 +342,7 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == "/api/firmware/flash":
             self._stream_firmware_flash(body)
         elif self.path == "/api/backup":
-            self._handle_backup_create()
+            self._handle_backup_create(body)
         elif self.path == "/api/restore":
             self._handle_restore(body)
         elif self.path == "/api/settings":
@@ -2046,12 +2046,21 @@ class Handler(BaseHTTPRequestHandler):
                 if proc.poll() is None:
                     proc.kill()
 
-    def _handle_backup_create(self):
+    def _handle_backup_create(self, body=None):
         """Read-only against the watch (`nav` never writes), safe to call any time - the
-        only actual disk write is the two .bin files themselves, not the watch."""
-        BACKUP_DIR.mkdir(exist_ok=True)
+        only actual disk write is the two .bin files themselves, not the watch.
+
+        Body may carry an optional "dir" - the folder to write the backup into instead of the
+        default ~/AmbitAppBackups (André, 2026-08-16: "save to a folder... your favourite cloud
+        folder, so it can be synced"). Pointing it at a Dropbox/OneDrive/Drive sync folder is how
+        the app does keyless cloud backup now, no OAuth."""
+        body = body or {}
+        target = BACKUP_DIR
+        if body.get("dir"):
+            target = Path(os.path.expanduser(str(body["dir"]))).resolve()
+        target.mkdir(parents=True, exist_ok=True)
         label = time.strftime("%Y%m%d-%H%M%S")
-        prefix = str(BACKUP_DIR / label)
+        prefix = str(target / label)
         code, out, err = run_tool("write_nav.py", ["nav", "--save", prefix])
         ok = code == 0 and Path(f"{prefix}-routes.bin").exists()
         self._send_json(200 if ok else 502, {
