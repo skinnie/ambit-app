@@ -1301,6 +1301,14 @@ def main():
         print("read-only unless --set --write is given")
     link.open()
 
+    # Use the actually-connected watch's product_id for the descriptor and the curated table
+    # when the caller didn't pin one - the desktop backend doesn't pass --device, so product_id
+    # was None and every non-Ambit3 watch silently fell back to the Ambit3 Peak descriptor. That
+    # mis-decodes a Traverse's 0x1100 blob (entry 0x04 crashes, language reads "Dansk" when the
+    # watch is English). open() has set opened_product_id to the real watch by now.
+    if product_id is None and link.opened_product_id is not None:
+        product_id = link.opened_product_id
+
     descriptor = descriptor_for_product_id(product_id) or sbem_schema.default_descriptor()
     if not descriptor.exists():
         msg = f"missing schema descriptor: {descriptor}"

@@ -561,6 +561,15 @@ def descriptor_for_product_id(product_id):
         path = (sbem_schema.ASSETS / "APK" / "kailash" / "Suunto 7R" / "Container"
                 / "Documents" / "descr+79DC39510E000100+2.0.5")
         return path if path.exists() else None
+    if product_id in (0x002B, 0x002D):
+        # Traverse (Jabiru) / Traverse Alpha (Loon) - same silent-wrong-schema bug as Kailash's
+        # (ported from main, 2026-08-16): the Ambit3 Peak reference descriptor mis-decodes a live
+        # Traverse's settings - entry 0x04 (compass_declination) is 1 byte where it says 4, and
+        # language/units read wrong values ("Dansk" when the watch is English). Its own real
+        # SuuntoLink descriptor at the current firmware (2.0.22) decodes correctly.
+        path = (sbem_schema.ASSETS / "WIndows apps" / "Suuntolink"
+                / "descr+A30E115119001200+2.0.22")
+        return path if path.exists() else None
     return None
 
 
