@@ -19,8 +19,27 @@ _here = Path(SPECPATH).resolve()          # tools/packaging
 REPO = _here.parent.parent                # repo root
 BACKEND = REPO / "desktop" / "backend"
 
+# App Zone reverse-engineering / corpus material that the backend never calls at runtime and
+# that must NOT ship inside a public download (kept out of the bundle deliberately; the offline
+# compiler emitter lives only on the private appzone-compiler branch and isn't here at all).
+EXCLUDE_TOOLS = {"appzone_corpus.py", "harvest_appzone.py"}
+EXCLUDE_TOOL_DIRS = {"ghidra_scripts"}  # tools/ghidra_scripts/*
+
+
+def _is_excluded(dest):
+    # dest is the in-bundle path, e.g. "tools/appzone_corpus.py" or "tools/ghidra_scripts/x.py".
+    parts = Path(dest).parts
+    if len(parts) >= 2 and parts[0] == "tools":
+        if parts[-1] in EXCLUDE_TOOLS:
+            return True
+        if len(parts) >= 3 and parts[1] in EXCLUDE_TOOL_DIRS:
+            return True
+    return False
+
+
 # Data the helper reads at runtime, mapped to the same layout server.py expects under
-# sys._MEIPASS when frozen (see server.py's FROZEN branch).
+# sys._MEIPASS when frozen (see server.py's FROZEN branch). The whole tools/ dir is added, then
+# the excluded RE/corpus files are filtered out of a.datas after Analysis (below).
 datas = [
     (str(REPO / "tools"), "tools"),
     (str(REPO / "data" / "suunto_apps"), "data/suunto_apps"),
@@ -30,10 +49,12 @@ if (BACKEND / "demo_data").is_dir():
 
 # server.py and ble_bridge sit next to the entry script; every tool the backend can shell out
 # to is imported by runpy at runtime, so name them all as hidden imports to make sure their
-# code (and their own transitive deps like `hid` and `bleak`) is actually bundled.
+# code (and their own transitive deps like `hid` and `bleak`) is actually bundled - except the
+# excluded RE/corpus tools, which the backend never runs.
 hiddenimports = ["server", "ble_bridge"]
 for _p in glob.glob(str(REPO / "tools" / "*.py")):
-    hiddenimports.append(Path(_p).stem)
+    if Path(_p).name not in EXCLUDE_TOOLS:
+        hiddenimports.append(Path(_p).stem)
 
 a = Analysis(
     [str(BACKEND / "frozen_entry.py")],
@@ -46,6 +67,9 @@ a = Analysis(
     excludes=[],
     noarchive=False,
 )
+
+# Drop the excluded RE/corpus files from the bundled tools/ tree so they never ship.
+a.datas = [d for d in a.datas if not _is_excluded(d[0])]
 
 pyz = PYZ(a.pure)
 
