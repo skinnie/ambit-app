@@ -77,6 +77,7 @@ const fr = {
   homeConnectRetryBtn: 'Réessayer',
   homeBleConnectBtn: 'Associer en Bluetooth (expérimental)',
   homeBleConnectWatchBtn: (name: string) => `Connecter ${name} en Bluetooth`,
+  homePairWatchPill: 'Associer',
   homeBleReadyTitle: 'Prêt à associer',
   homeBleReadyMsg:
     "Sur la montre : menu « Pair Mobile App » (première association) ou « Sync now » " +
@@ -684,6 +685,7 @@ const en: typeof fr = {
   homeConnectRetryBtn: 'Retry',
   homeBleConnectBtn: 'Pair via Bluetooth (experimental)',
   homeBleConnectWatchBtn: (name: string) => `Connect ${name} via Bluetooth`,
+  homePairWatchPill: 'Pair',
   homeBleReadyTitle: 'Ready to pair',
   homeBleReadyMsg:
     "On the watch: menu \"Pair Mobile App\" (first pairing) or \"Sync now\" (already " +

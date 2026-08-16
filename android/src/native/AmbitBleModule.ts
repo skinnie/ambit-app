@@ -35,7 +35,9 @@ if (!NativeAmbitBle) {
  * back and confirmed (see protocol_ble.c) — from here on, writeRoute()/
  * readRegion()/etc. from AmbitUsbModule.ts work
  * the same as over cable. */
-export function scanAndConnect(): Promise<boolean> {
+/** Resolves with the connected watch's Bluetooth address (used by the switcher to highlight
+ * which paired watch is active). */
+export function scanAndConnect(): Promise<string> {
   return NativeAmbitBle.scanAndConnect();
 }
 
@@ -57,7 +59,7 @@ export function listBondedWatches(): Promise<BondedWatch[]> {
  * (from listBondedWatches()) — for when more than one paired watch might be in range. Same
  * "trigger Sync now on the watch first" requirement as scanAndConnect(). Falls back to the
  * unpinned scan if the native method is missing (version skew). */
-export function scanAndConnectTo(address: string): Promise<boolean> {
+export function scanAndConnectTo(address: string): Promise<string> {
   if (typeof NativeAmbitBle.scanAndConnectTo !== 'function') return NativeAmbitBle.scanAndConnect();
   return NativeAmbitBle.scanAndConnectTo(address);
 }

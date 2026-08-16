@@ -422,7 +422,9 @@ class AmbitBleModule(private val reactContext: ReactApplicationContext) :
             mainHandler.post {
                 connectPromise?.let {
                     connectPromise = null
-                    if (ok) it.resolve(true)
+                    // Resolve the connected watch's address (multi-watch switcher, 2026-08-16):
+                    // lets the picker highlight the right paired watch even after a generic scan.
+                    if (ok) it.resolve(device.address)
                     else it.reject("BLE_INIT_FAILED",
                         "Watch connected and subscribed, but device-info readback failed — " +
                         "see logcat tag AmbitProtocolBle. Refusing to proceed without a confirmed firmware generation.")

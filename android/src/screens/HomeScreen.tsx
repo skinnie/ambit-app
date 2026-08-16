@@ -341,7 +341,7 @@ export default function HomeScreen() {
     setConnectError(undefined);
     setPhase('connecting');
     try {
-      await (targetAddress ? bleScanAndConnectTo(targetAddress) : bleScanAndConnect());
+      const connectedAddr = await (targetAddress ? bleScanAndConnectTo(targetAddress) : bleScanAndConnect());
       let devInfo: AmbitDeviceInfo | null = null;
       try { devInfo = await getDeviceInfo(); } catch { /* non-fatal — hide the info block below */ }
       setAmbitInfo(devInfo);
@@ -365,7 +365,7 @@ export default function HomeScreen() {
       setBleConnected(true);
       bleConnectedRef.current = true;
       setBleTransportActive(true);   // route all connect()/disconnect() through BLE
-      setConnectedBleAddress(targetAddress ?? null); // highlights the active BLE watch in the picker
+      setConnectedBleAddress(targetAddress ?? connectedAddr ?? null); // highlights the active BLE watch in the picker
       setSelectedWatch(null);
       refreshWatchLists();
       setPhase('connected');
@@ -510,6 +510,11 @@ export default function HomeScreen() {
   useEffect(() => {
     function onAttach() {
       stopSearchTimers();
+      // Defer to an active Bluetooth session (2026-08-16): plugging a watch in shouldn't yank
+      // the dashboard off the BLE watch you're already using. Just surface the newly-cabled
+      // watch in the switcher — tap its pill to switch. Auto-connect-on-plug still works
+      // normally when nothing is connected.
+      if (bleConnectedRef.current) { refreshWatchLists(); return; }
       detectAttachedDeviceType().then(type => {
         if (type !== 'none') connectFlowRef.current(type);
       }).catch(() => {});
@@ -768,36 +773,48 @@ export default function HomeScreen() {
           {/* Multi-watch switcher: shown with more than one watch to choose between, across both
               transports (cabled USB + paired BLE). Tapping reconnects the whole dashboard to it —
               cabled watches immediately, paired ones over Bluetooth (desktop has the same picker). */}
-          {allWatches.length > 1 && (
-            <View style={styles.watchSwitcher}>
-              {allWatches.map(w => {
-                const active = w.transport === 'usb'
-                  ? (!bleConnected && (selectedWatch ? w.usbDeviceName === selectedWatch : w.name === ambitInfo.name))
-                  : (bleConnected && connectedBleAddress === w.bleAddress);
-                return (
-                  <TouchableOpacity
-                    key={w.key}
-                    onPress={() => handleSelectWatch(w)}
-                    activeOpacity={0.75}
-                    style={[
-                      styles.watchChip,
-                      { borderColor: theme.mutedText },
-                      active && { backgroundColor: theme.primary, borderColor: theme.primary },
-                    ]}
-                  >
-                    <Icon
-                      name={w.transport === 'ble' ? 'bluetooth' : 'link'}
-                      size={12}
-                      color={active ? theme.card : theme.mutedText}
-                    />
-                    <Text style={[styles.watchChipText, { color: active ? theme.card : theme.text }]}>
-                      {watchPillName(w.name)}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          )}
+          {/* Multi-watch switcher: every cabled + paired watch (shown when there's more than one
+              to choose between), plus a "pair a new Bluetooth watch" action that's always
+              available so you can add a BLE watch to the picker straight from here. */}
+          <View style={styles.watchSwitcher}>
+            {allWatches.length > 1 && allWatches.map(w => {
+              const active = w.transport === 'usb'
+                ? (!bleConnected && (selectedWatch ? w.usbDeviceName === selectedWatch : w.name === ambitInfo.name))
+                : (bleConnected && connectedBleAddress === w.bleAddress);
+              return (
+                <TouchableOpacity
+                  key={w.key}
+                  onPress={() => handleSelectWatch(w)}
+                  activeOpacity={0.75}
+                  style={[
+                    styles.watchChip,
+                    { borderColor: theme.mutedText },
+                    active && { backgroundColor: theme.primary, borderColor: theme.primary },
+                  ]}
+                >
+                  <Icon
+                    name={w.transport === 'ble' ? 'bluetooth' : 'link'}
+                    size={12}
+                    color={active ? theme.card : theme.mutedText}
+                  />
+                  <Text style={[styles.watchChipText, { color: active ? theme.card : theme.text }]}>
+                    {watchPillName(w.name)}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+            <TouchableOpacity
+              key="__pair"
+              onPress={() => handleBleConnectRef.current()}
+              activeOpacity={0.75}
+              style={[styles.watchChip, styles.watchChipAction, { borderColor: theme.mutedText }]}
+            >
+              <Icon name="bluetooth" size={12} color={theme.mutedText} />
+              <Text style={[styles.watchChipText, { color: theme.mutedText }]}>
+                {t.homePairWatchPill}
+              </Text>
+            </TouchableOpacity>
+          </View>
           {!!(ambitInfo.fwVersion || ambitInfo.hwVersion) && (
             <Text style={[styles.deviceSub, v3MutedStyle]}>
               {ambitInfo.fwVersion ? `${t.garminFirmwareLabel} ${ambitInfo.fwVersion}` : ''}
@@ -1188,6 +1205,10 @@ function createStyles(t: ReturnType<typeof useV3Theme>) {
     watchChipText: {
       fontSize: 12,
       fontWeight: '700',
+    },
+    // The "pair a new Bluetooth watch" action pill — dashed to read as an add-action, not a watch.
+    watchChipAction: {
+      borderStyle: 'dashed',
     },
     deviceBattery: {
       flexDirection: 'row',
