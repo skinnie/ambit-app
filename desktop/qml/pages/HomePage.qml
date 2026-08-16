@@ -15,6 +15,8 @@ PageFlickable {
         // Which watch we are looking at - a real one, or the sample Testing mode serves.
         DeviceService.refreshDemoMode();
         DeviceService.refresh();
+        // Which watches are on the USB bus, for the multi-watch picker above the device card.
+        DeviceService.refreshDevices();
         // Real, 2026-08-08: Garmin detection is a cheap filesystem check (QStorageInfo +
         // one small XML file), not a USB/subprocess round trip like DeviceService's own -
         // safe to run on every Home load alongside it, not gated behind Ambit failing first.
@@ -26,6 +28,14 @@ PageFlickable {
         WeatherService.detectLocationFromIp();
         ActivityService.refresh();
         DeviceService.checkGpsOrbitStatus();
+    }
+
+    // Keep the multi-watch picker current: the heartbeat re-reads /api/device every ~10s, so
+    // piggyback a cheap re-enumerate on it - plugging or unplugging a second watch while the
+    // Home page is open then updates the picker without needing to leave and come back.
+    Connections {
+        target: DeviceService
+        function onDeviceInfoChanged() { DeviceService.refreshDevices(); }
     }
 
     // Real, 2026-08-08 ("Yes I want to implement it both to desktop and android version").
@@ -116,6 +126,65 @@ PageFlickable {
                             "Turn it off in Settings.")
                 color: Theme.primary
                 font.pixelSize: Theme.fontSizeBody
+            }
+        }
+
+        // Multi-watch picker: several Suunto watches on the USB bus at once - tap to choose
+        // which one the app targets (2026-08-16, porting the Android Home picker). Every
+        // backend tool then pins to the pick (see server.py's SELECTED_PRODUCT_ID), so pages
+        // stop racing between watches. Hidden when 0 or 1 watch is connected.
+        Card {
+            width: parent.width
+            visible: DeviceService.connectedWatches.length > 1
+
+            Column {
+                width: parent.width
+                spacing: Theme.spacingSmall
+
+                Text {
+                    text: qsTr("%1 watches connected — tap to switch:")
+                          .arg(DeviceService.connectedWatches.length)
+                    color: Theme.mutedText
+                    font.pixelSize: Theme.fontSizeBody
+                }
+
+                Flow {
+                    width: parent.width
+                    spacing: Theme.spacingSmall
+
+                    Repeater {
+                        model: DeviceService.connectedWatches
+                        delegate: Rectangle {
+                            required property var modelData
+                            // The active one: the explicitly pinned watch, or - when nothing is
+                            // pinned - whichever the backend currently reports as connected.
+                            readonly property bool active:
+                                DeviceService.selectedProductId >= 0
+                                    ? modelData.productId === DeviceService.selectedProductId
+                                    : DeviceService.model === modelData.codename
+                            radius: height / 2
+                            implicitHeight: chipLabel.implicitHeight + 12
+                            implicitWidth: chipLabel.implicitWidth + 24
+                            color: active ? Qt.alpha(Theme.primary, 0.13) : "transparent"
+                            border.width: 1
+                            border.color: active ? Theme.primary : Qt.alpha(Theme.mutedText, 0.4)
+
+                            Text {
+                                id: chipLabel
+                                anchors.centerIn: parent
+                                text: modelData.name
+                                color: active ? Theme.text : Theme.mutedText
+                                font.pixelSize: Theme.fontSizeBody
+                                font.bold: active
+                            }
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: DeviceService.selectWatch(modelData.productId)
+                            }
+                        }
+                    }
+                }
             }
         }
 

@@ -224,11 +224,25 @@ def catalog_entry_binary(rule_id):
     return entry, binary
 
 
+# The watch the user picked in the Home watch-switcher (its USB product_id), or None for
+# "whichever is plugged". Set by POST /api/device/select, read by run_tool() which hands it to
+# every tool via the AMBIT_PRODUCT_ID env var so all of them target the same one watch even
+# when several Suunto watches share the USB bus (2026-08-16, porting the Android multi-watch
+# picker; before this, every tool independently grabbed whichever product_id enumerated first,
+# so two plugged watches raced and pages loaded inconsistently).
+SELECTED_PRODUCT_ID = None
+
+
 def run_tool(script, args, timeout=180):
     """Runs one of tools/*.py exactly as a person at a terminal would. Returns
     (returncode, stdout, stderr); never raises for a nonzero exit, the caller decides what
     that means for the specific tool. Serialized across all callers via WATCH_LOCK - see its
     own comment for why."""
+    env = os.environ.copy()
+    if SELECTED_PRODUCT_ID is not None:
+        env["AMBIT_PRODUCT_ID"] = hex(SELECTED_PRODUCT_ID)
+    else:
+        env.pop("AMBIT_PRODUCT_ID", None)
     with WATCH_LOCK:
         # In a normal checkout PYTHON is the real interpreter, so it runs tools/<script>
         # directly. In the frozen download PYTHON is this same helper's own executable (there
@@ -237,7 +251,7 @@ def run_tool(script, args, timeout=180):
         cmd = ([PYTHON, "--tool", str(TOOLS_DIR / script), *args] if FROZEN
                else [PYTHON, str(TOOLS_DIR / script), *args])
         proc = subprocess.run(
-            cmd, cwd=TOOLS_DIR, capture_output=True, text=True, timeout=timeout)
+            cmd, cwd=TOOLS_DIR, capture_output=True, text=True, timeout=timeout, env=env)
         return proc.returncode, proc.stdout, proc.stderr
 
 
@@ -270,6 +284,8 @@ class Handler(BaseHTTPRequestHandler):
             self._handle_backups_list()
         elif self.path == "/api/device":
             self._handle_device()
+        elif self.path == "/api/devices":
+            self._handle_devices_list()
         elif self.path == "/api/ble/status":
             self._handle_ble_status()
         elif self.path == "/api/ble/logs/summary":
@@ -347,6 +363,8 @@ class Handler(BaseHTTPRequestHandler):
             self._handle_restore(body)
         elif self.path == "/api/settings":
             self._handle_settings_write(body)
+        elif self.path == "/api/device/select":
+            self._handle_device_select(body)
         elif self.path == "/api/time/sync":
             self._handle_time_sync(body)
         elif self.path == "/api/demo":
@@ -1037,6 +1055,40 @@ class Handler(BaseHTTPRequestHandler):
                                    "no parseable JSON", "raw_output": out})
             return
         self._send_json(200, {"ok": True, **info})
+
+    def _handle_devices_list(self):
+        """GET /api/devices - every Suunto watch on the USB bus, for the Home watch-switcher
+        (2026-08-16, porting the Android multi-watch picker). tools/list_watches.py mirrors
+        write_nav.Link's own enumerate walk, so the list is exactly the set Link could open.
+        Includes `selected` (the product_id currently pinned via /api/device/select, or null)."""
+        code, out, err = run_tool("list_watches.py", [])
+        last_line = out.strip().splitlines()[-1] if out.strip() else ""
+        try:
+            info = json.loads(last_line)
+        except (json.JSONDecodeError, IndexError):
+            self._send_json(502, {"ok": False, "error": "list_watches.py produced no parseable "
+                                   "JSON", "raw_output": out, "stderr": err})
+            return
+        info["selected"] = SELECTED_PRODUCT_ID
+        self._send_json(200, info)
+
+    def _handle_device_select(self, body):
+        """POST /api/device/select {"productId": int|null} - pin which watch every subsequent
+        tool targets when several share the USB bus (or null to go back to "whichever is
+        plugged"). run_tool() hands the choice to the tools via AMBIT_PRODUCT_ID."""
+        global SELECTED_PRODUCT_ID
+        pid = body.get("productId")
+        if pid is None:
+            SELECTED_PRODUCT_ID = None
+            self._send_json(200, {"ok": True, "selected": None})
+            return
+        try:
+            pid = int(pid)
+        except (TypeError, ValueError):
+            self._send_json(400, {"ok": False, "error": f"productId must be an integer, got {pid!r}"})
+            return
+        SELECTED_PRODUCT_ID = pid
+        self._send_json(200, {"ok": True, "selected": pid})
 
     def _handle_device_ble(self):
         """The BLE path for /api/device, taken once ble_bridge reports the bootstrap

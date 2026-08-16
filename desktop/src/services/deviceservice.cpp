@@ -226,6 +226,53 @@ void DeviceService::fetchDeviceInfo()
     });
 }
 
+void DeviceService::refreshDevices()
+{
+    QNetworkReply *reply = m_network.get(QNetworkRequest(backendUrl(QStringLiteral("/api/devices"))));
+    connect(reply, &QNetworkReply::finished, this, [this, reply] {
+        reply->deleteLater();
+        if (reply->error() != QNetworkReply::NoError)
+            return; // a transient backend hiccup - keep the last list rather than blanking it
+        const auto obj = QJsonDocument::fromJson(reply->readAll()).object();
+        if (!obj.value(QStringLiteral("ok")).toBool())
+            return;
+        QVariantList watches;
+        const auto arr = obj.value(QStringLiteral("watches")).toArray();
+        for (const auto &v : arr) {
+            const auto w = v.toObject();
+            watches.append(QVariantMap{
+                {QStringLiteral("productId"), w.value(QStringLiteral("productId")).toInt()},
+                {QStringLiteral("name"), w.value(QStringLiteral("name")).toString()},
+                {QStringLiteral("codename"), w.value(QStringLiteral("codename")).toString()},
+            });
+        }
+        m_connectedWatches = watches;
+        const auto sel = obj.value(QStringLiteral("selected"));
+        m_selectedProductId = sel.isNull() ? -1 : sel.toInt();
+        emit connectedWatchesChanged();
+    });
+}
+
+void DeviceService::selectWatch(int productId)
+{
+    QNetworkRequest request(backendUrl(QStringLiteral("/api/device/select")));
+    request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
+    QJsonObject payload;
+    payload.insert(QStringLiteral("productId"),
+                   productId < 0 ? QJsonValue() : QJsonValue(productId));
+    QNetworkReply *reply = m_network.post(request, QJsonDocument(payload).toJson());
+    connect(reply, &QNetworkReply::finished, this, [this, reply, productId] {
+        reply->deleteLater();
+        m_selectedProductId = productId;
+        emit connectedWatchesChanged();
+        // A different watch is a new connection: re-read identity (which re-arms the
+        // once-per-connection auto clock/orbit sync) and refresh the picker's own list.
+        m_autoSyncedThisConnection = false;
+        refresh();
+        refreshDevices();
+    });
+}
+
 void DeviceService::setEphemerisGpsOnly(bool value)
 {
     if (m_ephemerisGpsOnly == value)

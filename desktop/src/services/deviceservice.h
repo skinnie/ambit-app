@@ -5,6 +5,7 @@
 #include <QQmlEngine>
 #include <QTimer>
 #include <QUrl>
+#include <QVariantList>
 
 // AMBITAPP_SPEC.md's architecture: QML -> ViewModels -> Services -> Current Backend ->
 // libambit. This is the first real "Services" class - a thin HTTP client against
@@ -41,6 +42,13 @@ class DeviceService : public QObject
     Q_PROPERTY(QString firmwareVersion READ firmwareVersion NOTIFY deviceInfoChanged)
     Q_PROPERTY(QString hardwareVersion READ hardwareVersion NOTIFY deviceInfoChanged)
     Q_PROPERTY(int batteryPercent READ batteryPercent NOTIFY deviceInfoChanged)
+
+    // Every Suunto watch currently on the USB bus, for the Home watch-switcher (2026-08-16,
+    // porting the Android multi-watch picker). Each entry: {productId:int, name:str,
+    // codename:str}. selectedProductId is the one pinned via selectWatch() (all backend tools
+    // then target it), or -1 for "whichever is plugged".
+    Q_PROPERTY(QVariantList connectedWatches READ connectedWatches NOTIFY connectedWatchesChanged)
+    Q_PROPERTY(int selectedProductId READ selectedProductId NOTIFY connectedWatchesChanged)
 
     // GPS orbit (AGPS/SGEE) update - real, 2026-08-07. The backend side
     // (POST /api/agps/update, sgee_andre.md) was already built and hardware-verified; only
@@ -148,10 +156,18 @@ public:
     QString firmwareVersion() const { return m_firmwareVersion; }
     QString hardwareVersion() const { return m_hardwareVersion; }
     int batteryPercent() const { return m_batteryPercent; }
+    QVariantList connectedWatches() const { return m_connectedWatches; }
+    int selectedProductId() const { return m_selectedProductId; }
 
     // Checks /api/health, then /api/device (identity, battery). Read-only on the backend
     // side, safe to call any time.
     Q_INVOKABLE void refresh();
+
+    // GET /api/devices - refresh the list of watches on the USB bus (the Home switcher).
+    Q_INVOKABLE void refreshDevices();
+    // POST /api/device/select then re-read: pin every backend tool to this one watch when
+    // several share the bus (productId < 0 clears the pin). Mirrors Android's selectWatch().
+    Q_INVOKABLE void selectWatch(int productId);
 
     bool gpsOrbitBusy() const { return m_gpsOrbitBusy; }
     QString gpsOrbitStatusText() const { return m_gpsOrbitStatusText; }
@@ -247,6 +263,7 @@ signals:
     void bleStateChanged();
     void bleExperimentEnabledChanged();
     void markSyncedEnabledChanged();
+    void connectedWatchesChanged();
 
 private:
     QNetworkAccessManager m_network;
@@ -269,6 +286,8 @@ private:
     QString m_firmwareVersion;
     QString m_hardwareVersion;
     int m_batteryPercent = -1;
+    QVariantList m_connectedWatches;
+    int m_selectedProductId = -1;
 
     bool m_gpsOrbitBusy = false;
     bool m_glonassSupported = false;

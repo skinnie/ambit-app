@@ -26,6 +26,7 @@ milestone 7 in HANDOFF.md.
 
 import argparse
 import json
+import os
 import pathlib
 import sys
 from xml.sax.saxutils import escape as xml_escape
@@ -153,6 +154,20 @@ class Link:
         # silently the wrong watch for anything that needs to target one specifically. None
         # (the default) keeps that exact prior behavior; pass a specific key from
         # PRODUCT_IDS to open only that one even with others also connected.
+        #
+        # AMBIT_PRODUCT_ID env var (2026-08-16): the desktop backend sets this from the watch
+        # the user picked in the Home watch-switcher, so EVERY tool targets that one watch
+        # without each endpoint having to thread a --product-id flag. An explicit product_id
+        # argument still wins; the env var is only the default when none was passed.
+        if product_id is None:
+            env_pid = os.environ.get("AMBIT_PRODUCT_ID")
+            if env_pid:
+                try:
+                    parsed = int(env_pid, 0)
+                    if parsed in PRODUCT_IDS:
+                        product_id = parsed
+                except ValueError:
+                    pass
         self.product_id = product_id
         self.opened_product_id = None  # set by open() to the pid that actually opened
         self.sequence = 0
