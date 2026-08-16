@@ -60,6 +60,27 @@
             <category android:name="android.intent.category.BROWSABLE" />
             <data android:scheme="opensportsync" android:host="oauth" android:pathPrefix="/strava" />
         </intent-filter>
+        <!-- Callback OAuth2 Dropbox / Google Drive / OneDrive - added 2026-08-12, Backup &
+             Restore cloud destinations. Same self-serve loopback-callback pattern as Strava
+             above. -->
+        <intent-filter android:label="OAuth Dropbox">
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.DEFAULT" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="opensportsync" android:host="oauth" android:pathPrefix="/dropbox" />
+        </intent-filter>
+        <intent-filter android:label="OAuth Google Drive">
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.DEFAULT" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="opensportsync" android:host="oauth" android:pathPrefix="/googledrive" />
+        </intent-filter>
+        <intent-filter android:label="OAuth OneDrive">
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.DEFAULT" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="opensportsync" android:host="oauth" android:pathPrefix="/onedrive" />
+        </intent-filter>
         <meta-data
             android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"
             android:resource="@xml/device_filter" />

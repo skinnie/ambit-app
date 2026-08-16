@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QHash>
 #include <QNetworkAccessManager>
 #include <QObject>
 #include <QQmlEngine>
@@ -31,6 +32,23 @@
 //   Callback Domain for exactly this case. Same client_id/client_secret/token/refresh_token
 //   shape as the real Android app either way - see connectStrava()/exchangeStravaCode().
 //
+// Dropbox / Google Drive / OneDrive (added 2026-08-12, "implement the ones that the user can
+// set up easily by itself: open a login site and approve, or copy an API key to a file") -
+// same self-serve principle as Strava, not a shared AmbitApp-owned app: each user registers
+// their own free app on the provider's own developer console (a five-minute click-through,
+// same as Strava's own strava.com/settings/api step) and pastes the client ID (+secret where
+// the provider needs one) in here. All three use the same loopback-callback OAuth flow as
+// Strava, generalised into startCloudOAuth()/exchangeCloudCode() below rather than pasted
+// three more times - Dropbox and Google Drive use the classic client_id+client_secret
+// Authorization Code flow (same shape as Strava); OneDrive/Microsoft Graph uses PKCE instead
+// (no client secret - Microsoft's own recommended flow for a public/native client, and one
+// fewer thing for the user to manage since personal Microsoft accounts can't use app-only
+// auth anyway). All three request the provider's own "app-scoped folder" permission (Dropbox
+// App Folder, Google `drive.file`, OneDrive `Files.ReadWrite.AppFolder`) rather than full
+// Drive/Dropbox access - least privilege, and it means the app never has to browse or pick a
+// folder, only ever sees what it created itself. Used by CloudStorageService for the actual
+// backup upload/list/download - this class only owns the connect/disconnect/token lifecycle.
+//
 // Credentials stored via QSettings (this app's own org/name, set in main.cpp) - local,
 // plain-text config, the same tier of storage most small desktop apps use for this; not an
 // OS keychain, worth revisiting if this app ever handles anything more sensitive than a
@@ -49,6 +67,21 @@ class ConnectionsService : public QObject
     Q_PROPERTY(QString stravaClientId READ stravaClientId NOTIFY stravaChanged)
     Q_PROPERTY(QString stravaError READ stravaError NOTIFY stravaErrorChanged)
 
+    Q_PROPERTY(bool dropboxConnected READ dropboxConnected NOTIFY dropboxChanged)
+    Q_PROPERTY(bool dropboxConnecting READ dropboxConnecting NOTIFY dropboxConnectingChanged)
+    Q_PROPERTY(QString dropboxClientId READ dropboxClientId NOTIFY dropboxChanged)
+    Q_PROPERTY(QString dropboxError READ dropboxError NOTIFY dropboxErrorChanged)
+
+    Q_PROPERTY(bool googleDriveConnected READ googleDriveConnected NOTIFY googleDriveChanged)
+    Q_PROPERTY(bool googleDriveConnecting READ googleDriveConnecting NOTIFY googleDriveConnectingChanged)
+    Q_PROPERTY(QString googleDriveClientId READ googleDriveClientId NOTIFY googleDriveChanged)
+    Q_PROPERTY(QString googleDriveError READ googleDriveError NOTIFY googleDriveErrorChanged)
+
+    Q_PROPERTY(bool oneDriveConnected READ oneDriveConnected NOTIFY oneDriveChanged)
+    Q_PROPERTY(bool oneDriveConnecting READ oneDriveConnecting NOTIFY oneDriveConnectingChanged)
+    Q_PROPERTY(QString oneDriveClientId READ oneDriveClientId NOTIFY oneDriveChanged)
+    Q_PROPERTY(QString oneDriveError READ oneDriveError NOTIFY oneDriveErrorChanged)
+
 public:
     explicit ConnectionsService(QObject *parent = nullptr);
 
@@ -59,6 +92,21 @@ public:
     bool stravaConnecting() const { return m_stravaConnecting; }
     QString stravaClientId() const { return m_stravaClientId; }
     QString stravaError() const { return m_stravaError; }
+
+    bool dropboxConnected() const { return !m_cloudRefreshToken.value(kDropbox).isEmpty(); }
+    bool dropboxConnecting() const { return m_cloudConnecting.value(kDropbox); }
+    QString dropboxClientId() const { return m_cloudClientId.value(kDropbox); }
+    QString dropboxError() const { return m_cloudError.value(kDropbox); }
+
+    bool googleDriveConnected() const { return !m_cloudRefreshToken.value(kGoogleDrive).isEmpty(); }
+    bool googleDriveConnecting() const { return m_cloudConnecting.value(kGoogleDrive); }
+    QString googleDriveClientId() const { return m_cloudClientId.value(kGoogleDrive); }
+    QString googleDriveError() const { return m_cloudError.value(kGoogleDrive); }
+
+    bool oneDriveConnected() const { return !m_cloudRefreshToken.value(kOneDrive).isEmpty(); }
+    bool oneDriveConnecting() const { return m_cloudConnecting.value(kOneDrive); }
+    QString oneDriveClientId() const { return m_cloudClientId.value(kOneDrive); }
+    QString oneDriveError() const { return m_cloudError.value(kOneDrive); }
 
     Q_INVOKABLE void saveIntervalsIcu(const QString &athleteId, const QString &apiKey);
     Q_INVOKABLE void disconnectIntervalsIcu();
@@ -79,6 +127,29 @@ public:
     Q_INVOKABLE void disconnectStrava();
     Q_INVOKABLE QString stravaClientSecret() const;
 
+    // Same shape as connectStrava() - see this class's header comment for what differs
+    // (least-privilege app-folder scopes) and what doesn't (loopback callback flow).
+    Q_INVOKABLE void connectDropbox(const QString &clientId, const QString &clientSecret);
+    Q_INVOKABLE void disconnectDropbox();
+    Q_INVOKABLE QString dropboxClientSecret() const;
+
+    Q_INVOKABLE void connectGoogleDrive(const QString &clientId, const QString &clientSecret);
+    Q_INVOKABLE void disconnectGoogleDrive();
+    Q_INVOKABLE QString googleDriveClientSecret() const;
+
+    // No client secret parameter - OneDrive/Microsoft Graph uses PKCE (see header comment).
+    Q_INVOKABLE void connectOneDrive(const QString &clientId);
+    Q_INVOKABLE void disconnectOneDrive();
+
+    // CloudStorageService (a separate class, not a friend of this one) reads/writes the same
+    // "connections/<provider>/..." QSettings groups directly rather than going through a live
+    // C++ pointer to this singleton - the same way two independent QSettings instances in
+    // this app always share the one underlying store. Two QML_SINGLETON classes with no
+    // established constructor-injection wiring in main.cpp (Qt creates each lazily on first
+    // QML use) made that simpler than adding cross-singleton lookup machinery for it. It does
+    // duplicate the token-refresh POST shape (~30 lines, not the whole OAuth dance) - see its
+    // own header comment.
+
 signals:
     void intervalsIcuChanged();
     void runalyzeChanged();
@@ -86,12 +157,41 @@ signals:
     void stravaConnectingChanged();
     void stravaErrorChanged();
 
+    void dropboxChanged();
+    void dropboxConnectingChanged();
+    void dropboxErrorChanged();
+    void googleDriveChanged();
+    void googleDriveConnectingChanged();
+    void googleDriveErrorChanged();
+    void oneDriveChanged();
+    void oneDriveConnectingChanged();
+    void oneDriveErrorChanged();
+
 private:
     void setStravaError(const QString &message);
     void handleStravaCallback(const QString &requestLine);
     void exchangeStravaCode(const QString &clientId, const QString &clientSecret,
                              const QString &code);
     void stopStravaCallbackServer();
+
+    // provider is one of kDropbox/kGoogleDrive/kOneDrive below - the QSettings group name and
+    // the internal QHash key are the same string throughout this class.
+    struct CloudOAuthConfig {
+        QString authUrl;
+        QString tokenUrl;
+        QString scope;
+        bool pkce = false;
+        QList<QPair<QString, QString>> extraAuthParams;
+    };
+    static CloudOAuthConfig cloudConfig(const QString &provider);
+    void startCloudOAuth(const QString &provider, const QString &clientId, const QString &clientSecret);
+    void exchangeCloudCode(const QString &provider, const QString &clientId, const QString &clientSecret,
+                            const QString &code, const QString &redirectUri, const QString &codeVerifier);
+    void setCloudError(const QString &provider, const QString &message);
+    void setCloudConnecting(const QString &provider, bool value);
+    void stopCloudCallbackServer(const QString &provider);
+    void emitCloudChanged(const QString &provider);
+    static QString cloudGroup(const QString &provider);
 
     QSettings m_settings;
     QString m_intervalsIcuAthleteId;
@@ -103,4 +203,16 @@ private:
     QString m_stravaRefreshToken;
     bool m_stravaConnecting = false;
     QString m_stravaError;
+
+    static const QString kDropbox;
+    static const QString kGoogleDrive;
+    static const QString kOneDrive;
+
+    QHash<QString, QString> m_cloudClientId;
+    QHash<QString, QString> m_cloudRefreshToken;
+    QHash<QString, QString> m_cloudAccessToken;
+    QHash<QString, qint64> m_cloudExpiresAt;
+    QHash<QString, bool> m_cloudConnecting;
+    QHash<QString, QString> m_cloudError;
+    QHash<QString, QTcpServer *> m_cloudCallbackServers;
 };

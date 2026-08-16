@@ -28,6 +28,9 @@ import IntervalsScreen from './src/screens/IntervalsScreen';
 import type { GarminConnectResult } from './src/native/GarminModule';
 import { ActivityRecord } from './src/database/db';
 import { handleOAuthCallback as handleStravaCallback } from './src/services/ApiStrava';
+import { handleOAuthCallback as handleDropboxCallback } from './src/services/ApiDropbox';
+import { handleOAuthCallback as handleGoogleDriveCallback } from './src/services/ApiGoogleDrive';
+import { handleOAuthCallback as handleOneDriveCallback } from './src/services/ApiOneDrive';
 import { t, dateLocale } from './src/i18n';
 
 // ─── Types de navigation ──────────────────────────────────────────────────────
@@ -68,7 +71,10 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 
 // ─── Handler deep link OAuth2 ─────────────────────────────────────────────────
 
-const STRAVA_OAUTH_PREFIX  = 'opensportsync://oauth/strava';
+const STRAVA_OAUTH_PREFIX      = 'opensportsync://oauth/strava';
+const DROPBOX_OAUTH_PREFIX     = 'opensportsync://oauth/dropbox';
+const GOOGLEDRIVE_OAUTH_PREFIX = 'opensportsync://oauth/googledrive';
+const ONEDRIVE_OAUTH_PREFIX    = 'opensportsync://oauth/onedrive';
 
 async function processOAuthUrl(url: string | null) {
   if (!url) return;
@@ -79,6 +85,15 @@ async function processOAuthUrl(url: string | null) {
     if (url.startsWith(STRAVA_OAUTH_PREFIX)) {
       await handleStravaCallback(code);
       Alert.alert('Strava', t.stravaConnected);
+    } else if (url.startsWith(DROPBOX_OAUTH_PREFIX)) {
+      await handleDropboxCallback(code);
+      Alert.alert('Dropbox', t.cloudConnected);
+    } else if (url.startsWith(GOOGLEDRIVE_OAUTH_PREFIX)) {
+      await handleGoogleDriveCallback(code);
+      Alert.alert('Google Drive', t.cloudConnected);
+    } else if (url.startsWith(ONEDRIVE_OAUTH_PREFIX)) {
+      await handleOneDriveCallback(code);
+      Alert.alert('OneDrive', t.cloudConnected);
     }
   } catch (e: any) {
     Alert.alert(t.error, e?.message);

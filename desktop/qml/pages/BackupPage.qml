@@ -15,9 +15,22 @@ PageFlickable {
     contentHeight: column.height + Theme.spacingLarge * 2
     clip: true
 
+    // "none"/"dropbox"/"googledrive"/"onedrive" - which cloud destination the Cloud backup
+    // card below is currently pointed at. Added 2026-08-12 alongside CloudStorageService.
+    property string cloudProvider: "none"
+
     Component.onCompleted: {
         BackupService.refresh();
         BackupService.checkFirmware();
+    }
+
+    // Reusing BackupService's own local list/restore code for cloud downloads too - a
+    // downloaded file lands in the same ~/AmbitAppBackups folder a local backup already
+    // uses, so refreshing here is all it takes for it (and the existing Restore button) to
+    // pick it up, no separate cloud-restore UI needed.
+    Connections {
+        target: CloudStorageService
+        function onBackupDownloaded() { BackupService.refresh() }
     }
 
     FolderDialog {
@@ -116,8 +129,154 @@ PageFlickable {
                                 text: qsTr("Restore")
                                 onClicked: BackupService.restoreBackup(modelData.prefix, true)
                             }
+                            // Added 2026-08-12 - only shown once a cloud provider is picked
+                            // in the Cloud backup card below, same "pick a destination first"
+                            // flow as everything else on this page.
+                            RoundedButton {
+                                text: qsTr("Upload to cloud")
+                                visible: root.cloudProvider !== "none"
+                                enabled: !CloudStorageService.busy
+                                onClicked: CloudStorageService.uploadBackup(
+                                    root.cloudProvider, modelData.prefix, modelData.label)
+                            }
                         }
                     }
+                }
+            }
+        }
+
+        // --- Cloud backup - added 2026-08-12 ("implement the ones that the user can set up
+        // easily by itself"). Optional second destination for the exact same two files the
+        // "Backup & Restore" card above already produces - see CloudStorageService's own
+        // header comment for why downloads land back in the normal local list instead of
+        // needing their own restore path. ---
+        Card {
+            width: parent.width
+            visible: !HomeViewModel.isGarmin
+            Column {
+                width: parent.width
+                spacing: Theme.spacingSmall
+
+                Text { text: qsTr("Cloud backup"); font.bold: true; color: Theme.text }
+                Text {
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    color: Theme.mutedText
+                    font.pixelSize: Theme.fontSizeLabel
+                    text: qsTr("Optional. Upload a backup above to your own connected cloud " +
+                                "storage, or download one back down - it then appears in the " +
+                                "local list above, where Restore already works. Connect a " +
+                                "provider first in Settings → Connections.")
+                }
+
+                Flow {
+                    width: parent.width
+                    spacing: Theme.spacingSmall
+                    RoundedRadioButton {
+                        autoExclusive: false
+                        checked: root.cloudProvider === "none"
+                        text: qsTr("None")
+                        onClicked: root.cloudProvider = "none"
+                    }
+                    RoundedRadioButton {
+                        autoExclusive: false
+                        checked: root.cloudProvider === "dropbox"
+                        text: qsTr("Dropbox")
+                        enabled: ConnectionsService.dropboxConnected
+                        onClicked: {
+                            root.cloudProvider = "dropbox"
+                            CloudStorageService.refreshRemoteBackups("dropbox")
+                        }
+                    }
+                    RoundedRadioButton {
+                        autoExclusive: false
+                        checked: root.cloudProvider === "googledrive"
+                        text: qsTr("Google Drive")
+                        enabled: ConnectionsService.googleDriveConnected
+                        onClicked: {
+                            root.cloudProvider = "googledrive"
+                            CloudStorageService.refreshRemoteBackups("googledrive")
+                        }
+                    }
+                    RoundedRadioButton {
+                        autoExclusive: false
+                        checked: root.cloudProvider === "onedrive"
+                        text: qsTr("OneDrive")
+                        enabled: ConnectionsService.oneDriveConnected
+                        onClicked: {
+                            root.cloudProvider = "onedrive"
+                            CloudStorageService.refreshRemoteBackups("onedrive")
+                        }
+                    }
+                }
+
+                Text {
+                    visible: !ConnectionsService.dropboxConnected
+                             && !ConnectionsService.googleDriveConnected
+                             && !ConnectionsService.oneDriveConnected
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    color: Theme.mutedText
+                    font.pixelSize: Theme.fontSizeLabel
+                    text: qsTr("None connected yet - set one up in Settings → Connections " +
+                                "first.")
+                }
+
+                Column {
+                    width: parent.width
+                    visible: root.cloudProvider !== "none"
+                    spacing: Theme.spacingSmall
+
+                    Text {
+                        visible: CloudStorageService.remoteBackups.length === 0 && !CloudStorageService.busy
+                        text: qsTr("No cloud backups found yet - use \"Upload to cloud\" on a " +
+                                    "backup above.")
+                        color: Theme.mutedText
+                        font.pixelSize: Theme.fontSizeLabel
+                    }
+                    Text {
+                        visible: CloudStorageService.busy
+                        text: qsTr("Working…")
+                        color: Theme.mutedText
+                        font.pixelSize: Theme.fontSizeLabel
+                    }
+
+                    Repeater {
+                        model: CloudStorageService.remoteBackups
+                        delegate: Row {
+                            spacing: Theme.spacingSmall
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: modelData.createdAt > 0
+                                    ? new Date(modelData.createdAt * 1000)
+                                          .toLocaleString(Qt.locale(), Locale.ShortFormat)
+                                    : modelData.label
+                                color: Theme.text
+                                font.pixelSize: Theme.fontSizeBody
+                            }
+                            RoundedButton {
+                                text: qsTr("Download")
+                                enabled: !CloudStorageService.busy
+                                onClicked: CloudStorageService.downloadBackup(
+                                    root.cloudProvider, modelData.label)
+                            }
+                        }
+                    }
+
+                    RoundedButton {
+                        text: qsTr("Refresh cloud list")
+                        enabled: !CloudStorageService.busy
+                        onClicked: CloudStorageService.refreshRemoteBackups(root.cloudProvider)
+                    }
+                }
+
+                Text {
+                    visible: CloudStorageService.actionText.length > 0
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    font.pixelSize: Theme.fontSizeCaption
+                    color: CloudStorageService.actionOk ? Theme.success : Theme.error
+                    text: CloudStorageService.actionText
                 }
             }
         }
