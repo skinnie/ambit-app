@@ -920,30 +920,53 @@ export default function HomeScreen() {
               the exact same 0x1201 mechanism as BLE, just without the second NextTime
               push - no gating needed, device_driver_ambit3.c's date_time_set() dispatches
               correctly on either transport now. */}
-          <TouchableOpacity
-            style={styles.timeSyncRow}
-            disabled={timeSyncBusy}
-            onPress={handleSyncTime}
-          >
-            <Icon name="sync" size={14} color={theme.primary} />
-            <Text style={[styles.timeSyncText, { color: theme.primary }]}>
-              {timeSyncBusy ? t.connecting : (timeSyncMsg ?? t.homeSyncTimeButton)}
-            </Text>
-          </TouchableOpacity>
-          {/* Real, 2026-08-11 (André: "put the manual next to hardware") - opens the real
-              Suunto user-guide PDF for whichever model is connected (manualUrlFor(),
-              config/manuals.ts - same table as desktop's HomeViewModel.qml manualUrl) in
-              the OS's own PDF viewer/browser, same Linking.openURL() mechanism as any other
-              "open outside the app" action here. */}
-          <TouchableOpacity
-            style={styles.timeSyncRow}
-            onPress={() => Linking.openURL(manualUrlFor(ambitInfo.model))}
-          >
-            <Icon name="info" size={14} color={theme.primary} />
-            <Text style={[styles.timeSyncText, { color: theme.primary }]}>
-              {t.homeManualLink}
-            </Text>
-          </TouchableOpacity>
+          {/* The three card actions - Sync time, GPS data (orbital), View manual - lined up on
+              one centered horizontal row (André, 2026-08-16: "lining up will make it more
+              beautiful", both orientations), wrapping to more lines only if they don't fit. */}
+          <View style={styles.deviceLinksRow}>
+            <TouchableOpacity
+              style={styles.deviceLink}
+              disabled={timeSyncBusy}
+              onPress={handleSyncTime}
+            >
+              <Icon name="sync" size={14} color={theme.primary} />
+              <Text style={[styles.timeSyncText, { color: theme.primary }]}>
+                {timeSyncBusy ? t.connecting : (timeSyncMsg ?? t.homeSyncTimeButton)}
+              </Text>
+            </TouchableOpacity>
+            {/* GPS orbital data (SGEE/A-GPS) - André, 2026-08-16 ("I don't see any gps"). It used
+                to live only as a tile at the very bottom of this scroll, invisible on a phone;
+                surfaced here in the device card next to Sync time, matching desktop's HomePage.qml
+                which shows "GPS orbit" right in the hero card. Both are self-correcting update
+                actions, so they sit together. Works over USB and BLE (see handleOrbital). */}
+            <TouchableOpacity
+              style={styles.deviceLink}
+              disabled={isBusy}
+              onPress={handleOrbital}
+            >
+              <Icon name="satellite" size={14} color={theme.primary} />
+              <Text style={[styles.timeSyncText, { color: theme.primary }]}>
+                {orbitalBusy ? orbitalPhaseLabel(orbital.phase)
+                  : orbital.phase === 'done' ? t.gpsDoneMsg
+                  : orbital.phase === 'error' ? t.retry
+                  : t.gpsIdle}
+              </Text>
+            </TouchableOpacity>
+            {/* Real, 2026-08-11 (André: "put the manual next to hardware") - opens the real
+                Suunto user-guide PDF for whichever model is connected (manualUrlFor(),
+                config/manuals.ts - same table as desktop's HomeViewModel.qml manualUrl) in
+                the OS's own PDF viewer/browser, same Linking.openURL() mechanism as any other
+                "open outside the app" action here. */}
+            <TouchableOpacity
+              style={styles.deviceLink}
+              onPress={() => Linking.openURL(manualUrlFor(ambitInfo.model))}
+            >
+              <Icon name="info" size={14} color={theme.primary} />
+              <Text style={[styles.timeSyncText, { color: theme.primary }]}>
+                {t.homeManualLink}
+              </Text>
+            </TouchableOpacity>
+          </View>
         </Card>
       )}
 
@@ -1108,6 +1131,9 @@ export default function HomeScreen() {
         </View>
       ) : (
         <View style={[styles.actionsRow, roomy && styles.actionsRowRoomy]}>
+          {/* GPS orbital update moved up into the device card next to Sync time (André,
+              2026-08-16 - it was invisible buried down here on a phone), so this row is just
+              the primary activities sync now. */}
           <ActionTile
             icon="sync"
             label={syncLabel}
@@ -1116,14 +1142,6 @@ export default function HomeScreen() {
             onPress={handleSync}
             disabled={isBusy}
             grow
-          />
-          <ActionTile
-            icon="satellite"
-            label={orbitalLabel}
-            grow
-            busy={orbitalBusy}
-            onPress={handleOrbital}
-            disabled={isBusy}
           />
         </View>
       ))}
@@ -1389,6 +1407,22 @@ function createStyles(t: ReturnType<typeof useV3Theme>) {
       justifyContent: 'center',
       gap: 6,
       marginTop: 10,
+    },
+    // The three card actions (Sync time / GPS data / View manual) on one centered horizontal
+    // row, wrapping only if they overflow (André, 2026-08-16).
+    deviceLinksRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      alignItems: 'center',
+      justifyContent: 'center',
+      columnGap: 22,
+      rowGap: 8,
+      marginTop: 12,
+    },
+    deviceLink: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
     },
     heroButtons: {
       alignItems: 'center',
