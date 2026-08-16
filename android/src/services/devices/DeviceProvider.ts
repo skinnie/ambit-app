@@ -29,4 +29,10 @@ export interface DeviceProvider {
 
   /** Envoie le fichier SGEE (éphémérides GPS) à la montre. Optionnel selon le device. */
   updateSgee?(path: string): Promise<boolean>;
+
+  /** Experimental "mark synced" write-back (opt-in, OFF by default). Marks the `count` moves
+   *  just read this session synced on the watch so the Suunto app / SuuntoLink don't
+   *  duplicate them. Optional — only watches with a known synced entry id implement it, and
+   *  it no-ops on unsupported devices. Returns how many moves were marked. */
+  markSyncedLogs?(count: number): Promise<number>;
 }

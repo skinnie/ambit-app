@@ -78,6 +78,13 @@ export const disconnect = async (): Promise<void> => {
 };
 export const getLogs    = (knownIds?: string[]) => ambitConnector.getLogs(knownIds);
 export const updateSgee = (path: string) => ambitConnector.updateSgee!(path);
+
+/** Experimental "mark synced" write-back (OFF by default). Marks every move read this session
+ * (the native cache from getLogs) synced on the watch via 0x1201, and resolves how many were
+ * marked. Shared by USB and BLE (native g_device). The caller (MarkSynced.ts) must first
+ * confirm the device supports it. */
+export const markReadLogsSynced = (): Promise<number> =>
+  NativeAmbit.markReadLogsSynced();
 export const onSyncProgress = (cb: (e: SyncProgressEvent) => void) =>
   ambitConnector.onSyncProgress(cb);
 

@@ -818,15 +818,29 @@ def main():
     # other direct/manual invocation of this tool.
     ap.add_argument("--known-count", type=int, default=0, metavar="N",
                      help="skip decoding the N oldest entries (already cached by the caller)")
+    # Opt-in WRITE, off by default (the only thing that makes this tool not purely
+    # read-only). Reuses the already-open Link and already-decoded headers to mark each
+    # newly-read move synced on the watch (command 0x1201) so the Suunto app / SuuntoLink
+    # don't duplicate it - the experimental Settings toggle. See tools/mark_synced.py and
+    # the ambit-app-activity-sync-no-delete finding. Only marks the entries decoded THIS
+    # run (with --known-count, that's just the new ones, so each move is marked once, the
+    # call that first reads it), and never for --from FILE (nothing to write to).
+    ap.add_argument("--mark-synced", action="store_true",
+                     help="also tell the watch each newly-read move is synced (0x1201 write)")
     args = ap.parse_args()
 
+    link = None
     if args.from_file:
         with open(args.from_file, "rb") as f:
             data = f.read()
     else:
         from write_nav import Link, read_flash
         link = Link(dry_run=False, verbose=False)
-        print("read-only: 0x0b17 reads flash, nothing is written")
+        if args.mark_synced:
+            print("reading flash (0x0b17); --mark-synced will then write the synced flag "
+                  "(0x1201) for each new move")
+        else:
+            print("read-only: 0x0b17 reads flash, nothing is written")
         link.open()
         # Real fix, 2026-08-07 - this used to always read the full EXERCISE_LOG_SIZE
         # (5,526,464 bytes) regardless of how much is actually used, which is why this was
@@ -910,6 +924,12 @@ def main():
         print("\nno entries found (empty logbook)")
     elif count == args.known_count:
         print(f"\nno new entries since known-count={args.known_count}")
+
+    # Opt-in synced write-back (experimental Settings toggle). Same open Link, same decoded
+    # headers - no extra flash reads. Only the moves decoded this run, i.e. the new ones.
+    if args.mark_synced and link is not None and entries:
+        import mark_synced
+        mark_synced.mark_usb(link, entries)
 
     # Real total entry count, for the caller to detect a shrunk logbook (the watch's own
     # log wrapped/reset since the caller's known-count was recorded, so old cached indices

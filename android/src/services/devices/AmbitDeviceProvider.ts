@@ -4,6 +4,7 @@
 import * as AmbitUsbModule from '../../native/AmbitUsbModule';
 import { DeviceProvider, DeviceInfo } from './DeviceProvider';
 import { SyncProgressEvent } from '../../native/AmbitUsbModule';
+import { markReadLogsSynced } from '../MarkSynced';
 
 export class AmbitDeviceProvider implements DeviceProvider {
   readonly deviceName = 'Suunto Ambit';
@@ -26,6 +27,10 @@ export class AmbitDeviceProvider implements DeviceProvider {
 
   updateSgee(path: string): Promise<boolean> {
     return AmbitUsbModule.updateSgee(path);
+  }
+
+  markSyncedLogs(count: number): Promise<number> {
+    return markReadLogsSynced(count);
   }
 }
 

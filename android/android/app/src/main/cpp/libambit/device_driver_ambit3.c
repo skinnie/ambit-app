@@ -950,8 +950,14 @@ static int log_synced(ambit_object_t *object, ambit_log_entry_t *log_entry)
 
     ambit_date_time_t dt;
     memcpy(&dt, &log_entry->header.date_time, sizeof(dt));
+    // date_time.msec holds seconds*1000 (see parse_log_entry: `.msec = tm.tm_sec*1000`), so
+    // the seconds field is msec/1000. Upstream openambit passed dt.msec straight into the
+    // "%02d" seconds slot, which prints e.g. 6000 for :06 - a malformed timestamp that never
+    // matches the move on the watch, so the synced flag silently never applies. Divided here
+    // to match the real SuuntoLink cable capture ("...T18:14:06") and the companion desktop
+    // tools/mark_synced.py, which is proven byte-exact against that capture.
     snprintf((char*)sbem0102_synced.timestamp, sizeof(sbem0102_synced.timestamp), "%04d-%02d-%02dT%02d:%02d:%02d",
-            dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.msec);
+            dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.msec / 1000);
 
     sbem0102_synced.synced = 1;
     

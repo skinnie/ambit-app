@@ -413,13 +413,18 @@ class Handler(BaseHTTPRequestHandler):
         indices no longer mean the same activity, and the caller has to ask again with 0."""
         query = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
         known_count = query.get("known_count", ["0"])[0]
+        # Experimental "mark synced workouts as synced" toggle (Settings, OFF by default).
+        # The desktop DeviceService appends ?mark_synced=1 when the user has it on; the
+        # backend never marks on its own. See tools/mark_synced.py.
+        mark_synced = query.get("mark_synced", ["0"])[0] in ("1", "true")
         if ble_bridge.bridge.status().get("handshake_done"):
-            self._handle_activities_ble(int(known_count))
+            self._handle_activities_ble(int(known_count), mark_synced=mark_synced)
             return
         with tempfile.TemporaryDirectory() as tmpdir:
-            code, out, err = run_tool(
-                "exercise_log.py",
-                ["--gpx-out", tmpdir, "--fit-out", tmpdir, "--known-count", known_count])
+            tool_args = ["--gpx-out", tmpdir, "--fit-out", tmpdir, "--known-count", known_count]
+            if mark_synced:
+                tool_args.append("--mark-synced")
+            code, out, err = run_tool("exercise_log.py", tool_args)
             if code != 0:
                 self._send_json(502, {"ok": False, "raw_output": out, "stderr": err})
                 return
@@ -440,7 +445,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(200, {"ok": True, "activities": activities,
                                    "total_entries": total_entries, "raw_output": out})
 
-    def _handle_activities_ble(self, known_count):
+    def _handle_activities_ble(self, known_count, mark_synced=False):
         """The BLE path for GET /api/activities - tools/ble_activities.py. Same real
         decode as USB (to_gpx()/to_fit(), unchanged), the ExerciseLog region read directly
         via the driver-path command() proven reliable for routes tonight - no temp
@@ -477,6 +482,15 @@ class Handler(BaseHTTPRequestHandler):
                 "fit_base64": (base64.b64encode(fit_bytes).decode("ascii")
                                if fit_bytes else None),
             })
+        # Experimental synced write-back over BLE (unverified - see mark_synced.mark_ble's
+        # own docstring). Only the moves decoded this run. Best-effort: a write failure here
+        # must not fail the read the user actually asked for.
+        if mark_synced and entries:
+            try:
+                import mark_synced as mark_synced_mod         # noqa: PLC0415
+                mark_synced_mod.mark_ble(ble_bridge.bridge, entries)
+            except Exception as exc:                          # noqa: BLE001
+                print(f"mark-synced (BLE) failed, activities still returned: {exc}")
         self._send_json(200, {"ok": True, "transport": "ble", "activities": activities,
                                "total_entries": master["entries"]})
 

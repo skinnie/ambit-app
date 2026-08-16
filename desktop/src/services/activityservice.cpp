@@ -5,6 +5,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QNetworkReply>
+#include <QSettings>
 #include <QSqlError>
 #include <QSqlQuery>
 #include <QStandardPaths>
@@ -116,8 +117,16 @@ void ActivityService::refresh()
 
 void ActivityService::requestActivities(int knownCount, bool alreadyRetried)
 {
-    const QUrl url(kBackendBase + QStringLiteral("/api/activities?known_count=%1")
-                                       .arg(knownCount));
+    // Experimental "mark synced workouts as synced" toggle (DeviceService persists it to
+    // this same QSettings key; read here rather than coupling the two services). When on,
+    // ask the backend to write the watch's per-move synced flag after this read. Off by
+    // default - see DeviceService::markSyncedEnabled's header comment.
+    const bool markSynced =
+        QSettings().value(QStringLiteral("experimental/markSynced"), false).toBool();
+    QString path = QStringLiteral("/api/activities?known_count=%1").arg(knownCount);
+    if (markSynced)
+        path += QStringLiteral("&mark_synced=1");
+    const QUrl url(kBackendBase + path);
     QNetworkReply *reply = m_network.get(QNetworkRequest(url));
     connect(reply, &QNetworkReply::finished, this, [this, reply, knownCount, alreadyRetried] {
         reply->deleteLater();

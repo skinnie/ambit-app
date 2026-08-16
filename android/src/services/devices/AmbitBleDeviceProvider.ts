@@ -15,6 +15,7 @@
 import * as AmbitUsbModule from '../../native/AmbitUsbModule';
 import { DeviceProvider, DeviceInfo } from './DeviceProvider';
 import { SyncProgressEvent } from '../../native/AmbitUsbModule';
+import { markReadLogsSynced } from '../MarkSynced';
 
 export class AmbitBleDeviceProvider implements DeviceProvider {
   readonly deviceName = 'Suunto Ambit (BLE)';
@@ -44,6 +45,13 @@ export class AmbitBleDeviceProvider implements DeviceProvider {
 
   updateSgee(path: string): Promise<boolean> {
     return AmbitUsbModule.updateSgee(path);
+  }
+
+  // EXPERIMENTAL/unverified over BLE: the real Suunto app never wrote this flag on BLE (it
+  // uses EventBoard events). Rides the same shared-g_device native path as USB by analogy;
+  // markReadLogsSynced tags the logs so it's clear this is the unproven transport.
+  markSyncedLogs(count: number): Promise<number> {
+    return markReadLogsSynced(count, ' (BLE, unverified)');
   }
 }
 

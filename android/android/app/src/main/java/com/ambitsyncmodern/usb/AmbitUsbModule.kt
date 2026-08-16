@@ -83,6 +83,7 @@ class AmbitUsbModule(private val reactContext: ReactApplicationContext) :
     private external fun nativeAmbitGetDeviceInfo(): String
     private external fun nativeAmbitGetLogCount(knownDates: Array<String>): Int
     private external fun nativeAmbitGetLogAsGpx(index: Int): String?
+    private external fun nativeAmbitMarkReadLogsSynced(): Int
     private external fun nativeAmbitSendSgee(data: ByteArray): Boolean
     private external fun nativeAmbitWriteRoute(
         routeName: String,
@@ -721,6 +722,33 @@ class AmbitUsbModule(private val reactContext: ReactApplicationContext) :
     // command 0x1201 - see device_driver_ambit3.c's kailash_ble_time_sync() for the full
     // evidence). Which path runs is decided inside libambit itself (date_time_set()'s own
     // transport/product_id check), not here.
+    // ─── markReadLogsSynced() ──────────────────────────────────────────────────
+    // Experimental "mark synced workouts as synced" toggle (OFF by default). Marks every move
+    // read this session (the native g_log_dates cache from getLogs) synced on the watch via
+    // command 0x1201, so the Suunto app / SuuntoLink don't duplicate them - tradeoff: the move
+    // can't be re-retrieved from the watch afterwards. The TS layer (MarkSynced.ts) decides
+    // whether the connected watch SUPPORTS this (Ambit3 GEN4 fw only, mirroring the desktop
+    // mark_synced.py guard) and only calls it then. Marking all cached moves natively (rather
+    // than by a caller index) keeps it tied to exactly what was read. Resolves the number of
+    // moves marked. Shared by USB and BLE - both act on the same native g_device.
+    @ReactMethod
+    fun markReadLogsSynced(promise: Promise) {
+        if (!jniLoaded) {
+            promise.reject("JNI_NOT_LOADED", "Native library unavailable")
+            return
+        }
+        executor.execute {
+            try {
+                val marked = nativeAmbitMarkReadLogsSynced()
+                if (marked >= 0) promise.resolve(marked)
+                else promise.reject("MARK_SYNCED_FAILED",
+                    "Watch not initialized for mark-synced (see logcat AmbitJNI)")
+            } catch (e: Exception) {
+                promise.reject("MARK_SYNCED_ERROR", e.message ?: "Unknown error")
+            }
+        }
+    }
+
     @ReactMethod
     fun setDateTime(promise: Promise) {
         if (!jniLoaded) {

@@ -3,6 +3,7 @@ import { ambitDeviceProvider } from './devices/AmbitDeviceProvider';
 import { writeGpxFile } from './GpxService';
 import { extractGpxMetadata } from './GpxParser';
 import { isActivitySynced, markActivitySynced, getAllSyncedIds } from '../database/db';
+import { isMarkSyncedEnabled } from './MarkSynced';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -70,6 +71,20 @@ export async function runSync(
     return 0;
   }
   unsubscribe();
+
+  // ── 2b. Mark-synced write-back (experimental Settings toggle, OFF by default) ──
+  // The moves in gpxLogs are exactly the ones read this session (the watch skipped the
+  // already-known ones), so their indices match the native cache 0..gpxLogs.length-1. Tell
+  // the watch they're synced so the Suunto app / SuuntoLink don't duplicate them. Best-effort
+  // and non-fatal: a failure here must never lose the moves the user just read. Only the
+  // Ambit providers implement markSyncedLogs, and it no-ops on unsupported watches.
+  if (provider.markSyncedLogs && (await isMarkSyncedEnabled())) {
+    try {
+      await provider.markSyncedLogs(gpxLogs.length);
+    } catch (e: any) {
+      console.log('[mark-synced] write-back failed, moves still returned:', e?.message ?? e);
+    }
+  }
 
   // ── 3. Écriture des nouveaux logs ────────────────────────────────────────────
   emit({ phase: 'writing', current: 0, total: gpxLogs.length, newCount: 0, deviceName });

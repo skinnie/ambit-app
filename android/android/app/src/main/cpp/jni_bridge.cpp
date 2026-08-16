@@ -107,6 +107,12 @@ static ambit_object_t *g_device = nullptr;
 // Cache des logs lus (rempli lors de nativeAmbitGetLogCount, consommé par nativeAmbitGetLogAsGpx)
 static std::vector<std::string> g_log_cache;
 
+// Parallel to g_log_cache: each read move's own header date_time, kept so
+// nativeAmbitMarkReadLogsSynced can rebuild the minimal ambit_log_entry_t that
+// libambit_log_synced() needs (it reads only header.date_time - see
+// device_driver_ambit3.c's log_synced()). Same index as g_log_cache/getLogAsGpx.
+static std::vector<ambit_date_time_t> g_log_dates;
+
 // Publishes the in-construction BLE object to g_device DURING libambit_new_from_ble,
 // so incoming notifications route to it while the server-side handshake (which runs
 // inside that call, before it returns) is waiting for the watch's frames. Without
@@ -301,6 +307,7 @@ static void log_push_callback(void *userdata, ambit_log_entry_t *log_entry)
     (void)userdata;
     std::string gpx = convertEntryToGpx(log_entry);
     g_log_cache.push_back(gpx);
+    g_log_dates.push_back(log_entry->header.date_time);   // for mark-synced (same index)
     LOGI("log_push_callback: log #%zu ajouté (%zu bytes)",
          g_log_cache.size(), gpx.size());
     // Ne pas libérer ici : device_driver_ambit.c appelle libambit_log_entry_free après push_cb
@@ -343,6 +350,7 @@ Java_com_ambitsyncmodern_usb_AmbitUsbModule_nativeAmbitInit(
         g_device = nullptr;
     }
     g_log_cache.clear();
+    g_log_dates.clear();
 
     g_device = libambit_new_from_fd(fd, epIn, epOut,
                                     (uint16_t)vid, (uint16_t)pid);
@@ -434,6 +442,7 @@ Java_com_ambitsyncmodern_usb_AmbitUsbModule_nativeAmbitGetLogCount(
     }
 
     g_log_cache.clear();
+    g_log_dates.clear();
     int ret = libambit_log_read(g_device,
                                 log_skip_callback,
                                 log_push_callback,
@@ -463,6 +472,44 @@ Java_com_ambitsyncmodern_usb_AmbitUsbModule_nativeAmbitGetLogAsGpx(
         return nullptr;
     }
     return env->NewStringUTF(g_log_cache[(size_t)index].c_str());
+}
+
+/**
+ * nativeAmbitMarkReadLogsSynced
+ *
+ * Tells the watch that every move read this session (all of g_log_dates, filled by
+ * nativeAmbitGetLogCount - the moves the watch actually sent, NOT the possibly-shorter GPX
+ * array) is synced - the per-move flag SuuntoLink writes over cable so the Suunto app /
+ * SuuntoLink don't duplicate it. Opt-in, experimental (Settings), OFF by default; the TS
+ * layer decides whether the device SUPPORTS it (only Ambit3 GEN4 fw has a known log_synced
+ * entry id, mirroring the desktop mark_synced.py guard) and only calls this for supported
+ * watches. Driving the loop off g_log_dates here, rather than a caller-supplied index/count,
+ * keeps marking tied to exactly the moves that were read - no dependence on the GPX list
+ * length. libambit_log_synced reads only header.date_time, so a minimal stack entry with just
+ * that field is enough. Best-effort: one failed move doesn't abort the rest. Returns the
+ * number of moves marked, or -1 if not initialized. Nothing is deleted - the watch still
+ * reclaims log space by wraparound.
+ */
+JNIEXPORT jint JNICALL
+Java_com_ambitsyncmodern_usb_AmbitUsbModule_nativeAmbitMarkReadLogsSynced(
+        JNIEnv * /* env */, jobject /* thiz */)
+{
+    if (!g_device) { LOGE("nativeAmbitMarkReadLogsSynced: not initialized"); return -1; }
+    int marked = 0;
+    for (size_t i = 0; i < g_log_dates.size(); i++) {
+        ambit_log_entry_t entry;
+        memset(&entry, 0, sizeof(entry));
+        entry.header.date_time = g_log_dates[i];
+        int r = libambit_log_synced(g_device, &entry);
+        if (r != 0) {
+            LOGE("nativeAmbitMarkReadLogsSynced: libambit_log_synced returned %d (move %zu)", r, i);
+            continue;
+        }
+        marked++;
+    }
+    LOGI("nativeAmbitMarkReadLogsSynced: %d/%zu move(s) marked synced on watch",
+         marked, g_log_dates.size());
+    return marked;
 }
 
 /**
@@ -1000,6 +1047,7 @@ Java_com_ambitsyncmodern_usb_AmbitUsbModule_nativeAmbitDisconnect(
 {
     LOGI("nativeAmbitDisconnect");
     g_log_cache.clear();
+    g_log_dates.clear();
     if (g_device) {
         libambit_close(g_device);
         g_device = nullptr;
@@ -1035,6 +1083,7 @@ Java_com_ambitsyncmodern_ble_AmbitBleModule_nativeAmbitBleInit(
         g_device = nullptr;
     }
     g_log_cache.clear();
+    g_log_dates.clear();
 
     JavaVM *jvm = nullptr;
     env->GetJavaVM(&jvm);

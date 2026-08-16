@@ -600,6 +600,12 @@ const fr = {
   experimentalToggleDesc:
     'Fonctions non testées sur matériel réel via Android, à tester par câble. Faites d’abord ' +
     'une sauvegarde. Retours communautaires bienvenus.',
+  markSyncedLabel: 'Marquer les activités comme synchronisées pour l’app Suunto et SuuntoLink',
+  markSyncedDesc:
+    'Une fois une activité lue ici, indiquer à la montre qu’elle est déjà synchronisée. Cela ' +
+    'évite les doublons dans l’app Suunto et SuuntoLink — mais l’activité ne pourra plus être ' +
+    'récupérée depuis la montre si l’app Suunto échoue à la conserver. Laissez désactivé si ' +
+    'vous n’êtes pas sûr.',
   experimentalWarningBanner:
     '⚠️ Expérimental — non testé sur matériel réel. Connectez la montre par câble et faites ' +
     'une sauvegarde avant d’écrire quoi que ce soit.',
@@ -1233,6 +1239,12 @@ const en: typeof fr = {
   experimentalToggleDesc:
     "Features not hardware-tested on Android yet, to test over cable. Back up first. " +
     'Community feedback welcome.',
+  markSyncedLabel: 'Mark synced workouts as synced for Suunto app and SuuntoLink',
+  markSyncedDesc:
+    'Once a workout has been read here, tell the watch it is already synced. This avoids ' +
+    'duplicated workouts in the Suunto app and SuuntoLink — but it also means the workout can ' +
+    'no longer be retrieved again from the watch if the Suunto app fails to keep it. Leave off ' +
+    'unless you understand this tradeoff.',
   experimentalWarningBanner:
     '⚠️ Experimental — not hardware-tested. Connect the watch by cable and take a backup ' +
     'before writing anything.',

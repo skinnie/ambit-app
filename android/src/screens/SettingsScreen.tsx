@@ -8,6 +8,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
 import { useThemeMode, ThemeMode } from '../theme/ThemeModeContext';
 import { useExperimental } from '../config/ExperimentalContext';
+import { isMarkSyncedEnabled, setMarkSyncedEnabled as persistMarkSynced } from '../services/MarkSynced';
 import Icon, { IconName } from '../components/ui/Icon';
 import { CREDITS } from '../legal/credits';
 import { DecodedSetting, SettingField, SettingScreen } from '../services/AmbitSettingsReader';
@@ -127,6 +128,10 @@ export default function SettingsScreen() {
   >(null);
 
   const [mapProvider, setMapProviderState] = useState<MapProvider>('ign');
+
+  // Experimental "mark synced workouts as synced" toggle - own persisted flag (MarkSynced.ts),
+  // independent of the master experimental switch, default OFF.
+  const [markSyncedEnabled, setMarkSyncedEnabledState] = useState(false);
   const [tileCacheBytes, setTileCacheBytes] = useState<number | null>(null);
   const [clearingCache, setClearingCache] = useState(false);
 
@@ -275,7 +280,13 @@ export default function SettingsScreen() {
       setIntervalsApiKey(creds?.apiKey ?? '');
     });
     getMapProvider().then(setMapProviderState);
+    isMarkSyncedEnabled().then(setMarkSyncedEnabledState);
   }, []));
+
+  function handleToggleMarkSynced(v: boolean) {
+    setMarkSyncedEnabledState(v);
+    persistMarkSynced(v);
+  }
 
   function handleSetMapProvider(p: MapProvider) {
     setMapProviderState(p);
@@ -447,6 +458,18 @@ export default function SettingsScreen() {
           />
         </View>
         <Text style={styles.sectionDesc}>{t.experimentalToggleDesc}</Text>
+
+        {/* Mark-synced write-back - independent opt-in, not gated by the master toggle
+            (2026-08-16). Writes the watch's own per-move synced flag so the Suunto app /
+            SuuntoLink don't duplicate; tradeoff spelled out so nobody enables it blindly. */}
+        <View style={[styles.row, { justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }]}>
+          <Text style={[styles.connRowText, { flex: 1, marginRight: 12 }]}>{t.markSyncedLabel}</Text>
+          <Toggle
+            value={markSyncedEnabled}
+            onValueChange={handleToggleMarkSynced}
+          />
+        </View>
+        <Text style={styles.sectionDesc}>{t.markSyncedDesc}</Text>
 
         {experimentalEnabled && (
           <>
