@@ -148,14 +148,12 @@ not inside the main window.
 
 Two things worth knowing:
 
-- **You do not need it for the main app.** Routes, activities, POIs, backup and the rest all
-  work without it. Get the Workout Builder only if you actually want to create interval
-  workouts. (Inside the app, the "Open Workout Builder" button simply launches it if it's
-  present.)
+- **In the ready-made downloads it just works** — the Workout Builder is bundled inside the
+  app, so the "Open Workout Builder" button launches it with nothing extra to install.
 - **It also runs completely standalone** — you can use the Workout Builder on its own, with
   or without the main desktop app.
 
-The simplest way to run it standalone is:
+To run it standalone from source:
 
 ```
 python3 tools/workout_gui.py      # opens http://127.0.0.1:8765 in your browser

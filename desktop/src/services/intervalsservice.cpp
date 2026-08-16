@@ -1,5 +1,6 @@
 #include "intervalsservice.h"
 
+#include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
 #include <QProcess>
@@ -13,12 +14,41 @@
 #define AMBITAPP_REPO_ROOT ""
 #endif
 
+namespace {
+
+// The Workout Builder (tools/workout_gui.py) is bundled INSIDE the frozen watch helper (it's
+// just another tool), so in a packaged download the "Open Workout Builder" button needs
+// nothing installed - it just asks that helper to run it. Same path convention as
+// BackendProcess (the helper sits next to the app in backend/, or in Contents/Resources on mac).
+QString bundledBackendPath()
+{
+    const QDir appDir(QCoreApplication::applicationDirPath());
+#if defined(Q_OS_MACOS)
+    return appDir.absoluteFilePath(QStringLiteral("../Resources/backend/ambit-backend"));
+#elif defined(Q_OS_WIN)
+    return appDir.absoluteFilePath(QStringLiteral("backend/ambit-backend.exe"));
+#else
+    return appDir.absoluteFilePath(QStringLiteral("backend/ambit-backend"));
+#endif
+}
+
+}  // namespace
+
 IntervalsService::IntervalsService(QObject *parent) : QObject(parent)
 {
 }
 
 QString IntervalsService::launch()
 {
+    // Packaged download: the bundled helper carries the Workout Builder - just launch it.
+    const QString bundled = QFileInfo(bundledBackendPath()).absoluteFilePath();
+    if (QFileInfo::exists(bundled)) {
+        if (QProcess::startDetached(bundled, {QStringLiteral("--workout-builder")}))
+            return QString();
+    }
+
+    // Source checkout: fall back to the standalone Workout Builder (a packaged dist/ build if
+    // present, otherwise run tools/workout_gui.py with the system Python).
     const QString repoRoot = QDir(QStringLiteral(AMBITAPP_REPO_ROOT)).absolutePath();
     const QString fallbackScript = repoRoot + QStringLiteral("/tools/workout_gui.py");
 
