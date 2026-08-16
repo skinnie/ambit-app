@@ -10,12 +10,16 @@ import { runSync, SyncState } from '../services/SyncService';
 import { updateOrbitalData, OrbitalUpdateState } from '../services/SgeeService';
 import {
   connect as ambitConnect, disconnect as ambitDisconnect, getDeviceInfo, AmbitDeviceInfo,
+  listDevices, selectDevice, AmbitUsbDevice,
   wasLaunchedViaUsbAttach, onUsbAttached, detectAttachedDeviceType, AttachedDeviceType,
   readDeviceHistoryRaw, readDeviceLogRaw, setBleTransportActive, saveToDownloads,
   setDateTime,
 } from '../native/AmbitUsbModule';
 import RNFS from 'react-native-fs';
-import { scanAndConnect as bleScanAndConnect } from '../native/AmbitBleModule';
+import {
+  scanAndConnect as bleScanAndConnect, scanAndConnectTo as bleScanAndConnectTo,
+  listBondedWatches, BondedWatch,
+} from '../native/AmbitBleModule';
 import * as Garmin from '../native/GarminModule';
 import type { GarminConnectResult } from '../native/GarminModule';
 import { syncGarminActivities, GarminActivitySyncState } from '../services/GarminActivityService';
@@ -44,6 +48,21 @@ import { NavShell, NavShellItem } from '../navigation/NavShell';
 // that distinguishes it: everywhere below that would otherwise assume Ambit3's own
 // ExerciseLog/sport-mode shape switches to the Kailash-specific path instead.
 const isKailash = (info: AmbitDeviceInfo | null) => info?.model === 'Hoopoe';
+
+// Multi-watch switcher (2026-08-16): one unified entry per pickable watch, spanning both
+// transports — a cabled watch (USB, keyed by its stable USB path) or a paired one (BLE, keyed
+// by its Bluetooth address). Reconciles the two earlier switchers (USB-path vs productId): the
+// USB path wins as the id because it tells apart two watches of the *same* model, which a
+// productId can't. `name` is already the friendly device name from the native list.
+type SwitcherWatch = {
+  key: string;
+  name: string;
+  transport: 'usb' | 'ble';
+  usbDeviceName?: string; // USB: the path passed to selectDevice()
+  bleAddress?: string;    // BLE: the MAC passed to scanAndConnectTo()
+};
+// Trim the redundant "Suunto " so a pill reads "Kailash", "Ambit3 Peak", etc.
+const watchPillName = (name: string) => name.replace(/^Suunto\s+/i, '');
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Home'>;
 type ActiveAction = 'sync' | 'orbital';
@@ -152,7 +171,31 @@ export default function HomeScreen() {
   const [connectError, setConnectError] = useState<string | undefined>();
   const [waitingSeconds, setWaitingSeconds] = useState<number | null>(null);
   const [ambitInfo, setAmbitInfo] = useState<AmbitDeviceInfo | null>(null);
+  // Multi-watch switcher (2026-08-16): every cabled Suunto (USB) and every paired one (BLE),
+  // plus which one is active. The picker shows when there's more than one to choose between,
+  // across both transports (e.g. 2 paired, or 2 paired + 1 cabled).
+  const [attachedDevices, setAttachedDevices] = useState<AmbitUsbDevice[]>([]);
+  const [bondedWatches, setBondedWatches] = useState<BondedWatch[]>([]);
+  const [selectedWatch, setSelectedWatch] = useState<string | null>(null);   // USB path of active cabled watch
+  const [connectedBleAddress, setConnectedBleAddress] = useState<string | null>(null); // MAC of active BLE watch
   const [garminInfo, setGarminInfo] = useState<GarminConnectResult | null>(null);
+
+  // Cabled + paired watches merged into the switcher's unified shape (see SwitcherWatch).
+  const allWatches: SwitcherWatch[] = [
+    ...attachedDevices.map(d => ({
+      key: `usb:${d.deviceName}`, name: d.name, transport: 'usb' as const, usbDeviceName: d.deviceName,
+    })),
+    ...bondedWatches.map(b => ({
+      key: `ble:${b.address}`, name: b.name, transport: 'ble' as const, bleAddress: b.address,
+    })),
+  ];
+  // Re-read both lists (cheap; no watch round-trip) so the picker reflects what's plugged in
+  // and what's paired. Called on search + on connect. listBondedWatches degrades to [] when the
+  // native method or BLUETOOTH_CONNECT permission is missing, so this never throws.
+  const refreshWatchLists = useCallback(() => {
+    listDevices().then(setAttachedDevices).catch(() => {});
+    listBondedWatches().then(setBondedWatches).catch(() => {});
+  }, []);
   // Kailash only - visited cities/countries, travel stats, and the real activity-mode
   // logbook, all fetched once at connect time (see connectFlow's own 'ambit' branch below).
   const [kailashHistory, setKailashHistory] = useState<KailashHistory | null>(null);
@@ -220,6 +263,8 @@ export default function HomeScreen() {
         setAmbitInfo(devInfo ?? {
           name: info.name, model: '', serial: '', fwVersion: '', hwVersion: '', battery: -1,
         });
+        // Refresh cabled + paired watches so the switcher shows every one you can pick.
+        refreshWatchLists();
         setPhase('connected');
         handleSyncRef.current(); // preserve existing auto-sync-on-connect behavior
       } catch (e: any) {
@@ -249,6 +294,25 @@ export default function HomeScreen() {
   const connectFlowRef = useRef(connectFlow);
   connectFlowRef.current = connectFlow;
 
+  // Multi-watch switcher (2026-08-16): connect the whole dashboard (device info, history, sync)
+  // to the picked watch, over whichever transport it lives on. A cabled watch reconnects
+  // immediately; a paired (BLE) watch goes through the same scan-and-connect the Bluetooth
+  // button uses, pinned to that watch, so the user just triggers "Sync now"/"Pair Mobile App"
+  // on it. No-op if the watch is already the active one.
+  async function handleSelectWatch(watch: SwitcherWatch) {
+    if (watch.transport === 'usb') {
+      if (selectedWatch === watch.usbDeviceName && !bleConnectedRef.current) return;
+      setSelectedWatch(watch.usbDeviceName ?? null);
+      setConnectedBleAddress(null);
+      await selectDevice(watch.usbDeviceName ?? null).catch(() => {});
+      await connectFlowRef.current('ambit');
+    } else {
+      if (connectedBleAddress === watch.bleAddress) return;
+      setSelectedWatch(null);
+      await handleBleConnectRef.current(watch.bleAddress);
+    }
+  }
+
   // BLE connect (2026-08-08) — there was previously no way to reach a BLE
   // pairing flow at all from Home: startSearching()/detectAttachedDeviceType()
   // only ever look for a USB attach event, and the BLE send/export buttons
@@ -262,7 +326,10 @@ export default function HomeScreen() {
   // trigger the watch's own menu action first, right before scanning, since
   // its BLE advertising window is short (same reasoning as RouteScreen.tsx's
   // waitForSyncNowTap).
-  async function handleBleConnect() {
+  // `targetAddress` (multi-watch switcher, 2026-08-16): when the user picked a specific paired
+  // watch, pin the scan to that one so another paired watch soliciting nearby can't be grabbed
+  // instead. Omitted (generic Bluetooth button) → connect to the first compatible watch found.
+  async function handleBleConnect(targetAddress?: string) {
     // Straight to scanning — no confirmation dialog. The scan already waits ~15 s
     // (SCAN_TIMEOUT_MS in AmbitBleModule.kt), which is the watch's advertising
     // window, so the user just triggers "Pair Mobile App"/"Sync now" on the watch
@@ -274,7 +341,7 @@ export default function HomeScreen() {
     setConnectError(undefined);
     setPhase('connecting');
     try {
-      await bleScanAndConnect();
+      await (targetAddress ? bleScanAndConnectTo(targetAddress) : bleScanAndConnect());
       let devInfo: AmbitDeviceInfo | null = null;
       try { devInfo = await getDeviceInfo(); } catch { /* non-fatal — hide the info block below */ }
       setAmbitInfo(devInfo);
@@ -298,6 +365,9 @@ export default function HomeScreen() {
       setBleConnected(true);
       bleConnectedRef.current = true;
       setBleTransportActive(true);   // route all connect()/disconnect() through BLE
+      setConnectedBleAddress(targetAddress ?? null); // highlights the active BLE watch in the picker
+      setSelectedWatch(null);
+      refreshWatchLists();
       setPhase('connected');
       // No auto-sync on BLE connect — let the user pick an action from the menu.
       // (Auto-sync on connect is a USB-attach convenience; over BLE the connect
@@ -306,6 +376,7 @@ export default function HomeScreen() {
       setBleConnected(false);
       bleConnectedRef.current = false;
       setBleTransportActive(false);
+      setConnectedBleAddress(null);
       setConnectError(e?.message ?? t.unknownError);
       setPhase('connect-error');
     }
@@ -340,6 +411,9 @@ export default function HomeScreen() {
     stopSearchTimers();
     setPhase('searching');
     setConnectError(undefined);
+    // Populate the picker up front so paired (BLE) watches are offerable on the no-device
+    // screen even before anything is cabled — a BLE-only user has nothing to auto-connect.
+    refreshWatchLists();
 
     const poll = async () => {
       const type = await detectAttachedDeviceType().catch(() => 'none' as const);
@@ -519,7 +593,20 @@ export default function HomeScreen() {
           {phase === 'timeout' && (
             <Button label={t.homeConnectRetryBtn} onPress={startSearching} variant="text" grow={false} />
           )}
-          <Button label={t.homeBleConnectBtn} onPress={handleBleConnectRef.current} variant="text" grow={false} />
+          {/* Multi-watch switcher (2026-08-16): one direct-connect button per already-paired
+              watch, so a Bluetooth-only user can pick which of several paired watches to reach
+              (nothing is cabled to auto-connect). The generic pair button below stays for
+              pairing a brand-new watch. */}
+          {bondedWatches.map(b => (
+            <Button
+              key={b.address}
+              label={t.homeBleConnectWatchBtn(watchPillName(b.name))}
+              onPress={() => handleBleConnectRef.current(b.address)}
+              variant="text"
+              grow={false}
+            />
+          ))}
+          <Button label={t.homeBleConnectBtn} onPress={() => handleBleConnectRef.current()} variant="text" grow={false} />
           {/* Activities are stored locally and don't depend on a device being
               connected — don't trap the user behind the search/timeout screen
               if all they want is to look at what's already synced. */}
@@ -574,7 +661,7 @@ export default function HomeScreen() {
             grow={false}
           />
           {!bleAttempt && (
-            <Button label={t.homeBleConnectBtn} onPress={handleBleConnectRef.current} variant="text" grow={false} />
+            <Button label={t.homeBleConnectBtn} onPress={() => handleBleConnectRef.current()} variant="text" grow={false} />
           )}
           <Button label={t.viewActivities} onPress={() => navigation.navigate('LogList')} variant="text" grow={false} />
         </View>
@@ -678,6 +765,39 @@ export default function HomeScreen() {
       {deviceType === 'ambit' && ambitInfo && (
         <Card style={[roomy ? styles.deviceCardRoomy : styles.deviceCardCol, styles.deviceCardInner]}>
           <Text style={[styles.deviceName, v3TextStyle]}>{ambitInfo.name}</Text>
+          {/* Multi-watch switcher: shown with more than one watch to choose between, across both
+              transports (cabled USB + paired BLE). Tapping reconnects the whole dashboard to it —
+              cabled watches immediately, paired ones over Bluetooth (desktop has the same picker). */}
+          {allWatches.length > 1 && (
+            <View style={styles.watchSwitcher}>
+              {allWatches.map(w => {
+                const active = w.transport === 'usb'
+                  ? (!bleConnected && (selectedWatch ? w.usbDeviceName === selectedWatch : w.name === ambitInfo.name))
+                  : (bleConnected && connectedBleAddress === w.bleAddress);
+                return (
+                  <TouchableOpacity
+                    key={w.key}
+                    onPress={() => handleSelectWatch(w)}
+                    activeOpacity={0.75}
+                    style={[
+                      styles.watchChip,
+                      { borderColor: theme.mutedText },
+                      active && { backgroundColor: theme.primary, borderColor: theme.primary },
+                    ]}
+                  >
+                    <Icon
+                      name={w.transport === 'ble' ? 'bluetooth' : 'link'}
+                      size={12}
+                      color={active ? theme.card : theme.mutedText}
+                    />
+                    <Text style={[styles.watchChipText, { color: active ? theme.card : theme.text }]}>
+                      {watchPillName(w.name)}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
           {!!(ambitInfo.fwVersion || ambitInfo.hwVersion) && (
             <Text style={[styles.deviceSub, v3MutedStyle]}>
               {ambitInfo.fwVersion ? `${t.garminFirmwareLabel} ${ambitInfo.fwVersion}` : ''}
@@ -738,7 +858,7 @@ export default function HomeScreen() {
           each muted detail line, rather than the pre-redesign deviceInfoBox styles this
           screen no longer defines. ── */}
       {deviceType === 'ambit' && isKailash(ambitInfo) && kailashHistory && (
-        <Card style={[roomy ? styles.deviceCardRoomy : styles.deviceCardCol, styles.deviceCardInner]}>
+        <Card style={[roomy ? styles.deviceCardRoomyFull : styles.deviceCardCol, styles.deviceCardInner]}>
           <Text style={[styles.deviceName, v3TextStyle]}>{t.homeKailashTravelTitle}</Text>
           <Text style={[styles.deviceSub, v3MutedStyle]}>
             {t.homeKailashCitiesLabel} {kailashHistory.citiesVisited}
@@ -769,7 +889,7 @@ export default function HomeScreen() {
           own header comment) so each visited place gets its own dot instead of a nonsense
           polyline connecting unrelated cities in array order. ── */}
       {deviceType === 'ambit' && isKailash(ambitInfo) && kailashHistory && kailashHistory.visitedPlaces.length > 0 && (
-        <Card style={[roomy ? styles.deviceCardRoomy : styles.deviceCardCol, styles.deviceCardInner]}>
+        <Card style={[roomy ? styles.deviceCardRoomyFull : styles.deviceCardCol, styles.deviceCardInner]}>
           <Text style={[styles.deviceName, v3TextStyle]}>
             {t.homeKailashPlacesTitle(kailashHistory.visitedPlaces.length)}
           </Text>
@@ -778,7 +898,7 @@ export default function HomeScreen() {
       )}
 
       {deviceType === 'ambit' && isKailash(ambitInfo) && kailashTrack && (
-        <Card style={[roomy ? styles.deviceCardRoomy : styles.deviceCardCol, styles.deviceCardInner]}>
+        <Card style={[roomy ? styles.deviceCardRoomyFull : styles.deviceCardCol, styles.deviceCardInner]}>
           <Text style={[styles.deviceName, v3TextStyle]}>{t.homeKailashTrackTitle}</Text>
           <Text style={[styles.deviceSub, v3MutedStyle]}>
             {realTrackPoints(kailashTrack).length} {t.homeKailashTrackPoints}
@@ -1022,6 +1142,14 @@ function createStyles(t: ReturnType<typeof useV3Theme>) {
       flexGrow: 1,
       minWidth: 250,
     },
+    // Roomy, but full-width: forces the card onto its own row (flexBasis 100%) so the
+    // Kailash panels stack one-up/one-down like portrait instead of sitting beside the
+    // watch card (André, 2026-08-15: "on horizontal the watch and travel history are side
+    // by side, would prefer one up and other down like in the vertical").
+    deviceCardRoomyFull: {
+      flexBasis: '100%',
+      flexGrow: 1,
+    },
     // Same cap as deviceCardCol - see the JSX comment above on why WeatherCard needed this
     // (it's the only card on this screen that wasn't already capped to CONTENT_MAX_WIDTH).
     weatherWrap: {
@@ -1037,6 +1165,29 @@ function createStyles(t: ReturnType<typeof useV3Theme>) {
       fontSize: 15,
       fontWeight: '700',
       textAlign: 'center',
+    },
+    // Multi-watch switcher pills (2026-08-16) - a bordered pill per attached watch, the
+    // selected one filled with Theme.primary (same selected-state language as the Appearance
+    // and nav selectors).
+    watchSwitcher: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      justifyContent: 'center',
+      gap: 8,
+      marginTop: 10,
+    },
+    watchChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+      borderWidth: 1,
+      borderRadius: 999,
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+    },
+    watchChipText: {
+      fontSize: 12,
+      fontWeight: '700',
     },
     deviceBattery: {
       flexDirection: 'row',

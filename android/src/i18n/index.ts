@@ -76,6 +76,7 @@ const fr = {
   homeConnectingAmbit: 'Connexion à la montre…',
   homeConnectRetryBtn: 'Réessayer',
   homeBleConnectBtn: 'Associer en Bluetooth (expérimental)',
+  homeBleConnectWatchBtn: (name: string) => `Connecter ${name} en Bluetooth`,
   homeBleReadyTitle: 'Prêt à associer',
   homeBleReadyMsg:
     "Sur la montre : menu « Pair Mobile App » (première association) ou « Sync now » " +
@@ -127,13 +128,8 @@ const fr = {
   loading:        'Chargement du parcours…',
   noGps:          'Aucun point GPS dans ce fichier GPX',
   readError:      'Impossible de lire le fichier GPX\n',
-  liveloxTitle:   'Connexion Livelox',
-  liveloxMsg:     "Vous allez être redirigé vers Livelox pour autoriser l'accès. Revenez ensuite dans l'app.",
   connect:        'Se connecter',
-  liveloxError:   'Erreur Livelox',
-  liveloxSuccess: 'Activité importée !',
   close:          'Fermer',
-  viewOnLivelox:  'Voir sur Livelox',
   noApiKey:       'Clé API manquante',
   noApiKeyMsg:    'Configurez votre clé API Runalyze dans les Paramètres.',
   settings:       'Paramètres',
@@ -152,7 +148,6 @@ const fr = {
   shareFit:       'Partager FIT',
   saveFitDownloads: 'Enregistrer FIT (Téléchargements)',
   uploadRunalyze: 'Upload Runalyze',
-  uploadLivelox:  'Upload Livelox',
   uploadStrava:   'Upload Strava',
   distance:       'Distance',
   duration:       'Durée',
@@ -186,11 +181,6 @@ const fr = {
   viewOnStrava:          'Voir sur Strava',
   stravaSuccess:         'Activité uploadée sur Strava !',
 
-  // SettingsScreen — Livelox
-  liveloxSettingsDesc: "Connectez votre compte Livelox pour exporter vos parcours. La connexion utilise OAuth2 PKCE.",
-  liveloxConnectedStatus: 'Compte Livelox connecté',
-  liveloxDisconnectBtn: 'Se déconnecter de Livelox',
-  liveloxDisconnected: 'Déconnecté de Livelox.',
 
   // SettingsScreen — Runalyze
   emptyKey:       'Clé vide',
@@ -234,7 +224,6 @@ const fr = {
   logListTitle:  'Activités',
   mapFallback:   'Parcours',
   settingsTitle: 'Paramètres',
-  liveloxConnected: "Connexion réussie ! Vous pouvez maintenant exporter vos activités.",
   oauthMissingCode: 'Code OAuth manquant dans le callback',
 
   // HomeScreen — bouton données GPS (SGEE/AGPS)
@@ -364,6 +353,32 @@ const fr = {
   sportModesReadBtn: 'Lire les modes sport',
   sportModesReading: 'Lecture des modes sport…',
   sportModesRefreshBtn: 'Actualiser',
+  // Création / suppression / multisport (2026-08-14, portage de tools/sport_mode_manage.py)
+  sportModesManageTitle: 'Modes sport sur la montre',
+  sportModesCounts: (used: number, max: number, multi: number, maxMulti: number) =>
+    `${used}/${max} modes · ${multi}/${maxMulti} multisport`,
+  sportModesCreateBtn: '＋ Mode sport',
+  sportModesCreateMultiBtn: '＋ Multisport',
+  sportModesMultiBadge: 'multisport',
+  sportModesUsedByBadge: (names: string) => `utilisé par ${names}`,
+  sportModesDeleteBtn: 'Supprimer',
+  sportModesDeleteTitle: 'Supprimer le mode',
+  sportModesDeleteMsg: (name: string) => `Supprimer « ${name} » de la montre ?`,
+  sportModesCreateTitle: 'Nouveau mode sport',
+  sportModesCreateMultiTitle: 'Nouveau mode multisport',
+  sportModesNamePlaceholder: 'Nom',
+  sportModesActivityLabel: 'Activité',
+  sportModesLegsLabel: 'Étapes (dans l’ordre)',
+  sportModesLegsHint: 'Touchez les modes dans l’ordre où la montre doit les enchaîner. Répétitions autorisées.',
+  sportModesLegsChosen: (legs: string) => `Ordre : ${legs}`,
+  sportModesNoLegsYet: 'Aucune étape choisie',
+  sportModesCreateConfirm: 'Créer',
+  sportModesWriteWarning:
+    '⚠️ Les écritures sur la montre ne sont pas encore testées sur matériel réel via Android. ' +
+    'Les octets envoyés sont identiques à ceux de SuuntoLink, mais faites d’abord une sauvegarde par câble.',
+  sportModesWritingStep: (step: number, total: number) => total > 1 ? `Écriture ${step}/${total}…` : 'Écriture…',
+  sportModesVerifying: 'Vérification…',
+  sportModesManageReadError: 'Impossible de lire la structure des modes sport.',
   sportModesRenameBtn: 'Renommer',
   sportModesExpandBtn: 'Détails',
   sportModesCollapseBtn: 'Masquer',
@@ -512,6 +527,108 @@ const fr = {
   backupDownloadBtn: 'Télécharger',
   backupDownloading: (pct: number) => `Téléchargement… ${pct}%`,
   backupDownloadDone: 'Sauvegarde enregistrée.',
+
+  // Totals / Calendar (2026-08-13, portage des écrans TotalsPage.qml / CalendarPage.qml)
+  totalsScreenTitle: 'Totaux',
+  totalsTitle: 'Totaux',
+  totalsEmptyNoData: "Rien à additionner pour l'instant - lisez d'abord vos activités depuis la montre et ceci se remplira.",
+  totalsEmptyYear: 'Aucune activité cette année.',
+  totalsHoursTitle: 'Heures dehors',
+  totalsHoursSubtitle: (n: number) => `Sur ${n} activité${n !== 1 ? 's' : ''} avec une trace GPS`,
+  totalsDistanceTitle: 'Distance',
+  totalsDistanceDesc: 'Les activités sont regroupées par sport automatiquement. Touchez-en une pour la mettre en avant.',
+  totalsActivitiesCount: (n: number) => `${n} activité${n !== 1 ? 's' : ''}`,
+  totalsEnergyTitle: 'Énergie dépensée',
+  totalsEnergyUnavailable: "Les calories ne sont pas encore lues depuis la montre sur Android (elles n'apparaissent pas dans le GPX). Utilisez l'app de bureau pour ce total.",
+  totalsMore: 'Bientôt plus !',
+  calendarScreenTitle: 'Calendrier',
+  calendarTitle: 'Calendrier',
+  calendarActivities: (n: number) => `${n} activité${n !== 1 ? 's' : ''}`,
+  calendarToday: "Aujourd'hui",
+  calendarLegendRest: 'Jour de repos',
+  calendarLegendActivity: 'Activité',
+
+  // Fonctionnalités expérimentales (2026-08-14) - App Zone, Intervalles, Smart Sensor
+  experimentalSection: 'Expérimental',
+  experimentalToggleLabel: 'Activer les fonctionnalités expérimentales',
+  experimentalToggleDesc:
+    'Fonctions non testées sur matériel réel via Android, à tester par câble. Faites d’abord ' +
+    'une sauvegarde. Retours communautaires bienvenus.',
+  experimentalWarningBanner:
+    '⚠️ Expérimental — non testé sur matériel réel. Connectez la montre par câble et faites ' +
+    'une sauvegarde avant d’écrire quoi que ce soit.',
+  experimentalAppZone: 'App Zone (Suunto Apps)',
+  experimentalAppZoneDesc: 'Installer des Suunto Apps sur la montre (Ambit3).',
+  experimentalIntervals: 'Séance d’intervalles',
+  experimentalIntervalsDesc: 'Créer une séance d’intervalles (Suunto App ou séance planifiée).',
+  experimentalSmartSensor: 'Smart Sensor',
+  experimentalSmartSensorDesc: 'Ceinture cardio Suunto Smart Sensor via Bluetooth.',
+  smartSensorScreenTitle: 'Smart Sensor',
+  appZoneScreenTitle: 'App Zone',
+  intervalsScreenTitle: 'Intervalles',
+  experimentalComingNote:
+    'En construction. L’écran et le pipeline de données se mettent en place ; l’installation ' +
+    'sur la montre nécessite la prochaine build native. Rien n’écrit encore sur votre montre.',
+  smartSensorScanBtn: 'Chercher la ceinture',
+  smartSensorScanning: 'Recherche…',
+  smartSensorNotFound: 'Aucun Smart Sensor trouvé. Portez la ceinture (contact peau requis) puis réessayez.',
+  smartSensorForgetBtn: 'Oublier',
+  smartSensorNativeMissing: 'Le module Bluetooth Smart Sensor n’est pas dans cette build — recompilez l’app pour l’activer.',
+  smartSensorBattery: 'Batterie',
+  smartSensorHeartRate: 'Fréquence cardiaque',
+  smartSensorNoReading: 'aucune lecture',
+  // App Zone import (2026-08-14)
+  appZoneNativeMissing: 'Le module App Zone n’est pas dans cette build — recompilez l’app.',
+  appZoneNoCatalogTitle: 'Aucun catalogue importé',
+  appZoneInstructions:
+    'AmbitApp ne distribue aucune app Suunto (contenu propriétaire). Importez votre propre ' +
+    'catalogue depuis SuuntoLink : sur l’ordinateur où SuuntoLink est installé, trouvez le ' +
+    'dossier « suunto-apps » et son fichier « index.json » (~29 Mo), copiez-le sur cet ' +
+    'appareil, puis touchez Importer.',
+  appZoneImportBtn: 'Importer depuis SuuntoLink',
+  appZoneReimportBtn: 'Ré-importer',
+  appZoneImporting: 'Importation… (cela peut prendre un moment)',
+  appZoneImported: (n: number) => `${n} apps importées`,
+  appZoneImportFailed: 'Échec de l’importation',
+  appZoneSearchPlaceholder: 'Rechercher des apps…',
+  appZoneAppsCount: (n: number) => `${n} apps`,
+  appZoneInstallNote: 'Touchez une app pour l’installer sur un écran de mode sport.',
+  appZoneInstallTitle: (name: string) => `Installer « ${name} »`,
+  appZonePickMode: 'Choisir un mode sport',
+  appZonePickScreen: 'Choisir un écran',
+  appZonePickField: 'Choisir le champ à partager avec l’app',
+  appZoneReadingModes: 'Lecture des modes sport…',
+  appZoneNoRealScreens: 'Ce mode n’a aucun écran modifiable.',
+  appZoneInstallBtn: 'Installer',
+  appZoneInstalling: 'Installation…',
+  appZoneInstalledMsg: 'App installée.',
+  appZoneScreenLabel: (n: number) => `Écran ${n}`,
+  // Intervals (2026-08-14)
+  intervalsWarning:
+    '⚠️ Expérimental. La compilation utilise un compilateur communautaire tiers (pas Suunto). ' +
+    'L’installation sur la montre n’est pas confirmée sur du matériel. Faites une sauvegarde.',
+  intervalsAppSection: 'Séance d’intervalles (Suunto App)',
+  intervalsAppDesc: 'Construire → compiler (en ligne) → installer sur un écran.',
+  intervalsWarmup: 'Échauffement (min)',
+  intervalsReps: 'Répétitions',
+  intervalsWork: 'Effort (min)',
+  intervalsRest: 'Récup (min)',
+  intervalsCooldown: 'Retour au calme (min)',
+  intervalsCompileInstall: 'Compiler et installer',
+  intervalsCompiling: 'Compilation…',
+  intervalsGenerateBtn: 'Copier la source et ouvrir le compilateur',
+  intervalsImportBtn: 'Importer l’app compilée',
+  intervalsSourceCopiedMsg: 'Le site du compilateur s’est ouvert et la source est affichée ci-dessous. Sélectionnez-la, copiez-la sur le site, compilez, téléchargez le résultat, puis touchez « Importer l’app compilée ».',
+  intervalsSourceLabel: 'Source de la séance — sélectionnez tout, copiez, collez sur le site du compilateur.',
+  intervalsCompilerNote: 'La compilation se fait sur un site communautaire tiers (ni Suunto, ni nous). AmbitApp génère seulement la source et ouvre le site ; vous compilez là-bas et importez le résultat.',
+  intervalsPlannedSection: 'Séance planifiée (natif)',
+  intervalsPlannedDesc: 'Format non confirmé — peut ne pas apparaître sur la montre.',
+  intervalsName: 'Nom',
+  intervalsDuration: 'Durée (min)',
+  intervalsIntensity: 'Intensité (1-5)',
+  intervalsWriteBtn: 'Écrire sur la montre',
+  intervalsWritten: 'Écrit sur la montre.',
+  intervalsWriting: 'Écriture…',
 };
 
 const en: typeof fr = {
@@ -566,6 +683,7 @@ const en: typeof fr = {
   homeConnectingAmbit: 'Connecting to watch…',
   homeConnectRetryBtn: 'Retry',
   homeBleConnectBtn: 'Pair via Bluetooth (experimental)',
+  homeBleConnectWatchBtn: (name: string) => `Connect ${name} via Bluetooth`,
   homeBleReadyTitle: 'Ready to pair',
   homeBleReadyMsg:
     "On the watch: menu \"Pair Mobile App\" (first pairing) or \"Sync now\" (already " +
@@ -615,13 +733,8 @@ const en: typeof fr = {
   loading:        'Loading track…',
   noGps:          'No GPS points in this GPX file',
   readError:      'Cannot read GPX file\n',
-  liveloxTitle:   'Livelox Login',
-  liveloxMsg:     'You will be redirected to Livelox to authorize access. Come back to the app afterwards.',
   connect:        'Log in',
-  liveloxError:   'Livelox Error',
-  liveloxSuccess: 'Activity imported!',
   close:          'Close',
-  viewOnLivelox:  'View on Livelox',
   noApiKey:       'API key missing',
   noApiKeyMsg:    'Configure your Runalyze API key in Settings.',
   settings:       'Settings',
@@ -640,7 +753,6 @@ const en: typeof fr = {
   shareFit:       'Share FIT',
   saveFitDownloads: 'Save FIT to Downloads',
   uploadRunalyze: 'Upload to Runalyze',
-  uploadLivelox:  'Upload to Livelox',
   uploadStrava:   'Upload to Strava',
   distance:       'Distance',
   duration:       'Duration',
@@ -651,10 +763,6 @@ const en: typeof fr = {
   replayTime:     'Replay (time)',
   replayDist:     'Replay (distance)',
 
-  liveloxSettingsDesc: 'Connect your Livelox account to export your tracks. The connection uses OAuth2 PKCE.',
-  liveloxConnectedStatus: 'Livelox account connected',
-  liveloxDisconnectBtn: 'Disconnect from Livelox',
-  liveloxDisconnected: 'Disconnected from Livelox.',
 
   emptyKey:       'Empty key',
   emptyKeyMsg:    'Enter your Runalyze API key.',
@@ -694,7 +802,6 @@ const en: typeof fr = {
   logListTitle:  'Activities',
   mapFallback:   'Track',
   settingsTitle: 'Settings',
-  liveloxConnected: 'Connected! You can now export your activities.',
   oauthMissingCode: 'OAuth code missing in callback',
 
   // SettingsScreen — Appearance
@@ -842,6 +949,32 @@ const en: typeof fr = {
   sportModesReadBtn: 'Read Sport Modes',
   sportModesReading: 'Reading sport modes...',
   sportModesRefreshBtn: 'Refresh',
+  // Create / delete / multisport (2026-08-14, port of tools/sport_mode_manage.py)
+  sportModesManageTitle: 'Sport modes on the watch',
+  sportModesCounts: (used: number, max: number, multi: number, maxMulti: number) =>
+    `${used}/${max} modes · ${multi}/${maxMulti} multisport`,
+  sportModesCreateBtn: '＋ Sport mode',
+  sportModesCreateMultiBtn: '＋ Multisport',
+  sportModesMultiBadge: 'multisport',
+  sportModesUsedByBadge: (names: string) => `used by ${names}`,
+  sportModesDeleteBtn: 'Delete',
+  sportModesDeleteTitle: 'Delete sport mode',
+  sportModesDeleteMsg: (name: string) => `Delete “${name}” from the watch?`,
+  sportModesCreateTitle: 'New sport mode',
+  sportModesCreateMultiTitle: 'New multisport mode',
+  sportModesNamePlaceholder: 'Name',
+  sportModesActivityLabel: 'Activity',
+  sportModesLegsLabel: 'Legs (in order)',
+  sportModesLegsHint: 'Tap modes in the order the watch should step through them. Repeats allowed.',
+  sportModesLegsChosen: (legs: string) => `Order: ${legs}`,
+  sportModesNoLegsYet: 'No legs chosen yet',
+  sportModesCreateConfirm: 'Create',
+  sportModesWriteWarning:
+    "⚠️ Writing to the watch isn't hardware-tested on Android yet. The bytes sent are " +
+    "identical to SuuntoLink's, but take a cable backup first.",
+  sportModesWritingStep: (step: number, total: number) => total > 1 ? `Writing ${step}/${total}...` : 'Writing...',
+  sportModesVerifying: 'Verifying...',
+  sportModesManageReadError: 'Could not read the sport-mode structure.',
   sportModesRenameBtn: 'Rename',
   sportModesExpandBtn: 'Details',
   sportModesCollapseBtn: 'Hide',
@@ -987,6 +1120,107 @@ const en: typeof fr = {
   backupDownloadBtn: 'Download',
   backupDownloading: (pct: number) => `Downloading… ${pct}%`,
   backupDownloadDone: 'Backup saved.',
+
+  // Totals / Calendar (2026-08-13, port of TotalsPage.qml / CalendarPage.qml)
+  totalsScreenTitle: 'Totals',
+  totalsTitle: 'Totals',
+  totalsEmptyNoData: 'Nothing to add up yet - read your activities off the watch first and this fills in.',
+  totalsEmptyYear: 'No activities in this year.',
+  totalsHoursTitle: 'Hours outside',
+  totalsHoursSubtitle: (n: number) => `Across ${n} activit${n !== 1 ? 'ies' : 'y'} with a GPS track`,
+  totalsDistanceTitle: 'Distance',
+  totalsDistanceDesc: 'Activities are grouped by sport automatically. Tap one to feature it.',
+  totalsActivitiesCount: (n: number) => `${n} activit${n !== 1 ? 'ies' : 'y'}`,
+  totalsEnergyTitle: 'Energy spent',
+  totalsEnergyUnavailable: "Calories aren't read off the watch on Android yet (they aren't in the GPX). Use the desktop app for this total.",
+  totalsMore: 'More to come!',
+  calendarScreenTitle: 'Calendar',
+  calendarTitle: 'Calendar',
+  calendarActivities: (n: number) => `${n} activit${n !== 1 ? 'ies' : 'y'}`,
+  calendarToday: 'Today',
+  calendarLegendRest: 'Rest day',
+  calendarLegendActivity: 'Activity',
+
+  // Experimental features (2026-08-14) - App Zone, Intervals, Smart Sensor
+  experimentalSection: 'Experimental',
+  experimentalToggleLabel: 'Enable experimental features',
+  experimentalToggleDesc:
+    "Features not hardware-tested on Android yet, to test over cable. Back up first. " +
+    'Community feedback welcome.',
+  experimentalWarningBanner:
+    '⚠️ Experimental — not hardware-tested. Connect the watch by cable and take a backup ' +
+    'before writing anything.',
+  experimentalAppZone: 'App Zone (Suunto Apps)',
+  experimentalAppZoneDesc: 'Install Suunto Apps onto the watch (Ambit3).',
+  experimentalIntervals: 'Intervals workout',
+  experimentalIntervalsDesc: 'Build an interval workout (Suunto App or a planned move).',
+  experimentalSmartSensor: 'Smart Sensor',
+  experimentalSmartSensorDesc: 'Suunto Smart Sensor heart-rate belt over Bluetooth.',
+  smartSensorScreenTitle: 'Smart Sensor',
+  appZoneScreenTitle: 'App Zone',
+  intervalsScreenTitle: 'Intervals',
+  experimentalComingNote:
+    'Under construction. The screen and data pipeline are being built; installing to the ' +
+    'watch needs the next native build. Nothing here writes to your watch yet.',
+  smartSensorScanBtn: 'Scan for belt',
+  smartSensorScanning: 'Scanning...',
+  smartSensorNotFound: 'No Smart Sensor found. Put the belt on (needs skin contact to advertise) and try again.',
+  smartSensorForgetBtn: 'Forget',
+  smartSensorNativeMissing: "The Smart Sensor Bluetooth module isn't in this build yet - rebuild the app to enable it.",
+  smartSensorBattery: 'Battery',
+  smartSensorHeartRate: 'Heart rate',
+  smartSensorNoReading: 'no reading',
+  // App Zone import (2026-08-14)
+  appZoneNativeMissing: "The App Zone module isn't in this build yet - rebuild the app.",
+  appZoneNoCatalogTitle: 'No catalog imported',
+  appZoneInstructions:
+    'AmbitApp ships no Suunto apps (proprietary content). Import your own catalog from ' +
+    'SuuntoLink: on the computer where SuuntoLink is installed, find the "suunto-apps" folder ' +
+    'and its "index.json" file (~29 MB), copy it to this device, then tap Import.',
+  appZoneImportBtn: 'Import from SuuntoLink',
+  appZoneReimportBtn: 'Re-import',
+  appZoneImporting: 'Importing... (this can take a moment)',
+  appZoneImported: (n: number) => `${n} apps imported`,
+  appZoneImportFailed: 'Import failed',
+  appZoneSearchPlaceholder: 'Search apps...',
+  appZoneAppsCount: (n: number) => `${n} apps`,
+  appZoneInstallNote: 'Tap an app to install it onto a sport-mode screen.',
+  appZoneInstallTitle: (name: string) => `Install "${name}"`,
+  appZonePickMode: 'Choose a sport mode',
+  appZonePickScreen: 'Choose a screen',
+  appZonePickField: 'Choose a field to share with the app',
+  appZoneReadingModes: 'Reading sport modes...',
+  appZoneNoRealScreens: 'This mode has no editable screens.',
+  appZoneInstallBtn: 'Install',
+  appZoneInstalling: 'Installing...',
+  appZoneInstalledMsg: 'App installed.',
+  appZoneScreenLabel: (n: number) => `Screen ${n}`,
+  // Intervals (2026-08-14)
+  intervalsWarning:
+    '⚠️ Experimental. Compiling uses a third-party community compiler (not Suunto). Installing ' +
+    'onto the watch is not hardware-confirmed. Take a backup first.',
+  intervalsAppSection: 'Interval workout (Suunto App)',
+  intervalsAppDesc: 'Build → compile (online) → install onto a screen.',
+  intervalsWarmup: 'Warm-up (min)',
+  intervalsReps: 'Repeats',
+  intervalsWork: 'Work (min)',
+  intervalsRest: 'Rest (min)',
+  intervalsCooldown: 'Cool-down (min)',
+  intervalsCompileInstall: 'Compile & install',
+  intervalsCompiling: 'Compiling...',
+  intervalsGenerateBtn: 'Copy source & open compiler',
+  intervalsImportBtn: 'Import compiled app',
+  intervalsSourceCopiedMsg: 'The compiler site opened and the source is shown below. Select it, copy it into the site, compile, download the result, then tap "Import compiled app".',
+  intervalsSourceLabel: 'Workout source - select all, copy, and paste into the compiler site.',
+  intervalsCompilerNote: 'Compiling runs on a third-party community site (not Suunto, not us). AmbitApp only generates the source and opens the site; you compile there and import the result.',
+  intervalsPlannedSection: 'Planned move (native)',
+  intervalsPlannedDesc: 'Format unconfirmed - may not appear on the watch.',
+  intervalsName: 'Name',
+  intervalsDuration: 'Duration (min)',
+  intervalsIntensity: 'Intensity (1-5)',
+  intervalsWriteBtn: 'Write to watch',
+  intervalsWritten: 'Written to the watch.',
+  intervalsWriting: 'Writing...',
 };
 
 // Forced to English regardless of device locale (was `isFrench ? fr : en`,

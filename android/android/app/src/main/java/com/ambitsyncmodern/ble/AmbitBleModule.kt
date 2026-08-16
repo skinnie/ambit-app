@@ -133,6 +133,22 @@ class AmbitBleModule(private val reactContext: ReactApplicationContext) :
     // on AmbitUsbModule work exactly as over USB — same shared native g_device.
     @ReactMethod
     fun scanAndConnect(promise: Promise) {
+        scanTargetAddress = null
+        beginScan(promise)
+    }
+
+    // Multi-watch switcher (2026-08-16). Like scanAndConnect(), but only connects to the one
+    // bonded watch at `address` (from listBondedWatches()). With more than one paired watch in
+    // range, the plain scan would grab whichever solicited first; this pins it to the picked
+    // one. The user still triggers "Sync now"/"Pair Mobile App" on that watch to open its
+    // short advertising window (the watch is the GATT client that connects into our server).
+    @ReactMethod
+    fun scanAndConnectTo(address: String?, promise: Promise) {
+        scanTargetAddress = if (address.isNullOrEmpty()) null else address
+        beginScan(promise)
+    }
+
+    private fun beginScan(promise: Promise) {
         // Arm the native RX stash now — before we scan/connect, and therefore
         // before the watch can write its opening frame. Any bytes that arrive
         // before nativeAmbitBleInit publishes g_device get parked and replayed
@@ -147,6 +163,39 @@ class AmbitBleModule(private val reactContext: ReactApplicationContext) :
         startScan(promise)
     }
 
+    // Every Suunto watch already bonded to this phone (BluetoothAdapter.bondedDevices), so the
+    // switcher can list paired BLE watches next to cabled USB ones. HR straps and other Suunto
+    // accessories are filtered out — only device names matching the watch family are kept.
+    @ReactMethod
+    fun listBondedWatches(promise: Promise) {
+        val out = Arguments.createArray()
+        val adapter = (reactContext.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager)?.adapter
+        if (adapter == null) { promise.resolve(out); return }
+        try {
+            for (dev in adapter.bondedDevices ?: emptySet()) {
+                val name = dev.name ?: continue
+                if (!isWatchName(name)) continue
+                val m = Arguments.createMap()
+                m.putString("address", dev.address)
+                m.putString("name", name)
+                out.pushMap(m)
+            }
+        } catch (_: SecurityException) {
+            // BLUETOOTH_CONNECT not granted yet — return whatever we have (likely empty)
+        }
+        promise.resolve(out)
+    }
+
+    // A bonded device is one of our watches if its name matches the BLE family prefixes or
+    // names a known model, but is not an HR strap / smart sensor accessory.
+    private fun isWatchName(name: String): Boolean {
+        if (name.contains("Sensor", ignoreCase = true) || name.contains("HR", ignoreCase = true)) return false
+        if (COMPATIBLE_NAME_PREFIXES.any { name.startsWith(it) }) return true
+        return listOf("Ambit", "Traverse", "Kailash").any { name.contains(it, ignoreCase = true) }
+    }
+
+    // Multi-watch switcher: when set, startScan() connects only to this device address.
+    private var scanTargetAddress: String? = null
     private var scanCallback: ScanCallback? = null
 
     private fun startScan(promise: Promise) {
@@ -200,6 +249,9 @@ class AmbitBleModule(private val reactContext: ReactApplicationContext) :
                     val name = result.device.name ?: record?.deviceName
                     val nameMatches = name != null && COMPATIBLE_NAME_PREFIXES.any { name.startsWith(it) }
                     if (!advertisesNsp && !nameMatches) return // not one of ours — ignore (unfiltered scan sees everything)
+                    // Multi-watch switcher: if the user picked a specific paired watch, ignore
+                    // any other Suunto that happens to solicit at the same time.
+                    scanTargetAddress?.let { if (result.device.address != it) return }
 
                     Log.d("AmbitBleModule", "scan match: name=$name advertisesNsp=$advertisesNsp addr=${result.device.address}")
                     mainHandler.removeCallbacks(timeoutRunnable)

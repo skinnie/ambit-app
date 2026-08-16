@@ -39,6 +39,29 @@ export function scanAndConnect(): Promise<boolean> {
   return NativeAmbitBle.scanAndConnect();
 }
 
+/** A Suunto watch already bonded (paired) to this phone over Bluetooth. */
+export interface BondedWatch {
+  address: string; // Bluetooth MAC — the stable id used by scanAndConnectTo()
+  name: string;    // the bonded device name, e.g. "Ambit3 Peak" / "Suunto Kailash"
+}
+
+/** Every paired Suunto watch, so the switcher can list BLE watches beside cabled USB ones.
+ * Guarded so an older native build (without listBondedWatches) degrades to "no paired
+ * watches" instead of throwing — a JS/native version skew must never crash the connect flow. */
+export function listBondedWatches(): Promise<BondedWatch[]> {
+  if (typeof NativeAmbitBle.listBondedWatches !== 'function') return Promise.resolve([]);
+  return NativeAmbitBle.listBondedWatches();
+}
+
+/** Like scanAndConnect(), but pins the connection to the one bonded watch at `address`
+ * (from listBondedWatches()) — for when more than one paired watch might be in range. Same
+ * "trigger Sync now on the watch first" requirement as scanAndConnect(). Falls back to the
+ * unpinned scan if the native method is missing (version skew). */
+export function scanAndConnectTo(address: string): Promise<boolean> {
+  if (typeof NativeAmbitBle.scanAndConnectTo !== 'function') return NativeAmbitBle.scanAndConnect();
+  return NativeAmbitBle.scanAndConnectTo(address);
+}
+
 export function disconnectBle(): Promise<void> {
   return NativeAmbitBle.disconnectBle();
 }

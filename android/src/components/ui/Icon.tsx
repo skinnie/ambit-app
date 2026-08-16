@@ -11,7 +11,7 @@ export type IconName =
   | 'watch' | 'etrex' | 'sun' | 'moon' | 'auto' | 'chevronLeft' | 'chevronRight'
   | 'cycling' | 'running' | 'walking'
   | 'play' | 'pause' | 'skipBack' | 'skipForward'
-  | 'download' | 'upload';
+  | 'download' | 'upload' | 'calendar' | 'bluetooth';
 
 interface Props {
   name: IconName;
@@ -98,6 +98,14 @@ export default function Icon({ name, size = 20, color = '#000' }: Props) {
           <Path d="M9.5 14.5l5-5" {...s} />
         </Svg>
       );
+    // Multi-watch switcher (2026-08-16): transport marker for a paired watch. Feather's
+    // bluetooth rune, one polyline.
+    case 'bluetooth':
+      return (
+        <Svg width={size} height={size} viewBox="0 0 24 24">
+          <Path d="M6.5 6.5 L17.5 17.5 L12 23 L12 1 L17.5 6.5 L6.5 17.5" {...s} />
+        </Svg>
+      );
     case 'map':
       return (
         <Svg width={size} height={size} viewBox="0 0 24 24">
@@ -119,6 +127,22 @@ export default function Icon({ name, size = 20, color = '#000' }: Props) {
       return (
         <Svg width={size} height={size} viewBox="0 0 24 24">
           <Path d="M3 12h4l2-7 4 14 2-7h6" {...s} />
+        </Svg>
+      );
+    // Calendar screen link (2026-08-13, desktop CalendarPage.qml parity). Same 24dp/1.9
+    // outline language as the rest of this set: a month grid with a torn-off header band.
+    case 'calendar':
+      return (
+        <Svg width={size} height={size} viewBox="0 0 24 24">
+          <Rect x={3.5} y={5} width={17} height={16} rx={2.5} stroke={color} strokeWidth={1.9} fill="none" />
+          <Line x1={3.5} y1={9.5} x2={20.5} y2={9.5} {...s} />
+          <Line x1={8} y1={3} x2={8} y2={6.5} {...s} />
+          <Line x1={16} y1={3} x2={16} y2={6.5} {...s} />
+          <Circle cx={8} cy={14} r={1.1} fill={color} stroke="none" />
+          <Circle cx={12} cy={14} r={1.1} fill={color} stroke="none" />
+          <Circle cx={16} cy={14} r={1.1} fill={color} stroke="none" />
+          <Circle cx={8} cy={17.5} r={1.1} fill={color} stroke="none" />
+          <Circle cx={12} cy={17.5} r={1.1} fill={color} stroke="none" />
         </Svg>
       );
     // Real, 2026-08-10 ("change the orange icons to something more aligned with our
