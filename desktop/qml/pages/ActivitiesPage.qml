@@ -418,20 +418,22 @@ Item {
                 TapHandler { onTapped: colMenu.popup() }
                 HoverHandler { cursorShape: Qt.PointingHandCursor }
 
-                Menu {
+                ThemedMenu {
                     id: colMenu
-                    MenuItem {
+                    ThemedMenuItem {
                         text: qsTr("Sort ascending")
                         onTriggered: { root.activitySortKey = colHeader.modelData; root.activitySortDesc = false }
                     }
-                    MenuItem {
+                    ThemedMenuItem {
                         text: qsTr("Sort descending")
                         onTriggered: { root.activitySortKey = colHeader.modelData; root.activitySortDesc = true }
                     }
-                    MenuSeparator {}
+                    MenuSeparator {
+                        contentItem: Rectangle { implicitHeight: 1; color: Theme.mutedText; opacity: 0.3 }
+                    }
                     Repeater {
                         model: root.availableMetricsFor(colHeader.index)
-                        delegate: MenuItem {
+                        delegate: ThemedMenuItem {
                             required property var modelData
                             text: modelData.label
                             checkable: true
@@ -439,8 +441,10 @@ Item {
                             onTriggered: root.setColumn(colHeader.index, modelData.key)
                         }
                     }
-                    MenuSeparator {}
-                    MenuItem {
+                    MenuSeparator {
+                        contentItem: Rectangle { implicitHeight: 1; color: Theme.mutedText; opacity: 0.3 }
+                    }
+                    ThemedMenuItem {
                         text: qsTr("Remove column")
                         enabled: root.columns.length > 1
                         onTriggered: root.removeColumn(colHeader.index)

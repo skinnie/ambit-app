@@ -112,6 +112,8 @@ qt_add_qml_module(ambitapp
         qml/pages/CalendarPage.qml
         qml/components/Icon.qml
         qml/components/RoundedComboBox.qml
+        qml/components/ThemedMenu.qml
+        qml/components/ThemedMenuItem.qml
         qml/components/RoundedButton.qml
         qml/components/RoundedSlider.qml
         qml/components/RoundedTextField.qml
