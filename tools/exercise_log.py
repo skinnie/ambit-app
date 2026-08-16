@@ -612,6 +612,25 @@ def to_gpx(header, samples):
         # the watch already had it, it was simply never carried through.
         f'      <energy>{header["energy_consumption"]}</energy>',
         f'      <sport_type>{header["activity_type"]}</sport_type>',
+        # Richer summary metrics the watch already records in its log header (André,
+        # 2026-08-16: "show whatever is available from the file... pace? swolf?"). All were
+        # parsed by parse_log_header() but never carried through to the app; emitted here so
+        # the Activities list can offer them as selectable columns. Units are the watch's raw
+        # header units; the app converts to the user's unit setting for display:
+        #   hr = bpm, cadence = rpm/spm, speed = m/h (metres per hour), descent = m,
+        #   recovery = seconds, peak_training_effect = value*10 (so 35 -> 3.5),
+        #   pool_lengths = count, max_altitude = m.
+        f'      <avg_hr>{header["heartrate_avg"]}</avg_hr>',
+        f'      <max_hr>{header["heartrate_max"]}</max_hr>',
+        f'      <avg_cadence>{header["cadence_avg"]}</avg_cadence>',
+        f'      <max_cadence>{header["cadence_max"]}</max_cadence>',
+        f'      <avg_speed>{header["speed_avg_mh"]}</avg_speed>',
+        f'      <max_speed>{header["speed_max_mh"]}</max_speed>',
+        f'      <descent>{header["descent"]}</descent>',
+        f'      <recovery_time>{header["recovery_time_ms"] // 1000}</recovery_time>',
+        f'      <peak_training_effect>{header["peak_training_effect"]}</peak_training_effect>',
+        f'      <pool_lengths>{header["swimming_pool_lengths"]}</pool_lengths>',
+        f'      <max_altitude>{header["altitude_max"]}</max_altitude>',
         '    </extensions>',
         '  <trkseg>',
     ]

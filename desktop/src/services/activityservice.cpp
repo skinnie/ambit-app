@@ -50,6 +50,19 @@ QVariantMap ActivityService::parseGpx(const QString &gpxText)
     result[QStringLiteral("energyKcal")] = 0;
     result[QStringLiteral("sportTypeRaw")] = -1;
     result[QStringLiteral("startTime")] = QString();
+    // Richer summary metrics carried through from the watch log header (exercise_log.py).
+    // -1 / 0 mean "not recorded" so the UI can hide the figure rather than show a false 0.
+    result[QStringLiteral("avgHr")] = 0;
+    result[QStringLiteral("maxHr")] = 0;
+    result[QStringLiteral("avgCadence")] = 0;
+    result[QStringLiteral("maxCadence")] = 0;
+    result[QStringLiteral("avgSpeedMh")] = 0;     // metres/hour, watch's own unit
+    result[QStringLiteral("maxSpeedMh")] = 0;
+    result[QStringLiteral("descentMeters")] = 0;
+    result[QStringLiteral("recoverySeconds")] = 0;
+    result[QStringLiteral("peakTrainingEffect")] = 0;   // value*10 (35 -> 3.5)
+    result[QStringLiteral("poolLengths")] = 0;
+    result[QStringLiteral("maxAltitudeMeters")] = 0;
 
     QVariantList track;
     QXmlStreamReader xml(gpxText);
@@ -100,9 +113,49 @@ QVariantMap ActivityService::parseGpx(const QString &gpxText)
                 result[QStringLiteral("energyKcal")] = text.toInt();
             } else if (inExtensions && currentTag == QStringLiteral("sport_type")) {
                 result[QStringLiteral("sportTypeRaw")] = text.toInt();
+            } else if (inExtensions && currentTag == QStringLiteral("avg_hr")) {
+                result[QStringLiteral("avgHr")] = text.toInt();
+            } else if (inExtensions && currentTag == QStringLiteral("max_hr")) {
+                result[QStringLiteral("maxHr")] = text.toInt();
+            } else if (inExtensions && currentTag == QStringLiteral("avg_cadence")) {
+                result[QStringLiteral("avgCadence")] = text.toInt();
+            } else if (inExtensions && currentTag == QStringLiteral("max_cadence")) {
+                result[QStringLiteral("maxCadence")] = text.toInt();
+            } else if (inExtensions && currentTag == QStringLiteral("avg_speed")) {
+                result[QStringLiteral("avgSpeedMh")] = text.toDouble();
+            } else if (inExtensions && currentTag == QStringLiteral("max_speed")) {
+                result[QStringLiteral("maxSpeedMh")] = text.toDouble();
+            } else if (inExtensions && currentTag == QStringLiteral("descent")) {
+                result[QStringLiteral("descentMeters")] = text.toDouble();
+            } else if (inExtensions && currentTag == QStringLiteral("recovery_time")) {
+                result[QStringLiteral("recoverySeconds")] = text.toInt();
+            } else if (inExtensions && currentTag == QStringLiteral("peak_training_effect")) {
+                result[QStringLiteral("peakTrainingEffect")] = text.toInt();
+            } else if (inExtensions && currentTag == QStringLiteral("pool_lengths")) {
+                result[QStringLiteral("poolLengths")] = text.toInt();
+            } else if (inExtensions && currentTag == QStringLiteral("max_altitude")) {
+                result[QStringLiteral("maxAltitudeMeters")] = text.toDouble();
             }
         }
     }
+
+    // Derived: average pace (seconds per km). Prefer the watch's own avg speed; fall back to
+    // distance/duration. 0 when there's no distance to pace against.
+    const double distM = result.value(QStringLiteral("distanceMeters")).toDouble();
+    const double durS = result.value(QStringLiteral("durationSeconds")).toDouble();
+    const double avgSpeedMh = result.value(QStringLiteral("avgSpeedMh")).toDouble();
+    double paceSecPerKm = 0;
+    if (avgSpeedMh > 0)
+        paceSecPerKm = 3600.0 * 1000.0 / avgSpeedMh;   // (s/h)*(m/km) / (m/h) = s/km
+    else if (distM > 0 && durS > 0)
+        paceSecPerKm = durS / (distM / 1000.0);
+    result[QStringLiteral("paceSecPerKm")] = paceSecPerKm;
+
+    // If the watch didn't record an average speed (older GPX, or a sport that doesn't), derive
+    // it from distance/duration so the Avg-speed column still has something to show. The watch's
+    // own value (moving average) is preferred when present.
+    if (avgSpeedMh <= 0 && distM > 0 && durS > 0)
+        result[QStringLiteral("avgSpeedMh")] = distM / (durS / 3600.0);
 
     result[QStringLiteral("track")] = track;
     return result;
@@ -272,6 +325,23 @@ bool ActivityService::dbLoadAll()
         parsed[QStringLiteral("track")] = trackDoc.array().toVariantList();
         parsed[QStringLiteral("gpxText")] = q.value(9).toString();
         parsed[QStringLiteral("fitBase64")] = q.value(10).toString();
+        // The richer metrics (HR/cadence/speed/pace/descent/…) aren't stored as their own DB
+        // columns - re-parse the cached GPX text for them so the configurable Activities
+        // columns work offline too, without a schema migration. Cheap: a local in-memory
+        // string parse, and the extras just merge onto the fast DB core fields above.
+        const QString gpx = q.value(9).toString();
+        if (!gpx.isEmpty()) {
+            const QVariantMap extra = parseGpx(gpx);
+            for (const QString &key : {
+                     QStringLiteral("avgHr"), QStringLiteral("maxHr"),
+                     QStringLiteral("avgCadence"), QStringLiteral("maxCadence"),
+                     QStringLiteral("avgSpeedMh"), QStringLiteral("maxSpeedMh"),
+                     QStringLiteral("descentMeters"), QStringLiteral("recoverySeconds"),
+                     QStringLiteral("peakTrainingEffect"), QStringLiteral("poolLengths"),
+                     QStringLiteral("maxAltitudeMeters"), QStringLiteral("paceSecPerKm") }) {
+                parsed[key] = extra.value(key);
+            }
+        }
         m_activities.append(parsed);
     }
     m_showingCachedData = !m_activities.isEmpty();

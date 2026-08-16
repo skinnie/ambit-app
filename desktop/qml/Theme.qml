@@ -41,12 +41,25 @@ QtObject {
         // André, 2026-08-16: the same independent map/list choice for Routes and POIs.
         property string routesView: "map"
         property string poisView: "map"
+        // Configurable Activities list-view columns (André, 2026-08-16): a comma-separated
+        // ordered list of metric keys (see ActivityMetrics.qml). Default matches the original
+        // four fixed columns; the user adds/changes columns via the header dropdowns + "+".
+        property string activityColumns: "distance,duration,ascent,calories"
     }
 
     // "map" (cards with a track thumbnail, the original) or "list" (rows, no maps).
     property alias activitiesView: settingsId.activitiesView
     property alias routesView: settingsId.routesView
     property alias poisView: settingsId.poisView
+    property alias activityColumns: settingsId.activityColumns
+
+    // Convenience: the column keys as a real array, and a setter that writes them back as CSV.
+    function activityColumnList() {
+        return activityColumns.length > 0 ? activityColumns.split(",") : []
+    }
+    function setActivityColumns(keys) {
+        activityColumns = keys.join(",")
+    }
 
     readonly property bool isDark: {
         if (override === "light") return false;

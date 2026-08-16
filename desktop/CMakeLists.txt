@@ -48,6 +48,9 @@ set_source_files_properties(qml/ActivityTypes.qml PROPERTIES
 set_source_files_properties(qml/WatchUnits.qml PROPERTIES
     QT_QML_SINGLETON_TYPE true
 )
+set_source_files_properties(qml/ActivityMetrics.qml PROPERTIES
+    QT_QML_SINGLETON_TYPE true
+)
 set_source_files_properties(qml/TotalsFacts.qml PROPERTIES
     QT_QML_SINGLETON_TYPE true
 )
@@ -97,6 +100,7 @@ qt_add_qml_module(ambitapp
         qml/components/DemoDevicePicker.qml
         qml/components/LoadingPill.qml
         qml/WatchUnits.qml
+        qml/ActivityMetrics.qml
         qml/TotalsFacts.qml
         qml/NavBus.qml
         qml/SunTimes.qml

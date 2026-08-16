@@ -117,4 +117,26 @@ QtObject {
     function energy(kcal) {
         return qsTr("%1 kcal").arg(Math.round(kcal))
     }
+
+    // Speed and pace follow the DISTANCE unit choice (km<->mi), like every other distance-
+    // based figure. Input is metres/hour (the watch log header's own avg/max-speed unit) for
+    // speed, and seconds/km for pace. Added 2026-08-16 for the configurable Activities columns.
+    function speed(metersPerHour) {
+        if (imperialDistance)
+            return qsTr("%1 mph").arg((metersPerHour / 1609.344).toFixed(1))
+        return qsTr("%1 km/h").arg((metersPerHour / 1000).toFixed(1))
+    }
+
+    function pace(secondsPerKm) {
+        if (secondsPerKm <= 0)
+            return ""
+        // Convert to per-mile when the watch shows miles.
+        const perUnit = imperialDistance ? secondsPerKm * 1.609344 : secondsPerKm
+        const m = Math.floor(perUnit / 60)
+        const s = Math.round(perUnit % 60)
+        const mm = (s === 60) ? m + 1 : m
+        const ss = (s === 60) ? 0 : s
+        return qsTr("%1:%2 /%3").arg(mm).arg(String(ss).padStart(2, "0"))
+                                .arg(imperialDistance ? qsTr("mi") : qsTr("km"))
+    }
 }

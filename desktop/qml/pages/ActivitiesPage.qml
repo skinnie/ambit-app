@@ -10,24 +10,72 @@ Item {
     id: root
     property var selectedActivity: null
 
-    // In-page sort (André, 2026-08-16: "add option to sort by: last uploaded, name, distance,
-    // ascent"). "uploaded" = newest first, which is the list's existing default order (the
-    // backend returns activities most-recent-first); the others sort a copy so selection (by
-    // object, not index) is unaffected. UNTESTED on desktop - written without a Qt build to
-    // verify against; the logic is correct-by-construction, the layout needs a real look.
+    // In-page sort. `activitySortKey` is "uploaded" (backend order, newest first), "name", or
+    // any ActivityMetrics key (distance/pace/avgHr/…). Sorting a COPY keeps selection (by
+    // object, not index) unaffected.
     property string activitySortKey: "uploaded"
+    property bool activitySortDesc: true
     readonly property var sortedActivities: {
         var list = (root.activeActivities || []).slice()
         var key = root.activitySortKey
-        if (key === "name")
-            list.sort(function(a, b) { return (a.name || "").localeCompare(b.name || "") })
-        else if (key === "distance")
-            list.sort(function(a, b) { return (b.distanceMeters || 0) - (a.distanceMeters || 0) })
-        else if (key === "ascent")
-            list.sort(function(a, b) { return (b.ascentMeters || 0) - (a.ascentMeters || 0) })
-        // "uploaded": leave the backend's own most-recent-first order as-is.
+        var desc = root.activitySortDesc
+        if (key === "uploaded") {
+            // Backend order is already most-recent-first (= desc); reverse for ascending.
+            if (!desc) list.reverse()
+        } else if (key === "name") {
+            list.sort(function(a, b) {
+                var c = (a.name || "").localeCompare(b.name || "")
+                return desc ? -c : c
+            })
+        } else {
+            list.sort(function(a, b) {
+                var c = ActivityMetrics.raw(a, key) - ActivityMetrics.raw(b, key)
+                return desc ? -c : c
+            })
+        }
         return list
     }
+
+    // The persisted, ordered column keys (reactive: re-reads when Theme.activityColumns
+    // changes). Helpers below add/replace/remove columns, keeping them duplicate-free.
+    readonly property var columns: { Theme.activityColumns; return Theme.activityColumnList() }
+    function _columnsUsedExcept(idx) {
+        var used = []
+        for (var i = 0; i < columns.length; i++) if (i !== idx) used.push(columns[i])
+        return used
+    }
+    function setColumn(idx, key) {
+        var c = columns.slice(); c[idx] = key; Theme.setActivityColumns(c)
+    }
+    function removeColumn(idx) {
+        if (columns.length <= 1) return
+        var c = columns.slice(); c.splice(idx, 1); Theme.setActivityColumns(c)
+    }
+    function addColumn() {
+        // First catalogue metric not already shown.
+        for (var i = 0; i < ActivityMetrics.all.length; i++) {
+            var k = ActivityMetrics.all[i].key
+            if (columns.indexOf(k) === -1) { Theme.setActivityColumns(columns.concat([k])); return }
+        }
+    }
+    function sortByColumn(key) {
+        // Same column again toggles direction; a new column starts descending (largest first,
+        // the useful default for distance/HR/etc.).
+        if (activitySortKey === key) activitySortDesc = !activitySortDesc
+        else { activitySortKey = key; activitySortDesc = true }
+    }
+    // Catalogue entries a given column may switch to: everything NOT already used by ANOTHER
+    // column (its own current metric stays, so it shows checked) - keeps columns duplicate-free.
+    function availableMetricsFor(idx) {
+        var used = _columnsUsedExcept(idx)
+        var out = []
+        for (var i = 0; i < ActivityMetrics.all.length; i++) {
+            var m = ActivityMetrics.all[i]
+            if (used.indexOf(m.key) === -1) out.push(m)
+        }
+        return out
+    }
+    readonly property bool canAddColumn: columns.length < ActivityMetrics.all.length
 
     // Real, 2026-08-08 ("activities, just import the ones on the garmin device") - this
     // page is device-aware rather than duplicated: same grid/detail UI either way, sourced
@@ -291,7 +339,7 @@ Item {
                 color: root.activitySortKey === modelData.key ? Theme.primary : Theme.mutedText
                 font.pixelSize: Theme.fontSizeCaption
                 font.bold: root.activitySortKey === modelData.key
-                TapHandler { onTapped: root.activitySortKey = modelData.key }
+                TapHandler { onTapped: root.sortByColumn(modelData.key) }
                 HoverHandler { cursorShape: Qt.PointingHandCursor }
             }
         }
@@ -320,56 +368,104 @@ Item {
 
         Item { width: 32; height: 1 }   // over the activity badge
 
-        // Over the name/date column (name bold on top, date below) - "Name" and "Last uploaded".
-        Column {
+        // Over the name/date column - no label now (André: "remove name/last uploaded"),
+        // just a spacer so the metric columns keep lining up with the data.
+        Item {
             anchors.verticalCenter: parent.verticalCenter
             width: activitiesHeader.width * 0.42
-            spacing: 1
-            Text {
-                text: qsTr("Name")
-                color: root.activitySortKey === "name" ? Theme.primary : Theme.mutedText
-                font.pixelSize: Theme.fontSizeCaption
-                font.bold: root.activitySortKey === "name"
-                TapHandler { onTapped: root.activitySortKey = "name" }
+            height: 1
+        }
+
+        // One dropdown per configured metric column. Clicking opens a menu to sort by it or
+        // change which metric it shows (excluding metrics already in another column, so no
+        // duplicates). The active-sort column is highlighted with a direction arrow.
+        Repeater {
+            model: root.columns
+            delegate: Item {
+                id: colHeader
+                required property var modelData   // metric key
+                required property int index
+                readonly property bool active: root.activitySortKey === modelData
+                anchors.verticalCenter: parent.verticalCenter
+                width: ActivityMetrics.widthFor(modelData)
+                height: 26
+
+                Row {
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 3
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: ActivityMetrics.labelFor(colHeader.modelData)
+                        color: colHeader.active ? Theme.primary : Theme.mutedText
+                        font.pixelSize: Theme.fontSizeCaption
+                        font.bold: colHeader.active
+                    }
+                    Text {   // sort-direction arrow, only on the active column
+                        anchors.verticalCenter: parent.verticalCenter
+                        visible: colHeader.active
+                        text: root.activitySortDesc ? "↓" : "↑"
+                        color: Theme.primary
+                        font.pixelSize: Theme.fontSizeCaption
+                    }
+                    Text {   // dropdown caret
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: "▾"
+                        color: colHeader.active ? Theme.primary : Theme.mutedText
+                        font.pixelSize: Theme.fontSizeCaption
+                    }
+                }
+                TapHandler { onTapped: colMenu.popup() }
                 HoverHandler { cursorShape: Qt.PointingHandCursor }
-            }
-            Text {
-                text: qsTr("Last uploaded")
-                color: root.activitySortKey === "uploaded" ? Theme.primary : Theme.mutedText
-                font.pixelSize: Theme.fontSizeCaption
-                font.bold: root.activitySortKey === "uploaded"
-                TapHandler { onTapped: root.activitySortKey = "uploaded" }
-                HoverHandler { cursorShape: Qt.PointingHandCursor }
+
+                Menu {
+                    id: colMenu
+                    MenuItem {
+                        text: qsTr("Sort ascending")
+                        onTriggered: { root.activitySortKey = colHeader.modelData; root.activitySortDesc = false }
+                    }
+                    MenuItem {
+                        text: qsTr("Sort descending")
+                        onTriggered: { root.activitySortKey = colHeader.modelData; root.activitySortDesc = true }
+                    }
+                    MenuSeparator {}
+                    Repeater {
+                        model: root.availableMetricsFor(colHeader.index)
+                        delegate: MenuItem {
+                            required property var modelData
+                            text: modelData.label
+                            checkable: true
+                            checked: modelData.key === colHeader.modelData
+                            onTriggered: root.setColumn(colHeader.index, modelData.key)
+                        }
+                    }
+                    MenuSeparator {}
+                    MenuItem {
+                        text: qsTr("Remove column")
+                        enabled: root.columns.length > 1
+                        onTriggered: root.removeColumn(colHeader.index)
+                    }
+                }
             }
         }
 
-        Repeater {
-            model: [
-                { label: qsTr("Distance"), key: "distance", w: 96 },
-                { label: qsTr("Duration"), key: "",         w: 96 },
-                { label: qsTr("Ascent"),   key: "ascent",   w: 88 },
-                { label: qsTr("Calories"), key: "",         w: 96 },
-            ]
-            delegate: Item {
-                required property var modelData
-                anchors.verticalCenter: parent.verticalCenter
-                width: modelData.w
-                height: 26   // taller than the text so the whole column is an easy click target
-                Text {
-                    id: hdrText
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: modelData.label
-                    color: (modelData.key.length > 0 && root.activitySortKey === modelData.key)
-                           ? Theme.primary : Theme.mutedText
-                    font.pixelSize: Theme.fontSizeCaption
-                    font.bold: modelData.key.length > 0 && root.activitySortKey === modelData.key
-                }
-                // Whole-column click target (not just the small text) - easier to hit, matches
-                // the width of the data column below it.
-                TapHandler { enabled: modelData.key.length > 0; onTapped: root.activitySortKey = modelData.key }
-                HoverHandler { enabled: modelData.key.length > 0; cursorShape: Qt.PointingHandCursor }
+        // "+" add a column - an elegant round pill (André, 2026-08-16: "an elegant + to add
+        // more field"). Adds the first metric not already shown.
+        Rectangle {
+            anchors.verticalCenter: parent.verticalCenter
+            visible: root.canAddColumn
+            width: 22; height: 22; radius: 11
+            color: addHover.hovered ? Theme.primary : "transparent"
+            border.width: 1
+            border.color: addHover.hovered ? Theme.primary : Theme.mutedText
+            Text {
+                anchors.centerIn: parent
+                text: "+"
+                color: addHover.hovered ? Theme.card : Theme.mutedText
+                font.pixelSize: Theme.fontSizeBody
             }
+            HoverHandler { id: addHover; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: root.addColumn() }
         }
     }
 

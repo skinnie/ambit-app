@@ -83,56 +83,29 @@ Rectangle {
             }
         }
 
-        // Each figure says what it is on hover - real request, 2026-08-11 (André): "when
-        // you pass the mouse over a data, say what is that data field". A row of bare
-        // numbers is only readable if you already know the column order; this makes it
-        // readable without that. The number and the unit still come from the watch's own
-        // unit setting (see WatchUnits.qml), so the hint matches what is shown.
+        // Configurable metric columns (André, 2026-08-16). The column set is Theme's own
+        // persisted list of metric keys; each figure's value + unit come from ActivityMetrics
+        // (which formats in the watch's unit setting). Widths come from the same catalogue so
+        // the header dropdowns in ActivitiesPage line up over these columns to the pixel. Blank
+        // (not a false 0) for a move that never recorded the metric - see ActivityMetrics.value.
         Repeater {
-            model: [
-                {
-                    text: root.activity
-                          ? ActivityViewModel.formatDistance(root.activity.distanceMeters) : "",
-                    hint: qsTr("This was your distance"),
-                    muted: false, w: 96
-                },
-                {
-                    text: root.activity
-                          ? ActivityViewModel.formatDuration(root.activity.durationSeconds) : "",
-                    hint: qsTr("This was the duration"),
-                    muted: false, w: 96
-                },
-                {
-                    text: root.activity
-                          ? ActivityViewModel.formatElevation(root.activity.ascentMeters) : "",
-                    hint: qsTr("This is your ascent"),
-                    muted: true, w: 88
-                },
-                {
-                    // Blank for a move with no recorded energy rather than a false "0 kcal"
-                    // - an activity cached before this field was carried through has none.
-                    text: root.activity
-                          ? ActivityViewModel.formatEnergy(root.activity.energyKcal) : "",
-                    hint: qsTr("This is the energy you spent"),
-                    muted: true, w: 96
-                },
-            ]
+            model: Theme.activityColumnList()
             delegate: Item {
-                required property var modelData
+                required property var modelData   // a metric key, e.g. "distance"
                 anchors.verticalCenter: parent.verticalCenter
-                width: modelData.w
+                width: ActivityMetrics.widthFor(modelData)
                 height: figure.implicitHeight
 
                 Text {
                     id: figure
                     anchors.right: parent.right
-                    text: modelData.text
-                    color: modelData.muted ? Theme.mutedText : Theme.text
+                    text: root.activity ? ActivityMetrics.value(root.activity, modelData) : ""
+                    color: Theme.text
                     font.pixelSize: Theme.fontSizeBody
                 }
                 HoverHandler { id: figureHover }
-                ToolTip.visible: figureHover.hovered && modelData.text.length > 0
-                ToolTip.text: modelData.hint
+                ToolTip.visible: figureHover.hovered && figure.text.length > 0
+                ToolTip.text: ActivityMetrics.labelFor(modelData)
                 ToolTip.delay: 300
             }
         }
