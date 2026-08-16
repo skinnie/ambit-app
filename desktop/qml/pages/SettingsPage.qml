@@ -680,8 +680,16 @@ PageFlickable {
                         // to build an editor from.
                         Text {
                             visible: settingRow.control === "readonly" || !settingRow.editable
-                            text: settingRow.item.value + (settingRow.unitSuffix.length
-                                                           ? " " + settingRow.unitSuffix : "")
+                            // For an enum field (e.g. a locked unit that follows the units mode),
+                            // show its choice LABEL - "hPa"/"km"/"°C" - not the raw index 0, which
+                            // read as "zeros on the units" (André, 2026-08-17).
+                            text: {
+                                for (let i = 0; i < settingRow.choices.length; i++)
+                                    if (settingRow.choices[i].value === settingRow.item.value)
+                                        return settingRow.choices[i].label
+                                return settingRow.item.value + (settingRow.unitSuffix.length
+                                                                ? " " + settingRow.unitSuffix : "")
+                            }
                             color: Theme.mutedText
                             font.pixelSize: Theme.fontSizeBody
                         }
