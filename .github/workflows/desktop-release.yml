@@ -1,0 +1,112 @@
+# Builds the DESKTOP app (the Qt/QML one) into finished, downloadable files for
+# ordinary users: a Windows .zip (with a double-click .exe inside) and a macOS .dmg.
+#
+# You never run this yourself. GitHub lends us a real Windows PC and a real Mac in the
+# cloud; this recipe tells each of them to build the app and wrap it up. The results end
+# up as downloads on the run's own page, and (when you cut a release) on the Releases page
+# next to the Android APK.
+#
+# HOW TO TEST IT WITHOUT MAKING A REAL RELEASE:
+#   GitHub website -> your repo -> "Actions" tab -> "desktop apps" on the left ->
+#   "Run workflow" button. A few minutes later the finished Windows/Mac files appear at the
+#   bottom of that run's page as "Artifacts" you can download.
+#
+# HOW A REAL RELEASE HAPPENS:
+#   Pushing a version tag (e.g. v0.2.0) runs this automatically AND attaches the Windows and
+#   Mac downloads to the published Release. (The separate release.yml already does this for
+#   the Android APK; this file adds desktop to the same Release.)
+#
+# IMPORTANT, honest status: this builds and packages the app so it LAUNCHES. The little
+# behind-the-scenes "engine" that talks to the watch (the Python helper) is NOT bundled in
+# yet - that's the planned next step. Until then the app opens but reports the engine isn't
+# running. See README's "Building and installing" section.
+name: desktop apps
+
+on:
+  workflow_dispatch:            # the "Run workflow" button, for testing on demand
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"     # v1.2.3      -> attach to the full release
+      - "v[0-9]+.[0-9]+.[0-9]+-*"   # v1.2.3-rc.1 -> attach to the pre-release
+
+jobs:
+  # ---- Windows: produce a .zip containing ambitapp.exe and everything it needs -----------
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Same Qt version the app is built with locally. install-qt-action puts Qt's tools
+      # (including windeployqt) on PATH for the later steps.
+      - name: Install Qt 6.12
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.12.0"
+
+      - name: Build (Release)
+        run: |
+          cmake -S desktop -B desktop/build
+          cmake --build desktop/build --config Release
+
+      # windeployqt copies the Qt DLLs and QML plugins the app needs into a self-contained
+      # folder next to the .exe, so it runs on a PC that has never had Qt installed. --qmldir
+      # points it at our QML so it knows which QML modules to bundle.
+      - name: Bundle Qt runtime next to the app
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist\windows\AmbitApp | Out-Null
+          Copy-Item desktop\build\Release\ambitapp.exe dist\windows\AmbitApp\
+          windeployqt --qmldir desktop\qml --release dist\windows\AmbitApp\ambitapp.exe
+          Compress-Archive -Path dist\windows\AmbitApp\* -DestinationPath dist\AmbitApp-windows.zip
+
+      - name: Keep the download
+        uses: actions/upload-artifact@v4
+        with:
+          name: AmbitApp-windows
+          path: dist/AmbitApp-windows.zip
+
+      # Only when this run was started by a version tag: attach the .zip to the Release.
+      - name: Attach to the Release (tag builds only)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/AmbitApp-windows.zip
+
+  # ---- macOS: produce a .dmg the user drags into Applications -----------------------------
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Qt 6.12
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.12.0"
+
+      - name: Build (Release)
+        run: |
+          cmake -S desktop -B desktop/build -DCMAKE_BUILD_TYPE=Release
+          cmake --build desktop/build
+
+      # macdeployqt copies the Qt frameworks and QML plugins into the .app so it runs on a
+      # Mac that has never had Qt installed, then -dmg wraps it into the disk image users know.
+      - name: Bundle Qt runtime and make the .dmg
+        run: |
+          APP=$(find desktop/build -maxdepth 1 -name "*.app" | head -1)
+          echo "Found app bundle: $APP"
+          macdeployqt "$APP" -qmldir=desktop/qml -dmg
+          mkdir -p dist
+          DMG=$(find "$(dirname "$APP")" -maxdepth 1 -name "*.dmg" | head -1)
+          cp "$DMG" dist/AmbitApp-macos.dmg
+
+      - name: Keep the download
+        uses: actions/upload-artifact@v4
+        with:
+          name: AmbitApp-macos
+          path: dist/AmbitApp-macos.dmg
+
+      - name: Attach to the Release (tag builds only)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/AmbitApp-macos.dmg
