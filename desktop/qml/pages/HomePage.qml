@@ -129,65 +129,6 @@ PageFlickable {
             }
         }
 
-        // Multi-watch picker: several Suunto watches on the USB bus at once - tap to choose
-        // which one the app targets (2026-08-16, porting the Android Home picker). Every
-        // backend tool then pins to the pick (see server.py's SELECTED_PRODUCT_ID), so pages
-        // stop racing between watches. Hidden when 0 or 1 watch is connected.
-        Card {
-            width: parent.width
-            visible: DeviceService.connectedWatches.length > 1
-
-            Column {
-                width: parent.width
-                spacing: Theme.spacingSmall
-
-                Text {
-                    text: qsTr("%1 watches connected — tap to switch:")
-                          .arg(DeviceService.connectedWatches.length)
-                    color: Theme.mutedText
-                    font.pixelSize: Theme.fontSizeBody
-                }
-
-                Flow {
-                    width: parent.width
-                    spacing: Theme.spacingSmall
-
-                    Repeater {
-                        model: DeviceService.connectedWatches
-                        delegate: Rectangle {
-                            required property var modelData
-                            // The active one: the explicitly pinned watch, or - when nothing is
-                            // pinned - whichever the backend currently reports as connected.
-                            readonly property bool active:
-                                DeviceService.selectedProductId >= 0
-                                    ? modelData.productId === DeviceService.selectedProductId
-                                    : DeviceService.model === modelData.codename
-                            radius: height / 2
-                            implicitHeight: chipLabel.implicitHeight + 12
-                            implicitWidth: chipLabel.implicitWidth + 24
-                            color: active ? Qt.alpha(Theme.primary, 0.13) : "transparent"
-                            border.width: 1
-                            border.color: active ? Theme.primary : Qt.alpha(Theme.mutedText, 0.4)
-
-                            Text {
-                                id: chipLabel
-                                anchors.centerIn: parent
-                                text: modelData.name
-                                color: active ? Theme.text : Theme.mutedText
-                                font.pixelSize: Theme.fontSizeBody
-                                font.bold: active
-                            }
-                            MouseArea {
-                                anchors.fill: parent
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: DeviceService.selectWatch(modelData.productId)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
         // --- Device hero card: the watch is the hero, only one, per the spec. Real,
         // 2026-08-08 ("home page: instead of ambit it detects an etrex... firmware version,
         // hwid etc like on the android version") - device-aware: Ambit and Garmin are
@@ -659,6 +600,67 @@ PageFlickable {
                     color: Theme.error
                     font.pixelSize: Theme.fontSizeLabel
                     text: DeviceService.lastError
+                }
+            }
+        }
+
+        // Multi-watch picker: several Suunto watches on the USB bus at once - tap to choose
+        // which one the app targets (2026-08-16, porting the Android Home picker). Every
+        // backend tool then pins to the pick (see server.py's SELECTED_PRODUCT_ID), so pages
+        // stop racing between watches. Sits directly under the device card (André, 2026-08-16),
+        // so the current watch is the hero and the alternatives are the row beneath it. Hidden
+        // when 0 or 1 watch is connected.
+        Card {
+            width: parent.width
+            visible: DeviceService.connectedWatches.length > 1
+
+            Column {
+                width: parent.width
+                spacing: Theme.spacingSmall
+
+                Text {
+                    text: qsTr("%1 watches connected — tap to switch:")
+                          .arg(DeviceService.connectedWatches.length)
+                    color: Theme.mutedText
+                    font.pixelSize: Theme.fontSizeBody
+                }
+
+                Flow {
+                    width: parent.width
+                    spacing: Theme.spacingSmall
+
+                    Repeater {
+                        model: DeviceService.connectedWatches
+                        delegate: Rectangle {
+                            required property var modelData
+                            // The active one: the explicitly pinned watch, or - when nothing is
+                            // pinned - whichever the backend currently reports as connected.
+                            readonly property bool active:
+                                DeviceService.selectedProductId >= 0
+                                    ? modelData.productId === DeviceService.selectedProductId
+                                    : DeviceService.model === modelData.codename
+                            radius: height / 2
+                            implicitHeight: chipLabel.implicitHeight + 12
+                            implicitWidth: chipLabel.implicitWidth + 24
+                            color: active ? Qt.alpha(Theme.primary, 0.13) : "transparent"
+                            border.width: 1
+                            border.color: active ? Theme.primary : Qt.alpha(Theme.mutedText, 0.4)
+
+                            Text {
+                                id: chipLabel
+                                anchors.centerIn: parent
+                                text: modelData.name
+                                color: active ? Theme.text : Theme.mutedText
+                                font.pixelSize: Theme.fontSizeBody
+                                font.bold: active
+                            }
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: DeviceService.selectWatch(modelData.productId)
+                            }
+                        }
+                    }
                 }
             }
         }
