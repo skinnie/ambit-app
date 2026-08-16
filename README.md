@@ -139,6 +139,40 @@ On macOS and Windows, start the backend yourself before launching the binary:
 `cd desktop/backend && python3 server.py` (use `python` on Windows). Only the **Linux**
 build is confirmed on real hardware so far.
 
+### Interval Workout Builder (optional companion)
+
+The app has an **Intervals** section for building a structured interval workout and compiling
+it into a real Suunto App for the watch (Ambit3 only). That feature is powered by a **separate
+little tool**, the *Workout Builder* — it opens in your web browser as its own local app,
+not inside the main window.
+
+Two things worth knowing:
+
+- **You do not need it for the main app.** Routes, activities, POIs, backup and the rest all
+  work without it. Get the Workout Builder only if you actually want to create interval
+  workouts. (Inside the app, the "Open Workout Builder" button simply launches it if it's
+  present.)
+- **It also runs completely standalone** — you can use the Workout Builder on its own, with
+  or without the main desktop app.
+
+The simplest way to run it standalone is:
+
+```
+python3 tools/workout_gui.py      # opens http://127.0.0.1:8765 in your browser
+```
+
+To turn it into a double-click app instead (no Python needed to *use* it afterwards), build
+it with the per-OS packaging scripts — run each on its own OS, they don't cross-compile:
+
+```
+./tools/packaging/build_linux.sh      # -> dist/linux/Ambit3 Workout Builder
+./tools/packaging/build_mac.sh        # -> dist/mac/Ambit3 Workout Builder.app   (run on a Mac)
+tools\packaging\build_windows.bat     # -> dist\windows\Ambit3 Workout Builder.exe (run on Windows)
+```
+
+Full details — what it does, offline use, and getting compiled workouts into SuuntoLink — are
+in [`docs/tutorials/packaging.md`](docs/tutorials/packaging.md).
+
 ### Firmware flashing — urgency only
 
 Flashing watch firmware from the app **is possible and has been verified on real hardware**
