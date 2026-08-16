@@ -876,33 +876,43 @@ def main():
         # 46,364 bytes are real (a 119x difference). Read a small probe first to learn the
         # real boundary, then read only that much (+8KB margin - next_free_address marks where
         # new data gets appended next, not necessarily the exact byte the last entry ends at).
-        probe = read_flash(link, log_base, 1024, label="ExerciseLog (header)")
-        probe_master = parse_master_header(probe)
-        needed = probe_master["next_free_address"] - log_base + 8192
-        needed = max(1024, min(log_size, needed))
-        data = read_flash(link, log_base, needed, label="ExerciseLog")
+        if log_base == 0xFFFFFFFF or log_size == 0:
+            # This watch declares no ExerciseLog region (base 0xFFFFFFFF / size 0): the Kailash
+            # logs to the ephemeral DeviceLog 0x53, not a flash ExerciseLog. Nothing to read -
+            # report zero activities cleanly instead of crashing on a read of address
+            # 0xFFFFFFFF (real, 2026-08-16, was a 502 on the Kailash Activities page).
+            print("  no ExerciseLog region on this watch - 0 activities")
+            data = b""
+            entries = []
+        else:
+            probe = read_flash(link, log_base, 1024, label="ExerciseLog (header)")
+            probe_master = parse_master_header(probe)
+            needed = probe_master["next_free_address"] - log_base + 8192
+            needed = max(1024, min(log_size, needed))
+            data = read_flash(link, log_base, needed, label="ExerciseLog")
 
-        # Correctness net for the read-less-than-everything optimization above:
-        # logical_read()'s own wraparound handling (for a log old enough to have filled
-        # the whole region and wrapped at least once) assumes `data` spans the declared
-        # region size - true again once this reads less than that. Not expected to ever fire
-        # on a watch synced anywhere near regularly (46KB of 5.3MB - nowhere close to
-        # wrapping), but "probably fine" isn't the same as bounds-checked, so this actually
-        # verifies it by fully walking the entries before committing to the fast read, and
-        # falls back to the real, always-correct full read rather than risk truncated data.
-        try:
-            entries = list(walk_entries(data, mem_start=log_base, mem_size=log_size,
-                                        skip_count=args.known_count))
-        except (IndexError, struct.error) as exc:
-            print(f"  fast read parsed incompletely ({exc}) - falling back to a full "
-                  f"region read")
-            data = read_flash(link, log_base, log_size, label="ExerciseLog")
-            entries = list(walk_entries(data, mem_start=log_base, mem_size=log_size,
-                                        skip_count=args.known_count))
+            # Correctness net for the read-less-than-everything optimization above:
+            # logical_read()'s own wraparound handling (for a log old enough to have filled
+            # the whole region and wrapped at least once) assumes `data` spans the declared
+            # region size - true again once this reads less than that. Not expected to ever
+            # fire on a watch synced anywhere near regularly (46KB of 5.3MB - nowhere close to
+            # wrapping), but "probably fine" isn't the same as bounds-checked, so this actually
+            # verifies it by fully walking the entries before committing to the fast read, and
+            # falls back to the real, always-correct full read rather than risk truncated data.
+            try:
+                entries = list(walk_entries(data, mem_start=log_base, mem_size=log_size,
+                                            skip_count=args.known_count))
+            except (IndexError, struct.error) as exc:
+                print(f"  fast read parsed incompletely ({exc}) - falling back to a full "
+                      f"region read")
+                data = read_flash(link, log_base, log_size, label="ExerciseLog")
+                entries = list(walk_entries(data, mem_start=log_base, mem_size=log_size,
+                                            skip_count=args.known_count))
     if args.from_file:
         entries = list(walk_entries(data, skip_count=args.known_count))
 
-    master = parse_master_header(data)
+    master = (parse_master_header(data) if data
+              else {"entries": 0, "first_entry": 0, "last_entry": 0, "next_free_address": 0})
     print(f"master index: entries={master['entries']} "
           f"first=0x{master['first_entry']:x} last=0x{master['last_entry']:x} "
           f"next_free=0x{master['next_free_address']:x}")
