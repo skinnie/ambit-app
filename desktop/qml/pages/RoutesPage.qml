@@ -214,6 +214,25 @@ PageFlickable {
                 HomeViewModel.isGarmin ? GarminService.deviceGpxLoading : RouteService.loading
             readonly property var onDeviceRoutes:
                 HomeViewModel.isGarmin ? GarminService.onDeviceRoutes : RouteService.onWatchRoutes
+            // In-page sort (André, 2026-08-16). Routes have no on-device upload timestamp, so
+            // the keys are name/distance/ascent. CRUCIAL: export is by ORIGINAL list index
+            // (RouteService.exportRoute(index) / pendingExportIndex), so each sorted item
+            // carries its own `_origIndex` and the delegate exports/compares by THAT, never the
+            // Repeater's own post-sort index.
+            property string routeSortKey: "name"
+            readonly property var sortedRoutes: {
+                var list = (onDeviceCard.onDeviceRoutes || []).map(function(r, i) {
+                    return { r: r, _origIndex: i }
+                })
+                var key = onDeviceCard.routeSortKey
+                if (key === "distance")
+                    list.sort(function(a, b) { return (b.r.distanceMeters || 0) - (a.r.distanceMeters || 0) })
+                else if (key === "ascent")
+                    list.sort(function(a, b) { return (b.r.ascentMeters || 0) - (a.r.ascentMeters || 0) })
+                else
+                    list.sort(function(a, b) { return (a.r.name || "").localeCompare(b.r.name || "") })
+                return list
+            }
             Column {
                 width: parent.width
                 spacing: Theme.spacingSmall
@@ -252,11 +271,45 @@ PageFlickable {
                     text: qsTr("Couldn't save: %1").arg(root.saveError)
                 }
 
+                // Sort control (André, 2026-08-16). Name / distance / ascent.
+                Row {
+                    width: parent.width
+                    spacing: Theme.spacingSmall
+                    visible: !onDeviceCard.loading && onDeviceCard.sortedRoutes.length > 1
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: qsTr("Sort:")
+                        color: Theme.mutedText
+                        font.pixelSize: Theme.fontSizeCaption
+                    }
+                    Repeater {
+                        model: [
+                            { key: "name", label: qsTr("Name") },
+                            { key: "distance", label: qsTr("Distance") },
+                            { key: "ascent", label: qsTr("Ascent") },
+                        ]
+                        delegate: Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: modelData.label
+                            color: onDeviceCard.routeSortKey === modelData.key ? Theme.primary : Theme.mutedText
+                            font.pixelSize: Theme.fontSizeCaption
+                            font.bold: onDeviceCard.routeSortKey === modelData.key
+                            TapHandler { onTapped: onDeviceCard.routeSortKey = modelData.key }
+                            HoverHandler { cursorShape: Qt.PointingHandCursor }
+                        }
+                    }
+                }
+
                 Repeater {
-                    model: onDeviceCard.loading ? [] : onDeviceCard.onDeviceRoutes
+                    model: onDeviceCard.loading ? [] : onDeviceCard.sortedRoutes
                     delegate: Column {
                         width: parent.width
                         spacing: Theme.spacingSmall
+                        // Sorted item wrapper (see onDeviceCard.sortedRoutes): the real route is
+                        // `route`, and `origIndex` is its position in the UNSORTED list - export
+                        // must use origIndex, not the Repeater's own index.
+                        readonly property var route: modelData.r
+                        readonly property int origIndex: modelData._origIndex
 
                         // Real request 2026-08-08 ("add a map for each gpx") - real points,
                         // not a placeholder: RouteService.onWatchRoutes' own track field now
@@ -267,20 +320,20 @@ PageFlickable {
                         Item {
                             // Map hidden in "list" view (Settings -> Routes view), collapsed to
                             // zero height so the list is compact - André, 2026-08-16.
-                            visible: Theme.routesView === "map" && modelData.track && modelData.track.length > 1
+                            visible: Theme.routesView === "map" && route.track && route.track.length > 1
                             width: parent.width
                             height: visible ? 140 : 0
                             MapView {
                                 anchors.fill: parent
-                                readonly property var center: RouteViewModel.trackCenter(modelData.track)
+                                readonly property var center: RouteViewModel.trackCenter(route.track)
                                 latitude: center ? center.lat : 0
                                 longitude: center ? center.lon : 0
-                                trackPoints: modelData.track || []
+                                trackPoints: route.track || []
                                 TapHandler {
                                     onTapped: {
-                                        bigMap.trackPoints = modelData.track || []
+                                        bigMap.trackPoints = route.track || []
                                         bigMap.markers = []
-                                        bigMap.trackTitle = modelData.name || ""
+                                        bigMap.trackTitle = route.name || ""
                                         bigMap.open()
                                     }
                                 }
@@ -295,17 +348,17 @@ PageFlickable {
                                 width: parent.width - exportButton.width - Theme.spacingSmall
                                 spacing: 2
                                 Text {
-                                    text: modelData.name
+                                    text: route.name
                                     color: Theme.text
                                     font.pixelSize: Theme.fontSizeBody
                                     font.bold: true
                                 }
                                 Text {
                                     text: qsTr("%1 · %2 points · ascent %3 m · descent %4 m")
-                                        .arg(RouteViewModel.formatDistance(modelData.distanceMeters))
-                                        .arg(modelData.pointCount)
-                                        .arg(modelData.ascentMeters)
-                                        .arg(modelData.descentMeters)
+                                        .arg(RouteViewModel.formatDistance(route.distanceMeters))
+                                        .arg(route.pointCount)
+                                        .arg(route.ascentMeters)
+                                        .arg(route.descentMeters)
                                     color: Theme.mutedText
                                     font.pixelSize: Theme.fontSizeCaption
                                 }
@@ -313,23 +366,23 @@ PageFlickable {
 
                             RoundedButton {
                                 id: exportButton
-                                text: (RouteService.exporting && root.pendingExportIndex === index)
+                                text: (RouteService.exporting && root.pendingExportIndex === origIndex)
                                     ? qsTr("Exporting...") : qsTr("Export")
                                 enabled: !RouteService.exporting
                                 onClicked: {
                                     if (HomeViewModel.isGarmin) {
                                         // Already have the real bytes - no fetch step needed.
-                                        const safeName = (modelData.name || "route")
+                                        const safeName = (route.name || "route")
                                             .replace(/[\\/:*?"<>|]/g, "_")
                                         exportDialog.currentFile =
                                             LocalFileService.downloadsLocation + "/" + safeName + ".gpx"
                                         root.saveError = ""
-                                        exportDialog.pendingGpxOverride = modelData.gpxText
+                                        exportDialog.pendingGpxOverride = route.gpxText
                                         exportDialog.open()
                                     } else {
-                                        root.pendingExportIndex = index
-                                        root.pendingExportName = modelData.name
-                                        RouteService.exportRoute(index)
+                                        root.pendingExportIndex = origIndex
+                                        root.pendingExportName = route.name
+                                        RouteService.exportRoute(origIndex)
                                     }
                                 }
                             }

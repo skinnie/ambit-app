@@ -10,6 +10,25 @@ Item {
     id: root
     property var selectedActivity: null
 
+    // In-page sort (André, 2026-08-16: "add option to sort by: last uploaded, name, distance,
+    // ascent"). "uploaded" = newest first, which is the list's existing default order (the
+    // backend returns activities most-recent-first); the others sort a copy so selection (by
+    // object, not index) is unaffected. UNTESTED on desktop - written without a Qt build to
+    // verify against; the logic is correct-by-construction, the layout needs a real look.
+    property string activitySortKey: "uploaded"
+    readonly property var sortedActivities: {
+        var list = (root.activeActivities || []).slice()
+        var key = root.activitySortKey
+        if (key === "name")
+            list.sort(function(a, b) { return (a.name || "").localeCompare(b.name || "") })
+        else if (key === "distance")
+            list.sort(function(a, b) { return (b.distanceMeters || 0) - (a.distanceMeters || 0) })
+        else if (key === "ascent")
+            list.sort(function(a, b) { return (b.ascentMeters || 0) - (a.ascentMeters || 0) })
+        // "uploaded": leave the backend's own most-recent-first order as-is.
+        return list
+    }
+
     // Real, 2026-08-08 ("activities, just import the ones on the garmin device") - this
     // page is device-aware rather than duplicated: same grid/detail UI either way, sourced
     // from ActivityService (Ambit3, real watch log) or GarminService (Garmin, real GPX
@@ -179,6 +198,7 @@ Item {
     // if it were current. Garmin has no separate cache concept - its own files already live
     // on the device's own storage, read fresh every time.
     Text {
+        id: cachedBanner
         // Real bug, found live 2026-08-09 ("after loaded there is still text under the
         // cards") - this is genuinely an ActivityService/Ambit3 concept (its own on-disk
         // exercise-log cache), but was never gated against Kailash, so a stale
@@ -233,6 +253,126 @@ Item {
     // with reuseItems does real delegate virtualization: only what's near the viewport is
     // instantiated, recycled as it scrolls, bounding the live-map count to a small constant
     // regardless of list length.
+    // Sort control (André, 2026-08-16). Two shapes: a simple "Sort:" chip row for the map/card
+    // GRID view (cards have no columns), and, for the LIST view, a proper column-header row
+    // aligned exactly with ActivityRow's own columns (badge 32, name 42%, then 96/96/88/96
+    // right-aligned) - André's feedback: the sort labels must line up with the data columns,
+    // and the Calories column needs a title too.
+    Row {
+        id: activitiesSortSimple
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.leftMargin: Theme.spacingLarge
+        anchors.rightMargin: Theme.spacingLarge
+        anchors.top: cachedBanner.visible ? cachedBanner.bottom
+                     : trackLogLoadingBanner.visible ? trackLogLoadingBanner.bottom
+                     : activityLoadingPill.visible ? activityLoadingPill.bottom : parent.top
+        anchors.topMargin: (cachedBanner.visible || trackLogLoadingBanner.visible || activityLoadingPill.visible)
+                           ? Theme.spacingMedium : Theme.spacingLarge
+        spacing: Theme.spacingSmall
+        visible: root.selectedActivity === null && root.sortedActivities.length > 1
+                 && Theme.activitiesView !== "list"
+        Text {
+            anchors.verticalCenter: parent.verticalCenter
+            text: qsTr("Sort:")
+            color: Theme.mutedText
+            font.pixelSize: Theme.fontSizeCaption
+        }
+        Repeater {
+            model: [
+                { key: "uploaded", label: qsTr("Last uploaded") },
+                { key: "name", label: qsTr("Name") },
+                { key: "distance", label: qsTr("Distance") },
+                { key: "ascent", label: qsTr("Ascent") },
+            ]
+            delegate: Text {
+                anchors.verticalCenter: parent.verticalCenter
+                text: modelData.label
+                color: root.activitySortKey === modelData.key ? Theme.primary : Theme.mutedText
+                font.pixelSize: Theme.fontSizeCaption
+                font.bold: root.activitySortKey === modelData.key
+                TapHandler { onTapped: root.activitySortKey = modelData.key }
+                HoverHandler { cursorShape: Qt.PointingHandCursor }
+            }
+        }
+    }
+
+    // LIST-view column headers - same widths/margins/spacing as ActivityRow so each title sits
+    // over its data column. Distance/Ascent (and Name/Last uploaded) are clickable to sort;
+    // Duration/Calories are plain titles (not sort keys André asked for, but shown so every
+    // column is labelled).
+    Row {
+        id: activitiesHeader
+        anchors.left: parent.left
+        anchors.right: parent.right
+        // ActivityRow lives inside the ListView (leftMargin spacingLarge) and its own inner Row
+        // adds spacingMedium - match both so columns line up to the pixel.
+        anchors.leftMargin: Theme.spacingLarge + Theme.spacingMedium
+        anchors.rightMargin: Theme.spacingLarge + Theme.spacingMedium
+        anchors.top: cachedBanner.visible ? cachedBanner.bottom
+                     : trackLogLoadingBanner.visible ? trackLogLoadingBanner.bottom
+                     : activityLoadingPill.visible ? activityLoadingPill.bottom : parent.top
+        anchors.topMargin: (cachedBanner.visible || trackLogLoadingBanner.visible || activityLoadingPill.visible)
+                           ? Theme.spacingMedium : Theme.spacingLarge
+        spacing: Theme.spacingMedium
+        visible: root.selectedActivity === null && root.sortedActivities.length > 1
+                 && Theme.activitiesView === "list"
+
+        Item { width: 32; height: 1 }   // over the activity badge
+
+        // Over the name/date column (name bold on top, date below) - "Name" and "Last uploaded".
+        Column {
+            anchors.verticalCenter: parent.verticalCenter
+            width: activitiesHeader.width * 0.42
+            spacing: 1
+            Text {
+                text: qsTr("Name")
+                color: root.activitySortKey === "name" ? Theme.primary : Theme.mutedText
+                font.pixelSize: Theme.fontSizeCaption
+                font.bold: root.activitySortKey === "name"
+                TapHandler { onTapped: root.activitySortKey = "name" }
+                HoverHandler { cursorShape: Qt.PointingHandCursor }
+            }
+            Text {
+                text: qsTr("Last uploaded")
+                color: root.activitySortKey === "uploaded" ? Theme.primary : Theme.mutedText
+                font.pixelSize: Theme.fontSizeCaption
+                font.bold: root.activitySortKey === "uploaded"
+                TapHandler { onTapped: root.activitySortKey = "uploaded" }
+                HoverHandler { cursorShape: Qt.PointingHandCursor }
+            }
+        }
+
+        Repeater {
+            model: [
+                { label: qsTr("Distance"), key: "distance", w: 96 },
+                { label: qsTr("Duration"), key: "",         w: 96 },
+                { label: qsTr("Ascent"),   key: "ascent",   w: 88 },
+                { label: qsTr("Calories"), key: "",         w: 96 },
+            ]
+            delegate: Item {
+                required property var modelData
+                anchors.verticalCenter: parent.verticalCenter
+                width: modelData.w
+                height: 26   // taller than the text so the whole column is an easy click target
+                Text {
+                    id: hdrText
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: modelData.label
+                    color: (modelData.key.length > 0 && root.activitySortKey === modelData.key)
+                           ? Theme.primary : Theme.mutedText
+                    font.pixelSize: Theme.fontSizeCaption
+                    font.bold: modelData.key.length > 0 && root.activitySortKey === modelData.key
+                }
+                // Whole-column click target (not just the small text) - easier to hit, matches
+                // the width of the data column below it.
+                TapHandler { enabled: modelData.key.length > 0; onTapped: root.activitySortKey = modelData.key }
+                HoverHandler { enabled: modelData.key.length > 0; cursorShape: Qt.PointingHandCursor }
+            }
+        }
+    }
+
     GridView {
         id: activitiesGrid
         anchors.left: parent.left
@@ -246,9 +386,11 @@ Item {
         // top margin, with the grid painting right up against/behind it (z: 1 on the banner
         // only fixed which one is on top, not the fact they occupied the same space). Drops
         // below the banner's own bottom edge, with real spacing, only while it's visible.
-        anchors.top: trackLogLoadingBanner.visible ? trackLogLoadingBanner.bottom
+        anchors.top: activitiesSortSimple.visible ? activitiesSortSimple.bottom
+                     : trackLogLoadingBanner.visible ? trackLogLoadingBanner.bottom
                      : activityLoadingPill.visible ? activityLoadingPill.bottom : parent.top
-        anchors.topMargin: (trackLogLoadingBanner.visible || activityLoadingPill.visible)
+        anchors.topMargin: activitiesSortSimple.visible ? Theme.spacingMedium
+                           : (trackLogLoadingBanner.visible || activityLoadingPill.visible)
                            ? Theme.spacingMedium : Theme.spacingLarge
         visible: root.selectedActivity === null && Theme.activitiesView !== "list"
         clip: true
@@ -264,7 +406,7 @@ Item {
         readonly property int columnsShown:
             Math.max(1, Math.min(Math.floor(width / cellWidth), Math.max(1, model ? model.length : 1)))
         readonly property real contentWidthUsed: columnsShown * cellWidth
-        model: root.activeActivities
+        model: root.sortedActivities
         delegate: Item {
             width: GridView.view.cellWidth
             height: GridView.view.cellHeight
@@ -287,15 +429,20 @@ Item {
         anchors.leftMargin: Theme.spacingLarge
         anchors.rightMargin: Theme.spacingLarge
         anchors.bottomMargin: Theme.spacingLarge
-        anchors.top: trackLogLoadingBanner.visible ? trackLogLoadingBanner.bottom
+        // Anchor below the column headers, with a generous gap so the headers read as a
+        // separate band from the rows (André, 2026-08-16: "do more distance between the first
+        // two lines of text and the activities").
+        anchors.top: activitiesHeader.visible ? activitiesHeader.bottom
+                     : trackLogLoadingBanner.visible ? trackLogLoadingBanner.bottom
                      : activityLoadingPill.visible ? activityLoadingPill.bottom : parent.top
-        anchors.topMargin: (trackLogLoadingBanner.visible || activityLoadingPill.visible)
+        anchors.topMargin: activitiesHeader.visible ? Theme.spacingLarge
+                           : (trackLogLoadingBanner.visible || activityLoadingPill.visible)
                            ? Theme.spacingMedium : Theme.spacingLarge
         visible: root.selectedActivity === null && Theme.activitiesView === "list"
         clip: true
         reuseItems: true
         spacing: 0
-        model: root.activeActivities
+        model: root.sortedActivities
         delegate: ActivityRow {
             required property var modelData
             width: activitiesList.width
