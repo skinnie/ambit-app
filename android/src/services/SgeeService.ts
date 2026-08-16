@@ -1,6 +1,13 @@
 import RNFS from 'react-native-fs';
 import { connect, disconnect, updateSgee } from '../native/AmbitUsbModule';
 
+// A minimal writer shape so this service needn't import the full DeviceProvider (avoids a
+// cycle). Over BLE the caller passes the BLE provider, whose updateSgee() writes over the
+// already-open GATT link and, crucially, does NOT do a USB connect() (see
+// AmbitBleDeviceProvider.ts). Over USB no writer is passed and we open our own short-lived
+// connection below, exactly as before.
+type SgeeWriter = { updateSgee(path: string): Promise<boolean> };
+
 // GPS orbital data (AGPS/SGEE) — live, unauthenticated Suunto endpoint.
 // Verified working 2026-08-05 against real hardware: see ambit-app/sgee_andre.md
 // and ambit-app/tools/README.md. NOT the same as the account-tied cloudapi.suunto.com
@@ -23,6 +30,7 @@ const SGEE_LOCAL_PATH = `${RNFS.DocumentDirectoryPath}/gpsorbit.bin`;
  * let that existing check decide whether anything really needs writing.
  */
 export async function updateWatchSgee(
+  writer?: SgeeWriter,
   onProgress?: (received: number, total: number) => void
 ): Promise<void> {
   const download = RNFS.downloadFile({
@@ -42,7 +50,13 @@ export async function updateWatchSgee(
     throw new Error(`SGEE download failed: HTTP ${result.statusCode}`);
   }
 
-  await updateSgee(SGEE_LOCAL_PATH);
+  // Over BLE the writer (the BLE provider) writes on the already-open link; over USB we
+  // call the native op directly on the connection opened in updateOrbitalData().
+  if (writer) {
+    await writer.updateSgee(SGEE_LOCAL_PATH);
+  } else {
+    await updateSgee(SGEE_LOCAL_PATH);
+  }
 }
 
 export interface OrbitalUpdateState {
@@ -50,24 +64,39 @@ export interface OrbitalUpdateState {
   error?: string;
 }
 
-/** Full pipeline for the HomeScreen button: connect, download, write, disconnect. */
-export async function updateOrbitalData(onState: (s: OrbitalUpdateState) => void): Promise<void> {
+/**
+ * Full pipeline for the HomeScreen button: connect, download, write, disconnect.
+ *
+ * Over USB (no provider) this opens its own short-lived connection, since the app does not
+ * hold a USB link open between actions. Over BLE the caller passes the BLE provider: the GATT
+ * session is already open and owned by HomeScreen, so we must NOT connect()/disconnect() (that
+ * would try a USB open and tear down the live BLE session) - we just download and let the
+ * provider write on the existing link. This mirrors handleSync's own USB-vs-BLE branch, and is
+ * why the GPS-orbit action now works over Bluetooth instead of silently failing a USB connect.
+ */
+export async function updateOrbitalData(
+  onState: (s: OrbitalUpdateState) => void,
+  provider?: SgeeWriter,
+): Promise<void> {
+  const overBle = !!provider;
   onState({ phase: 'connecting' });
-  try {
-    await connect();
-  } catch (e: any) {
-    onState({ phase: 'error', error: e?.message ?? 'Connexion à la montre échouée' });
-    return;
+  if (!overBle) {
+    try {
+      await connect();
+    } catch (e: any) {
+      onState({ phase: 'error', error: e?.message ?? 'Connexion à la montre échouée' });
+      return;
+    }
   }
 
   onState({ phase: 'downloading' });
   try {
-    await updateWatchSgee();
+    await updateWatchSgee(provider);
     onState({ phase: 'writing' }); // le téléchargement et l'écriture native sont rapides, phase surtout indicative
     onState({ phase: 'done' });
   } catch (e: any) {
     onState({ phase: 'error', error: e?.message ?? 'Échec de la mise à jour des données GPS' });
   } finally {
-    await disconnect().catch(() => {});
+    if (!overBle) await disconnect().catch(() => {});
   }
 }

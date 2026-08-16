@@ -642,7 +642,11 @@ export default function HomeScreen() {
     if (isBusy) return;
     setLastActive('orbital');
     try {
-      await updateOrbitalData(setOrbital);
+      // Over BLE the GATT session is already open - hand updateOrbitalData the BLE provider so
+      // it writes the orbit file on that live link instead of attempting a USB connect() (which
+      // fails with a "check cable" error). Same USB-vs-BLE branch handleSync uses.
+      const provider = bleConnectedRef.current ? ambitBleDeviceProvider : undefined;
+      await updateOrbitalData(setOrbital, provider);
     } catch (e: any) {
       Alert.alert(t.error, e?.message ?? t.unknownError);
       setOrbital({ phase: 'error', error: e?.message });
