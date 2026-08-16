@@ -56,11 +56,14 @@ PageFlickable {
     // section. Bit 0x0004 is deliberately absent: confirmed present on the reference
     // watch's own baseline but never isolated to one specific pod, so there's nothing
     // honest to label it with.
+    // `cap` gates each pod on this watch's own capability record ("" = always available, like
+    // the HR belt). A Traverse reports supportsFootPod/BikePod/PowerPod=false, so only the HR
+    // belt shows for it - it has no ANT+ pod support at all. André, 2026-08-17.
     readonly property var podBits: [
-        { bit: 0x0001, label: qsTr("HR belt") },
-        { bit: 0x0040, label: qsTr("Power pod") },
-        { bit: 0x0100, label: qsTr("Foot pod") },
-        { bit: 0x0800, label: qsTr("Bike pod") },
+        { bit: 0x0001, label: qsTr("HR belt"),   cap: "" },
+        { bit: 0x0040, label: qsTr("Power pod"), cap: "supportsPowerPod" },
+        { bit: 0x0100, label: qsTr("Foot pod"),  cap: "supportsFootPod" },
+        { bit: 0x0800, label: qsTr("Bike pod"),  cap: "supportsBikePod" },
     ]
 
     // Real, 2026-08-09 ("Implement the sport modes like suunto link") - SuuntoLink's own
@@ -751,6 +754,9 @@ PageFlickable {
                                 id: podRow
                                 required property var modelData
                                 spacing: 4
+                                // Only show a pod this watch actually supports (HR belt always).
+                                visible: podRow.modelData.cap === ""
+                                         || root.caps[podRow.modelData.cap] === true
                                 RoundedCheckBox {
                                     checked: modeColumn.mode ? (modeColumn.mode.useHw & podRow.modelData.bit) !== 0 : false
                                     enabled: !modeColumn.busy
