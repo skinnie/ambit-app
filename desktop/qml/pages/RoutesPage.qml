@@ -79,7 +79,37 @@ PageFlickable {
                 width: parent.width
                 spacing: Theme.spacingSmall
 
-                Text { text: qsTr("Import a route"); font.bold: true; color: Theme.text }
+                // Title + a "little i" that opens the route-planner help dialog (André,
+                // 2026-08-16). Same tap-to-open "i" affordance as SettingsPage's orbital info.
+                Row {
+                    width: parent.width
+                    spacing: Theme.spacingSmall
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: qsTr("Import a route")
+                        font.bold: true
+                        color: Theme.text
+                    }
+                    Rectangle {
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 18; height: 18; radius: 9
+                        color: "transparent"
+                        border.width: 1
+                        border.color: Theme.mutedText
+                        Text {
+                            anchors.centerIn: parent
+                            text: "i"
+                            font.pixelSize: Theme.fontSizeCaption
+                            font.bold: true
+                            color: Theme.mutedText
+                        }
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: routePlannerDialog.open()
+                        }
+                    }
+                }
 
                 RoundedButton {
                     text: qsTr("Import GPX…")
@@ -439,5 +469,48 @@ PageFlickable {
     MapWindow {
         id: bigMap
         anchors.centerIn: parent
+    }
+
+    // Route-planner help (André, 2026-08-16): the "i" next to "Import a route" opens this. The
+    // watch imports a GPX; these are the tools that produce one. Links open in the OS browser
+    // via the same Qt.openUrlExternally() used for the user manual elsewhere.
+    ThemedDialog {
+        id: routePlannerDialog
+        anchors.centerIn: Overlay.overlay
+        title: qsTr("Plan a route")
+        standardButtons: Dialog.Close
+
+        contentItem: Column {
+            width: 340
+            spacing: Theme.spacingSmall
+
+            Text {
+                width: parent.width
+                wrapMode: Text.WordWrap
+                text: qsTr("To plan your routes you can use:")
+                color: Theme.text
+                font.pixelSize: Theme.fontSizeBody
+            }
+            Text {
+                width: parent.width
+                wrapMode: Text.WordWrap
+                textFormat: Text.StyledText
+                linkColor: Theme.primary
+                color: Theme.text
+                font.pixelSize: Theme.fontSizeBody
+                text: qsTr("•  <a href=\"https://routeplanner.suunto.com/\">Suunto planner</a> (online)")
+                onLinkActivated: (link) => Qt.openUrlExternally(link)
+            }
+            Text {
+                width: parent.width
+                wrapMode: Text.WordWrap
+                textFormat: Text.StyledText
+                linkColor: Theme.primary
+                color: Theme.text
+                font.pixelSize: Theme.fontSizeBody
+                text: qsTr("•  <a href=\"https://www.komoot.com/\">Komoot</a> (online)")
+                onLinkActivated: (link) => Qt.openUrlExternally(link)
+            }
+        }
     }
 }

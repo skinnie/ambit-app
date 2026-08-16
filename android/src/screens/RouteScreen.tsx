@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { View, Text, StyleSheet, Alert, ScrollView, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, Alert, ScrollView, TouchableOpacity, Modal, Pressable, Linking } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   pickAndParseRoute, uploadRoute, readOnWatchNavigation, getCachedNavigation, exportSingleRouteToGpx,
@@ -37,6 +37,7 @@ export default function RouteScreen() {
 
   const [pending, setPending] = useState<PendingRoute | null>(null);
   const [picking, setPicking] = useState(false);
+  const [plannerOpen, setPlannerOpen] = useState(false);   // route-planner help dialog
   const [sendState, setSendState] = useState<SendRouteState>({ phase: 'idle' });
   const sendBusy = sendState.phase === 'connecting' || sendState.phase === 'writing';
 
@@ -140,9 +141,38 @@ export default function RouteScreen() {
   return (
     <ScrollView style={styles.root} contentContainerStyle={styles.content}>
 
+      {/* Route-planner help dialog - the tools that produce a GPX this screen can import.
+          Links open in the browser (Linking.openURL), matching desktop's RoutesPage. */}
+      <Modal visible={plannerOpen} transparent animationType="fade" onRequestClose={() => setPlannerOpen(false)}>
+        <Pressable style={styles.backdrop} onPress={() => setPlannerOpen(false)}>
+          <Pressable style={styles.dialogCard} onPress={() => {}}>
+            <Text style={styles.dialogTitle}>{t.routePlannerTitle}</Text>
+            <Text style={styles.dialogText}>{t.routePlannerIntro}</Text>
+            <TouchableOpacity style={styles.dialogLinkRow} onPress={() => Linking.openURL('https://routeplanner.suunto.com/')}>
+              <Text style={styles.dialogLink}>•  Suunto planner </Text>
+              <Text style={styles.dialogMuted}>{t.routePlannerOnline}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.dialogLinkRow} onPress={() => Linking.openURL('https://www.komoot.com/')}>
+              <Text style={styles.dialogLink}>•  Komoot </Text>
+              <Text style={styles.dialogMuted}>{t.routePlannerOnline}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.dialogClose} onPress={() => setPlannerOpen(false)}>
+              <Text style={styles.dialogCloseText}>{t.close}</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
       {/* ── Import a route ── */}
       <Card style={{ width: '100%' }}>
-        <Text style={styles.cardTitle}>{t.routeSendSection}</Text>
+        {/* Title + a "little i" that opens the route-planner help dialog (André, 2026-08-16),
+            same affordance as desktop's RoutesPage. */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Text style={styles.cardTitle}>{t.routeSendSection}</Text>
+          <TouchableOpacity style={styles.infoBadge} onPress={() => setPlannerOpen(true)} hitSlop={8}>
+            <Text style={styles.infoBadgeText}>i</Text>
+          </TouchableOpacity>
+        </View>
         <Button label={t.routeIdle} variant="filled" loading={picking} disabled={picking || sendBusy} onPress={handlePick} style={{ marginTop: v3Spacing.small }} />
 
         {pending && (
@@ -220,6 +250,31 @@ const createStyles = (t: ReturnType<typeof useV3Theme>) => StyleSheet.create({
   root: { flex: 1, backgroundColor: t.background },
   content: { padding: v3Spacing.medium, gap: v3Spacing.medium },
   cardTitle: { fontSize: v3Type.heading, fontWeight: '700', color: t.text },
+  // "little i" info badge next to the title (matches desktop's RoutesPage).
+  infoBadge: {
+    width: 18, height: 18, borderRadius: 9,
+    borderWidth: 1, borderColor: t.mutedText,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  infoBadgeText: { fontSize: 11, fontWeight: '700', color: t.mutedText, lineHeight: 13 },
+  // Route-planner help dialog.
+  backdrop: {
+    flex: 1, backgroundColor: '#00000066',
+    justifyContent: 'center', alignItems: 'center', padding: 24,
+  },
+  dialogCard: {
+    width: '100%', maxWidth: 340,
+    backgroundColor: t.card, borderRadius: 16,
+    borderWidth: 1, borderColor: t.mutedText + '55',
+    padding: v3Spacing.medium, gap: v3Spacing.small,
+  },
+  dialogTitle: { fontSize: v3Type.bodyLarge, fontWeight: '700', color: t.text },
+  dialogText: { fontSize: v3Type.body, color: t.text, marginTop: 2 },
+  dialogLinkRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 4 },
+  dialogLink: { fontSize: v3Type.body, color: t.primary, fontWeight: '600' },
+  dialogMuted: { fontSize: v3Type.body, color: t.mutedText },
+  dialogClose: { alignSelf: 'flex-end', marginTop: v3Spacing.small, paddingVertical: 6, paddingHorizontal: 10 },
+  dialogCloseText: { fontSize: v3Type.body, color: t.primary, fontWeight: '700' },
   row: { flexDirection: 'row', alignItems: 'center', gap: v3Spacing.small },
   itemName: { fontSize: v3Type.bodyLarge, fontWeight: '700', color: t.text },
   itemStats: { fontSize: v3Type.label, color: t.mutedText, marginTop: 2 },
