@@ -1,15 +1,21 @@
 import React, { useState } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, Switch,
+  View, Text, TextInput, TouchableOpacity,
   StyleSheet, Alert, ScrollView, ActivityIndicator, Modal, FlatList,
 } from 'react-native';
 import { ExerciseMode, FIELD_TYPES, fieldTypeLabel } from '../services/CustomModesReader';
 import {
   readCustomModes, renameCustomMode, writeCustomModeField, writeCustomModeDisplayField,
 } from '../services/CustomModesService';
+import {
+  readSportModes, applySportModeEdit, plans, SportSummary, SportModeManageState,
+} from '../services/SportModeManage';
+import { ACTIVITY_TYPES } from '../services/ActivityColors';
+import { SPORT_MODE_ROWS } from '../services/SportModeRows';
 import { t } from '../i18n';
 import { useV3Theme, v3Spacing, v3Type } from '../theme/v3';
 import { Card } from '../components/ui/Card';
+import { Toggle } from '../components/ui/primitives';
 import Icon from '../components/ui/Icon';
 import { WatchFacePreview, displayLayoutType } from '../components/WatchFacePreview';
 
@@ -42,6 +48,22 @@ type Phase = 'idle' | 'connecting' | 'reading' | 'done' | 'error';
 
 interface PickerTarget { mode: string; display: number; field: number }
 
+// Activities the user can create a single mode for: those with real creation defaults on the
+// reference variant (Emu = Ambit3 Peak, the fallback the codec uses for the whole Ambit3
+// family), minus the multisport-container activities (those go through Create Multisport).
+// Sorted by name, same as the desktop tool's --activities listing.
+const DEFAULT_VARIANT = SPORT_MODE_ROWS.defaultVariant;
+const CREATABLE_ACTIVITIES = Object.keys(SPORT_MODE_ROWS.activityDefaults[DEFAULT_VARIANT] ?? {})
+  .map(Number)
+  .filter(id => !SPORT_MODE_ROWS.multisportActivities.includes(id) && ACTIVITY_TYPES[id])
+  .map(id => ({ id, name: ACTIVITY_TYPES[id].name }))
+  .sort((a, b) => a.name.localeCompare(b.name));
+const MULTISPORT_ACTIVITIES = SPORT_MODE_ROWS.multisportActivities
+  .filter(id => ACTIVITY_TYPES[id])
+  .map(id => ({ id, name: ACTIVITY_TYPES[id].name }));
+
+type CreateKind = 'single' | 'multi';
+
 export default function SportModesScreen() {
   const theme = useV3Theme();
   const [modes, setModes] = useState<ExerciseMode[] | null>(null);
@@ -57,6 +79,17 @@ export default function SportModesScreen() {
   const [hrLowEdits, setHrLowEdits] = useState<Record<string, string>>({});
   const [hrHighEdits, setHrHighEdits] = useState<Record<string, string>>({});
   const [hrLimitsEdits, setHrLimitsEdits] = useState<Record<string, boolean>>({});
+
+  // ── Structural manage (create / delete / multisport) - full-codec view alongside the
+  // lossy-reader edit flow above (SportModeManage.ts / SportModeCodec.ts). ──
+  const [summary, setSummary] = useState<SportSummary | null>(null);
+  const [writeState, setWriteState] = useState<SportModeManageState | null>(null);
+  const [createKind, setCreateKind] = useState<CreateKind | null>(null);
+  const [createName, setCreateName] = useState('');
+  const [createActivityId, setCreateActivityId] = useState<number | null>(null);
+  const [legs, setLegs] = useState<string[]>([]);
+  const manageBusy = writeState != null
+    && writeState.phase !== 'done' && writeState.phase !== 'error' && writeState.phase !== 'idle';
 
   function applyModes(loaded: ExerciseMode[]) {
     setModes(loaded);
@@ -85,6 +118,55 @@ export default function SportModesScreen() {
       setError(s.error);
       if (s.modes) applyModes(s.modes);
     });
+    // Also load the structural view (menu order, multisport combos, slot counts) via the
+    // full codec. Separate short read; best-effort so a failure here never blocks the editor.
+    try {
+      setSummary(await readSportModes());
+    } catch {
+      setSummary(null);
+    }
+  }
+
+  // Run one structural edit (create/delete/multisport), then refresh both views. The error, if
+  // any, is captured from the state callback (async state can't be read back after the await).
+  async function runEdit(build: Parameters<typeof applySportModeEdit>[0]) {
+    let errorMsg: string | undefined;
+    const fresh = await applySportModeEdit(build, s => {
+      setWriteState(s);
+      if (s.phase === 'error') errorMsg = s.error;
+    });
+    if (fresh) {
+      setSummary(fresh);
+      await handleRead();
+    } else if (errorMsg) {
+      Alert.alert(t.error, errorMsg);
+    }
+  }
+
+  function confirmDelete(name: string, multisport: boolean) {
+    Alert.alert(t.sportModesDeleteTitle, t.sportModesDeleteMsg(name), [
+      { text: t.cancel, style: 'cancel' },
+      {
+        text: t.sportModesDeleteBtn, style: 'destructive',
+        onPress: () => runEdit(multisport ? plans.deleteMultisport(name) : plans.delete(name)),
+      },
+    ]);
+  }
+
+  function openCreate(kind: CreateKind) {
+    setCreateKind(kind);
+    setCreateName('');
+    setCreateActivityId(kind === 'multi' ? (MULTISPORT_ACTIVITIES[0]?.id ?? null) : null);
+    setLegs([]);
+  }
+
+  async function submitCreate() {
+    const name = createName.trim();
+    if (!name || createActivityId == null) return;
+    const kind = createKind;
+    setCreateKind(null);
+    if (kind === 'single') await runEdit(plans.create(name, createActivityId));
+    else if (kind === 'multi') await runEdit(plans.createMultisport(name, createActivityId, legs));
   }
 
   async function withWrite(modeName: string, action: () => Promise<{ ok: boolean; error?: string } | undefined>) {
@@ -187,12 +269,10 @@ export default function SportModesScreen() {
 
           <Text style={styles(theme).label}>{t.sportModesHrLimitsLabel}</Text>
           <View style={styles(theme).row}>
-            <Switch
+            <Toggle
               value={hrLimitsEdits[name] ?? false}
               onValueChange={v => setHrLimitsEdits(prev => ({ ...prev, [name]: v }))}
               disabled={isWriting}
-              trackColor={{ false: theme.mutedText + '55', true: theme.primary + '88' }}
-              thumbColor={theme.card}
             />
             <TextInput
               style={[styles(theme).input, { flex: 1, marginLeft: 10 }]}
@@ -341,6 +421,73 @@ export default function SportModesScreen() {
         )}
       </Card>
 
+      {/* ── Manage: create / delete / multisport (full-codec structural view) ── */}
+      {summary && (
+        <Card style={{ width: '100%' }}>
+          <View style={styles(theme).listRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles(theme).cardTitle}>{t.sportModesManageTitle}</Text>
+              <Text style={styles(theme).sectionDesc}>
+                {t.sportModesCounts(summary.used, summary.maxUsed, summary.multi, summary.maxMulti)}
+              </Text>
+            </View>
+          </View>
+
+          <Text style={[styles(theme).sectionDesc, { color: theme.warning }]}>{t.sportModesWriteWarning}</Text>
+
+          {manageBusy && (
+            <View style={styles(theme).statusRow}>
+              <ActivityIndicator size="small" color={theme.primary} />
+              <Text style={[styles(theme).sectionDesc, { marginLeft: 8, marginBottom: 0 }]}>
+                {writeState?.phase === 'verifying' ? t.sportModesVerifying
+                  : writeState?.phase === 'reading' ? t.sportModesReading
+                  : writeState?.phase === 'connecting' ? t.connecting
+                  : t.sportModesWritingStep(writeState?.step ?? 1, writeState?.totalSteps ?? 1)}
+              </Text>
+            </View>
+          )}
+
+          {summary.modes.map(m => (
+            <View key={`${m.order}-${m.name}`} style={styles(theme).manageRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles(theme).manageName}>{m.name}</Text>
+                {m.multisport && <Text style={styles(theme).manageSub}>{m.legs.join(' → ')}</Text>}
+                {!m.multisport && m.usedBy.length > 0 && (
+                  <Text style={styles(theme).manageSub}>{t.sportModesUsedByBadge(m.usedBy.join(', '))}</Text>
+                )}
+              </View>
+              {m.multisport && <Text style={styles(theme).multiBadge}>{t.sportModesMultiBadge}</Text>}
+              <TouchableOpacity
+                style={[styles(theme).smallBtn, styles(theme).deleteBtn]}
+                disabled={manageBusy}
+                onPress={() => confirmDelete(m.name, m.multisport)}
+              >
+                <Text style={styles(theme).deleteBtnText}>{t.sportModesDeleteBtn}</Text>
+              </TouchableOpacity>
+            </View>
+          ))}
+
+          <View style={[styles(theme).row, { marginTop: 12 }]}>
+            <TouchableOpacity
+              style={[styles(theme).smallBtn, { opacity: summary.used >= summary.maxUsed || manageBusy ? 0.4 : 1 }]}
+              disabled={summary.used >= summary.maxUsed || manageBusy}
+              onPress={() => openCreate('single')}
+            >
+              <Text style={styles(theme).smallBtnText}>{t.sportModesCreateBtn}</Text>
+            </TouchableOpacity>
+            {summary.maxMulti > 0 && (
+              <TouchableOpacity
+                style={[styles(theme).smallBtn, { opacity: summary.used >= summary.maxUsed || summary.multi >= summary.maxMulti || manageBusy ? 0.4 : 1 }]}
+                disabled={summary.used >= summary.maxUsed || summary.multi >= summary.maxMulti || manageBusy}
+                onPress={() => openCreate('multi')}
+              >
+                <Text style={styles(theme).smallBtnText}>{t.sportModesCreateMultiBtn}</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </Card>
+      )}
+
       {modes && modes.map(mode => {
         const name = mode.settings.name;
         const realCount = mode.displays.filter(d => !d.isBuiltIn).length;
@@ -360,6 +507,80 @@ export default function SportModesScreen() {
           </TouchableOpacity>
         );
       })}
+
+      {/* ── Create / Multisport modal ── */}
+      <Modal visible={createKind != null} animationType="slide" transparent onRequestClose={() => setCreateKind(null)}>
+        <View style={styles(theme).modalOverlay}>
+          <View style={styles(theme).modalBox}>
+            <Text style={styles(theme).cardTitle}>
+              {createKind === 'multi' ? t.sportModesCreateMultiTitle : t.sportModesCreateTitle}
+            </Text>
+
+            <Text style={styles(theme).label}>{t.sportModesNamePlaceholder}</Text>
+            <TextInput
+              style={styles(theme).input}
+              value={createName}
+              onChangeText={setCreateName}
+              placeholder={t.sportModesNamePlaceholder}
+              placeholderTextColor={theme.mutedText}
+            />
+
+            <Text style={styles(theme).label}>{t.sportModesActivityLabel}</Text>
+            <ScrollView style={{ maxHeight: createKind === 'multi' ? 120 : 220 }}>
+              <View style={styles(theme).chipRow}>
+                {(createKind === 'multi' ? MULTISPORT_ACTIVITIES : CREATABLE_ACTIVITIES).map(a => (
+                  <TouchableOpacity
+                    key={a.id}
+                    style={[styles(theme).chip, createActivityId === a.id && styles(theme).chipActive]}
+                    onPress={() => setCreateActivityId(a.id)}
+                  >
+                    <Text style={[styles(theme).chipText, createActivityId === a.id && styles(theme).chipTextActive]}>{a.name}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </ScrollView>
+
+            {createKind === 'multi' && (
+              <>
+                <Text style={styles(theme).label}>{t.sportModesLegsLabel}</Text>
+                <Text style={styles(theme).sectionDesc}>{t.sportModesLegsHint}</Text>
+                <Text style={[styles(theme).sectionDesc, { color: legs.length ? theme.primary : theme.mutedText }]}>
+                  {legs.length ? t.sportModesLegsChosen(legs.join(' → ')) : t.sportModesNoLegsYet}
+                </Text>
+                <View style={styles(theme).chipRow}>
+                  {(summary?.modes ?? []).filter(m => !m.multisport).map(m => (
+                    <TouchableOpacity
+                      key={m.name}
+                      style={[styles(theme).chip]}
+                      onPress={() => setLegs(prev => [...prev, m.name])}
+                    >
+                      <Text style={styles(theme).chipText}>＋ {m.name}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                {legs.length > 0 && (
+                  <TouchableOpacity style={{ marginTop: 6 }} onPress={() => setLegs([])}>
+                    <Text style={[styles(theme).sectionDesc, { color: theme.error }]}>✕ {t.cancel}</Text>
+                  </TouchableOpacity>
+                )}
+              </>
+            )}
+
+            <View style={[styles(theme).row, { marginTop: 16, justifyContent: 'flex-end' }]}>
+              <TouchableOpacity style={styles(theme).smallBtn} onPress={() => setCreateKind(null)}>
+                <Text style={styles(theme).smallBtnText}>{t.cancel}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles(theme).smallBtn, { opacity: !createName.trim() || createActivityId == null || (createKind === 'multi' && legs.length < 2) ? 0.4 : 1 }]}
+                disabled={!createName.trim() || createActivityId == null || (createKind === 'multi' && legs.length < 2)}
+                onPress={submitCreate}
+              >
+                <Text style={styles(theme).smallBtnText}>{t.sportModesCreateConfirm}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -405,6 +626,18 @@ const styles = (t: ReturnType<typeof useV3Theme>) => StyleSheet.create({
   },
   fieldText: { color: t.text, fontSize: v3Type.body, flex: 1, marginRight: 8 },
   listRow: { flexDirection: 'row', alignItems: 'center' },
+  manageRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10,
+    borderTopWidth: 1, borderTopColor: t.mutedText + '22', paddingTop: 10,
+  },
+  manageName: { fontSize: v3Type.bodyLarge, fontWeight: '600', color: t.text },
+  manageSub: { fontSize: v3Type.label, color: t.mutedText, marginTop: 2 },
+  multiBadge: {
+    fontSize: v3Type.tiny, fontWeight: '700', color: t.primary,
+    backgroundColor: t.primary + '1F', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999, overflow: 'hidden',
+  },
+  deleteBtn: { backgroundColor: t.error + '1A', borderColor: t.error },
+  deleteBtnText: { color: t.error, fontWeight: '600', fontSize: v3Type.label },
   modalOverlay: { flex: 1, backgroundColor: '#00000066', justifyContent: 'flex-end' },
   modalBox: { backgroundColor: t.background, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, maxHeight: '85%' },
   pickerRow: { paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: t.mutedText + '22' },

@@ -1,10 +1,10 @@
 import { connect, disconnect, getDeviceInfo, readSettingsRaw, readPersonalSettings } from '../native/AmbitUsbModule';
 import {
-  AMBIT3_SETTINGS_FIELDS, KAILASH_SETTINGS_FIELDS, SettingField,
+  AMBIT3_SETTINGS_FIELDS, TRAVERSE_SETTINGS_FIELDS, KAILASH_SETTINGS_FIELDS, SettingField,
   decodeSettings, DecodedSetting,
 } from './AmbitSettingsReader';
 import { decodePersonalSettings } from './AmbitPersonalSettingsReader';
-import { writeSetting as writeSettingRaw, WriteSettingResult } from './AmbitSettingsWriter';
+import { writeSetting as writeSettingRaw, WriteSettingResult, WriteDevice } from './AmbitSettingsWriter';
 
 // The Ambit 1 / Ambit 2 family (Ambit, Ambit2, Ambit2 S, Ambit2 R) uses the older legacy
 // personal-settings mechanism, not the Ambit3/Kailash SBEM 0x1100 - a different read path
@@ -15,13 +15,12 @@ function isAmbit12(name?: string): boolean {
   return name === 'Suunto Ambit' || name.startsWith('Suunto Ambit 2');
 }
 
-// Traverse and Traverse Alpha. openambit drives them with the SAME ambit3 driver as the
-// Ambit3 family (device_support.c), so they READ fine with the Ambit3 SBEM path/table. But
-// they're shown READ-ONLY for now: we haven't verified a write against real Traverse hardware,
-// and they have real features the Ambit3 doesn't (Traverse Alpha's shot-detection/hunting-
-// fishing modes, Traverse backlight/POD differences) that the shared Ambit3 table doesn't
-// cover. TODO: give them their own field tables from a real descriptor (like Kailash got),
-// then re-enable writing once verified.
+// Traverse and Traverse Alpha. openambit drives them with the SAME ambit3 driver as the Ambit3
+// family, but their SCHEMA assigns different entry ids (Personal.Weight is 0x1b, not the
+// Ambit3's 0x19; nearly every id is shifted). 2026-08-16: they now have their OWN generated
+// field table (TRAVERSE_SETTINGS_FIELDS) + write templates from the real Traverse fw 2.0.22
+// descriptor, so they read correctly and are writable via the same 0x1101 mechanism (the
+// per-screen templates resolved through the Traverse schema).
 function isTraverse(name?: string): boolean {
   if (!name) return false;
   return name.startsWith('Suunto Traverse');
@@ -44,6 +43,9 @@ export interface ReadSettingsState {
   phase: 'idle' | 'connecting' | 'reading' | 'done' | 'error';
   settings?: DecodedSetting[];
   fields?: SettingField[];
+  // Which write plumbing the caller should pass back on a write - 'ambit3' | 'traverse' |
+  // 'kailash'. Undefined means read-only (Ambit 1/2). See AmbitSettingsWriter.WriteDevice.
+  writeDevice?: WriteDevice;
   isKailash?: boolean;
   // The connected watch's own friendly name (e.g. "Suunto Kailash", "Suunto Ambit3
   // Peak") from getDeviceInfo()'s device list, so the UI can label the section with the
@@ -82,15 +84,15 @@ export async function readAmbitSettings(onState: (s: ReadSettingsState) => void)
       return;
     }
 
-    const fields = isKailash ? KAILASH_SETTINGS_FIELDS : AMBIT3_SETTINGS_FIELDS;
+    // Per-device field table AND write plumbing, keyed off the connected watch: each schema
+    // family assigns its own entry ids, so one table can't serve all three.
+    const traverse = isTraverse(deviceName);
+    const fields = isKailash ? KAILASH_SETTINGS_FIELDS
+      : traverse ? TRAVERSE_SETTINGS_FIELDS
+      : AMBIT3_SETTINGS_FIELDS;
+    const writeDevice: WriteDevice = isKailash ? 'kailash' : traverse ? 'traverse' : 'ambit3';
     const settings = decodeSettings(await readSettingsRaw(), fields);
-    // Traverse / Traverse Alpha: read with the Ambit3 table but show read-only (no write
-    // table handed back), until verified on real hardware. Ambit3 / Kailash stay writable.
-    if (isTraverse(deviceName)) {
-      onState({ phase: 'done', settings, deviceName, readOnly: true });
-    } else {
-      onState({ phase: 'done', settings, fields, isKailash, deviceName });
-    }
+    onState({ phase: 'done', settings, fields, writeDevice, isKailash, deviceName });
   } catch (e: any) {
     onState({ phase: 'error', error: e?.message ?? 'Failed to read settings' });
   } finally {
@@ -113,6 +115,7 @@ export async function writeAmbitSetting(
   key: string,
   value: number,
   fields: SettingField[],
+  device: WriteDevice,
   onState: (s: WriteSettingState) => void,
 ): Promise<void> {
   onState({ phase: 'connecting' });
@@ -124,7 +127,7 @@ export async function writeAmbitSetting(
   }
   onState({ phase: 'writing' });
   try {
-    const result = await writeSettingRaw(key, value, fields);
+    const result = await writeSettingRaw(key, value, fields, device);
     onState({
       phase: result.ok ? 'done' : 'error',
       result,

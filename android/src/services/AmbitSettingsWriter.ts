@@ -2,11 +2,17 @@ import { readSettingsRaw, writeSettingsRaw } from '../native/AmbitUsbModule';
 import { base64ToBytes, bytesToBase64 } from './Base64';
 import { SettingField, decodeSettings } from './AmbitSettingsReader';
 import {
-  AMBIT3_WRITE_TEMPLATES,
-  AMBIT3_KEY_TEMPLATE,
-  AMBIT3_ENUM_VALUES,
-  AMBIT3_BOOL_ENTRIES,
+  WRITE_TEMPLATES,
+  KEY_SCREEN,
+  ENUM_VALUES,
+  BOOL_ENTRIES,
 } from './AmbitSettingsTemplates';
+
+// Which per-device write plumbing to use. Ambit3 family and Traverse share the same 0x1101
+// template mechanism but with different entry ids (their schemas differ); Kailash never gets
+// here (it writes single entries over 0x1201). Defaults to 'ambit3' for callers that predate
+// the per-device split.
+export type WriteDevice = 'ambit3' | 'traverse' | 'kailash';
 
 // Real, hardware-confirmed write dance, 2026-08-08: read the full settings blob fresh,
 // patch exactly the bytes for one field (found by its real entry ID, from whichever field
@@ -63,10 +69,10 @@ function encodeEntry(id: number, data: Uint8Array): Uint8Array {
  * in the captures, where a watch left holding GpsPositionFormat=15 makes SuuntoLink's own
  * write shrink and omit that entry. Re-sending a value we cannot interpret, or substituting
  * a legal one, would both be worse than leaving the field for the watch to keep owning. */
-function representable(entryId: number, data: Uint8Array): boolean {
-  const values = AMBIT3_ENUM_VALUES[entryId];
+function representable(device: WriteDevice, entryId: number, data: Uint8Array): boolean {
+  const values = ENUM_VALUES[device][entryId];
   if (values) return data.length >= 1 && values.includes(data[0]);
-  if (AMBIT3_BOOL_ENTRIES.includes(entryId)) return data.length === 1 && (data[0] === 0 || data[0] === 1);
+  if (BOOL_ENTRIES[device].includes(entryId)) return data.length === 1 && (data[0] === 0 || data[0] === 1);
   return true;
 }
 
@@ -79,12 +85,13 @@ function representable(entryId: number, data: Uint8Array): boolean {
  * emitted here. Mirrors the desktop's build_write_payload(), which is verified byte-exact
  * against all 134 captured SuuntoLink writes. */
 function buildWritePayload(
+  device: WriteDevice,
   read: Uint8Array,
   screen: string,
   patch: { entryId: number; occurrence: number; data: Uint8Array },
 ): Uint8Array | null {
   const split = splitEntries(read);
-  const wanted = AMBIT3_WRITE_TEMPLATES[screen];
+  const wanted = WRITE_TEMPLATES[device][screen];
   if (!split || !wanted) return null;
 
   const byId = new Map<number, Uint8Array[]>();
@@ -103,7 +110,7 @@ function buildWritePayload(
     for (let n = 0; n < occurrences.length; n++) {
       if (entryId === patch.entryId && n === patch.occurrence) {
         chunks.push(encodeEntry(entryId, patch.data));
-      } else if (representable(entryId, occurrences[n])) {
+      } else if (representable(device, entryId, occurrences[n])) {
         chunks.push(encodeEntry(entryId, occurrences[n]));
       }
     }
@@ -157,10 +164,15 @@ function findFieldOffset(bytes: Uint8Array, field: SettingField): number | null 
 }
 
 function encodeField(bytes: Uint8Array, offset: number, field: SettingField, value: number): void {
-  const raw = field.scale ? Math.round(value * field.scale) : value;
+  // A float field carries a fractional raw value (compass declination in radians, value*π/180)
+  // - Math.round would flatten it to 0/1. Only integer-wire fields (scaled or not) round.
+  const raw = field.scale
+    ? (field.float ? value * field.scale : Math.round(value * field.scale))
+    : value;
   const view = new DataView(bytes.buffer, bytes.byteOffset + offset, field.byteWidth);
   if (field.float) { view.setFloat32(0, raw, true); return; }
   if (field.byteWidth === 1) { (field.signed ? view.setInt8 : view.setUint8).call(view, 0, raw); return; }
+  if (field.byteWidth === 2) { (field.signed ? view.setInt16 : view.setUint16).call(view, 0, raw, true); return; }
   (field.signed ? view.setInt32 : view.setUint32).call(view, 0, raw, true);
 }
 
@@ -185,6 +197,7 @@ export async function writeSetting(
   key: string,
   value: number,
   fields: SettingField[],
+  device: WriteDevice = 'ambit3',
 ): Promise<WriteSettingResult> {
   const field = fields.find(f => f.key === key);
   if (!field) {
@@ -205,6 +218,44 @@ export async function writeSetting(
 
   const beforeB64 = await readSettingsRaw();
   const before = base64ToBytes(beforeB64);
+
+  // Birth year (utf8 "YYYY-01-01"): overwrite ONLY the 4 year digits in the existing entry,
+  // preserving its length and "-MM-DD" tail. A same-length patch is the safest write there is
+  // - no re-encoding of a variable-length text entry, exactly what desktop's write_one() does
+  // for this field (SuuntoLink only ever edits the year).
+  if (field.kind === 'year') {
+    if ((field.min !== undefined && value < field.min) || (field.max !== undefined && value > field.max)) {
+      return { ok: false, key, previousValue: null, requestedValue: value, confirmedValue: null,
+        error: `${key}=${value} out of range [${field.min}, ${field.max}]` };
+    }
+    const split = splitEntries(before);
+    const existing = split?.entries.find(([id]) => id === field.entryId)?.[1];
+    if (!existing || existing.length < 4) {
+      return { ok: false, key, previousValue: null, requestedValue: value, confirmedValue: null,
+        error: `entry 0x${field.entryId.toString(16)} (${key}) not in this watch's current settings reply` };
+    }
+    let prevText = '';
+    for (let i = 0; i < existing.length; i++) prevText += String.fromCharCode(existing[i]);
+    const prevYear = parseInt((prevText.match(/\d{4}/) || ['0'])[0], 10) || null;
+    const yearStr = String(Math.round(value)).padStart(4, '0').slice(0, 4);
+    const data = new Uint8Array(existing);
+    for (let i = 0; i < 4; i++) data[i] = yearStr.charCodeAt(i);
+    const screen = KEY_SCREEN[device][key];
+    const payload = screen
+      ? buildWritePayload(device, before, screen, { entryId: field.entryId, occurrence: 0, data })
+      : null;
+    if (!payload) {
+      return { ok: false, key, previousValue: prevYear, requestedValue: value, confirmedValue: null,
+        error: `${key} has no write template - this setting is not writable from the app` };
+    }
+    await writeSettingsRaw(bytesToBase64(payload));
+    const afterYear = decodeSettings(await readSettingsRaw(), fields).find(s => s.key === key);
+    const confYear = afterYear ? afterYear.value : null;
+    return { ok: confYear === Math.round(value), key, previousValue: prevYear,
+      requestedValue: value, confirmedValue: confYear,
+      error: confYear === Math.round(value) ? undefined : `write not confirmed (watch shows ${confYear})` };
+  }
+
   const offset = findFieldOffset(before, field);
   if (offset === null) {
     return { ok: false, key, previousValue: null, requestedValue: value, confirmedValue: null,
@@ -213,6 +264,7 @@ export async function writeSetting(
   const previousView = new DataView(before.buffer, before.byteOffset + offset, field.byteWidth);
   const previousRaw = field.float ? previousView.getFloat32(0, true)
     : field.byteWidth === 1 ? (field.signed ? previousView.getInt8(0) : previousView.getUint8(0))
+    : field.byteWidth === 2 ? (field.signed ? previousView.getInt16(0, true) : previousView.getUint16(0, true))
     : (field.signed ? previousView.getInt32(0, true) : previousView.getUint32(0, true));
   const previousValue = field.scale ? previousRaw / field.scale : previousRaw;
 
@@ -225,16 +277,23 @@ export async function writeSetting(
   // tables (generated from settings_write.py by tools/gen_android_settings_templates.py, so
   // they cannot drift apart).
   //
-  // `isAmbit3` is decided by whether this field table has a screen for the key at all:
-  // Kailash writes one entry at a time over 0x1201 and never goes through here.
-  const screen = AMBIT3_KEY_TEMPLATE[key];
+  // The Ambit3 family (Ambit3 + Traverse) sends ONLY the screen this field belongs to, so the
+  // paired phone's BLE bond keys never ride along. Kailash has no such per-screen template and
+  // no bond keys in a cable reply, so it takes the original whole-blob patch: change the one
+  // field in place and write the whole settings blob back. (0x1201 single-entry pushes are the
+  // BLE path; over cable Kailash uses the same 0x1101 write as everyone else.)
+  const screen = device === 'kailash' ? null : KEY_SCREEN[device][key];
   const entryStart = offset - (field.byteOffset ?? 0);
   const entryData = new Uint8Array(before.subarray(entryStart, entryStart + field.byteWidth + (field.byteOffset ?? 0)));
   encodeField(entryData, field.byteOffset ?? 0, field, value);
 
   let payload: Uint8Array | null = null;
-  if (screen) {
-    payload = buildWritePayload(before, screen, {
+  if (device === 'kailash') {
+    const patched = new Uint8Array(before);
+    encodeField(patched, offset, field, value);
+    payload = patched;
+  } else if (screen) {
+    payload = buildWritePayload(device, before, screen, {
       entryId: field.entryId,
       occurrence: 0,
       data: entryData,
@@ -262,13 +321,23 @@ export async function writeSetting(
   // representation both sides actually went through instead - mirrors
   // settings_write.py's own write_one(), which compares confirmed_raw against
   // raw_new_value (integers), never the display-scaled floats.
-  const requestedRaw = field.scale ? Math.round(value * field.scale) : value;
-  const confirmedRaw = confirmedValue !== null
-    ? (field.scale ? Math.round(confirmedValue * field.scale) : confirmedValue)
-    : null;
+  let ok: boolean;
+  if (field.float) {
+    // A float field (compass declination) carries a fractional raw value, so rounding it to
+    // an int - as the scaled-integer path below does - would collapse every value to 0 and
+    // "confirm" every write. Compare in display units with a small tolerance instead (0.05°,
+    // well under the 0.1° step).
+    ok = confirmedValue !== null && Math.abs(confirmedValue - value) < 0.05;
+  } else {
+    const requestedRaw = field.scale ? Math.round(value * field.scale) : value;
+    const confirmedRaw = confirmedValue !== null
+      ? (field.scale ? Math.round(confirmedValue * field.scale) : confirmedValue)
+      : null;
+    ok = confirmedRaw === requestedRaw;
+  }
 
   return {
-    ok: confirmedRaw === requestedRaw,
+    ok,
     key,
     previousValue,
     requestedValue: value,

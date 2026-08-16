@@ -48,6 +48,7 @@ extern "C" int ambit3_read_settings_raw(ambit_object_t *object, uint8_t **out, s
 extern "C" int ambit3_write_settings_raw(ambit_object_t *object, const uint8_t *data, size_t datalen, uint8_t **out, size_t *out_len);
 extern "C" int ambit3_read_custom_modes_raw(ambit_object_t *object, uint8_t *out_buffer);
 extern "C" int ambit3_write_custom_modes_raw(ambit_object_t *object, const uint8_t *data, size_t datalen);
+extern "C" int ambit3_write_region_raw(ambit_object_t *object, uint32_t base, const uint8_t *data, size_t extent);
 
 #undef  LOG_TAG
 #define LOG_TAG "AmbitJNI"
@@ -947,6 +948,44 @@ Java_com_ambitsyncmodern_usb_AmbitUsbModule_nativeAmbitWriteCustomModesRaw(
     int ret = ambit3_write_custom_modes_raw(g_device, buffer.data(), buffer.size());
     if (ret != 0) {
         LOGE("ambit3_write_custom_modes_raw failed: %d", ret);
+        return JNI_FALSE;
+    }
+    return JNI_TRUE;
+}
+
+/**
+ * nativeAmbitWriteRegion  (EXPERIMENTAL - App-Zone / Training-program, 2026-08-14)
+ *
+ * Generic region write: writes the first `extent` bytes of `data` at flash `address`, then
+ * finalizes with the SAME used-extent SHA256 data-tail as the CustomModes writer (no commit).
+ * `data` is the full region image the caller built; `extent` is how many of its leading bytes
+ * are the real used content (the rest, if any, is 0xFF padding the watch never hashes). The
+ * per-region format correctness lives in TS (proven byte-exact against captures). Returns
+ * false on any protocol-level failure; the caller re-reads to confirm the live state.
+ */
+JNIEXPORT jboolean JNICALL
+Java_com_ambitsyncmodern_usb_AmbitUsbModule_nativeAmbitWriteRegion(
+        JNIEnv *env, jobject /* thiz */, jlong address, jbyteArray data, jint extent)
+{
+    if (!g_device) { LOGE("nativeAmbitWriteRegion: Not connected"); return JNI_FALSE; }
+    if (!data) { LOGE("nativeAmbitWriteRegion: null data"); return JNI_FALSE; }
+
+    jsize len = env->GetArrayLength(data);
+    if (extent < 4 || extent > len) {
+        LOGE("nativeAmbitWriteRegion: bad extent %d for %d-byte image", (int)extent, (int)len);
+        return JNI_FALSE;
+    }
+    if (address < 0 || address > 0x00FFFFFF) {
+        LOGE("nativeAmbitWriteRegion: implausible address 0x%llx", (long long)address);
+        return JNI_FALSE;
+    }
+    std::vector<uint8_t> buffer((size_t)len);
+    env->GetByteArrayRegion(data, 0, len, reinterpret_cast<jbyte *>(buffer.data()));
+
+    LOGI("nativeAmbitWriteRegion: 0x%06llx extent=%d (image %d)", (long long)address, (int)extent, (int)len);
+    int ret = ambit3_write_region_raw(g_device, (uint32_t)address, buffer.data(), (size_t)extent);
+    if (ret != 0) {
+        LOGE("ambit3_write_region_raw failed: %d", ret);
         return JNI_FALSE;
     }
     return JNI_TRUE;

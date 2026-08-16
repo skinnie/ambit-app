@@ -3,7 +3,7 @@
  *
  * L'architecture est intentionnellement hardware-agnostic : chaque marque/modèle
  * fournit sa propre implémentation de cette interface. L'application ne connaît
- * que cette interface ; les couches données (GPX, SQLite, Livelox…) sont
+ * que cette interface ; les couches données (GPX, SQLite, cloud…) sont
  * totalement indépendantes du hardware.
  *
  * Implémentations existantes :

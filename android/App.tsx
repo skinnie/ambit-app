@@ -9,6 +9,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 // nothing in the app imports theme/useTheme.ts anymore after this.
 import { useV3Theme } from './src/theme/v3';
 import { ThemeModeProvider, useThemeMode } from './src/theme/ThemeModeContext';
+import { ExperimentalProvider } from './src/config/ExperimentalContext';
 import HomeScreen from './src/screens/HomeScreen';
 import LogListScreen from './src/screens/LogListScreen';
 import MapScreen from './src/screens/MapScreen';
@@ -19,9 +20,13 @@ import GarminRouteScreen from './src/screens/GarminRouteScreen';
 import GarminPoiScreen from './src/screens/GarminPoiScreen';
 import BackupScreen from './src/screens/BackupScreen';
 import SportModesScreen from './src/screens/SportModesScreen';
+import TotalsScreen from './src/screens/TotalsScreen';
+import CalendarScreen from './src/screens/CalendarScreen';
+import SmartSensorScreen from './src/screens/SmartSensorScreen';
+import AppZoneScreen from './src/screens/AppZoneScreen';
+import IntervalsScreen from './src/screens/IntervalsScreen';
 import type { GarminConnectResult } from './src/native/GarminModule';
 import { ActivityRecord } from './src/database/db';
-import { handleOAuthCallback as handleLiveloxCallback } from './src/services/ApiLivelox';
 import { handleOAuthCallback as handleStravaCallback } from './src/services/ApiStrava';
 import { t, dateLocale } from './src/i18n';
 
@@ -46,13 +51,23 @@ export type RootStackParamList = {
   // Real, 2026-08-08 - Ambit3-only (Kailash's own memory map has no CustomModes region),
   // HomeScreen only routes here for that device type - see SportModesScreen.tsx.
   SportModes: undefined;
+  // Activity-analytics views (2026-08-13, port of desktop TotalsPage/CalendarPage). Both are
+  // derived purely from the local activity DB, so they're reachable any time (no device
+  // needed) - launched from the Activities screen header, not the device-gated Home shell.
+  Totals: undefined;
+  Calendar: undefined;
+  // Experimental (2026-08-14) - gated behind the Experimental flag (see ExperimentalContext),
+  // reached from the Settings > Experimental section. App-Zone + Intervals write flash and are
+  // unproven on Android hardware; Smart Sensor is a separate BLE peripheral (the HR belt).
+  SmartSensor: undefined;
+  AppZone: undefined;
+  Intervals: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 // ─── Handler deep link OAuth2 ─────────────────────────────────────────────────
 
-const LIVELOX_OAUTH_PREFIX = 'opensportsync://oauth/livelox';
 const STRAVA_OAUTH_PREFIX  = 'opensportsync://oauth/strava';
 
 async function processOAuthUrl(url: string | null) {
@@ -61,10 +76,7 @@ async function processOAuthUrl(url: string | null) {
     const code = new URL(url).searchParams.get('code');
     if (!code) throw new Error(t.oauthMissingCode);
 
-    if (url.startsWith(LIVELOX_OAUTH_PREFIX)) {
-      await handleLiveloxCallback(code);
-      Alert.alert('Livelox', t.liveloxConnected);
-    } else if (url.startsWith(STRAVA_OAUTH_PREFIX)) {
+    if (url.startsWith(STRAVA_OAUTH_PREFIX)) {
       await handleStravaCallback(code);
       Alert.alert('Strava', t.stravaConnected);
     }
@@ -78,7 +90,9 @@ async function processOAuthUrl(url: string | null) {
 export default function App() {
   return (
     <ThemeModeProvider>
-      <AppShell />
+      <ExperimentalProvider>
+        <AppShell />
+      </ExperimentalProvider>
     </ThemeModeProvider>
   );
 }
@@ -165,6 +179,31 @@ function AppShell() {
             name="SportModes"
             component={SportModesScreen}
             options={{ title: t.sportModesScreenTitle }}
+          />
+          <Stack.Screen
+            name="Totals"
+            component={TotalsScreen}
+            options={{ title: t.totalsScreenTitle }}
+          />
+          <Stack.Screen
+            name="Calendar"
+            component={CalendarScreen}
+            options={{ title: t.calendarScreenTitle }}
+          />
+          <Stack.Screen
+            name="SmartSensor"
+            component={SmartSensorScreen}
+            options={{ title: t.smartSensorScreenTitle }}
+          />
+          <Stack.Screen
+            name="AppZone"
+            component={AppZoneScreen}
+            options={{ title: t.appZoneScreenTitle }}
+          />
+          <Stack.Screen
+            name="Intervals"
+            component={IntervalsScreen}
+            options={{ title: t.intervalsScreenTitle }}
           />
         </Stack.Navigator>
       </NavigationContainer>

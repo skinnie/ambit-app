@@ -20,10 +20,17 @@ const TILE_SIZE = 256;
 // separate, real, explicit request) - reusing it for a map overlay was the mistake, not
 // the pattern: grey-on-beige-street-tile is genuinely low contrast, confirmed live. Map
 // tiles have their own fixed, mostly-light palette regardless of the app's own light/dark
-// mode, so this is a fixed color, not theme-driven - a Material-ish teal, good contrast
-// against typical OSM/IGN colors (beige/tan roads, green parks, white background, blue
-// water), calmer than the red it replaced.
-export const TRACK_COLOR = '#00897B';
+// mode, so this is a fixed color, not theme-driven - a teal with good contrast against
+// typical OSM/IGN colors (beige/tan roads, green parks, white background, blue water),
+// calmer than the red it replaced.
+//
+// 2026-08-15 (André, design-parity audit: desktop is the baseline): this is desktop's
+// map-overlay color, Theme.qml's `mapAccent` = its _lightPrimary #167E6A - the exact same
+// fixed, theme-independent teal desktop draws every track/POI marker in (MapView.qml
+// strokeStyle, PoisPage.qml). Was #00897B, a near-but-not-equal Material teal that made the
+// two apps' maps visibly disagree; matched to desktop's value so a route drawn here is the
+// same green as the same route on desktop.
+export const TRACK_COLOR = '#167E6A';
 
 export function tileUrl(provider: MapProvider, z: number, x: number, y: number): string {
   switch (provider) {

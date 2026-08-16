@@ -8,12 +8,12 @@
 // stays exactly as it is for whichever screens haven't moved onto this yet.
 //
 // spacing/radius/type scale still copied by hand from desktop/qml/Theme.qml, same reasoning
-// as before: one shared layout/type language across both apps. primary/accent are a real,
-// deliberate exception to that, same day ("why we have this cyano blue? ... change to a
-// nicer grey") - a real, explicit design choice to move Android off desktop's teal onto a
-// slate grey instead, not a bug or a stale copy. success/warning/error/background/card/text/
-// mutedText are unchanged (already neutral or real semantic status colors, not the "cyano
-// blue" being asked about).
+// as before: one shared layout/type language across both apps. As of 2026-08-15 the COLOR
+// palette is fully mutualized with desktop too: dark mode was already the shared slate grey
+// (the 2026-08-09 "change to a nicer grey" pass), and light mode is now back on desktop's
+// teal (see v3Light below) after that pass had left the two apps mismatched in light mode.
+// Every token here now equals its Theme.qml counterpart exactly, so the two apps render the
+// same colors in both themes.
 
 import { useThemeMode } from './ThemeModeContext';
 
@@ -33,9 +33,17 @@ export interface V3Colors {
 export const v3Light: V3Colors = {
   background: '#F6F8F9',
   card:       '#FFFFFF',
-  primary:    '#475569',
+  // 2026-08-15 (André, full design-parity audit: "the android app should look 100%
+  // identical to the desktop except the intervals. Desktop is our baseline"). Light-mode
+  // primary/accent were a slate grey (#475569/#64748B) - a leftover from the 2026-08-09
+  // "change to a nicer grey" pass, which only ever mutualized the DARK palette (both apps
+  // are grey in dark mode, see v3Dark below and Theme.qml's _dark* block). Light mode was
+  // never brought back into line: desktop stayed on its teal identity (Theme.qml's
+  // _lightPrimary #167E6A / _lightAccent #2FA98C), Android was left grey - so the two apps
+  // did not match in light mode. Restored to desktop's exact teal so they do.
+  primary:    '#167E6A',
   secondary:  '#5B6270',
-  accent:     '#64748B',
+  accent:     '#2FA98C',
   success:    '#1A7F37',
   warning:    '#946200',
   error:      '#C0392B',

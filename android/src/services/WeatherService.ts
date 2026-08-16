@@ -31,7 +31,7 @@ const DEFAULT_LAT = 48.85;
 const DEFAULT_LON = 2.35;
 
 export async function fetchWeather(latitude: number, longitude: number): Promise<WeatherData | null> {
-  // URLSearchParams + string concat, not `new URL()` - matches ApiStrava.ts/ApiLivelox.ts's
+  // URLSearchParams + string concat, not `new URL()` - matches ApiStrava.ts's
   // own established pattern in this codebase (URL's own constructor isn't used anywhere
   // else here).
   const params = new URLSearchParams({

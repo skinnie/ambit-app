@@ -1712,3 +1712,35 @@ int ambit3_write_custom_modes_raw(ambit_object_t *object, const uint8_t *data, s
     /* No CMD_NAV_COMMIT here - Finding 27, see this function's own header comment. */
     return 0;
 }
+
+/* Generic region writer for the experimental App-Zone / Training-program paths (2026-08-14).
+ * Same proven finalization as ambit3_write_custom_modes_raw above (Findings 26/27): write the
+ * used extent via pmem20, SHA256 that SAME extent, send the 0x0b18 data-tail carrying that
+ * hash, and send NO commit (0x0b04). The difference is only that base + extent are parameters
+ * and there is no root-tag check: unlike CustomModes (always DEVICE_CUSTOM), the Apps and
+ * TrainingProgram regions have different root structures, so the CALLER (the per-region TS
+ * builder that owns the format) decides the base, builds the exact image, and passes how many
+ * bytes are the real used extent. That keeps this a dumb, auditable primitive whose byte-exact
+ * correctness is proven per-feature in TS against real SuuntoLink captures - the same standard
+ * as the sport-mode path, not a new trust assumption. */
+int ambit3_write_region_raw(ambit_object_t *object, uint32_t base, const uint8_t *data, size_t extent)
+{
+    if (object == NULL || data == NULL || extent < 4) return -1;
+
+    if (libambit_pmem20_data_write(&object->driver_data->pmem20, base, data, extent) != 0) {
+        LOG_ERROR("ambit3_write_region_raw: region write failed at 0x%06x", base);
+        return -1;
+    }
+
+    uint8_t hash[32];
+    sha256(data, extent, hash);
+    char hash_hex[65];
+    for (int i = 0; i < 32; i++) {
+        sprintf(hash_hex + i * 2, "%02X", hash[i]);
+    }
+    hash_hex[64] = '\0';
+
+    /* Reuse the same tail helper Routes/Waypoints finalize with: [u32 LE base][u32 0]
+     * [64 ASCII uppercase hex hash] over 0x0b18. No commit. */
+    return ambit3_send_region_tail(object, base, hash_hex);
+}

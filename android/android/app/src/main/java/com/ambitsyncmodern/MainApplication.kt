@@ -6,6 +6,8 @@ import com.facebook.react.ReactApplication
 import com.ambitsyncmodern.usb.AmbitUsbPackage
 import com.ambitsyncmodern.ble.AmbitBlePackage
 import com.ambitsyncmodern.garmin.GarminPackage
+import com.ambitsyncmodern.smartsensor.AmbitSmartSensorPackage
+import com.ambitsyncmodern.catalog.AmbitCatalogPackage
 import com.facebook.react.ReactHost
 import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.load
 import com.facebook.react.defaults.DefaultReactHost.getDefaultReactHost
@@ -22,6 +24,8 @@ class MainApplication : Application(), ReactApplication {
           add(AmbitUsbPackage())
           add(AmbitBlePackage())
           add(GarminPackage())
+          add(AmbitSmartSensorPackage())
+          add(AmbitCatalogPackage())
         },
     )
   }

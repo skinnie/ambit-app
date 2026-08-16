@@ -247,6 +247,21 @@ export function writeCustomModesRaw(dataBase64: string): Promise<boolean> {
   return NativeAmbit.writeCustomModesRaw(dataBase64);
 }
 
+/**
+ * EXPERIMENTAL (2026-08-14) - generic flash-region write, shared by the App-Zone and
+ * Training-program (Intervals) paths. Writes the first `extent` bytes of the base64 region
+ * image at `address`, finalized with the same used-extent SHA256 data-tail as
+ * writeCustomModesRaw (no commit) - see ambit3_write_region_raw()/nativeAmbitWriteRegion in
+ * the native layer. The image and extent are built and proven byte-exact in TS by the
+ * per-region builder that owns the format; this is just the marshalling boundary. Resolving
+ * true means the write+tail completed without a protocol failure, NOT that the watch's live
+ * state reflects it - the caller re-reads to confirm, same "prove it" rule as every other
+ * write here. NOT yet hardware-confirmed on Android.
+ */
+export function writeRegion(address: number, dataBase64: string, extent: number): Promise<boolean> {
+  return NativeAmbit.writeRegion(address, dataBase64, extent);
+}
+
 // ─── Auto-sync on USB attach ───────────────────────────────────────────────────
 // AndroidManifest.xml (launchMode="singleTask" + USB_DEVICE_ATTACHED intent-filter
 // + device_filter.xml) already lets the OS launch/foreground the app when the
@@ -289,4 +304,25 @@ export interface AmbitDeviceInfo {
  * The watch must already be connected (connect() called first). */
 export function getDeviceInfo(): Promise<AmbitDeviceInfo> {
   return NativeAmbit.getDeviceInfo();
+}
+
+// ─── Multi-watch switcher (2026-08-16) ─────────────────────────────────────────
+// With more than one Suunto plugged in, connect() targets whichever watch selectDevice() last
+// chose (by its stable USB path), so the UI can offer a picker like the desktop app's.
+
+export interface AmbitUsbDevice {
+  deviceName: string;   // stable Android USB path, e.g. "/dev/bus/usb/002/010" — the id for selectDevice
+  productId: number;    // e.g. 0x002b (Traverse); identifies the model
+  name: string;         // friendly name from the known-PID table, e.g. "Suunto Traverse"
+}
+
+/** Every attached Suunto watch. Use to decide whether to show the picker (length > 1). */
+export function listDevices(): Promise<AmbitUsbDevice[]> {
+  return NativeAmbit.listDevices();
+}
+
+/** Choose which attached watch subsequent connect() calls target (by deviceName). Pass null to
+ * clear (back to "first found"). */
+export function selectDevice(deviceName: string | null): Promise<boolean> {
+  return NativeAmbit.selectDevice(deviceName);
 }

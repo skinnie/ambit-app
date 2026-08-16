@@ -70,17 +70,23 @@ export function NavShell({
 function NavShellButton({
   item, selected, vertical, t,
 }: { item: NavShellItem; selected: boolean; vertical: boolean; t: ReturnType<typeof useV3Theme> }) {
+  // 2026-08-15 (André, design-parity audit: desktop is the baseline). Matched to
+  // desktop/qml/components/NavItem.qml exactly: the selected destination is a SOLID
+  // Theme.primary fill with its icon+label drawn in Theme.card (the surface color), not the
+  // faint accent+'22' tint with primary-colored text this used before. Unselected items are
+  // Theme.text (desktop's full-contrast idle color), not a greyed mutedText.
+  const fg = selected ? t.card : t.text;
   return (
     <TouchableOpacity
-      style={[vertical ? styles.railItem : styles.tabItem, selected && { backgroundColor: t.accent + '22' }]}
+      style={[vertical ? styles.railItem : styles.tabItem, selected && { backgroundColor: t.primary }]}
       onPress={item.onPress}
       activeOpacity={0.7}
     >
-      <Icon name={item.icon} size={22} color={selected ? t.primary : t.mutedText} />
+      <Icon name={item.icon} size={22} color={fg} />
       <Text
         style={[
           vertical ? styles.railLabel : styles.tabLabel,
-          { color: selected ? t.primary : t.mutedText },
+          { color: fg },
         ]}
         numberOfLines={1}
       >

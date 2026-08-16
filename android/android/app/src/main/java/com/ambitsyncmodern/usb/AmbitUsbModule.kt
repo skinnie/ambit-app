@@ -101,10 +101,16 @@ class AmbitUsbModule(private val reactContext: ReactApplicationContext) :
     private external fun nativeAmbitSetDateTime(): Boolean
     private external fun nativeAmbitReadCustomModesRaw(): String?
     private external fun nativeAmbitWriteCustomModesRaw(data: ByteArray): Boolean
+    private external fun nativeAmbitWriteRegion(address: Long, data: ByteArray, extent: Int): Boolean
     private external fun nativeAmbitDisconnect()
 
     // ─── État interne ─────────────────────────────────────────────────────────
     private var currentDevice: UsbDevice? = null
+    // Multi-watch switcher (2026-08-16): which attached Suunto to talk to when more than one is
+    // plugged in, by its stable Android USB path (UsbDevice.deviceName, e.g. /dev/bus/usb/002/010).
+    // null = "first found", the pre-switcher behaviour. Set from JS via selectDevice(); connect()
+    // prefers it, falling back to the first match if that watch is no longer attached.
+    @Volatile private var selectedDeviceName: String? = null
     private var pendingConnectPromise: Promise? = null
     private var pendingPickGpxPromise: Promise? = null
     private var pendingSaveAsPromise: Promise? = null
@@ -229,9 +235,12 @@ class AmbitUsbModule(private val reactContext: ReactApplicationContext) :
             return
         }
         val usbManager = reactContext.getSystemService(Context.USB_SERVICE) as UsbManager
-        val ambit = usbManager.deviceList.values.find { device ->
+        val matches = usbManager.deviceList.values.filter { device ->
             device.vendorId == SUUNTO_VID && device.productId in SUUNTO_PID_NAMES
         }
+        // Prefer the watch the user picked in the switcher; fall back to the first attached one
+        // (unchanged single-watch behaviour) if it's the only one or the selection is stale.
+        val ambit = matches.find { it.deviceName == selectedDeviceName } ?: matches.firstOrNull()
         if (ambit == null) {
             promise.reject("AMBIT_NOT_FOUND", "No Suunto watch detected. Check the USB OTG cable.")
             return
@@ -257,6 +266,32 @@ class AmbitUsbModule(private val reactContext: ReactApplicationContext) :
             reactContext.registerReceiver(usbPermissionReceiver, filter)
         }
         usbManager.requestPermission(ambit, permissionIntent)
+    }
+
+    // Multi-watch switcher (2026-08-16). All attached Suunto watches, so the UI can offer a
+    // picker when more than one is plugged in (the desktop app already has this). Each entry's
+    // `deviceName` is the stable USB path used by selectDevice()/connect().
+    @ReactMethod
+    fun listDevices(promise: Promise) {
+        val usbManager = reactContext.getSystemService(Context.USB_SERVICE) as UsbManager
+        val out = Arguments.createArray()
+        for (device in usbManager.deviceList.values) {
+            if (device.vendorId != SUUNTO_VID || device.productId !in SUUNTO_PID_NAMES) continue
+            val m = Arguments.createMap()
+            m.putString("deviceName", device.deviceName)
+            m.putInt("productId", device.productId)
+            m.putString("name", SUUNTO_PID_NAMES[device.productId] ?: device.productName ?: "Suunto")
+            out.pushMap(m)
+        }
+        promise.resolve(out)
+    }
+
+    // Choose which attached watch subsequent connect() calls target. Pass null/"" to clear the
+    // choice (back to "first found"). Cheap and synchronous - just records the selection.
+    @ReactMethod
+    fun selectDevice(deviceName: String?, promise: Promise) {
+        selectedDeviceName = if (deviceName.isNullOrEmpty()) null else deviceName
+        promise.resolve(true)
     }
 
     private fun openDeviceAndInit(device: UsbDevice, promise: Promise) {
@@ -741,6 +776,28 @@ class AmbitUsbModule(private val reactContext: ReactApplicationContext) :
                 else promise.reject("CUSTOMMODES_WRITE_FAILED", "Failed to write CustomModes (see logcat AmbitJNI)")
             } catch (e: Exception) {
                 promise.reject("CUSTOMMODES_WRITE_ERROR", e.message ?: "Unknown error")
+            }
+        }
+    }
+
+    // EXPERIMENTAL (2026-08-14) - generic region write for App-Zone / Training-program. Writes
+    // the first `extent` bytes of the base64 image at `address`, finalized with the same
+    // used-extent hash + data-tail as writeCustomModesRaw (no commit). The image + extent are
+    // built and proven byte-exact in TS (see the per-region builders); this only marshals.
+    @ReactMethod
+    fun writeRegion(address: Double, dataBase64: String, extent: Double, promise: Promise) {
+        if (!jniLoaded) {
+            promise.reject("JNI_NOT_LOADED", "Native library unavailable")
+            return
+        }
+        executor.execute {
+            try {
+                val data = Base64.decode(dataBase64, Base64.DEFAULT)
+                val ok = nativeAmbitWriteRegion(address.toLong(), data, extent.toInt())
+                if (ok) promise.resolve(true)
+                else promise.reject("REGION_WRITE_FAILED", "Failed to write region (see logcat AmbitJNI)")
+            } catch (e: Exception) {
+                promise.reject("REGION_WRITE_ERROR", e.message ?: "Unknown error")
             }
         }
     }

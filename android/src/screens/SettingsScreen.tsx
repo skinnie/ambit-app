@@ -1,23 +1,24 @@
 import React, { useCallback, useState } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, Switch,
+  View, Text, TextInput, TouchableOpacity,
   StyleSheet, Alert, ScrollView, ActivityIndicator, Linking, Modal,
 } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { RootStackParamList } from '../../App';
 import { useThemeMode, ThemeMode } from '../theme/ThemeModeContext';
+import { useExperimental } from '../config/ExperimentalContext';
 import Icon, { IconName } from '../components/ui/Icon';
 import { CREDITS } from '../legal/credits';
-import { DecodedSetting, SettingField } from '../services/AmbitSettingsReader';
+import { DecodedSetting, SettingField, SettingScreen } from '../services/AmbitSettingsReader';
 import { readAmbitSettings, writeAmbitSetting } from '../services/AmbitSettingsService';
+import type { WriteDevice } from '../services/AmbitSettingsWriter';
 import {
   getRunalyzeApiKey, saveRunalyzeApiKey, removeRunalyzeApiKey,
 } from '../services/ApiRunalyze';
 import {
   getIntervalsIcuCredentials, saveIntervalsIcuCredentials, removeIntervalsIcuCredentials,
 } from '../services/ApiIntervalsIcu';
-import {
-  isAuthenticated as liveloxIsAuth, getAuthorizationUrl, logout as liveloxLogout,
-} from '../services/ApiLivelox';
 import {
   isAuthenticated as stravaIsAuth, getAuthorizationUrl as stravaAuthUrl, logout as stravaLogout,
 } from '../services/ApiStrava';
@@ -29,7 +30,7 @@ import { getTileCacheSizeBytes, clearTileCache } from '../services/TileCache';
 import { t } from '../i18n';
 import { APP_VERSION } from '../config/version';
 import { useV3Theme } from '../theme/v3';
-import { Button, Chip, FieldRow, IconBadge, StatusLine } from '../components/ui/primitives';
+import { Button, Chip, Dropdown, FieldRow, IconBadge, StatusLine, Toggle } from '../components/ui/primitives';
 
 // Real, 2026-08-09 ("no button to change provider, nor in the settings like the desktop
 // version") - same 3 real choices MapScreen.tsx/TrackMapScreen.tsx's own in-map layer
@@ -53,6 +54,23 @@ const THEME_OPTIONS: { mode: ThemeMode; icon: IconName; label: () => string }[] 
   { mode: 'system', icon: 'auto', label: () => t.themeSystem },
 ];
 
+// SuuntoLink groups watch settings into named screens; desktop (SettingsPage.qml) shows the
+// same four section headers in this order. Ported here 2026-08-16 so the two apps group
+// settings identically instead of Android showing one flat list. A row with no `screen`
+// (Kailash, no display metadata) falls into "Other".
+const SETTINGS_SCREEN_ORDER: SettingScreen[] = ['general', 'units', 'personal', 'other'];
+const SETTINGS_SCREEN_TITLE: Record<SettingScreen, string> = {
+  general:  'General settings',
+  units:    'Unit settings',
+  personal: 'Personal settings',
+  other:    'Other',
+};
+const settingScreenOf = (row: DecodedSetting): SettingScreen => row.screen ?? 'other';
+const settingScreenRank = (s: SettingScreen): number => {
+  const i = SETTINGS_SCREEN_ORDER.indexOf(s);
+  return i < 0 ? 99 : i;
+};
+
 // Static, non-editable display of a settings value — used for the read-only Ambit 1/2 rows.
 function readOnlyValue(row: DecodedSetting): string {
   if (row.kind === 'enum') return row.choices?.find(c => c.value === row.value)?.label ?? String(row.value);
@@ -64,12 +82,13 @@ function readOnlyValue(row: DecodedSetting): string {
 export default function SettingsScreen() {
   const theme = useV3Theme();
   const styles = createStyles(theme);
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const { enabled: experimentalEnabled, setEnabled: setExperimentalEnabled } = useExperimental();
   const { mode, setMode } = useThemeMode();
 
   const [runalyzeKey, setRunalyzeKey]     = useState('');
   const [savedKey, setSavedKey]           = useState<string | null>(null);
   const [saving, setSaving]               = useState(false);
-  const [liveloxAuth, setLiveloxAuth]     = useState(false);
   const [stravaAuth, setStravaAuth]       = useState(false);
 
   const [intervalsAthleteId, setIntervalsAthleteId] = useState('');
@@ -82,7 +101,7 @@ export default function SettingsScreen() {
   // a status-dot row per service, tap-to-open a Dialog with that service's own form - not
   // four separate always-expanded full-height sections like this screen had. Same real
   // handlers/state above, this only changes which one is visible at a time.
-  const [openConnection, setOpenConnection] = useState<'strava' | 'livelox' | 'runalyze' | 'intervals' | null>(null);
+  const [openConnection, setOpenConnection] = useState<'strava' | 'runalyze' | 'intervals' | null>(null);
 
   const [mapProvider, setMapProviderState] = useState<MapProvider>('ign');
   const [tileCacheBytes, setTileCacheBytes] = useState<number | null>(null);
@@ -127,6 +146,7 @@ export default function SettingsScreen() {
   // Ambit 1/2 family: settings are read-only (no write in libambit), so the rows render
   // their value statically and the write controls are hidden.
   const [ambitReadOnly, setAmbitReadOnly] = useState(false);
+  const [ambitWriteDevice, setAmbitWriteDevice] = useState<WriteDevice | undefined>();
   const [ambitSettingsPhase, setAmbitSettingsPhase] =
     useState<'idle' | 'connecting' | 'reading' | 'done' | 'error'>('idle');
   const [ambitSettingsError, setAmbitSettingsError] = useState<string | undefined>();
@@ -135,6 +155,9 @@ export default function SettingsScreen() {
   // TextInput needs its own string buffer, separate from the decoded numeric row.value,
   // the same pattern SportModesScreen.tsx already uses for its own numeric fields.
   const [coordEdits, setCoordEdits] = useState<Record<string, string>>({});
+  // Free-text edit buffer for the Personal numeric fields (height/weight/HR) - keyed by key,
+  // the same shape as coordEdits.
+  const [numEdits, setNumEdits] = useState<Record<string, string>>({});
 
   async function handleReadAmbitSettings() {
     await readAmbitSettings(s => {
@@ -149,15 +172,16 @@ export default function SettingsScreen() {
       }
       if (s.fields) setAmbitSettingsFields(s.fields);
       if (s.deviceName) setAmbitDeviceName(s.deviceName);
+      setAmbitWriteDevice(s.writeDevice);
       setAmbitReadOnly(!!s.readOnly);
       setAmbitSettingsError(s.error);
     });
   }
 
   async function handleWriteAmbitSetting(key: string, value: number) {
-    if (!ambitSettingsFields) return;
+    if (!ambitSettingsFields || !ambitWriteDevice) return;
     setWritingKey(key);
-    await writeAmbitSetting(key, value, ambitSettingsFields, s => {
+    await writeAmbitSetting(key, value, ambitSettingsFields, ambitWriteDevice, s => {
       if (s.phase === 'done' || s.phase === 'error') {
         setWritingKey(null);
         if (s.error) Alert.alert(t.error, s.error);
@@ -197,12 +221,27 @@ export default function SettingsScreen() {
     handleWriteAmbitSetting(key, parsed);
   }
 
+  // Personal numeric write (Height/Weight/Max HR/Rest HR). Validated against the field's own
+  // display range - the same bounds SuuntoLink's UI enforces (see AmbitSettingsReader ranges)
+  // - so an out-of-range value is refused here rather than sent to the watch.
+  function handleSetNumber(row: DecodedSetting) {
+    const parsed = parseFloat(numEdits[row.key] ?? '');
+    if (!Number.isFinite(parsed)) {
+      Alert.alert(t.error, `${row.label ?? row.key}: not a valid number`);
+      return;
+    }
+    if ((row.min !== undefined && parsed < row.min) || (row.max !== undefined && parsed > row.max)) {
+      Alert.alert(t.error, `${row.label ?? row.key} = ${parsed} out of range [${row.min}, ${row.max}]`);
+      return;
+    }
+    handleWriteAmbitSetting(row.key, parsed);
+  }
+
   useFocusEffect(useCallback(() => {
     getRunalyzeApiKey().then(k => {
       setSavedKey(k);
       setRunalyzeKey(k ?? '');
     });
-    liveloxIsAuth().then(setLiveloxAuth);
     stravaIsAuth().then(setStravaAuth);
     getIntervalsIcuCredentials().then(creds => {
       setIntervalsSaved(!!creds);
@@ -277,20 +316,6 @@ export default function SettingsScreen() {
     Alert.alert('Strava', t.stravaDisconnected);
   }
 
-  async function handleLiveloxConnect() {
-    try {
-      const url = await getAuthorizationUrl();
-      await Linking.openURL(url);
-    } catch (e: any) {
-      Alert.alert(t.liveloxError, e?.message ?? String(e));
-    }
-  }
-
-  async function handleLiveloxDisconnect() {
-    await liveloxLogout();
-    setLiveloxAuth(false);
-    Alert.alert('Livelox', t.liveloxDisconnected);
-  }
 
   return (
     <ScrollView style={styles.root} contentContainerStyle={styles.content}>
@@ -320,6 +345,55 @@ export default function SettingsScreen() {
             );
           })}
         </View>
+      </View>
+
+      {/* ── Experimental (2026-08-14, André: "enable it with a toggle on experimental") ──
+          One toggle gates the three unproven, cable-tested, community-feedback features
+          (App-Zone install, Intervals builder, Smart Sensor). Default OFF so nobody who
+          never opens this is exposed to an unproven flash write. ── */}
+      <View style={styles.section}>
+        <View style={styles.cardHead}>
+          <IconBadge icon="warning" />
+          <Text style={styles.cardTitle}>{t.experimentalSection}</Text>
+        </View>
+        <View style={[styles.row, { justifyContent: 'space-between', alignItems: 'center' }]}>
+          <Text style={[styles.connRowText, { flex: 1, marginRight: 12 }]}>{t.experimentalToggleLabel}</Text>
+          <Toggle
+            value={experimentalEnabled}
+            onValueChange={setExperimentalEnabled}
+          />
+        </View>
+        <Text style={styles.sectionDesc}>{t.experimentalToggleDesc}</Text>
+
+        {experimentalEnabled && (
+          <>
+            <Text style={[styles.sectionDesc, { color: theme.warning }]}>{t.experimentalWarningBanner}</Text>
+            <TouchableOpacity style={styles.connRow} activeOpacity={0.7} onPress={() => navigation.navigate('AppZone')}>
+              <Icon name="watch" size={18} color={theme.text} />
+              <View style={{ flex: 1, marginLeft: 10 }}>
+                <Text style={styles.connRowText}>{t.experimentalAppZone}</Text>
+                <Text style={styles.sectionDesc}>{t.experimentalAppZoneDesc}</Text>
+              </View>
+              <Icon name="chevronRight" size={18} color={theme.mutedText} />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.connRow} activeOpacity={0.7} onPress={() => navigation.navigate('Intervals')}>
+              <Icon name="chart" size={18} color={theme.text} />
+              <View style={{ flex: 1, marginLeft: 10 }}>
+                <Text style={styles.connRowText}>{t.experimentalIntervals}</Text>
+                <Text style={styles.sectionDesc}>{t.experimentalIntervalsDesc}</Text>
+              </View>
+              <Icon name="chevronRight" size={18} color={theme.mutedText} />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.connRow} activeOpacity={0.7} onPress={() => navigation.navigate('SmartSensor')}>
+              <Icon name="link" size={18} color={theme.text} />
+              <View style={{ flex: 1, marginLeft: 10 }}>
+                <Text style={styles.connRowText}>{t.experimentalSmartSensor}</Text>
+                <Text style={styles.sectionDesc}>{t.experimentalSmartSensorDesc}</Text>
+              </View>
+              <Icon name="chevronRight" size={18} color={theme.mutedText} />
+            </TouchableOpacity>
+          </>
+        )}
       </View>
 
       {/* ── Watch Settings - real, 2026-08-08. Cable settings-write is confirmed working
@@ -362,13 +436,26 @@ export default function SettingsScreen() {
           </Text>
         )}
 
-        {ambitSettings && ambitSettings.map(row => {
-          const label = row.key.split('_')
+        {ambitSettings && ambitSettings
+          // Group by SuuntoLink settings screen (General/Units/Personal/Other), preserving
+          // the table's own order within each group - a stable sort with an index tiebreak.
+          .map((row, i) => ({ row, i }))
+          .sort((a, b) =>
+            settingScreenRank(settingScreenOf(a.row)) - settingScreenRank(settingScreenOf(b.row)) || a.i - b.i)
+          .map(({ row }, idx, arr) => {
+          // SuuntoLink's own field name (desktop renders the same `label`); the title-cased
+          // key is only the fallback for a device with no display metadata (Kailash).
+          const label = row.label ?? row.key.split('_')
             .map((w, i) => (i === 0 ? w.charAt(0).toUpperCase() + w.slice(1) : w))
             .join(' ');
           const busy = writingKey === row.key;
+          const showHeader = idx === 0 || settingScreenOf(arr[idx - 1].row) !== settingScreenOf(row);
           return (
-            <View key={row.key} style={styles.ambitSettingRow}>
+            <React.Fragment key={row.key}>
+              {showHeader && (
+                <Text style={styles.settingsGroupTitle}>{SETTINGS_SCREEN_TITLE[settingScreenOf(row)]}</Text>
+              )}
+            <View style={styles.ambitSettingRow}>
               <Text style={styles.ambitSettingLabel}>{label}</Text>
 
               {ambitReadOnly && (
@@ -377,46 +464,77 @@ export default function SettingsScreen() {
 
               {!ambitReadOnly && (<>
               {row.kind === 'bool' && (
-                <Switch
+                <Toggle
                   value={row.value === 1}
                   onValueChange={v => handleWriteAmbitSetting(row.key, v ? 1 : 0)}
                   disabled={busy}
-                  trackColor={{ false: theme.mutedText + '55', true: theme.primary + '88' }}
-                  thumbColor={theme.card}
                 />
               )}
 
+              {/* Every enum setting is a compact dropdown (André, 2026-08-16: the chip rows
+                  "aren't dropdown menus like in the desktop, which puts it cluttered"). A unit
+                  field the watch owns under Metric/Imperial is shown but disabled (row.locked). */}
               {row.kind === 'enum' && (
-                <View style={styles.chipRow}>
-                  {(row.choices ?? []).map(choice => (
-                    <TouchableOpacity
-                      key={choice.value}
-                      style={[styles.chip, choice.value === row.value && styles.chipActive]}
-                      disabled={busy}
-                      onPress={() => handleWriteAmbitSetting(row.key, choice.value)}
-                    >
-                      <Text style={[styles.chipText, choice.value === row.value && styles.chipTextActive]}>
-                        {choice.label}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
+                <Dropdown
+                  value={row.value}
+                  choices={row.choices ?? []}
+                  disabled={busy || row.locked}
+                  onSelect={v => handleWriteAmbitSetting(row.key, v)}
+                />
+              )}
+
+              {/* Activity class: a labelled dropdown of SuuntoLink's own values, matching
+                  desktop (kind 'number' but control 'dropdown'). */}
+              {row.kind === 'number' && row.control === 'dropdown' && (
+                <Dropdown
+                  value={row.value}
+                  choices={row.choices ?? []}
+                  disabled={busy}
+                  onSelect={v => handleWriteAmbitSetting(row.key, v)}
+                />
+              )}
+
+              {/* Personal numerics (Height/Weight/Max HR/Rest HR): a free-text field + Save,
+                  range-checked in handleSetNumber. A +-5 stepper made no sense at these
+                  ranges (30-250 kg, 30-240 bpm) and couldn't do Weight's 0.1 kg step. */}
+              {/* Free-text numeric editors: Personal numerics (Height/Weight/Max HR/Rest HR),
+                  Birth year (kind 'year'), and Compass declination (degrees, can be negative -
+                  so its keyboard isn't digit-only). All range-checked in handleSetNumber. */}
+              {((row.kind === 'number' && (row.control === 'number' || row.control === 'declination'))
+                || row.kind === 'year') && (
+                <View style={styles.coordRow}>
+                  <TextInput
+                    style={styles.coordInput}
+                    value={numEdits[row.key] ?? String(row.value)}
+                    onChangeText={v => setNumEdits(prev => ({ ...prev, [row.key]: v }))}
+                    editable={!busy}
+                    keyboardType={(row.min ?? 0) < 0 ? 'default' : 'numeric'}
+                    placeholderTextColor={theme.mutedText}
+                  />
+                  {!!row.unit && <Text style={styles.ambitSettingValueRO}>{row.unit}</Text>}
+                  <TouchableOpacity style={styles.coordSetBtn} disabled={busy} onPress={() => handleSetNumber(row)}>
+                    <Text style={styles.btnText}>{t.saveBtn}</Text>
+                  </TouchableOpacity>
                 </View>
               )}
 
-              {row.kind === 'number' && (
+              {/* Backlight brightness (control 'slider' - no RN slider, kept as a +-step
+                  stepper). Uses the field's own min/max/step when present, else 0..100 by 5. */}
+              {row.kind === 'number' && row.control !== 'dropdown'
+                && row.control !== 'number' && row.control !== 'declination' && (
                 <View style={styles.stepperRow}>
                   <TouchableOpacity
                     style={styles.stepperBtn}
                     disabled={busy}
-                    onPress={() => handleWriteAmbitSetting(row.key, Math.max(0, row.value - 5))}
+                    onPress={() => handleWriteAmbitSetting(row.key, Math.max(row.min ?? 0, row.value - (row.step ?? 5)))}
                   >
                     <Text style={styles.stepperBtnText}>-</Text>
                   </TouchableOpacity>
-                  <Text style={styles.stepperValue}>{row.value}</Text>
+                  <Text style={styles.stepperValue}>{row.value}{row.unit ? ` ${row.unit}` : ''}</Text>
                   <TouchableOpacity
                     style={styles.stepperBtn}
                     disabled={busy}
-                    onPress={() => handleWriteAmbitSetting(row.key, Math.min(100, row.value + 5))}
+                    onPress={() => handleWriteAmbitSetting(row.key, Math.min(row.max ?? 100, row.value + (row.step ?? 5)))}
                   >
                     <Text style={styles.stepperBtnText}>+</Text>
                   </TouchableOpacity>
@@ -452,6 +570,7 @@ export default function SettingsScreen() {
 
               {busy && <ActivityIndicator size="small" color={theme.primary} style={{ marginLeft: 8 }} />}
             </View>
+            </React.Fragment>
           );
         })}
 
@@ -475,12 +594,6 @@ export default function SettingsScreen() {
           <View style={[styles.connDot, { backgroundColor: stravaAuth ? theme.success : theme.mutedText }]} />
           <Text style={styles.connRowText}>
             {stravaAuth ? t.stravaConnectedStatus : `${t.stravaSection} — ${t.connect}`}
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.connRow} activeOpacity={0.7} onPress={() => setOpenConnection('livelox')}>
-          <View style={[styles.connDot, { backgroundColor: liveloxAuth ? theme.success : theme.mutedText }]} />
-          <Text style={styles.connRowText}>
-            {liveloxAuth ? t.liveloxConnectedStatus : `Livelox — ${t.connect}`}
           </Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.connRow} activeOpacity={0.7} onPress={() => setOpenConnection('runalyze')}>
@@ -512,28 +625,6 @@ export default function SettingsScreen() {
             ) : (
               <View style={styles.row}>
                 <Button label={t.connect} variant="filled" onPress={handleStravaConnect} />
-              </View>
-            )}
-            <Button label={t.closeBtn} variant="text" onPress={() => setOpenConnection(null)} style={{ marginTop: 12 }} />
-          </View>
-        </View>
-      </Modal>
-
-      <Modal visible={openConnection === 'livelox'} animationType="slide" transparent onRequestClose={() => setOpenConnection(null)}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalBox}>
-            <Text style={styles.cardTitle}>Livelox</Text>
-            <Text style={styles.sectionDesc}>{t.liveloxSettingsDesc}</Text>
-            {liveloxAuth ? (
-              <>
-                <Chip icon="check" label={t.liveloxConnectedStatus} />
-                <View style={styles.row}>
-                  <Button label={t.liveloxDisconnectBtn} variant="text" grow={false} onPress={handleLiveloxDisconnect} />
-                </View>
-              </>
-            ) : (
-              <View style={styles.row}>
-                <Button label={t.connect} variant="filled" onPress={handleLiveloxConnect} />
               </View>
             )}
             <Button label={t.closeBtn} variant="text" onPress={() => setOpenConnection(null)} style={{ marginTop: 12 }} />
@@ -727,6 +818,11 @@ const createStyles = (t: ReturnType<typeof useV3Theme>) => StyleSheet.create({
   themeOptionLabelSelected: { color: t.card },
   btnText: { color: t.card, fontWeight: '600', fontSize: 14 },
   statusRow: { flexDirection: 'row', alignItems: 'center', marginTop: 10 },
+  // Section header for a settings group (General/Units/Personal/Other) - matches desktop's
+  // group title (mutedText, bold, fontSizeLabel, a little top space above the first row).
+  settingsGroupTitle: {
+    color: t.mutedText, fontWeight: '700', fontSize: 12, marginTop: 18, marginBottom: 2,
+  },
   ambitSettingRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     marginTop: 14,

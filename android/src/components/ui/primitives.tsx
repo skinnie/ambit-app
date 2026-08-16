@@ -1,7 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View, Text, TextInput, TextInputProps, TouchableOpacity, ActivityIndicator, ViewStyle,
-  useWindowDimensions,
+  useWindowDimensions, Modal, ScrollView,
 } from 'react-native';
 import { useV3Theme, v3Radius, v3Spacing, v3Type } from '../../theme/v3';
 import { Card } from './Card';
@@ -53,22 +53,22 @@ export function Button({
 }) {
   const t = useV3Theme();
   const isAlert = tone === 'alert';
-  let bg = 'transparent';
-  let fg = t.text;
-  let borderColor: string | undefined;
-
-  if (variant === 'filled') {
-    bg = isAlert ? t.error : t.primary;
-    // Real, ported from desktop/qml/components/RoundedButton.qml's own contentItem: text on
-    // a filled/checked button is Theme.card (the surface color), not a separate "on-primary"
-    // token invented for RN - card is always legible against primary in both light and dark.
-    fg = isAlert ? '#ffffff' : t.card;
-  } else if (variant === 'outline') {
-    borderColor = isAlert ? t.error : t.primary;
-    fg = isAlert ? t.error : t.text;
-  } else {
-    fg = isAlert ? t.error : t.mutedText;
-  }
+  // 2026-08-15 (André, design-parity audit: desktop is the baseline; "buttons that are not
+  // the same, outlines of buttons that are not the same"). Ported faithfully from
+  // desktop/qml/components/RoundedButton.qml: on desktop EVERY plain action button (Save,
+  // Connect, Import, Disconnect...) is a card-surfaced button with a 1px Theme.mutedText
+  // border and a Theme.text label - it only fills with Theme.primary when `checked` (a
+  // selected/toggle state, which in this RN app is expressed by dedicated controls -
+  // Toggle, the Appearance selector, chip rows - not by this Button). So a filled teal CTA
+  // was Android-only; matched to desktop's bordered look here. `variant` now distinguishes a
+  // bordered button (filled/outline - both desktop's idle look, mutedText border) from a
+  // borderless text button (tertiary). tone='alert' recolors border+label to Theme.error for
+  // destructive actions, the same way desktop tints a destructive action red.
+  const isText = variant === 'text';
+  const fg = isAlert
+    ? t.error
+    : (disabled || loading ? t.mutedText : t.text);
+  const borderColor = isAlert ? t.error : t.mutedText;
 
   return (
     <TouchableOpacity
@@ -78,8 +78,10 @@ export function Button({
       style={[
         {
           flexGrow: grow ? 1 : 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-          paddingVertical: variant === 'text' ? 9 : 12, paddingHorizontal: v3Spacing.medium, borderRadius: v3Radius.small,
-          backgroundColor: bg, borderColor, borderWidth: borderColor ? 1.4 : 0,
+          paddingVertical: isText ? 9 : 11, paddingHorizontal: v3Spacing.medium, borderRadius: v3Radius.small,
+          backgroundColor: isText ? 'transparent' : t.card,
+          borderColor: isText ? undefined : borderColor,
+          borderWidth: isText ? 0 : 1,
           opacity: disabled || loading ? 0.5 : 1,
         },
         style,
@@ -94,6 +96,115 @@ export function Button({
         </>
       )}
     </TouchableOpacity>
+  );
+}
+
+// ── Toggle — pill switch, a faithful port of desktop's RoundedSwitch.qml ───
+// 2026-08-15 (André, design-parity audit: desktop is the baseline; "Don't forget toggles,
+// go to the detail"). React Native's built-in <Switch> can't reproduce desktop's switch:
+// its ON track was a translucent primary+'88' (not a solid fill), its thumb stayed card in
+// both states, and it can't carry the off-state border desktop uses. desktop/qml/components/
+// RoundedSwitch.qml is a 36x20 pill: ON = solid Theme.primary track + Theme.card thumb; OFF
+// = Theme.card track with a 1px Theme.mutedText border + a Theme.mutedText thumb (so an off
+// switch is always visible, its own 2026-08-10 fix). This mirrors those values exactly, with
+// the same 16px handle that sits 2px from each end.
+export function Toggle({
+  value, onValueChange, disabled,
+}: { value: boolean; onValueChange: (v: boolean) => void; disabled?: boolean }) {
+  const t = useV3Theme();
+  return (
+    <TouchableOpacity
+      onPress={() => onValueChange(!value)}
+      disabled={disabled}
+      activeOpacity={0.8}
+      style={{
+        width: 36, height: 20, borderRadius: 10, justifyContent: 'center',
+        backgroundColor: value ? t.primary : t.card,
+        borderWidth: value ? 0 : 1, borderColor: t.mutedText,
+        opacity: disabled ? 0.5 : 1,
+      }}
+    >
+      <View style={{
+        width: 16, height: 16, borderRadius: 8,
+        backgroundColor: value ? t.card : t.mutedText,
+        marginLeft: value ? 18 : 2,
+      }} />
+    </TouchableOpacity>
+  );
+}
+
+// ── Dropdown — a value picker matching desktop's RoundedComboBox.qml ───────
+// 2026-08-16 (André: "on desktop we have dropdown menus"). SuuntoLink (and desktop, off the
+// same tools/settings_write.py AMBIT3_DISPLAY table) shows a settings field with a long list
+// of choices - Language, GPS position format, Backlight mode - as a dropdown, not the chip
+// row Android was rendering for every enum. Styled after RoundedComboBox.qml: a card-surfaced
+// box with a 1px Theme.mutedText border, the current label + a chevron, opening a bordered
+// card menu whose selected row is tinted Theme.primary+'26' (the exact popup highlight
+// desktop uses).
+export function Dropdown({
+  value, choices, onSelect, disabled,
+}: {
+  value: number;
+  choices: { value: number; label: string }[];
+  onSelect: (v: number) => void;
+  disabled?: boolean;
+}) {
+  const t = useV3Theme();
+  const [open, setOpen] = useState(false);
+  const current = choices.find(c => c.value === value)?.label ?? String(value);
+  return (
+    <>
+      <TouchableOpacity
+        onPress={() => setOpen(true)}
+        disabled={disabled}
+        activeOpacity={0.75}
+        style={{
+          flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 6,
+          minWidth: 130, maxWidth: 210, flexShrink: 1,
+          backgroundColor: t.card, borderColor: t.mutedText, borderWidth: 1,
+          borderRadius: v3Radius.card, paddingLeft: v3Spacing.medium, paddingRight: 10, paddingVertical: 8,
+          opacity: disabled ? 0.5 : 1,
+        }}
+      >
+        <Text numberOfLines={1} style={{ color: t.text, fontSize: v3Type.body, flexShrink: 1 }}>{current}</Text>
+        {/* No down-chevron glyph in the icon font; chevronRight rotated 90° points down. */}
+        <View style={{ transform: [{ rotate: '90deg' }] }}>
+          <Icon name="chevronRight" size={18} color={t.mutedText} />
+        </View>
+      </TouchableOpacity>
+      <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
+        <TouchableOpacity
+          activeOpacity={1}
+          onPress={() => setOpen(false)}
+          style={{ flex: 1, backgroundColor: '#00000066', justifyContent: 'center', padding: 28 }}
+        >
+          <View style={{
+            backgroundColor: t.card, borderColor: t.mutedText, borderWidth: 1,
+            borderRadius: v3Radius.card, maxHeight: '70%', overflow: 'hidden',
+          }}>
+            <ScrollView>
+              {choices.map(c => {
+                const sel = c.value === value;
+                return (
+                  <TouchableOpacity
+                    key={c.value}
+                    onPress={() => { onSelect(c.value); setOpen(false); }}
+                    style={{
+                      paddingVertical: 12, paddingHorizontal: v3Spacing.medium,
+                      backgroundColor: sel ? t.primary + '26' : 'transparent',
+                    }}
+                  >
+                    <Text style={{ color: t.text, fontSize: v3Type.body, fontWeight: sel ? '700' : '400' }}>
+                      {c.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+    </>
   );
 }
 

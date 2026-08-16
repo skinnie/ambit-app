@@ -31,6 +31,26 @@ export default function LogListScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [activeFilter, setActiveFilter] = useState<string>(ALL);
 
+  // Calendar + Totals are activity-analytics views (desktop TotalsPage/CalendarPage parity).
+  // On Android they're reached from here, the Activities screen, rather than the Home nav
+  // shell: the phone's bottom tab row is already full, and these three (list / calendar /
+  // totals) are one family of "what have I done" views, so grouping them is the adaptive
+  // choice (rule 2, "UI evolutive according to the device").
+  React.useLayoutEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <View style={styles.headerActions}>
+          <TouchableOpacity onPress={() => navigation.navigate('Calendar')} hitSlop={8}>
+            <Icon name="calendar" size={22} color={theme.text} />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => navigation.navigate('Totals')} hitSlop={8}>
+            <Icon name="chart" size={22} color={theme.text} />
+          </TouchableOpacity>
+        </View>
+      ),
+    });
+  }, [navigation, theme, styles]);
+
   const load = useCallback(async () => {
     try {
       // 1. Reconstruire depuis GPX orphelins — en ignorant la liste noire
@@ -280,6 +300,7 @@ function formatDist(meters: number): string {
 
 const createStyles = (t: ReturnType<typeof useV3Theme>) => StyleSheet.create({
   root: { flex: 1, backgroundColor: t.background },
+  headerActions: { flexDirection: 'row', gap: 18, paddingRight: 4 },
   list: { flex: 1, padding: 12 },
   filterBar: { maxHeight: 52, backgroundColor: t.background },
   filterBarContent: { paddingHorizontal: 12, paddingVertical: 8, gap: 8 },

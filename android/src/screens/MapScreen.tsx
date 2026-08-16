@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, Alert, TouchableOpacity, Linking } from 'react-native';
 import { shareFile, saveToDownloads } from '../native/AmbitUsbModule';
 import { WebView, WebViewMessageEvent } from 'react-native-webview';
-import { uploadGpxToLivelox, isAuthenticated, getAuthorizationUrl } from '../services/ApiLivelox';
 import { uploadGpxToStrava, isAuthenticated as stravaIsAuthenticated } from '../services/ApiStrava';
 import { getRunalyzeApiKey, uploadFitToRunalyze } from '../services/ApiRunalyze';
 import { getIntervalsIcuCredentials, uploadFitToIntervalsIcu } from '../services/ApiIntervalsIcu';
@@ -431,43 +430,6 @@ export default function MapScreen() {
 
   // ─── Exports ───
 
-  async function handleExportLivelox() {
-    setShowExportMenu(false);
-    try {
-      const auth = await isAuthenticated();
-      if (!auth) {
-        const url = await getAuthorizationUrl();
-        Alert.alert(
-          t.liveloxTitle,
-          t.liveloxMsg,
-          [
-            { text: t.cancel, style: 'cancel' },
-            { text: t.connect, onPress: () => Linking.openURL(url) },
-          ]
-        );
-        return;
-      }
-      setExporting(true);
-      try {
-        const result = await uploadGpxToLivelox(activity.gpx_path);
-        Alert.alert(
-          'Livelox',
-          `${t.liveloxSuccess}\n\n${result.viewerUrl}`,
-          [
-            { text: t.close, style: 'cancel' },
-            { text: t.viewOnLivelox, onPress: () => Linking.openURL(result.viewerUrl) },
-          ]
-        );
-      } catch (e: any) {
-        Alert.alert(t.liveloxError, e?.message ?? String(e));
-      } finally {
-        setExporting(false);
-      }
-    } catch (e: any) {
-      Alert.alert(t.liveloxError, e?.message ?? String(e));
-    }
-  }
-
   async function handleUploadRunalyze() {
     setShowExportMenu(false);
     const apiKey = await getRunalyzeApiKey();
@@ -711,7 +673,6 @@ export default function MapScreen() {
           <ExportMenuItem styles={styles} label={t.saveFitDownloads} onPress={handleSaveFitToDownloads} />
           <ExportMenuItem styles={styles} label={t.uploadRunalyze} onPress={handleUploadRunalyze} />
           <ExportMenuItem styles={styles} label={t.uploadIntervals} onPress={handleUploadIntervals} />
-          <ExportMenuItem styles={styles} label={t.uploadLivelox}  onPress={handleExportLivelox} />
           <ExportMenuItem styles={styles} label={t.uploadStrava}   onPress={handleUploadStrava} />
         </View>
       )}
@@ -881,9 +842,12 @@ function createStyles(t: ReturnType<typeof useV3Theme>) {
       padding: 8,
     },
     // Real, 2026-08-09 ("change the buttons to match the colors... of our new theme") -
-    // the main play/pause button is the one real primary action on this bar, so it takes
-    // the same filled-primary treatment as primitives.tsx's own Button variant="filled"
-    // (bg t.primary, fg t.card) instead of blending into the bar with a plain t.card fill.
+    // the main play/pause control is the one real primary action on this bar, so it stays a
+    // solid Theme.primary circle (fg Theme.card) rather than blending into the bar with a
+    // plain t.card fill. This is a media control with no desktop counterpart (track replay is
+    // Android-only), so it keeps the solid-primary affordance even though labeled action
+    // buttons (primitives.tsx Button) are bordered to match desktop as of the 2026-08-15
+    // parity audit - a round icon play button reads as its own thing, not an action button.
     replayBtnMain: {
       padding: 8,
       backgroundColor: t.primary,

@@ -1,4 +1,5 @@
 import { base64ToBytes } from './Base64';
+import { MODE_OWNED_UNITS } from './AmbitSettingsTemplates';
 
 // Decodes a real sml.DeviceSettings reply (0x1100) - two curated tables, one per real
 // schema family, mirroring the companion research project's tools/settings_write.py
@@ -22,7 +23,18 @@ import { base64ToBytes } from './Base64';
 // DeviceHistory's LogHeaders was - see KailashHistoryReader.ts for that shape) - one
 // value, one entry, decoded directly.
 
-export type SettingKind = 'bool' | 'enum' | 'number' | 'coord';
+// 'year' is a utf8 "YYYY-01-01" string on the wire (Personal.BirthDay), shown/edited as a
+// plain year - decoded and written specially, not through the numeric path.
+export type SettingKind = 'bool' | 'enum' | 'number' | 'coord' | 'year';
+
+// How SuuntoLink presents a field (ported from tools/settings_write.py AMBIT3_DISPLAY):
+// radio for 2-3 choices, dropdown for a long list, checkbox for a standalone bool, slider
+// for a range. Android only needs to distinguish 'dropdown' (render a real dropdown menu)
+// from the rest today, but the full set is carried so the two apps stay in step.
+export type SettingControl =
+  'radio' | 'dropdown' | 'checkbox' | 'slider' | 'number' | 'declination' | 'coord' | 'readonly' | 'year';
+// Which SuuntoLink settings screen the field lives on - drives the section grouping.
+export type SettingScreen = 'general' | 'units' | 'personal' | 'other';
 
 export interface SettingChoice {
   value: number;
@@ -35,10 +47,18 @@ export interface SettingField {
   kind: SettingKind;
   // 'bool' -> 1 byte (0/1). 'enum' -> 1 byte, raw integer indexes into `choices`.
   // 'number'/'coord' -> byteWidth bytes, unsigned unless `signed` is set; 'float' for float32.
-  byteWidth: 1 | 4;
+  // byteWidth 2 (uint16) is used by Personal.Weight (kg*100 on the wire).
+  byteWidth: 1 | 2 | 4;
   signed?: boolean;
   float?: boolean;
   choices?: SettingChoice[];
+  // Display bounds/step for a numeric field, in the DISPLAY unit (after `scale`) - the same
+  // ranges SuuntoLink's own UI enforces (tools/settings_write.py AMBIT3_RANGES), so the app
+  // refuses an out-of-range write the way SuuntoLink does. `unit` is shown after the value.
+  min?: number;
+  max?: number;
+  step?: number;
+  unit?: string;
   // Byte offset *within* the entry's own value - default 0. Needed for entries that pack
   // more than one field (e.g. Kailash's home-location entry: two int32s in one 8-byte
   // entry) - every other field in this file has exactly one value per entry, offset 0.
@@ -46,54 +66,26 @@ export interface SettingField {
   // Raw integer -> real value divisor (e.g. 1e7 for a lat/lon degrees*1e7 encoding,
   // the same convention this project's POI lat/lon already uses). Default 1 (no scaling).
   scale?: number;
+  // Desktop-parity display metadata, ported from tools/settings_write.py AMBIT3_DISPLAY
+  // (2026-08-16). That table's own header says it exists "so the desktop and Android UIs
+  // render identically off one table instead of drifting apart" - Android had drifted (none
+  // of these three were carried), so SettingsScreen was title-casing the raw key for a name
+  // and rendering every enum as a chip row. `label` is SuuntoLink's own field name, `control`
+  // is how SuuntoLink presents it, `screen` is which settings screen it belongs to.
+  label?: string;
+  control?: SettingControl;
+  screen?: SettingScreen;
 }
 
 // Real, live-confirmed 2026-08-08 against André's own Ambit3 Peak - every value below
 // matched the real SuuntoLink "General Settings" screenshots exactly once entry IDs were
 // derived correctly (assets/ambit3 pcap/v2/general ambit settings/).
-export const AMBIT3_SETTINGS_FIELDS: SettingField[] = [
-  { key: 'date_format', entryId: 0x01, kind: 'enum', byteWidth: 1,
-    choices: [{ value: 0, label: 'DDMM' }, { value: 1, label: 'MMDD' }] },
-  { key: 'tones', entryId: 0x02, kind: 'enum', byteWidth: 1,
-    choices: [{ value: 0, label: 'Buttons off' }, { value: 1, label: 'All on' }, { value: 2, label: 'All off' }] },
-  { key: 'gps_position_format', entryId: 0x03, kind: 'enum', byteWidth: 1,
-    choices: [
-      { value: 0, label: 'WGS84 d' }, { value: 1, label: 'WGS84 dm' }, { value: 2, label: 'WGS84 dms' },
-      { value: 3, label: 'UTM' }, { value: 4, label: 'MGRS' }, { value: 5, label: 'British (BNG)' },
-      { value: 6, label: 'Finnish (ETRS-TM35FIN)' }, { value: 7, label: 'Finnish (KKJ)' },
-      { value: 8, label: 'Irish (IG)' }, { value: 9, label: 'Swedish (RT90)' },
-      { value: 10, label: 'Swiss (CH1903)' }, { value: 11, label: 'UTM - NAD27 Alaska' },
-      { value: 12, label: 'UTM - NAD27 Conus' }, { value: 13, label: 'UTM - NAD83' },
-      { value: 14, label: 'NZTM2000' },
-    ] },
-  { key: 'compass_declination', entryId: 0x04, kind: 'number', byteWidth: 4, float: true },
-  { key: 'button_lock_sport_mode', entryId: 0x05, kind: 'enum', byteWidth: 1,
-    choices: [{ value: 0, label: 'All buttons' }, { value: 1, label: 'Actions only' }] },
-  { key: 'button_lock_time_mode', entryId: 0x06, kind: 'enum', byteWidth: 1,
-    choices: [{ value: 0, label: 'All buttons' }, { value: 1, label: 'Actions only' }] },
-  { key: 'units_mode', entryId: 0x07, kind: 'enum', byteWidth: 1,
-    choices: [{ value: 0, label: 'Metric' }, { value: 1, label: 'Imperial' }, { value: 2, label: 'Advanced' }] },
-  { key: 'language', entryId: 0x11, kind: 'enum', byteWidth: 1,
-    choices: [
-      { value: 0, label: 'Dansk' }, { value: 1, label: 'Deutsch' }, { value: 2, label: 'English' },
-      { value: 3, label: 'Espanol' }, { value: 4, label: 'Francais' }, { value: 5, label: 'Italiano' },
-      { value: 6, label: 'Nederlands' }, { value: 7, label: 'Norsk' }, { value: 8, label: 'Portugues' },
-      { value: 9, label: 'Suomi' }, { value: 10, label: 'Svenska' }, { value: 11, label: 'Chinese' },
-      { value: 12, label: 'Japanese' }, { value: 13, label: 'Korean' }, { value: 14, label: 'Cestina' },
-      { value: 15, label: 'Polski' }, { value: 16, label: 'Russian' },
-    ] },
-  { key: 'time_format', entryId: 0x13, kind: 'enum', byteWidth: 1,
-    choices: [{ value: 0, label: '24h' }, { value: 1, label: '12h' }] },
-  // Real bug, found 2026-08-09 ("gps time keeping => true, it should be True") - same fix
-  // as desktop's tools/settings_write.py own _ENUM_LABEL_FIXES, never ported here until now.
-  { key: 'gps_time_keeping', entryId: 0x14, kind: 'enum', byteWidth: 1,
-    choices: [{ value: 0, label: 'True' }, { value: 1, label: 'False' }] },
-  { key: 'display_dark', entryId: 0x20, kind: 'bool', byteWidth: 1 },
-  { key: 'backlight_mode', entryId: 0x21, kind: 'enum', byteWidth: 1,
-    choices: [{ value: 0, label: 'Normal' }, { value: 1, label: 'Off' }, { value: 2, label: 'Night' }, { value: 3, label: 'Toggle' }] },
-  { key: 'backlight_brightness', entryId: 0x22, kind: 'number', byteWidth: 1 },
-  { key: 'storm_alarm', entryId: 0x27, kind: 'bool', byteWidth: 1 },
-];
+// AMBIT3_SETTINGS_FIELDS / TRAVERSE_SETTINGS_FIELDS are GENERATED per device from each watch's
+// own schema descriptor (tools/gen_android_settings_templates.py), because entry ids differ per
+// schema family - the Traverse shifts nearly every id off the Ambit3's, so ONE hardcoded table
+// decoded a Traverse's Personal fields off the wrong bytes (verified live 2026-08-16). Both apps
+// now derive ids from the connected watch's own schema. See AmbitSettingsTemplates.ts.
+export { AMBIT3_FIELDS as AMBIT3_SETTINGS_FIELDS, TRAVERSE_FIELDS as TRAVERSE_SETTINGS_FIELDS } from './AmbitSettingsTemplates';
 
 // Kailash's own real, smaller schema (41 entries total vs. the Ambit3's ~324) - every
 // field here is exactly what the real 7R iOS app's own settings screen shows (see this
@@ -181,10 +173,19 @@ function sbemEntries(bytes: Uint8Array, start: number): SbemEntry[] {
 }
 
 function decodeField(bytes: Uint8Array, entry: SbemEntry, field: SettingField): number {
+  // Personal.BirthDay is a utf8 "YYYY-01-01" string, not a number - read the whole entry as
+  // ASCII and pull the leading 4-digit year out of it. SuuntoLink only ever edits the year.
+  if (field.kind === 'year') {
+    let s = '';
+    for (let i = entry.start; i < entry.end; i++) s += String.fromCharCode(bytes[i]);
+    const m = s.match(/\d{4}/);
+    return m ? parseInt(m[0], 10) : 0;
+  }
   const off = entry.start + (field.byteOffset ?? 0);
   const view = new DataView(bytes.buffer, bytes.byteOffset + off, field.byteWidth);
   const raw = field.float ? view.getFloat32(0, true)
     : field.byteWidth === 1 ? (field.signed ? view.getInt8(0) : view.getUint8(0))
+    : field.byteWidth === 2 ? (field.signed ? view.getInt16(0, true) : view.getUint16(0, true))
     : (field.signed ? view.getInt32(0, true) : view.getUint32(0, true));
   return field.scale ? raw / field.scale : raw;
 }
@@ -195,6 +196,18 @@ export interface DecodedSetting {
   kind: SettingKind;
   value: number;
   choices?: SettingChoice[];
+  // Carried through from the field so the UI can show SuuntoLink's own name, pick the right
+  // control (dropdown vs radio), and group by settings screen - see SettingField.
+  label?: string;
+  control?: SettingControl;
+  screen?: SettingScreen;
+  min?: number;
+  max?: number;
+  step?: number;
+  unit?: string;
+  // True for a unit field the watch owns while units_mode is Metric/Imperial: shown but not
+  // editable (only "Advanced" frees them), the same rule desktop/settings_write.py enforce.
+  locked?: boolean;
 }
 
 /** Decodes a base64 sml.DeviceSettings reply (see readSettingsRaw() in
@@ -224,7 +237,21 @@ export function decodeSettings(b64: string, fields: SettingField[]): DecodedSett
       kind: field.kind,
       value: decodeField(bytes, entry, field),
       choices: field.choices,
+      label: field.label,
+      control: field.control,
+      screen: field.screen,
+      min: field.min,
+      max: field.max,
+      step: field.step,
+      unit: field.unit,
     });
+  }
+  // The seven unit fields the watch owns while units_mode is Metric(0)/Imperial(1) - shown but
+  // not editable then; only "Advanced"(2) frees them. Marked here (post-decode) so the UI gets
+  // it from one place, the same rule desktop's read_all() applies.
+  const mode = out.find(r => r.key === 'units_mode')?.value;
+  if (mode === 0 || mode === 1) {
+    for (const r of out) if (MODE_OWNED_UNITS.includes(r.key)) r.locked = true;
   }
   return out;
 }
