@@ -19,8 +19,9 @@ import { useV3Theme } from '../theme/v3';
 import { ActivityThumbnail } from '../components/ActivityThumbnail';
 import Icon, { IconName } from '../components/ui/Icon';
 import {
-  getViewMode, getActivityColumns, setActivityColumns, ViewMode,
+  getViewMode, setViewMode as persistViewMode, getActivityColumns, setActivityColumns, ViewMode,
 } from '../services/ListViewPrefs';
+import { ViewModeToggle } from '../components/ui/ViewModeToggle';
 import {
   ALL_METRICS, MetricValues, metricLabel, metricValue, metricRaw, metricsAvailableFor,
 } from '../services/ActivityMetrics';
@@ -77,6 +78,7 @@ export default function LogListScreen() {
     getViewMode('activities').then(setViewMode);
     getActivityColumns().then(setColumns);
   }, []));
+  function changeViewMode(m: ViewMode) { setViewMode(m); persistViewMode('activities', m); }
 
   function persistColumns(next: string[]) {
     setColumns(next);
@@ -275,13 +277,17 @@ export default function LogListScreen() {
 
       {/* Configurable metric columns (port of desktop): a scrollable row of dropdown pills,
           one per column, plus an elegant "+" to add. Each pill opens a menu to sort by it,
-          change which metric it shows (no duplicates), or remove it. */}
+          change which metric it shows (no duplicates), or remove it.
+          The map/list view dropdown (moved here from Settings, André 2026-08-16) is the FIRST
+          item on the left of this same row - matching desktop, where it sits far left on the
+          header line "as text, as a dropdown menu as the other stuff". Persisted. */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
         style={styles.colBar}
         contentContainerStyle={styles.colBarContent}
       >
+        <ViewModeToggle mode={viewMode} onChange={changeViewMode} />
         {columns.map((key, idx) => {
           const active = sortKey === key;
           return (

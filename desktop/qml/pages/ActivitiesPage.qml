@@ -306,17 +306,36 @@ Item {
     // aligned exactly with ActivityRow's own columns (badge 32, name 42%, then 96/96/88/96
     // right-aligned) - André's feedback: the sort labels must line up with the data columns,
     // and the Calories column needs a title too.
-    Row {
-        id: activitiesSortSimple
-        anchors.left: parent.left
-        anchors.right: parent.right
-        anchors.leftMargin: Theme.spacingLarge
-        anchors.rightMargin: Theme.spacingLarge
+    // Map/list view control - moved here from Settings (André, 2026-08-16). On the LEFT, on the
+    // same horizontal line as the header/sort row, as a text dropdown matching the column-header
+    // menus (André: "on the left side, as text, as a dropdown menu as the other stuff, aligned,
+    // on the same horizontal line") - the old right-side pill overlapped the Calories column
+    // header. Still persisted via Theme.activitiesView.
+    ViewModeToggle {
+        id: activitiesViewToggle
+        z: 3
         anchors.top: cachedBanner.visible ? cachedBanner.bottom
                      : trackLogLoadingBanner.visible ? trackLogLoadingBanner.bottom
                      : activityLoadingPill.visible ? activityLoadingPill.bottom : parent.top
         anchors.topMargin: (cachedBanner.visible || trackLogLoadingBanner.visible || activityLoadingPill.visible)
                            ? Theme.spacingMedium : Theme.spacingLarge
+        anchors.left: parent.left
+        // Align with the leftmost content of the rows below (badge column left edge).
+        anchors.leftMargin: Theme.spacingLarge + Theme.spacingMedium
+        visible: root.selectedActivity === null && (root.activeActivities || []).length > 0
+        mode: Theme.activitiesView
+        onChosen: (m) => Theme.activitiesView = m
+    }
+
+    Row {
+        id: activitiesSortSimple
+        // Starts to the right of the view dropdown so both share one horizontal line (map view).
+        anchors.left: activitiesViewToggle.right
+        anchors.right: parent.right
+        anchors.leftMargin: Theme.spacingLarge
+        anchors.rightMargin: Theme.spacingLarge
+        // Share the view dropdown's horizontal line.
+        anchors.verticalCenter: activitiesViewToggle.verticalCenter
         spacing: Theme.spacingSmall
         visible: root.selectedActivity === null && root.sortedActivities.length > 1
                  && Theme.activitiesView !== "list"

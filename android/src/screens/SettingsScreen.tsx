@@ -9,9 +9,6 @@ import { RootStackParamList } from '../../App';
 import { useThemeMode, ThemeMode } from '../theme/ThemeModeContext';
 import { useExperimental } from '../config/ExperimentalContext';
 import { isMarkSyncedEnabled, setMarkSyncedEnabled as persistMarkSynced } from '../services/MarkSynced';
-import {
-  getViewMode, setViewMode as persistViewMode, ViewMode, ListSurface,
-} from '../services/ListViewPrefs';
 import { useDemo } from '../config/DemoContext';
 import { DemoDevicePicker } from '../components/ui/DemoDevicePicker';
 import Icon, { IconName } from '../components/ui/Icon';
@@ -140,15 +137,6 @@ export default function SettingsScreen() {
   // independent of the master experimental switch, default OFF.
   const [markSyncedEnabled, setMarkSyncedEnabledState] = useState(false);
 
-  // Independent map/list view preference per list surface (Activities / Routes / POIs) -
-  // desktop's `Theme.activitiesView` pattern, extended to all three (André, 2026-08-16).
-  const [views, setViews] = useState<Record<ListSurface, ViewMode>>({
-    activities: 'map', routes: 'map', pois: 'map',
-  });
-  function handleSetView(surface: ListSurface, mode: ViewMode) {
-    setViews(v => ({ ...v, [surface]: mode }));
-    persistViewMode(surface, mode);
-  }
   const [tileCacheBytes, setTileCacheBytes] = useState<number | null>(null);
   const [clearingCache, setClearingCache] = useState(false);
 
@@ -298,8 +286,6 @@ export default function SettingsScreen() {
     });
     getMapProvider().then(setMapProviderState);
     isMarkSyncedEnabled().then(setMarkSyncedEnabledState);
-    (['activities', 'routes', 'pois'] as ListSurface[]).forEach(s =>
-      getViewMode(s).then(m => setViews(v => ({ ...v, [s]: m }))));
   }, []));
 
   function handleToggleMarkSynced(v: boolean) {
@@ -460,43 +446,8 @@ export default function SettingsScreen() {
         </View>
       </View>
 
-      {/* ── List views (2026-08-16): independent map/list preference for each list surface,
-          persisted, mirroring desktop's Activities-view setting. Map shows each item's track;
-          List is lighter. ── */}
-      <View style={styles.section}>
-        <View style={styles.cardHead}>
-          <IconBadge icon="list" />
-          <Text style={styles.cardTitle}>{t.listViewsSection}</Text>
-        </View>
-        <Text style={styles.sectionDesc}>{t.listViewSettingDesc}</Text>
-        {([
-          ['activities', t.activitiesViewLabel],
-          ['routes', t.routesViewLabel],
-          ['pois', t.poisViewLabel],
-        ] as [ListSurface, string][]).map(([surface, label]) => (
-          <View key={surface} style={styles.viewPrefBlock}>
-            <Text style={styles.viewPrefLabel}>{label}</Text>
-            <View style={styles.themeRow}>
-              {(['map', 'list'] as ViewMode[]).map(m => {
-                const selected = views[surface] === m;
-                return (
-                  <TouchableOpacity
-                    key={m}
-                    onPress={() => handleSetView(surface, m)}
-                    activeOpacity={0.75}
-                    style={[styles.themeOption, selected && styles.themeOptionSelected]}
-                  >
-                    <Icon name={m === 'map' ? 'map' : 'list'} size={15} color={selected ? theme.card : theme.text} />
-                    <Text style={[styles.themeOptionLabel, selected && styles.themeOptionLabelSelected]}>
-                      {m === 'map' ? t.viewMap : t.viewList}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          </View>
-        ))}
-      </View>
+      {/* The map/list view choice moved out of Settings and onto each list screen itself
+          (Activities/Routes/POIs) - André 2026-08-16. Still persisted via ListViewPrefs. */}
 
       {/* ── Testing mode (2026-08-16, ported from desktop): pretend a device is connected so
           the app can be explored without one. Toggle + a picker of the watches the app knows

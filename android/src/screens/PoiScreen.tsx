@@ -10,7 +10,8 @@ import { useV3Theme, v3Spacing, v3Type } from '../theme/v3';
 import { Card } from '../components/ui/Card';
 import { Button, FieldRow } from '../components/ui/primitives';
 import { TrackPreview } from '../components/TrackPreview';
-import { getViewMode, ViewMode } from '../services/ListViewPrefs';
+import { getViewMode, setViewMode as persistViewMode, ViewMode } from '../services/ListViewPrefs';
+import { ViewModeToggle } from '../components/ui/ViewModeToggle';
 
 // v3.0 UI port (2026-08-09, "re do... pois to match entirely desktop") - real structural
 // rebuild matching desktop's own PoisPage.qml: "Add a POI" gets a live pin preview, "Import
@@ -45,6 +46,7 @@ export default function PoiScreen() {
   // (name is the only meaningful key) - just the view toggle.
   const [viewMode, setViewMode] = useState<ViewMode>('map');
   useFocusEffect(useCallback(() => { getViewMode('pois').then(setViewMode); }, []));
+  function changeViewMode(m: ViewMode) { setViewMode(m); persistViewMode('pois', m); }
 
   // Real, 2026-08-10 ("it is not upon the watch to give you that, is on the app to store
   // the activities, so they can load almost immediately and just refresh what is new") -
@@ -192,7 +194,14 @@ export default function PoiScreen() {
 
       {/* ── On the watch ── */}
       <Card style={{ width: '100%' }}>
-        <Text style={styles.cardTitle}>{t.poiOnWatchSection}</Text>
+        {/* Title + map/list view dropdown, right after the title on the left (moved here from
+            Settings, André 2026-08-16; matches desktop). */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          <Text style={styles.cardTitle}>{t.poiOnWatchSection}</Text>
+          {!onWatchLoading && onWatch && onWatch.length > 0 && (
+            <ViewModeToggle mode={viewMode} onChange={changeViewMode} />
+          )}
+        </View>
 
         {onWatchLoading && <Text style={styles.itemStats}>{t.poiOnWatchReading}</Text>}
         {!onWatchLoading && onWatchError && (

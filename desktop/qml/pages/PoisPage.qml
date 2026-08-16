@@ -358,10 +358,28 @@ PageFlickable {
             Column {
                 width: parent.width
                 spacing: Theme.spacingSmall
-                Text {
-                    text: HomeViewModel.isGarmin ? qsTr("On the device") : qsTr("On the watch")
-                    font.bold: true
-                    color: Theme.text
+                // Title + the map/list view control (moved here from Settings, André 2026-08-16;
+                // still persisted via Theme.poisView). Text dropdown on the LEFT, right after the
+                // title, on the same horizontal line (André, 2026-08-16).
+                Item {
+                    width: parent.width
+                    height: Math.max(onWatchPoiTitle.implicitHeight, 26)
+                    Text {
+                        id: onWatchPoiTitle
+                        anchors.left: parent.left
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: HomeViewModel.isGarmin ? qsTr("On the device") : qsTr("On the watch")
+                        font.bold: true
+                        color: Theme.text
+                    }
+                    ViewModeToggle {
+                        anchors.left: onWatchPoiTitle.right
+                        anchors.leftMargin: Theme.spacingMedium
+                        anchors.verticalCenter: parent.verticalCenter
+                        visible: !onDevicePoiCard.loading && onDevicePoiCard.onDevicePois.length > 0
+                        mode: Theme.poisView
+                        onChosen: (m) => Theme.poisView = m
+                    }
                 }
 
                 Text {

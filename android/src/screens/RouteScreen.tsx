@@ -12,7 +12,8 @@ import { Card } from '../components/ui/Card';
 import { Button, StatusLine } from '../components/ui/primitives';
 import { TrackPreview } from '../components/TrackPreview';
 import { SortBar } from '../components/ui/SortBar';
-import { getViewMode, sortItems, sortKeysFor, SortKey, ViewMode } from '../services/ListViewPrefs';
+import { getViewMode, setViewMode as persistViewMode, sortItems, sortKeysFor, SortKey, ViewMode } from '../services/ListViewPrefs';
+import { ViewModeToggle } from '../components/ui/ViewModeToggle';
 
 // v3.0 UI port (2026-08-09, "re do routes... to match entirely desktop") - real structural
 // rebuild matching desktop's own RoutesPage.qml: an "Import a route" card with a real
@@ -47,6 +48,7 @@ export default function RouteScreen() {
   const [viewMode, setViewMode] = useState<ViewMode>('map');
   const [sortKey, setSortKey] = useState<SortKey>('name');
   useFocusEffect(useCallback(() => { getViewMode('routes').then(setViewMode); }, []));
+  function changeViewMode(m: ViewMode) { setViewMode(m); persistViewMode('routes', m); }
   const sortedOnWatch = onWatch
     ? sortItems(onWatch.map(r => ({ r, name: r.name, distanceM: r.distanceM, ascentM: r.ascentM })), sortKey).map(x => x.r)
     : null;
@@ -161,7 +163,14 @@ export default function RouteScreen() {
 
       {/* ── On the watch ── */}
       <Card style={{ width: '100%' }}>
-        <Text style={styles.cardTitle}>{t.routeOnWatchSection}</Text>
+        {/* Title + map/list view dropdown, right after the title on the left (moved here from
+            Settings, André 2026-08-16; matches desktop). */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          <Text style={styles.cardTitle}>{t.routeOnWatchSection}</Text>
+          {!onWatchLoading && sortedOnWatch && sortedOnWatch.length > 0 && (
+            <ViewModeToggle mode={viewMode} onChange={changeViewMode} />
+          )}
+        </View>
 
         {onWatchLoading && (
           <StatusLine text={t.routeOnWatchReading} />

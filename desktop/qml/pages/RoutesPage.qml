@@ -237,10 +237,28 @@ PageFlickable {
                 width: parent.width
                 spacing: Theme.spacingSmall
 
-                Text {
-                    text: HomeViewModel.isGarmin ? qsTr("On the device") : qsTr("On the watch")
-                    font.bold: true
-                    color: Theme.text
+                // Title + the map/list view control (moved here from Settings, André 2026-08-16;
+                // still persisted via Theme.routesView). The control is a text dropdown on the
+                // LEFT, right after the title, on the same horizontal line (André, 2026-08-16).
+                Item {
+                    width: parent.width
+                    height: Math.max(onWatchTitle.implicitHeight, 26)
+                    Text {
+                        id: onWatchTitle
+                        anchors.left: parent.left
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: HomeViewModel.isGarmin ? qsTr("On the device") : qsTr("On the watch")
+                        font.bold: true
+                        color: Theme.text
+                    }
+                    ViewModeToggle {
+                        anchors.left: onWatchTitle.right
+                        anchors.leftMargin: Theme.spacingMedium
+                        anchors.verticalCenter: parent.verticalCenter
+                        visible: !onDeviceCard.loading && onDeviceCard.sortedRoutes.length > 0
+                        mode: Theme.routesView
+                        onChosen: (m) => Theme.routesView = m
+                    }
                 }
 
                 // Real request 2026-08-08 ("add a loading text while it is loading instead
