@@ -148,7 +148,7 @@ PageFlickable {
                     spacing: Theme.spacingSmall
                     Text {
                         anchors.verticalCenter: parent.verticalCenter
-                        text: qsTr("Save to a folder")
+                        text: qsTr("Backup database to folder")
                         font.bold: true
                         color: Theme.text
                     }
