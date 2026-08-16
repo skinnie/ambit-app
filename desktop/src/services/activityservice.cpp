@@ -228,7 +228,14 @@ void ActivityService::requestActivities(int knownCount, bool alreadyRetried)
         }
 
         setLoading(false);
-        m_ok = dbLoadAll();
+        // The fetch succeeded, so ok is true even if the list is empty: an empty result is
+        // "no recorded activities on the watch", a valid state the page renders as such - NOT
+        // "couldn't load". Real, 2026-08-16: a reset/empty watch (a freshly-flashed Kailash,
+        // whose ExerciseLog region is absent) came back with 0 activities, and because
+        // dbLoadAll() returns false for an empty database, ok flipped to false and the page
+        // showed the error banner. Load the (possibly empty) rows, but don't let that decide ok.
+        dbLoadAll();
+        m_ok = true;
         m_showingCachedData = false;
         emit activitiesChanged();
     });
