@@ -1,0 +1,63 @@
+# Continuous Integration (CI) — a robot that rebuilds the app on every push and
+# tells you, with a green check or a red X, whether it still works. It runs on
+# GitHub's servers; you never run this yourself. Three independent jobs, so one
+# can be red while the others stay green.
+name: build
+
+# When it runs: every push to any branch, and every pull request.
+on:
+  push:
+  pull_request:
+
+jobs:
+  # 1) Fast sanity check: do all the Python tools still parse? These are the
+  #    scripts that write to your watches, so a typo here matters. Runs in seconds.
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Compile every Python file
+        run: python -m compileall -q tools desktop/backend
+
+  # 2) Android: build the debug APK, exactly like ./build-android.sh does.
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install JavaScript dependencies
+        working-directory: android
+        run: npm ci
+      - name: Build the debug APK
+        working-directory: android/android
+        run: ./gradlew :app:assembleDebug --no-daemon
+      - name: Keep the built APK so you can download it from the run page
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-debug-apk
+          path: android/android/app/build/outputs/apk/debug/*.apk
+
+  # 3) Desktop: build the Qt/QML app, exactly like ./build-desktop.sh does.
+  desktop:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Qt 6.12 (same version you build with locally)
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.12.0"
+      - name: Install Ninja + OpenGL headers Qt needs on a headless machine
+        run: sudo apt-get update && sudo apt-get install -y ninja-build libgl1-mesa-dev
+      - name: Build
+        run: |
+          cmake -S desktop -B desktop/build -G Ninja
+          cmake --build desktop/build

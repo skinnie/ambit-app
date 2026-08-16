@@ -1,0 +1,63 @@
+# Release automation, tied to Semantic Versioning (https://semver.org).
+#
+# When you push a version TAG shaped like SemVer, this robot builds the
+# standalone Android APK (JS bundle baked in, no Metro needed) and publishes it
+# as a GitHub Release with auto-written notes. So cutting a release becomes:
+#
+#     git tag v0.2.0          # MAJOR.MINOR.PATCH  (see SemVer)
+#     git push origin v0.2.0
+#
+# A tag ending in "-something" (e.g. v0.2.0-rc.1) is published as a *pre-release*
+# — your "test it on the watches first" version — instead of a full release.
+name: release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"     # v1.2.3     -> full release
+      - "v[0-9]+.[0-9]+.[0-9]+-*"   # v1.2.3-rc.1 -> pre-release
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install JavaScript dependencies
+        working-directory: android
+        run: npm ci
+      - name: Build the standalone release APK (bundle baked in)
+        working-directory: android/android
+        run: ./gradlew :app:assembleRelease --no-daemon
+      - name: Rename APK to include the version tag
+        run: |
+          mkdir -p out
+          cp android/android/app/build/outputs/apk/release/*.apk \
+             "out/ambitsyncmodern_${GITHUB_REF_NAME}.apk"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apk
+          path: out/*.apk
+
+  publish:
+    needs: build-apk
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write        # needed to create the Release
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: apk
+          path: out
+      - name: Publish the GitHub Release with the APK attached
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true                              # notes from your commits
+          prerelease: ${{ contains(github.ref_name, '-') }}          # v..-rc.1 => pre-release
+          files: out/*.apk

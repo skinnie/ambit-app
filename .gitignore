@@ -3,6 +3,9 @@ __pycache__/
 csrc/build/
 venv/
 
+# MkDocs build output (mkdocs build), regenerated from docs/ + mkdocs.yml
+site/
+
 # PyInstaller build tooling/output: venvs bake in absolute paths of the machine that
 # created them, so they must never travel between machines (this broke a real Mac
 # build once - "bad interpreter", the venv's own python3 shebang pointed at a Linux
@@ -68,3 +71,16 @@ desktop/*.exitcode
 # Local Python virtualenv at the repo root (same reasoning as venv/ above - machine-local,
 # regenerated, never travels).
 .venv/
+
+# Suunto App catalog — Suunto's own App-Zone catalog data (catalog.bin/catalog.json + the
+# raw source index.json), tens of MB, NOT ours to redistribute. Must never be versioned
+# (the catalog was deliberately kept out of git and scrubbed from history before).
+/data/suunto_apps/
+/data/suunto_apps_source/
+
+# Third-party reference repos cloned locally for study (openambit, opensportsync, AmbitSync,
+# Movescount, pyambit, …) — each has its own .git, ~78 MB, not part of this project.
+/githubprojects/
+
+# Stray CMake configure artifacts if cmake is ever run from the repo root.
+/CMakeFiles/
