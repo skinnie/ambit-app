@@ -66,7 +66,7 @@ void LogService::reportProblem(const QString &context)
     const QString body =
         tr("Describe what you were doing when this happened:\n\n\n"
            "----- system -----\n"
-           "AmbitApp on %1 (%2)\n"
+           "Sommet on %1 (%2)\n"
            "Log file: %3\n\n"
            "----- last log lines -----\n%4\n\n"
            "(The full log is in the folder this opened - attach it if you can.)")
@@ -76,7 +76,7 @@ void LogService::reportProblem(const QString &context)
     QUrl mail(QStringLiteral("mailto:") + kReportAddress);
     QUrlQuery query;
     query.addQueryItem(QStringLiteral("subject"),
-                       QStringLiteral("AmbitApp problem report"));
+                       QStringLiteral("Sommet problem report"));
     query.addQueryItem(QStringLiteral("body"), body);
     mail.setQuery(query);
 

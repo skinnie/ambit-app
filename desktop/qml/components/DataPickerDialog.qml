@@ -211,7 +211,7 @@ ThemedDialog {
                     visible: !AppsService.hasCatalog
                     width: parent.width
                     wrapMode: Text.WordWrap
-                    text: qsTr("No Suunto App catalogue yet. AmbitApp ships none - they are " +
+                    text: qsTr("No Suunto App catalogue yet. Sommet ships none - they are " +
                                 "Suunto's own apps. Import your own from SuuntoLink: point to " +
                                 "its suunto-apps/index.json (on Linux, copy that file over from " +
                                 "a Windows/Mac SuuntoLink install first).")

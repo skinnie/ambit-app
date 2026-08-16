@@ -178,7 +178,7 @@ export function deviceLogToGpx(log: KailashDeviceLog, name = 'Kailash Activity')
   if (pts.length === 0) return null;
   const lines = [
     '<?xml version="1.0" encoding="UTF-8"?>',
-    '<gpx version="1.1" creator="AmbitApp" xmlns="http://www.topografix.com/GPX/1/1">',
+    '<gpx version="1.1" creator="Sommet" xmlns="http://www.topografix.com/GPX/1/1">',
     `  <metadata><time>${esc(pts[0].time)}</time></metadata>`,
     `  <trk><name>${esc(name)}</name><trkseg>`,
   ];

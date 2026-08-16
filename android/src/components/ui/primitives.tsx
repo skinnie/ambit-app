@@ -349,7 +349,7 @@ export function ActionTile({
   );
 }
 
-// ── Logo — mountain mark + optional "AmbitApp" wordmark ────────────────────
+// ── Logo — mountain mark + optional "Sommet" wordmark ────────────────────
 export function Logo({ size = 64, wordmark = true }: { size?: number; wordmark?: boolean }) {
   const t = useV3Theme();
   return (
@@ -357,7 +357,7 @@ export function Logo({ size = 64, wordmark = true }: { size?: number; wordmark?:
       <Icon name="mountain" size={size} color={t.primary} />
       {wordmark && (
         <Text style={{ marginTop: 3, fontSize: Math.round(size * 0.26), fontWeight: '800', color: t.text, letterSpacing: 0.4 }}>
-          AmbitApp
+          Sommet
         </Text>
       )}
     </View>

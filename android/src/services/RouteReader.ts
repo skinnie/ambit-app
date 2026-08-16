@@ -162,6 +162,6 @@ export function navigationToGpx(nav: WatchNavigation): string {
   ).join('\n');
 
   return `<?xml version="1.0" encoding="UTF-8"?>\n` +
-    `<gpx version="1.1" creator="AmbitApp" xmlns="http://www.topografix.com/GPX/1/1">\n` +
+    `<gpx version="1.1" creator="Sommet" xmlns="http://www.topografix.com/GPX/1/1">\n` +
     `${wptBlocks}${wptBlocks && routeBlocks ? '\n' : ''}${routeBlocks}\n</gpx>`;
 }

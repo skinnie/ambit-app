@@ -164,7 +164,7 @@ PageFlickable {
                     Text { text: qsTr("General"); font.bold: true; font.pixelSize: Theme.fontSizeBodyLarge; color: Theme.text; anchors.verticalCenter: parent.verticalCenter }
                 }
                 Text {
-                    text: qsTr("AmbitApp V2 — see AMBITAPP_SPEC.md")
+                    text: qsTr("Sommet — for Suunto Ambit")
                     color: Theme.mutedText
                     font.pixelSize: Theme.fontSizeLabel
                 }
@@ -370,7 +370,7 @@ PageFlickable {
                         text: qsTr("This watch can also use GLONASS satellites, and has its " +
                                     "own storage for their orbital data. Suunto's software " +
                                     "never sends it to this model, so those satellites start " +
-                                    "cold every time. AmbitApp sends both GPS and GLONASS " +
+                                    "cold every time. Sommet sends both GPS and GLONASS " +
                                     "orbital data, which can speed up getting a fix. Tick " +
                                     "this to send GPS only.")
                     }
@@ -1407,7 +1407,7 @@ PageFlickable {
                 // just a label. Still gets the same size fix as every other header.
                 Text { text: qsTr("About"); font.bold: true; font.pixelSize: Theme.fontSizeBodyLarge; color: Theme.text }
                 Text {
-                    text: qsTr("AmbitApp V2.5.11")
+                    text: qsTr("Sommet V2.5.11")
                     color: Theme.text
                     font.pixelSize: Theme.fontSizeBody
                 }

@@ -93,7 +93,7 @@ function pointsToGpx(points: TrackLogPoint[]): string {
     return `    <trkpt lat="${p.lat.toFixed(7)}" lon="${p.lon.toFixed(7)}"><time>${t}</time></trkpt>`;
   }).join('\n');
   return `<?xml version="1.0" encoding="UTF-8"?>\n` +
-    `<gpx version="1.1" creator="AmbitApp" xmlns="http://www.topografix.com/GPX/1/1">\n` +
+    `<gpx version="1.1" creator="Sommet" xmlns="http://www.topografix.com/GPX/1/1">\n` +
     (metaTime ? `  <metadata><time>${escapeXml(metaTime)}</time></metadata>\n` : '') +
     `  <trk><name>Kailash TrackLog</name><trkseg>\n${trkpts}\n  </trkseg></trk>\n</gpx>\n`;
 }

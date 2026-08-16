@@ -10,7 +10,7 @@ ApplicationWindow {
     visible: true
     width: 1200
     height: 800
-    title: qsTr("AmbitApp")
+    title: qsTr("Sommet")
     // Real, 2026-08-10 ("To recall: implement logo on desktop mode") - verified live:
     // ApplicationWindow has no `icon` property in this Qt build (6.12 - confirmed against
     // QtQuick.Templates' own plugins.qmltypes, not just a typo here), so this QML-side

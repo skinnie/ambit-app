@@ -501,9 +501,9 @@ const fr = {
 
   // SettingsScreen — À propos / mentions légales
   aboutSection: 'À propos',
-  aboutVersion: (v: string) => `AmbitApp v${v}`,
+  aboutVersion: (v: string) => `Sommet v${v}`,
   aboutDisclaimer:
-    "AmbitApp est un projet personnel, indépendant et open source. Il n'est ni affilié à, " +
+    "Sommet est un projet personnel, indépendant et open source. Il n'est ni affilié à, " +
     "ni approuvé, ni sponsorisé par Suunto Oy ou Garmin Ltd. Suunto, Ambit, Traverse, " +
     "Garmin, eTrex, ainsi que tout autre nom de produit ou marque mentionné dans " +
     "l'application, sont des marques déposées ou non déposées de leurs détenteurs " +
@@ -673,7 +673,7 @@ const fr = {
   appZoneNativeMissing: 'Le module App Zone n’est pas dans cette build — recompilez l’app.',
   appZoneNoCatalogTitle: 'Aucun catalogue importé',
   appZoneInstructions:
-    'AmbitApp ne distribue aucune app Suunto (contenu propriétaire). Importez votre propre ' +
+    'Sommet ne distribue aucune app Suunto (contenu propriétaire). Importez votre propre ' +
     'catalogue depuis SuuntoLink : sur l’ordinateur où SuuntoLink est installé, trouvez le ' +
     'dossier « suunto-apps » et son fichier « index.json » (~29 Mo), copiez-le sur cet ' +
     'appareil, puis touchez Importer.',
@@ -712,7 +712,7 @@ const fr = {
   intervalsImportBtn: 'Importer l’app compilée',
   intervalsSourceCopiedMsg: 'Le site du compilateur s’est ouvert et la source est affichée ci-dessous. Sélectionnez-la, copiez-la sur le site, compilez, téléchargez le résultat, puis touchez « Importer l’app compilée ».',
   intervalsSourceLabel: 'Source de la séance — sélectionnez tout, copiez, collez sur le site du compilateur.',
-  intervalsCompilerNote: 'La compilation se fait sur un site communautaire tiers (ni Suunto, ni nous). AmbitApp génère seulement la source et ouvre le site ; vous compilez là-bas et importez le résultat.',
+  intervalsCompilerNote: 'La compilation se fait sur un site communautaire tiers (ni Suunto, ni nous). Sommet génère seulement la source et ouvre le site ; vous compilez là-bas et importez le résultat.',
   intervalsPlannedSection: 'Séance planifiée (natif)',
   intervalsPlannedDesc: 'Format non confirmé — peut ne pas apparaître sur la montre.',
   intervalsName: 'Nom',
@@ -1183,9 +1183,9 @@ const en: typeof fr = {
 
   // SettingsScreen — About / legal
   aboutSection: 'About',
-  aboutVersion: (v: string) => `AmbitApp v${v}`,
+  aboutVersion: (v: string) => `Sommet v${v}`,
   aboutDisclaimer:
-    "AmbitApp is an independent, open-source personal project. It is not affiliated " +
+    "Sommet is an independent, open-source personal project. It is not affiliated " +
     "with, endorsed by, or sponsored by Suunto Oy or Garmin Ltd. Suunto, Ambit, Traverse, " +
     "Garmin, eTrex, and any other product name or trademark referenced in this app are " +
     "registered or unregistered trademarks of their respective owners (Suunto Oy and " +
@@ -1352,7 +1352,7 @@ const en: typeof fr = {
   appZoneNativeMissing: "The App Zone module isn't in this build yet - rebuild the app.",
   appZoneNoCatalogTitle: 'No catalog imported',
   appZoneInstructions:
-    'AmbitApp ships no Suunto apps (proprietary content). Import your own catalog from ' +
+    'Sommet ships no Suunto apps (proprietary content). Import your own catalog from ' +
     'SuuntoLink: on the computer where SuuntoLink is installed, find the "suunto-apps" folder ' +
     'and its "index.json" file (~29 MB), copy it to this device, then tap Import.',
   appZoneImportBtn: 'Import from SuuntoLink',
@@ -1390,7 +1390,7 @@ const en: typeof fr = {
   intervalsImportBtn: 'Import compiled app',
   intervalsSourceCopiedMsg: 'The compiler site opened and the source is shown below. Select it, copy it into the site, compile, download the result, then tap "Import compiled app".',
   intervalsSourceLabel: 'Workout source - select all, copy, and paste into the compiler site.',
-  intervalsCompilerNote: 'Compiling runs on a third-party community site (not Suunto, not us). AmbitApp only generates the source and opens the site; you compile there and import the result.',
+  intervalsCompilerNote: 'Compiling runs on a third-party community site (not Suunto, not us). Sommet only generates the source and opens the site; you compile there and import the result.',
   intervalsPlannedSection: 'Planned move (native)',
   intervalsPlannedDesc: 'Format unconfirmed - may not appear on the watch.',
   intervalsName: 'Name',

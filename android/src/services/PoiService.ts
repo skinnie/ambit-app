@@ -101,7 +101,7 @@ function poisToGpx(pois: WatchPoi[]): string {
     `  <wpt lat="${p.latitude.toFixed(7)}" lon="${p.longitude.toFixed(7)}"><name>${escapeXml(p.name)}</name></wpt>`
   ).join('\n');
   return `<?xml version="1.0" encoding="UTF-8"?>\n` +
-    `<gpx version="1.1" creator="AmbitApp" xmlns="http://www.topografix.com/GPX/1/1">\n` +
+    `<gpx version="1.1" creator="Sommet" xmlns="http://www.topografix.com/GPX/1/1">\n` +
     `${wpts}\n</gpx>`;
 }
 

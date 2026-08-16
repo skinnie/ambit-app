@@ -617,7 +617,7 @@ export default function MapScreen() {
         // requires a real, identifying User-Agent on every tile request, or it gets treated as
         // bulk/anonymous traffic. WebView's default sends a generic Android/Chrome UA with no
         // way to single out just the tile requests, so this sets it for the whole page load.
-        userAgent="AmbitApp/2.0"
+        userAgent="Sommet/2.0"
         onLoad={onWebViewLoad}
         onMessage={onMessage}
       />

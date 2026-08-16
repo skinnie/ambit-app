@@ -739,7 +739,7 @@ export default function HomeScreen() {
 
       {/* ── Header ── */}
       <View style={styles.header}>
-        <Text style={styles.appName}>AmbitApp</Text>
+        <Text style={styles.appName}>Sommet</Text>
         <Badge label={`v${APP_VERSION}`} />
       </View>
       {/* Real, 2026-08-09 ("the icon of the watch could be like 20% bigger while in

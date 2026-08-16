@@ -136,7 +136,7 @@ void WeatherService::fetchPlaceName()
     QNetworkRequest request(url);
     // Nominatim's usage policy requires a real identifying User-Agent, not the Qt default -
     // see https://operations.osmfoundation.org/policies/nominatim/.
-    request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("AmbitApp/2.0"));
+    request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("Sommet/2.0"));
 
     QNetworkReply *reply = m_network.get(request);
     connect(reply, &QNetworkReply::finished, this, [this, reply] {

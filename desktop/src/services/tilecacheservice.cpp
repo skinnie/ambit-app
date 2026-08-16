@@ -134,7 +134,7 @@ void TileCacheService::downloadRegion(const QVariantList &points, const QString 
     // ensureTileCached() skip-if-exists behavior.
     for (const QUrl &url : std::as_const(urls)) {
         QNetworkRequest request(url);
-        request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("AmbitApp/2.0"));
+        request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("Sommet/2.0"));
         request.setAttribute(QNetworkRequest::CacheLoadControlAttribute,
                               QNetworkRequest::PreferCache);
         request.setAttribute(QNetworkRequest::CacheSaveControlAttribute, true);

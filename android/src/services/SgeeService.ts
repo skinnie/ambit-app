@@ -37,7 +37,7 @@ export async function updateWatchSgee(
     fromUrl: SGEE_URL,
     toFile: SGEE_LOCAL_PATH,
     headers: {
-      'User-Agent': 'AmbitApp/1.0',
+      'User-Agent': 'Sommet/1.0',
       'Accept': 'application/octet-stream',
     },
     progress: onProgress

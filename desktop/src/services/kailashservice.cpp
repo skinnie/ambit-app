@@ -187,7 +187,7 @@ void KailashService::refreshHomeLocation(double latitude, double longitude)
     url.setQuery(query);
 
     QNetworkRequest request(url);
-    request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("AmbitApp/2.0"));
+    request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("Sommet/2.0"));
 
     QNetworkReply *reply = m_network.get(request);
     connect(reply, &QNetworkReply::finished, this, [this, reply, latitude, longitude] {

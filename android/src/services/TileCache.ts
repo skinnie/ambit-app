@@ -47,7 +47,7 @@ export async function ensureTileCached(provider: MapProvider, z: number, x: numb
   const result = await RNFS.downloadFile({
     fromUrl: tileUrl(provider, z, x, y),
     toFile: path,
-    headers: { 'User-Agent': 'AmbitApp/2.0' },
+    headers: { 'User-Agent': 'Sommet/2.0' },
   }).promise;
 
   if (result.statusCode !== 200) {

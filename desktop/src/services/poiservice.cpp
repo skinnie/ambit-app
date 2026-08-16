@@ -49,7 +49,7 @@ QString PoiService::buildWaypointGpx(const QString &name, double lat, double lon
 {
     return QStringLiteral(
                "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
-               "<gpx version=\"1.1\" creator=\"AmbitApp\" "
+               "<gpx version=\"1.1\" creator=\"Sommet\" "
                "xmlns=\"http://www.topografix.com/GPX/1/1\">\n"
                "  <wpt lat=\"%1\" lon=\"%2\"><name>%3</name></wpt>\n"
                "</gpx>\n")

@@ -1,26 +1,17 @@
 #!/usr/bin/env python3
-"""Generates the main AmbitApp desktop app's own window/taskbar icon, reusing the real
-mountain-peaks mark already drawn for the Android app (android/src/components/ui/Icon.tsx's
-own "mountain" case: `M2 18.5L6.5 9.5L9.5 13L13.5 5.5L17.5 12L20 9L22 18.5Z`, a 24x24
-viewBox) - the same real app, the same mark, on both platforms, real request 2026-08-09
-("can you just use the android app icon for our desktop app?").
+"""Generates the Sommet desktop app's own window/taskbar icon.
 
-Real, deliberate adjustment from the Android original (2026-08-09, "if it needs adjustment
-to match our design do it"): the Android launcher draws this as a thin *stroke* outline
-(white on black) - fine at a phone's own launcher-icon size, but a thin stroke would all
-but disappear at a 16x16 taskbar/dock size. Filled solid here instead (same real path,
-closed into a silhouette against its own baseline) for legibility at real desktop icon
-sizes, and colored from this project's own actual Theme.qml palette (deep teal background,
-white foreground) rather than Android's plain black/white - the same real palette
-tools/packaging/make_icon.py's own BG/ACCENT constants already draw from (that script's own
-ACCENT, (87, 201, 179), is Theme.qml's _darkPrimary #57C9B3 exactly) - not a new, unrelated
-color invented for this icon specifically.
+The mark is "Peak" (direction 01, chosen 2026-08-14): the Suunto Smart Sensor's own visual
+language - a round black device disc with a single triangle accent - with the Suunto name
+dropped and the accent moved from Suunto red to Sommet's own teal (#2FA98C, Theme.qml's
+_lightAccent). Sommet is French for "summit", so the peak is the whole idea; the light dot at
+its apex is a summit waypoint (the POI the app plants on a route). The same mark is drawn
+in-app by qml/components/SommetMark.qml - this script is the raster (PNG/ICO/ICNS) version for
+the one static OS-level icon slot, kept in step with that component's geometry (both use the
+same 120-unit reference the logo concepts were drawn in).
 
 Run once to (re)generate `desktop/packaging/icon.png`/`icon.icns`/`icon.ico` - committed as
-normal binary assets, same convention tools/packaging/make_icon.py already established for
-the Workout Builder's own separate icon (that one intentionally different: this project's
-own original interval-bars mark, not reused from the Android app's own icon, since they're
-different tools).
+normal binary assets, same convention as before.
 
     ./tools/packaging/make_desktop_app_icon.py
 """
@@ -30,46 +21,40 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 
 SIZE = 1024
+SS = 4                     # supersample factor for smooth disc/triangle edges
 OUT_DIR = Path(__file__).resolve().parent.parent.parent / "desktop" / "packaging"
 
-# Real, 2026-08-10 ("logo for the app is green, please do it grey") - was the deep-teal
-# pairing tools/packaging/make_icon.py's own BG still uses; this project moved off that teal
-# onto a slate grey for both platforms' own in-app primary color already tonight (Android's
-# v3.ts, desktop's Theme.qml _darkPrimary/_darkAccent) - this is that same grey (Android's
-# v3Light.primary #475569), not a new color invented for the icon specifically. A window/
-# taskbar icon is one static OS-level asset (most window managers cache it at window
-# creation and don't live-update it from in-app state), so this is the one grey variant,
-# not a light/dark pair switched at runtime - a real, deliberate scope line, not an
-# oversight.
-BG = (71, 85, 105, 255)
-MOUNTAIN = (255, 255, 255, 255)
+# Colors, straight from the chosen mark / Theme.qml - not invented for the icon.
+POD = (14, 17, 22, 255)        # #0E1116 - the device-black disc
+TEAL = (47, 169, 140, 255)     # #2FA98C - Theme.qml _lightAccent, the summit peak
+DOT = (233, 235, 238, 255)     # #E9EBEE - Theme.qml _darkText, the summit waypoint
 
-# android/src/components/ui/Icon.tsx's own real "mountain" path, in its native 24x24
-# viewBox - copied by coordinate, not redrawn/guessed.
-MOUNTAIN_PATH_24 = [
-    (2, 18.5), (6.5, 9.5), (9.5, 13), (13.5, 5.5), (17.5, 12), (20, 9), (22, 18.5),
-]
+# The mark is drawn in a 120x120 reference box (the same one the logo concepts used), then
+# scaled to the icon size, so the raster stays identical to SommetMark.qml's vector.
+DISC = (60, 60, 57)                       # cx, cy, r
+PEAK = [(40, 84), (72, 40), (94, 84)]     # front peak triangle
+APEX = (72, 40)                           # summit waypoint centre
+WP_OUTER, WP_INNER = 6.6, 3.1             # waypoint dark ring / light centre radii
 
 
 def make_base_image():
-    img = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(img)
+    n = SIZE * SS
+    s = n / 120.0
+    img = Image.new("RGBA", (n, n), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
 
-    margin = SIZE * 0.06
-    draw.rounded_rectangle(
-        [margin, margin, SIZE - margin, SIZE - margin], radius=SIZE * 0.22, fill=BG)
+    def circle(cx, cy, r, fill):
+        d.ellipse([(cx - r) * s, (cy - r) * s, (cx + r) * s, (cy + r) * s], fill=fill)
 
-    # The real path scaled from its native 24x24 viewBox into this icon's own drawable
-    # area, closed back to its own start point (a real, solid silhouette against its own
-    # baseline - not a guess at "what the shape would look like filled").
-    pad_frac = 0.16
-    area = SIZE * (1 - 2 * pad_frac)
-    offset = SIZE * pad_frac
-    scale = area / 24
-    points = [(offset + x * scale, offset + y * scale) for x, y in MOUNTAIN_PATH_24]
-    draw.polygon(points, fill=MOUNTAIN)
+    # pod disc
+    circle(*DISC, fill=POD)
+    # front peak
+    d.polygon([(x * s, y * s) for x, y in PEAK], fill=TEAL)
+    # summit waypoint: dark ring (cut into the peak) + light centre
+    circle(APEX[0], APEX[1], WP_OUTER, fill=POD)
+    circle(APEX[0], APEX[1], WP_INNER, fill=DOT)
 
-    return img
+    return img.resize((SIZE, SIZE), Image.LANCZOS)
 
 
 def main():

@@ -52,7 +52,7 @@ protected:
                                   QIODevice *outgoingData = nullptr) override
     {
         QNetworkRequest request(originalRequest);
-        request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("AmbitApp/2.0"));
+        request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("Sommet/2.0"));
         // PreferCache (not the Qt default AlwaysNetwork/PreferNetwork): map tiles for a
         // given z/x/y almost never change, so once cached there is no real reason to ever
         // revalidate over the network - this is what makes revisits and app restarts load
@@ -84,8 +84,8 @@ public:
 int main(int argc, char *argv[])
 {
     QGuiApplication app(argc, argv);
-    app.setOrganizationName(QStringLiteral("AmbitApp"));
-    app.setApplicationName(QStringLiteral("AmbitApp"));
+    app.setOrganizationName(QStringLiteral("Sommet"));
+    app.setApplicationName(QStringLiteral("Sommet"));
 
     // Start the bundled watch helper if this is a packaged download (no-op in a dev build,
     // where run-desktop.sh starts the Python backend instead). See BackendProcess for why.

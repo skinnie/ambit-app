@@ -160,8 +160,8 @@ void ConnectionsService::connectStrava(const QString &clientId, const QString &c
 
                             static const QString body = QStringLiteral(
                                 "<html><body style=\"font-family:sans-serif;text-align:center;"
-                                "margin-top:15%\"><h2>AmbitApp</h2><p>You can close this tab "
-                                "and go back to AmbitApp.</p></body></html>");
+                                "margin-top:15%\"><h2>Sommet</h2><p>You can close this tab "
+                                "and go back to Sommet.</p></body></html>");
                             const QByteArray bodyUtf8 = body.toUtf8();
                             const QByteArray response =
                                 QStringLiteral("HTTP/1.1 200 OK\r\nContent-Type: "
@@ -447,8 +447,8 @@ void ConnectionsService::startCloudOAuth(const QString &provider, const QString 
 
                             static const QString body = QStringLiteral(
                                 "<html><body style=\"font-family:sans-serif;text-align:center;"
-                                "margin-top:15%\"><h2>AmbitApp</h2><p>You can close this tab "
-                                "and go back to AmbitApp.</p></body></html>");
+                                "margin-top:15%\"><h2>Sommet</h2><p>You can close this tab "
+                                "and go back to Sommet.</p></body></html>");
                             const QByteArray bodyUtf8 = body.toUtf8();
                             const QByteArray response =
                                 QStringLiteral("HTTP/1.1 200 OK\r\nContent-Type: "
