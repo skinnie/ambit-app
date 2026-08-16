@@ -92,6 +92,7 @@ const fr = {
   homeSyncActivitiesBtn: 'SYNC ACTIVITÉS',
   homeBatteryLabel: 'batterie',
   homeHwLabel:      'matériel',
+  homeSerialLabel:  'Nº de série',
   homeDeviceConnectedStatus: 'Connecté',
 
   // Kailash travel history (2026-08-08)
@@ -760,6 +761,7 @@ const en: typeof fr = {
   homeSyncActivitiesBtn: 'SYNC ACTIVITIES',
   homeBatteryLabel: 'battery',
   homeHwLabel:      'hardware',
+  homeSerialLabel:  'Serial',
   homeDeviceConnectedStatus: 'Connected',
 
   // Kailash travel history (2026-08-08)

@@ -893,6 +893,10 @@ export default function HomeScreen() {
               {ambitInfo.hwVersion ? `  ·  ${t.homeHwLabel} ${ambitInfo.hwVersion}` : ''}
             </Text>
           )}
+          {/* Serial number - desktop's hero-card info grid shows it; parity, 2026-08-16. */}
+          {!!ambitInfo.serial && (
+            <Text style={[styles.deviceSub, v3MutedStyle]}>{t.homeSerialLabel} {ambitInfo.serial}</Text>
+          )}
           <View style={styles.deviceMetaRow}>
             {ambitInfo.battery >= 0 && (
               <View style={styles.deviceBattery}>
