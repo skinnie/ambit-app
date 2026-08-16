@@ -4,7 +4,14 @@ import { useFocusEffect } from '@react-navigation/native';
 import {
   runFirmwareCheck, downloadFirmware, BackupState,
 } from '../services/FirmwareBackupService';
-import { createNavBackup, listNavBackups, backupsFolderPath, BackupEntry } from '../services/NavBackupService';
+import {
+  createNavBackup, listNavBackups, backupsFolderPath, BackupEntry,
+  uploadNavBackupToCloud, listCloudNavBackups, downloadNavBackupFromCloud,
+  CloudProvider, CloudBackupEntry,
+} from '../services/NavBackupService';
+import { isAuthenticated as dropboxIsAuth } from '../services/ApiDropbox';
+import { isAuthenticated as gdriveIsAuth } from '../services/ApiGoogleDrive';
+import { isAuthenticated as onedriveIsAuth } from '../services/ApiOneDrive';
 import { shareFile } from '../native/AmbitUsbModule';
 import { t } from '../i18n';
 import { useV3Theme, v3Spacing, v3Type } from '../theme/v3';
@@ -41,6 +48,73 @@ export default function BackupScreen() {
     listNavBackups().then(setBackups).catch(() => {});
   }, []);
   useFocusEffect(useCallback(() => { refreshBackups(); }, [refreshBackups]));
+
+  // ── Cloud backup - added 2026-08-12, ports desktop's own BackupPage.qml/
+  // CloudStorageService the same day (see NavBackupService.ts's own header comment on this
+  // section). 'none' means nothing picked yet - the three real choices only become tappable
+  // once connected in Settings → Connections. ──
+  const [cloudProvider, setCloudProvider] = useState<CloudProvider | 'none'>('none');
+  const [dropboxAuth, setDropboxAuth] = useState(false);
+  const [gdriveAuth, setGdriveAuth] = useState(false);
+  const [onedriveAuth, setOnedriveAuth] = useState(false);
+  const [cloudBackups, setCloudBackups] = useState<CloudBackupEntry[]>([]);
+  const [cloudBusy, setCloudBusy] = useState(false);
+  const [cloudActionText, setCloudActionText] = useState<string | undefined>();
+  const [cloudActionOk, setCloudActionOk] = useState(true);
+
+  useFocusEffect(useCallback(() => {
+    dropboxIsAuth().then(setDropboxAuth);
+    gdriveIsAuth().then(setGdriveAuth);
+    onedriveIsAuth().then(setOnedriveAuth);
+  }, []));
+
+  const refreshCloudBackups = useCallback((provider: CloudProvider) => {
+    setCloudBusy(true);
+    listCloudNavBackups(provider)
+      .then(setCloudBackups)
+      .catch((e: any) => setCloudActionText(e?.message ?? t.unknownError))
+      .finally(() => setCloudBusy(false));
+  }, []);
+
+  function handleSelectCloudProvider(provider: CloudProvider | 'none') {
+    setCloudProvider(provider);
+    setCloudActionText(undefined);
+    if (provider !== 'none') refreshCloudBackups(provider);
+  }
+
+  async function handleUploadToCloud(entry: BackupEntry) {
+    if (cloudProvider === 'none' || cloudBusy) return;
+    setCloudBusy(true);
+    setCloudActionText(undefined);
+    try {
+      await uploadNavBackupToCloud(cloudProvider, entry);
+      setCloudActionOk(true);
+      setCloudActionText(t.cloudUploaded);
+      refreshCloudBackups(cloudProvider);
+    } catch (e: any) {
+      setCloudActionOk(false);
+      setCloudActionText(e?.message ?? t.unknownError);
+    } finally {
+      setCloudBusy(false);
+    }
+  }
+
+  async function handleDownloadFromCloud(entry: CloudBackupEntry) {
+    if (cloudProvider === 'none' || cloudBusy) return;
+    setCloudBusy(true);
+    setCloudActionText(undefined);
+    try {
+      await downloadNavBackupFromCloud(cloudProvider, entry.label);
+      setCloudActionOk(true);
+      setCloudActionText(t.cloudDownloaded);
+      refreshBackups();
+    } catch (e: any) {
+      setCloudActionOk(false);
+      setCloudActionText(e?.message ?? t.unknownError);
+    } finally {
+      setCloudBusy(false);
+    }
+  }
 
   async function handleCreateNavBackup() {
     if (navBackupBusy) return;
@@ -112,12 +186,64 @@ export default function BackupScreen() {
         {backups.map(b => (
           <View key={b.prefix} style={styles.backupRow}>
             <Text style={styles.backupDate}>{new Date(b.createdAt).toLocaleString()}</Text>
-            <TouchableOpacity style={styles.shareBtn} onPress={() => handleShareBackup(b)}>
-              <Text style={styles.shareBtnText}>{t.backupShareBtn}</Text>
-            </TouchableOpacity>
+            <View style={styles.backupRowBtns}>
+              <TouchableOpacity style={styles.shareBtn} onPress={() => handleShareBackup(b)}>
+                <Text style={styles.shareBtnText}>{t.backupShareBtn}</Text>
+              </TouchableOpacity>
+              {cloudProvider !== 'none' && (
+                <TouchableOpacity style={styles.shareBtn} disabled={cloudBusy} onPress={() => handleUploadToCloud(b)}>
+                  <Text style={styles.shareBtnText}>{t.cloudUploadBtn}</Text>
+                </TouchableOpacity>
+              )}
+            </View>
           </View>
         ))}
         <Text style={styles.restoreNote}>{t.backupRestoreUnavailable}</Text>
+      </Section>
+
+      {/* ── Cloud backup - added 2026-08-12 ("implement the ones that the user can set up
+          easily by itself"). Optional second destination for the exact same two files above -
+          see NavBackupService.ts's own header comment on this section. ── */}
+      <Section title={t.cloudBackupSection} description={t.cloudBackupDesc}>
+        <View style={styles.row}>
+          <Button label={t.cloudNone} variant={cloudProvider === 'none' ? 'filled' : 'outline'}
+            grow={false} onPress={() => handleSelectCloudProvider('none')} />
+          <Button label="Dropbox" variant={cloudProvider === 'dropbox' ? 'filled' : 'outline'}
+            grow={false} disabled={!dropboxAuth} onPress={() => handleSelectCloudProvider('dropbox')} />
+        </View>
+        <View style={styles.row}>
+          <Button label="Google Drive" variant={cloudProvider === 'googledrive' ? 'filled' : 'outline'}
+            grow={false} disabled={!gdriveAuth} onPress={() => handleSelectCloudProvider('googledrive')} />
+          <Button label="OneDrive" variant={cloudProvider === 'onedrive' ? 'filled' : 'outline'}
+            grow={false} disabled={!onedriveAuth} onPress={() => handleSelectCloudProvider('onedrive')} />
+        </View>
+
+        {!dropboxAuth && !gdriveAuth && !onedriveAuth && (
+          <StatusLine text={t.cloudNoneConnected} />
+        )}
+
+        {cloudProvider !== 'none' && (
+          <>
+            {cloudBusy && <StatusLine text={t.backupNavWorking} />}
+            {!cloudBusy && cloudBackups.length === 0 && <StatusLine text={t.cloudEmpty} />}
+            {cloudBackups.map(entry => (
+              <View key={entry.label} style={styles.backupRow}>
+                <Text style={styles.backupDate}>
+                  {entry.createdAt > 0 ? new Date(entry.createdAt).toLocaleString() : entry.label}
+                </Text>
+                <TouchableOpacity style={styles.shareBtn} disabled={cloudBusy} onPress={() => handleDownloadFromCloud(entry)}>
+                  <Text style={styles.shareBtnText}>{t.cloudDownloadBtn}</Text>
+                </TouchableOpacity>
+              </View>
+            ))}
+            <View style={styles.row}>
+              <Button label={t.cloudRefreshBtn} variant="text" grow={false} loading={cloudBusy}
+                onPress={() => refreshCloudBackups(cloudProvider)} />
+            </View>
+          </>
+        )}
+
+        {!!cloudActionText && <StatusLine text={cloudActionText} tone={cloudActionOk ? undefined : 'alert'} />}
       </Section>
 
       <WarningNote>{t.backupWarning}</WarningNote>
@@ -190,6 +316,7 @@ const createStyles = (t: ReturnType<typeof useV3Theme>) => StyleSheet.create({
     marginTop: v3Spacing.small,
   },
   backupDate: { color: t.text, fontSize: v3Type.bodyLarge },
+  backupRowBtns: { flexDirection: 'row', gap: v3Spacing.small },
   shareBtn: {
     paddingVertical: 6, paddingHorizontal: 12, borderRadius: 8,
     backgroundColor: t.primary + '1F', borderWidth: 1, borderColor: t.primary,

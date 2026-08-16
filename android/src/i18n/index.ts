@@ -182,6 +182,51 @@ const fr = {
   viewOnStrava:          'Voir sur Strava',
   stravaSuccess:         'Activité uploadée sur Strava !',
 
+  // SettingsScreen / BackupScreen — Dropbox / Google Drive / OneDrive (added 2026-08-12,
+  // "implement the ones that the user can set up easily by itself" — Backup & Restore cloud
+  // destinations). Shared strings across all three providers, unlike Strava's own dedicated
+  // set above, since the dialogs/status text are otherwise identical.
+  cloudConnectedStatus:    'Connecté',
+  cloudDisconnectBtn:      'Se déconnecter',
+  cloudDisconnected:       'Déconnecté.',
+  cloudConnected:          'Connexion réussie !',
+  cloudError:              'Erreur de connexion',
+  cloudAppKeyPlaceholder:    'Clé d\'application',
+  cloudAppSecretPlaceholder: 'Secret d\'application',
+  cloudClientIdPlaceholder:     'ID client',
+  cloudClientSecretPlaceholder: 'Secret client',
+  cloudDropboxDesc: 'Créez votre propre application gratuite sur dropbox.com/developers/apps ' +
+    '(accès "App folder"). Ajoutez ces deux Redirect URI : http://localhost (pour l\'app ' +
+    'ordinateur) et opensportsync://oauth/dropbox (pour cette app) - la même application ' +
+    'sert les deux. Puis collez sa clé et son secret ci-dessous. Seul votre dossier ' +
+    '"AmbitApp Backups" dans Dropbox est utilisé.',
+  cloudGoogleDriveDesc: 'Créez votre propre application gratuite sur console.cloud.google.com ' +
+    '(activez l\'API Google Drive, créez un ID client OAuth de type "Desktop app"), puis ' +
+    'collez son ID et son secret ci-dessous. Seuls les fichiers créés par cette application ' +
+    'sont visibles (portée drive.file).',
+  cloudOneDriveDesc: 'Créez votre propre application gratuite sur entra.microsoft.com ' +
+    '(plateforme "Mobile and desktop applications"). Ajoutez ces deux Redirect URI : ' +
+    'http://localhost (pour l\'app ordinateur) et opensportsync://oauth/onedrive (pour ' +
+    'cette app) - la même application sert les deux. Puis collez son ID d\'application ' +
+    'ci-dessous — pas de secret nécessaire ici (PKCE). Seul le dossier d\'application ' +
+    'OneDrive de cette app est utilisé.',
+
+  // BackupScreen — Cloud backup card
+  cloudBackupSection:  'Sauvegarde cloud',
+  cloudBackupDesc:     'Optionnel. Uploadez une sauvegarde ci-dessus vers votre propre ' +
+    'stockage cloud connecté, ou téléchargez-en une — elle apparaît alors dans la liste ' +
+    'locale ci-dessus. Connectez d\'abord un service dans Paramètres → Connexions.',
+  cloudNone:           'Aucun',
+  cloudNoneConnected:  'Aucun service connecté pour l\'instant — configurez-en un dans ' +
+    'Paramètres → Connexions.',
+  cloudEmpty:          'Aucune sauvegarde cloud trouvée — utilisez "Uploader" sur une ' +
+    'sauvegarde ci-dessus.',
+  cloudUploadBtn:      'Uploader',
+  cloudDownloadBtn:    'Télécharger',
+  cloudRefreshBtn:     'Rafraîchir',
+  cloudUploaded:       'Uploadée vers le cloud.',
+  cloudDownloaded:     'Téléchargée — elle apparaît maintenant dans la liste locale ci-dessus.',
+
 
   // SettingsScreen — Runalyze
   emptyKey:       'Clé vide',
@@ -826,6 +871,45 @@ const en: typeof fr = {
   stravaNotConnected:    'Connect Strava first in Settings.',
   viewOnStrava:          'View on Strava',
   stravaSuccess:         'Activity uploaded to Strava!',
+
+  // Dropbox / Google Drive / OneDrive cloud-backup destinations (added 2026-08-12). Shared
+  // strings across all three providers — see the fr block above for the rationale.
+  cloudConnectedStatus:    'Connected',
+  cloudDisconnectBtn:      'Disconnect',
+  cloudDisconnected:       'Disconnected.',
+  cloudConnected:          'Connected!',
+  cloudError:              'Connection error',
+  cloudAppKeyPlaceholder:    'App key',
+  cloudAppSecretPlaceholder: 'App secret',
+  cloudClientIdPlaceholder:     'Client ID',
+  cloudClientSecretPlaceholder: 'Client Secret',
+  cloudDropboxDesc: 'Register your own free app at dropbox.com/developers/apps (App folder ' +
+    'access). Add both Redirect URIs: http://localhost (for the desktop app) and ' +
+    'opensportsync://oauth/dropbox (for this app) - the same app serves both. Then paste ' +
+    'its App key and App secret below. Only your own "AmbitApp Backups" folder in Dropbox ' +
+    'is ever touched.',
+  cloudGoogleDriveDesc: 'Register your own free app at console.cloud.google.com (enable the ' +
+    'Google Drive API, create an OAuth Client ID of type "Desktop app"), then paste its ' +
+    'Client ID and Client Secret below. Only files this app itself creates are ever visible ' +
+    'to it (drive.file scope).',
+  cloudOneDriveDesc: 'Register your own free app at entra.microsoft.com (platform "Mobile ' +
+    'and desktop applications"). Add both Redirect URIs: http://localhost (for the desktop ' +
+    'app) and opensportsync://oauth/onedrive (for this app) - the same app serves both. ' +
+    'Then paste its Application (client) ID below — no secret needed here, this uses PKCE. ' +
+    'Only this app\'s own OneDrive app folder is ever touched.',
+
+  cloudBackupSection:  'Cloud backup',
+  cloudBackupDesc:     'Optional. Upload a backup above to your own connected cloud storage, ' +
+    'or download one back down — it then appears in the local list above. Connect a provider ' +
+    'first in Settings → Connections.',
+  cloudNone:           'None',
+  cloudNoneConnected:  'Nothing connected yet — set one up in Settings → Connections first.',
+  cloudEmpty:          'No cloud backups found yet — use "Upload" on a backup above.',
+  cloudUploadBtn:      'Upload',
+  cloudDownloadBtn:    'Download',
+  cloudRefreshBtn:     'Refresh',
+  cloudUploaded:       'Uploaded to the cloud.',
+  cloudDownloaded:     'Downloaded — it now appears in the local list above.',
 
   gpsUpdate:          'GPS',
   gpsDone:            'GPS OK',

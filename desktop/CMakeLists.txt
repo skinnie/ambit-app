@@ -158,6 +158,8 @@ qt_add_qml_module(ambitapp
         src/services/backupservice.cpp
         src/services/connectionsservice.h
         src/services/connectionsservice.cpp
+        src/services/cloudstorageservice.h
+        src/services/cloudstorageservice.cpp
         src/services/localfileservice.h
         src/services/localfileservice.cpp
         src/services/garminservice.h

@@ -23,6 +23,15 @@ import {
   isAuthenticated as stravaIsAuth, getAuthorizationUrl as stravaAuthUrl, logout as stravaLogout,
 } from '../services/ApiStrava';
 import {
+  isAuthenticated as dropboxIsAuth, getAuthorizationUrl as dropboxAuthUrl, logout as dropboxLogout,
+} from '../services/ApiDropbox';
+import {
+  isAuthenticated as gdriveIsAuth, getAuthorizationUrl as gdriveAuthUrl, logout as gdriveLogout,
+} from '../services/ApiGoogleDrive';
+import {
+  isAuthenticated as onedriveIsAuth, getAuthorizationUrl as onedriveAuthUrl, logout as onedriveLogout,
+} from '../services/ApiOneDrive';
+import {
   getMapProvider, setMapProvider, MapProvider, MAP_PROVIDER_LABELS,
 } from '../services/MapProviderService';
 import { detectAttachedDeviceType } from '../native/AmbitUsbModule';
@@ -91,6 +100,18 @@ export default function SettingsScreen() {
   const [saving, setSaving]               = useState(false);
   const [stravaAuth, setStravaAuth]       = useState(false);
 
+  // Dropbox / Google Drive / OneDrive - added 2026-08-12, Backup & Restore cloud
+  // destinations (see NavBackupService.ts / BackupScreen.tsx). Self-serve: the user pastes
+  // their own registered app's credentials here, same shape as desktop's ConnectionsService.
+  const [dropboxAuth, setDropboxAuth]     = useState(false);
+  const [dropboxClientId, setDropboxClientId]         = useState('');
+  const [dropboxClientSecret, setDropboxClientSecret] = useState('');
+  const [gdriveAuth, setGdriveAuth]       = useState(false);
+  const [gdriveClientId, setGdriveClientId]           = useState('');
+  const [gdriveClientSecret, setGdriveClientSecret]   = useState('');
+  const [onedriveAuth, setOnedriveAuth]   = useState(false);
+  const [onedriveClientId, setOnedriveClientId]       = useState('');
+
   const [intervalsAthleteId, setIntervalsAthleteId] = useState('');
   const [intervalsApiKey, setIntervalsApiKey]       = useState('');
   const [intervalsSaved, setIntervalsSaved]         = useState(false);
@@ -101,7 +122,9 @@ export default function SettingsScreen() {
   // a status-dot row per service, tap-to-open a Dialog with that service's own form - not
   // four separate always-expanded full-height sections like this screen had. Same real
   // handlers/state above, this only changes which one is visible at a time.
-  const [openConnection, setOpenConnection] = useState<'strava' | 'runalyze' | 'intervals' | null>(null);
+  const [openConnection, setOpenConnection] = useState<
+    'strava' | 'runalyze' | 'intervals' | 'dropbox' | 'googledrive' | 'onedrive' | null
+  >(null);
 
   const [mapProvider, setMapProviderState] = useState<MapProvider>('ign');
   const [tileCacheBytes, setTileCacheBytes] = useState<number | null>(null);
@@ -243,6 +266,9 @@ export default function SettingsScreen() {
       setRunalyzeKey(k ?? '');
     });
     stravaIsAuth().then(setStravaAuth);
+    dropboxIsAuth().then(setDropboxAuth);
+    gdriveIsAuth().then(setGdriveAuth);
+    onedriveIsAuth().then(setOnedriveAuth);
     getIntervalsIcuCredentials().then(creds => {
       setIntervalsSaved(!!creds);
       setIntervalsAthleteId(creds?.athleteId ?? '');
@@ -314,6 +340,63 @@ export default function SettingsScreen() {
     await stravaLogout();
     setStravaAuth(false);
     Alert.alert('Strava', t.stravaDisconnected);
+  }
+
+  // ── Cloud backup destinations (Dropbox / Google Drive / OneDrive), added 2026-08-12.
+  // Connect opens the provider in the browser; the callback returns via App.tsx's deep-link
+  // handler. OneDrive uses PKCE, so it takes only a client ID (no secret). ──
+  async function handleDropboxConnect() {
+    if (!dropboxClientId.trim() || !dropboxClientSecret.trim()) {
+      Alert.alert(t.emptyCreds, t.emptyCredsMsg);
+      return;
+    }
+    try {
+      const url = await dropboxAuthUrl(dropboxClientId.trim(), dropboxClientSecret.trim());
+      await Linking.openURL(url);
+    } catch (e: any) {
+      Alert.alert(t.cloudError, e?.message ?? String(e));
+    }
+  }
+  async function handleDropboxDisconnect() {
+    await dropboxLogout();
+    setDropboxAuth(false);
+    Alert.alert('Dropbox', t.cloudDisconnected);
+  }
+
+  async function handleGdriveConnect() {
+    if (!gdriveClientId.trim() || !gdriveClientSecret.trim()) {
+      Alert.alert(t.emptyCreds, t.emptyCredsMsg);
+      return;
+    }
+    try {
+      const url = await gdriveAuthUrl(gdriveClientId.trim(), gdriveClientSecret.trim());
+      await Linking.openURL(url);
+    } catch (e: any) {
+      Alert.alert(t.cloudError, e?.message ?? String(e));
+    }
+  }
+  async function handleGdriveDisconnect() {
+    await gdriveLogout();
+    setGdriveAuth(false);
+    Alert.alert('Google Drive', t.cloudDisconnected);
+  }
+
+  async function handleOnedriveConnect() {
+    if (!onedriveClientId.trim()) {
+      Alert.alert(t.emptyCreds, t.emptyCredsMsg);
+      return;
+    }
+    try {
+      const url = await onedriveAuthUrl(onedriveClientId.trim());
+      await Linking.openURL(url);
+    } catch (e: any) {
+      Alert.alert(t.cloudError, e?.message ?? String(e));
+    }
+  }
+  async function handleOnedriveDisconnect() {
+    await onedriveLogout();
+    setOnedriveAuth(false);
+    Alert.alert('OneDrive', t.cloudDisconnected);
   }
 
 
@@ -608,6 +691,26 @@ export default function SettingsScreen() {
             {intervalsSaved ? `${t.intervalsSection} — ${t.credsStored}` : `${t.intervalsSection} — ${t.connect}`}
           </Text>
         </TouchableOpacity>
+        {/* Dropbox / Google Drive / OneDrive - added 2026-08-12, Backup & Restore cloud
+            destinations (see NavBackupService.ts / BackupScreen.tsx). */}
+        <TouchableOpacity style={styles.connRow} activeOpacity={0.7} onPress={() => setOpenConnection('dropbox')}>
+          <View style={[styles.connDot, { backgroundColor: dropboxAuth ? theme.success : theme.mutedText }]} />
+          <Text style={styles.connRowText}>
+            {dropboxAuth ? `Dropbox — ${t.cloudConnectedStatus}` : `Dropbox — ${t.connect}`}
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.connRow} activeOpacity={0.7} onPress={() => setOpenConnection('googledrive')}>
+          <View style={[styles.connDot, { backgroundColor: gdriveAuth ? theme.success : theme.mutedText }]} />
+          <Text style={styles.connRowText}>
+            {gdriveAuth ? `Google Drive — ${t.cloudConnectedStatus}` : `Google Drive — ${t.connect}`}
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.connRow} activeOpacity={0.7} onPress={() => setOpenConnection('onedrive')}>
+          <View style={[styles.connDot, { backgroundColor: onedriveAuth ? theme.success : theme.mutedText }]} />
+          <Text style={styles.connRowText}>
+            {onedriveAuth ? `OneDrive — ${t.cloudConnectedStatus}` : `OneDrive — ${t.connect}`}
+          </Text>
+        </TouchableOpacity>
       </View>
 
       <Modal visible={openConnection === 'strava'} animationType="slide" transparent onRequestClose={() => setOpenConnection(null)}>
@@ -695,6 +798,90 @@ export default function SettingsScreen() {
               )}
             </View>
             {intervalsSaved && <StatusLine text={t.credsStored} />}
+            <Button label={t.closeBtn} variant="text" onPress={() => setOpenConnection(null)} style={{ marginTop: 12 }} />
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Dropbox / Google Drive / OneDrive connect modals - added 2026-08-12, Backup &
+          Restore cloud destinations (see NavBackupService.ts). ── */}
+      <Modal visible={openConnection === 'dropbox'} animationType="slide" transparent onRequestClose={() => setOpenConnection(null)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
+            <Text style={styles.cardTitle}>Dropbox</Text>
+            <Text style={styles.sectionDesc}>{t.cloudDropboxDesc}</Text>
+            {dropboxAuth ? (
+              <>
+                <Chip icon="check" label={t.cloudConnectedStatus} />
+                <View style={styles.row}>
+                  <Button label={t.cloudDisconnectBtn} variant="text" grow={false} onPress={handleDropboxDisconnect} />
+                </View>
+              </>
+            ) : (
+              <>
+                <FieldRow icon="key" value={dropboxClientId} onChangeText={setDropboxClientId}
+                  placeholder={t.cloudAppKeyPlaceholder} autoCapitalize="none" autoCorrect={false} />
+                <FieldRow icon="key" value={dropboxClientSecret} onChangeText={setDropboxClientSecret}
+                  placeholder={t.cloudAppSecretPlaceholder} autoCapitalize="none" autoCorrect={false} secureTextEntry />
+                <View style={styles.row}>
+                  <Button label={t.connect} variant="filled" onPress={handleDropboxConnect} />
+                </View>
+              </>
+            )}
+            <Button label={t.closeBtn} variant="text" onPress={() => setOpenConnection(null)} style={{ marginTop: 12 }} />
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={openConnection === 'googledrive'} animationType="slide" transparent onRequestClose={() => setOpenConnection(null)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
+            <Text style={styles.cardTitle}>Google Drive</Text>
+            <Text style={styles.sectionDesc}>{t.cloudGoogleDriveDesc}</Text>
+            {gdriveAuth ? (
+              <>
+                <Chip icon="check" label={t.cloudConnectedStatus} />
+                <View style={styles.row}>
+                  <Button label={t.cloudDisconnectBtn} variant="text" grow={false} onPress={handleGdriveDisconnect} />
+                </View>
+              </>
+            ) : (
+              <>
+                <FieldRow icon="key" value={gdriveClientId} onChangeText={setGdriveClientId}
+                  placeholder={t.cloudClientIdPlaceholder} autoCapitalize="none" autoCorrect={false} />
+                <FieldRow icon="key" value={gdriveClientSecret} onChangeText={setGdriveClientSecret}
+                  placeholder={t.cloudClientSecretPlaceholder} autoCapitalize="none" autoCorrect={false} secureTextEntry />
+                <View style={styles.row}>
+                  <Button label={t.connect} variant="filled" onPress={handleGdriveConnect} />
+                </View>
+              </>
+            )}
+            <Button label={t.closeBtn} variant="text" onPress={() => setOpenConnection(null)} style={{ marginTop: 12 }} />
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={openConnection === 'onedrive'} animationType="slide" transparent onRequestClose={() => setOpenConnection(null)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
+            <Text style={styles.cardTitle}>OneDrive</Text>
+            <Text style={styles.sectionDesc}>{t.cloudOneDriveDesc}</Text>
+            {onedriveAuth ? (
+              <>
+                <Chip icon="check" label={t.cloudConnectedStatus} />
+                <View style={styles.row}>
+                  <Button label={t.cloudDisconnectBtn} variant="text" grow={false} onPress={handleOnedriveDisconnect} />
+                </View>
+              </>
+            ) : (
+              <>
+                <FieldRow icon="key" value={onedriveClientId} onChangeText={setOnedriveClientId}
+                  placeholder={t.cloudClientIdPlaceholder} autoCapitalize="none" autoCorrect={false} />
+                <View style={styles.row}>
+                  <Button label={t.connect} variant="filled" onPress={handleOnedriveConnect} />
+                </View>
+              </>
+            )}
             <Button label={t.closeBtn} variant="text" onPress={() => setOpenConnection(null)} style={{ marginTop: 12 }} />
           </View>
         </View>
