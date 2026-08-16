@@ -156,6 +156,53 @@ PageFlickable {
                         onClicked: Theme.activitiesView = "list"
                     }
                 }
+
+                // André, 2026-08-16: the same independent map/list choice for Routes and POIs.
+                Text {
+                    text: qsTr("Routes view")
+                    color: Theme.text
+                    font.pixelSize: Theme.fontSizeBody
+                    font.bold: true
+                    topPadding: Theme.spacingSmall
+                }
+                Row {
+                    spacing: Theme.spacingSmall
+                    RoundedRadioButton {
+                        autoExclusive: false
+                        checked: Theme.routesView === "map"
+                        text: qsTr("See as a map")
+                        onClicked: Theme.routesView = "map"
+                    }
+                    RoundedRadioButton {
+                        autoExclusive: false
+                        checked: Theme.routesView === "list"
+                        text: qsTr("See as a list")
+                        onClicked: Theme.routesView = "list"
+                    }
+                }
+
+                Text {
+                    text: qsTr("POIs view")
+                    color: Theme.text
+                    font.pixelSize: Theme.fontSizeBody
+                    font.bold: true
+                    topPadding: Theme.spacingSmall
+                }
+                Row {
+                    spacing: Theme.spacingSmall
+                    RoundedRadioButton {
+                        autoExclusive: false
+                        checked: Theme.poisView === "map"
+                        text: qsTr("See as a map")
+                        onClicked: Theme.poisView = "map"
+                    }
+                    RoundedRadioButton {
+                        autoExclusive: false
+                        checked: Theme.poisView === "list"
+                        text: qsTr("See as a list")
+                        onClicked: Theme.poisView = "list"
+                    }
+                }
             }
         }
 

@@ -265,9 +265,11 @@ PageFlickable {
                         // no extra USB round trip per route. Garmin's own track field comes
                         // straight from the local GPX file already read.
                         Item {
-                            visible: modelData.track && modelData.track.length > 1
+                            // Map hidden in "list" view (Settings -> Routes view), collapsed to
+                            // zero height so the list is compact - André, 2026-08-16.
+                            visible: Theme.routesView === "map" && modelData.track && modelData.track.length > 1
                             width: parent.width
-                            height: 140
+                            height: visible ? 140 : 0
                             MapView {
                                 anchors.fill: parent
                                 readonly property var center: RouteViewModel.trackCenter(modelData.track)

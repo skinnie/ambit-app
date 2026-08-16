@@ -38,10 +38,15 @@ QtObject {
         // see as a map, see as a list." Persisted the same way the theme choice is, so the
         // app opens on whichever view he last used.
         property string activitiesView: "map"
+        // André, 2026-08-16: the same independent map/list choice for Routes and POIs.
+        property string routesView: "map"
+        property string poisView: "map"
     }
 
     // "map" (cards with a track thumbnail, the original) or "list" (rows, no maps).
     property alias activitiesView: settingsId.activitiesView
+    property alias routesView: settingsId.routesView
+    property alias poisView: settingsId.poisView
 
     readonly property bool isDark: {
         if (override === "light") return false;

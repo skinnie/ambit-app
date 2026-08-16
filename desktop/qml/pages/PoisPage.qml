@@ -404,8 +404,10 @@ PageFlickable {
                         spacing: Theme.spacingSmall
 
                         Item {
+                            // Map hidden in "list" view (Settings -> POIs view) - André, 2026-08-16.
+                            visible: Theme.poisView === "map"
                             width: parent.width
-                            height: 120
+                            height: visible ? 120 : 0
                             MapView {
                                 anchors.fill: parent
                                 latitude: modelData.lat
