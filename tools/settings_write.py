@@ -669,7 +669,18 @@ def read_all(payload, descriptor, product_id=None):
         if data is None:
             out[key] = {"ok": False, "error": f"entry 0x{entry_id:02x} not in this reply"}
             continue
-        value = _entry_value(schema, entry_id, data, field.fid)
+        try:
+            value = _entry_value(schema, entry_id, data, field.fid)
+        except (struct.error, IndexError, ValueError) as exc:
+            # Real, 2026-08-12 (ported from main): a live Traverse's entry 0x04 came back 1 byte
+            # where the descriptor in use (silently the Ambit3 Peak reference one, see
+            # write_nav.descriptor_for_product_id's own docstring) says 4 - a schema/wire
+            # mismatch, not a code bug. One bad field must not take the whole settings response
+            # down with it (this was the Traverse "settings Bad Gateway" 502).
+            out[key] = {"ok": False,
+                        "error": f"could not decode entry 0x{entry_id:02x} for {field.path} "
+                                 f"against this watch's schema: {exc}"}
+            continue
         desc = describe_field(field)
         if group_id is not None:
             # A GROUP member's own min/max (describe_field's, from its raw int width -
