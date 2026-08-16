@@ -34,7 +34,7 @@ import { APP_VERSION } from '../config/version';
 import { manualUrlFor, garminManualUrlFor } from '../config/manuals';
 import { t } from '../i18n';
 import Icon from '../components/ui/Icon';
-import { ActionTile, Badge, Button, Chip, Logo, StatusLine } from '../components/ui/primitives';
+import { ActionTile, Badge, Button, Chip, StatusLine } from '../components/ui/primitives';
 // v3.0 UI port (2026-08-09, "go all the way to the new theming") - the whole screen (not
 // just the connected dashboard) is on the v3 palette now; tokens.ts/useTheme() aren't
 // imported here anymore at all.
@@ -109,12 +109,7 @@ export default function HomeScreen() {
   const v3TextStyle = { color: theme.text };
   const v3MutedStyle = { color: theme.mutedText };
 
-  // "No device connected" screens (searching/connecting/timeout/error) run
-  // ~12.5% larger text than the rest of the app, scaled further by the
-  // device's own width so it keeps that proportion on a tablet instead of
-  // just growing the phone-sized number — clamped so it can't run away.
   const { width: winWidth, height: winHeight } = useWindowDimensions();
-  const deviceFlowScale = Math.min(1.6, Math.max(1.125, (winWidth / 380) * 1.125));
   // "Roomy" = actually landscape AND wide enough (a landscape tablet / large window),
   // where the connected screen lays its cards side by side and uses more tile columns.
   // Must be orientation-based, not width-only: this tablet is 800 px wide in PORTRAIT,
@@ -657,62 +652,14 @@ export default function HomeScreen() {
 
   // ── Device area render (searching/connecting/timeout/error states) ───────
   // searching / timeout are now rendered INSIDE the unified card page below (desktop parity:
-  // Home is always the card dashboard, with a "No watch connected / Searching…" hero card
-  // holding the connect options, instead of a separate full-screen splash). Only the two
-  // transient states below (actively connecting, and a connect error) keep a focused
-  // full-screen treatment.
-  if (phase === 'connecting') {
-    const msg = deviceType === 'garmin' && waitingSeconds !== null
-      ? t.garminWaitingForMount(waitingSeconds)
-      : deviceType === 'ambit' ? (bleAttempt ? t.homeConnectingBle : t.homeConnectingAmbit) : t.connecting;
-    return (
-      <View style={styles.deviceFlowContainer}>
-        <View style={styles.deviceFlowLogo}>
-          <Logo size={Math.round(56 * deviceFlowScale)} />
-          <Badge label={`v${APP_VERSION}`} />
-        </View>
-        <ActivityIndicator size="large" color={theme.text} />
-        <Text style={[styles.deviceFlowTitle, deviceFlowTitleScale(deviceFlowScale)]}>{msg}</Text>
-        {bleAttempt && (
-          <Text style={[styles.deviceSub, { textAlign: 'center', paddingHorizontal: 24 }]}>
-            {t.homeBleReadyMsg}
-          </Text>
-        )}
-        <Button label={t.viewActivities} onPress={() => navigation.navigate('LogList')} variant="text" grow={false} />
-      </View>
-    );
-  }
-
-  if (phase === 'connect-error') {
-    return (
-      <View style={styles.deviceFlowContainer}>
-        <View style={styles.deviceFlowLogo}>
-          <Logo size={Math.round(56 * deviceFlowScale)} />
-          <Badge label={`v${APP_VERSION}`} />
-        </View>
-        <Text style={[styles.deviceFlowTitle, deviceFlowTitleScale(deviceFlowScale)]}>{connectError}</Text>
-        <View style={styles.deviceFlowButtons}>
-          <Button
-            label={t.homeConnectRetryBtn}
-            onPress={() => bleAttempt ? handleBleConnectRef.current() : connectFlowRef.current(deviceType as 'ambit' | 'garmin')}
-            variant="text"
-            grow={false}
-          />
-          {!bleAttempt && (
-            <Button label={t.homeBleConnectBtn} onPress={() => handleBleConnectRef.current()} variant="text" grow={false} />
-          )}
-          <Button label={t.viewActivities} onPress={() => navigation.navigate('LogList')} variant="text" grow={false} />
-        </View>
-        <TouchableOpacity style={styles.settingsBtn} onPress={() => navigation.navigate('Settings')} activeOpacity={0.75}>
-          <Icon name="settings" size={19} color={theme.text} />
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
-  // Unified card page from here on (searching / timeout / connected all render it - desktop
-  // parity). `connected` gates the parts that genuinely need a live watch.
+  // Home is always the card dashboard now (desktop parity) - EVERY non-connected state
+  // (searching / timeout / connecting / connect-error) renders the same hero card on the
+  // page below, never a separate full-screen splash. `connected` gates the parts that
+  // genuinely need a live watch.
   const connected = phase === 'connected';
+  const connectingMsg = deviceType === 'garmin' && waitingSeconds !== null
+    ? t.garminWaitingForMount(waitingSeconds)
+    : deviceType === 'ambit' ? (bleAttempt ? t.homeConnectingBle : t.homeConnectingAmbit) : t.connecting;
 
   // v3.0 UI port - the persistent nav shell (NavRail.qml's real pattern: a fixed item list,
   // visibility gated by connected-device type, selection by string id). Garmin routes to
@@ -774,41 +721,58 @@ export default function HomeScreen() {
           side-by-side wrapping row (each card sized to share the width), so the space
           is used instead of stretching one card per line. ── */}
       <View style={[styles.cardStack, roomy && styles.cardStackRoomy]}>
-      {/* ── Disconnected hero card (searching / no-watch). Desktop parity: the "No watch
-          connected / Searching…" state lives in a card on the dashboard, holding the connect
-          options + multi-watch switcher, instead of a separate full-screen splash. ── */}
-      {!connected && (
-        <Card style={[roomy ? styles.deviceCardRoomyFull : styles.deviceCardCol, styles.deviceCardInner]}>
-          <Text style={[styles.deviceName, v3TextStyle]}>
-            {phase === 'searching' ? t.homeSearchingTitle : t.homeNoDeviceTitle}
-          </Text>
-          <Text style={[styles.deviceSub, v3MutedStyle]}>
-            {phase === 'searching' ? t.homeTagline : t.homeNoDeviceSub}
-          </Text>
-          {phase === 'searching' && (
-            <View style={{ marginTop: 12 }}>
-              <ActivityIndicator size="small" color={theme.text} />
-            </View>
-          )}
-          {/* Multi-watch switcher (2026-08-16): one direct-connect button per already-paired
-              watch, so a Bluetooth-only user can pick which of several paired watches to reach. */}
-          <View style={styles.heroButtons}>
-            {phase === 'timeout' && (
-              <Button label={t.homeConnectRetryBtn} onPress={startSearching} variant="text" grow={false} />
+      {/* ── Non-connected hero card. Desktop parity: EVERY non-connected state (searching,
+          timeout/no-watch, actively connecting, connect error) lives in this one card on the
+          dashboard, holding the right message + connect options, instead of a separate
+          full-screen splash. `busy` = actively connecting or scanning (spinner, no buttons). ── */}
+      {!connected && (() => {
+        const busy = phase === 'connecting';
+        const title = phase === 'searching' ? t.homeSearchingTitle
+          : phase === 'connecting' ? connectingMsg
+          : phase === 'connect-error' ? (connectError ?? t.homeNoDeviceTitle)
+          : t.homeNoDeviceTitle;
+        const sub = phase === 'searching' ? t.homeTagline
+          : phase === 'connecting' ? (bleAttempt ? t.homeBleReadyMsg : '')
+          : phase === 'connect-error' ? '' : t.homeNoDeviceSub;
+        return (
+          <Card style={[roomy ? styles.deviceCardRoomyFull : styles.deviceCardCol, styles.deviceCardInner]}>
+            <Text style={[styles.deviceName, v3TextStyle]}>{title}</Text>
+            {sub.length > 0 && <Text style={[styles.deviceSub, v3MutedStyle]}>{sub}</Text>}
+            {(phase === 'searching' || busy) && (
+              <View style={{ marginTop: 12 }}>
+                <ActivityIndicator size="small" color={theme.text} />
+              </View>
             )}
-            {bondedWatches.map(b => (
-              <Button
-                key={b.address}
-                label={t.homeBleConnectWatchBtn(watchPillName(b.name))}
-                onPress={() => handleBleConnectRef.current(b.address)}
-                variant="text"
-                grow={false}
-              />
-            ))}
-            <Button label={t.homeBleConnectBtn} onPress={() => handleBleConnectRef.current()} variant="text" grow={false} />
-          </View>
-        </Card>
-      )}
+            {/* Connect options - hidden while actively connecting (nothing to do but wait).
+                Multi-watch switcher: one direct-connect button per already-paired watch. */}
+            {!busy && (
+              <View style={styles.heroButtons}>
+                {phase === 'timeout' && (
+                  <Button label={t.homeConnectRetryBtn} onPress={startSearching} variant="text" grow={false} />
+                )}
+                {phase === 'connect-error' && (
+                  <Button
+                    label={t.homeConnectRetryBtn}
+                    onPress={() => bleAttempt ? handleBleConnectRef.current() : connectFlowRef.current(deviceType === 'garmin' ? 'garmin' : 'ambit')}
+                    variant="text"
+                    grow={false}
+                  />
+                )}
+                {bondedWatches.map(b => (
+                  <Button
+                    key={b.address}
+                    label={t.homeBleConnectWatchBtn(watchPillName(b.name))}
+                    onPress={() => handleBleConnectRef.current(b.address)}
+                    variant="text"
+                    grow={false}
+                  />
+                ))}
+                <Button label={t.homeBleConnectBtn} onPress={() => handleBleConnectRef.current()} variant="text" grow={false} />
+              </View>
+            )}
+          </Card>
+        );
+      })()}
       {deviceType === 'garmin' && garminInfo && (() => {
         const vol = garminInfo.volumes.find(v => v.hasGarminDeviceXml) ?? garminInfo.volumes[0];
         return (
@@ -1148,14 +1112,6 @@ function fmtDuration(seconds: number): string {
 function fmtDate(iso: string): string {
   const d = new Date(iso);
   return isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-}
-
-function deviceFlowTitleScale(scale: number) {
-  return { fontSize: Math.round(16 * scale), lineHeight: Math.round(23 * scale) };
-}
-
-function deviceFlowTaglineScale(scale: number) {
-  return { fontSize: Math.round(12.5 * scale) };
 }
 
 function syncPhaseLabel(phase: SyncState['phase']): string {
