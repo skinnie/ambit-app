@@ -45,6 +45,15 @@ class AppsService : public QObject
     // ruleId, error?}. A UI reads this right after install() rather than a separate signal
     // payload, matching how every other write-result property in this app already works.
     Q_PROPERTY(QVariantMap lastInstallResult READ lastInstallResult NOTIFY lastInstallResultChanged)
+    // Whether a Suunto Apps catalog is present at all, and how many entries. The App Zone
+    // catalog is Suunto's proprietary content and the App Zone service is dead, so nothing is
+    // shipped or hosted - the user imports their own SuuntoLink suunto-apps/index.json (André,
+    // 2026-08-14: "import it from a suunto link installation"; and for Linux, where SuuntoLink
+    // isn't installed, the same file copied over). hasCatalog gates the UI between the import
+    // prompt and the app browser.
+    Q_PROPERTY(bool hasCatalog READ hasCatalog NOTIFY catalogStatusChanged)
+    Q_PROPERTY(int catalogCount READ catalogCount NOTIFY catalogStatusChanged)
+    Q_PROPERTY(bool importing READ importing NOTIFY importingChanged)
 
 public:
     explicit AppsService(QObject *parent = nullptr);
@@ -56,6 +65,17 @@ public:
     QVariantList searchResults() const { return m_searchResults; }
     bool installing() const { return m_installing; }
     QVariantMap lastInstallResult() const { return m_lastInstallResult; }
+    bool hasCatalog() const { return m_hasCatalog; }
+    int catalogCount() const { return m_catalogCount; }
+    bool importing() const { return m_importing; }
+
+    // GET /api/apps/catalog_status - is a catalog present, and how big. No watch access.
+    Q_INVOKABLE void refreshCatalogStatus();
+
+    // POST /api/apps/import - extract a user-selected SuuntoLink suunto-apps/index.json into
+    // this app's compact catalog. `path` is a local filesystem path (a QML FileDialog gives a
+    // file:// URL - strip it with the URL's toLocalFile() before calling). No watch access.
+    Q_INVOKABLE void importCatalog(const QString &path);
 
     // GET /api/apps - real, read-only (apps.py's own fast probe-first path), safe any time.
     Q_INVOKABLE void refreshInstalledApps();
@@ -83,6 +103,10 @@ signals:
     void searchResultsChanged();
     void installingChanged();
     void lastInstallResultChanged();
+    void catalogStatusChanged();
+    void importingChanged();
+    // Emitted after importCatalog() finishes - ok, and the entry count on success.
+    void catalogImported(bool ok, int count, const QString &error);
 
 private:
     QNetworkAccessManager m_network;
@@ -93,11 +117,15 @@ private:
     QVariantList m_searchResults;
     bool m_installing = false;
     QVariantMap m_lastInstallResult;
+    bool m_hasCatalog = false;
+    int m_catalogCount = 0;
+    bool m_importing = false;
 
     void setLoading(bool value);
     void setLastError(const QString &message);
     void setSearching(bool value);
     void setInstalling(bool value);
+    void setImporting(bool value);
 
     static QUrl backendUrl(const QString &path);
 };

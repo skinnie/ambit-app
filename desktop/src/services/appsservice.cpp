@@ -47,6 +47,61 @@ void AppsService::setInstalling(bool value)
     emit installingChanged();
 }
 
+void AppsService::setImporting(bool value)
+{
+    if (m_importing == value)
+        return;
+    m_importing = value;
+    emit importingChanged();
+}
+
+void AppsService::refreshCatalogStatus()
+{
+    QNetworkReply *reply = m_network.get(QNetworkRequest(backendUrl(QStringLiteral("/api/apps/catalog_status"))));
+    connect(reply, &QNetworkReply::finished, this, [this, reply] {
+        reply->deleteLater();
+        const auto obj = QJsonDocument::fromJson(reply->readAll()).object();
+        m_hasCatalog = obj.value(QStringLiteral("hasCatalog")).toBool();
+        m_catalogCount = obj.value(QStringLiteral("count")).toInt();
+        emit catalogStatusChanged();
+    });
+}
+
+void AppsService::importCatalog(const QString &path)
+{
+    setImporting(true);
+    QNetworkRequest request(backendUrl(QStringLiteral("/api/apps/import")));
+    request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
+    // A QML FileDialog hands back a file:// URL; the backend wants a plain local path.
+    const QString local = path.startsWith(QStringLiteral("file:")) ? QUrl(path).toLocalFile() : path;
+    QJsonObject body;
+    body[QStringLiteral("path")] = local;
+
+    QNetworkReply *reply = m_network.post(request, QJsonDocument(body).toJson(QJsonDocument::Compact));
+    connect(reply, &QNetworkReply::finished, this, [this, reply] {
+        reply->deleteLater();
+        setImporting(false);
+
+        const auto obj = QJsonDocument::fromJson(reply->readAll()).object();
+        const bool ok = (reply->error() == QNetworkReply::NoError)
+            && obj.value(QStringLiteral("ok")).toBool();
+        if (!ok) {
+            const QString err = reply->error() != QNetworkReply::NoError
+                ? reply->errorString()
+                : obj.value(QStringLiteral("error")).toString();
+            setLastError(QStringLiteral("POST /api/apps/import: %1").arg(err));
+            emit catalogImported(false, 0, err);
+            return;
+        }
+        setLastError(QString());
+        const int count = obj.value(QStringLiteral("count")).toInt();
+        m_hasCatalog = count > 0;
+        m_catalogCount = count;
+        emit catalogStatusChanged();
+        emit catalogImported(true, count, QString());
+    });
+}
+
 void AppsService::refreshInstalledApps()
 {
     setLoading(true);

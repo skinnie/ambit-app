@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Dialogs
 import AmbitApp
 
 // SuuntoLink's own "CHOOSE WHAT TO SHOW IN THIS ROW" screen (its Figure 5, and
@@ -73,7 +74,17 @@ ThemedDialog {
     onOpened: {
         appSearchField.text = ""
         CustomModesService.refreshRowMenu(activityId, displayTemplate, rowName)
+        AppsService.refreshCatalogStatus()
         AppsService.searchCatalog("", DeviceService.model, -1)
+    }
+
+    // Import the user's own SuuntoLink catalogue (suunto-apps/index.json). AmbitApp ships no
+    // Suunto app content; each user supplies their own licensed copy. Real, 2026-08-14.
+    FileDialog {
+        id: indexFileDialog
+        title: qsTr("Select SuuntoLink suunto-apps/index.json")
+        nameFilters: [qsTr("index.json (index.json)"), qsTr("JSON files (*.json)"), qsTr("All files (*)")]
+        onAccepted: AppsService.importCatalog(selectedFile)
     }
 
     onAccepted: {
@@ -191,6 +202,41 @@ ThemedDialog {
                     color: Theme.text
                     topPadding: Theme.spacingSmall
                 }
+
+                // Import prompt - shown until a catalogue has been imported. AmbitApp ships no
+                // Suunto app content (proprietary, and the App Zone service is dead), so the
+                // user imports their own SuuntoLink suunto-apps/index.json. On Linux, where
+                // SuuntoLink isn't installed, they copy that file from a Windows/Mac install.
+                Text {
+                    visible: !AppsService.hasCatalog
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    text: qsTr("No Suunto App catalogue yet. AmbitApp ships none - they are " +
+                                "Suunto's own apps. Import your own from SuuntoLink: point to " +
+                                "its suunto-apps/index.json (on Linux, copy that file over from " +
+                                "a Windows/Mac SuuntoLink install first).")
+                    color: Theme.mutedText
+                    font.pixelSize: Theme.fontSizeCaption
+                }
+                Row {
+                    spacing: Theme.spacingSmall
+                    RoundedButton {
+                        enabled: !AppsService.importing
+                        text: AppsService.importing
+                              ? qsTr("Importing...")
+                              : (AppsService.hasCatalog
+                                 ? qsTr("Re-import from SuuntoLink...")
+                                 : qsTr("Import from SuuntoLink..."))
+                        onClicked: indexFileDialog.open()
+                    }
+                    Text {
+                        visible: AppsService.hasCatalog && !AppsService.importing
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: qsTr("%1 apps").arg(AppsService.catalogCount)
+                        color: Theme.mutedText
+                        font.pixelSize: Theme.fontSizeCaption
+                    }
+                }
                 Text {
                     visible: root.appCount >= root.maxApps
                     width: parent.width
@@ -214,6 +260,7 @@ ThemedDialog {
                 RoundedTextField {
                     id: appSearchField
                     width: parent.width
+                    visible: AppsService.hasCatalog
                     enabled: !root.hasPendingEdits && root.appCount < root.maxApps
                     placeholderText: qsTr("Search Suunto Apps...")
                     onTextChanged: AppsService.searchCatalog(text, DeviceService.model, -1)
@@ -225,7 +272,8 @@ ThemedDialog {
                     text: qsTr("Searching...")
                 }
                 Text {
-                    visible: !root.hasPendingEdits && root.appCount < root.maxApps
+                    visible: AppsService.hasCatalog && !root.hasPendingEdits
+                             && root.appCount < root.maxApps
                              && appSearchField.text.trim().length === 0
                     width: parent.width
                     wrapMode: Text.WordWrap

@@ -1362,6 +1362,46 @@ PageFlickable {
                         font.pixelSize: Theme.fontSizeBody
                     }
                 }
+
+                // --- Mark synced workouts. Opt-in, OFF by default (André, 2026-08-16).
+                // Writes the watch's own per-move synced flag after this app reads a
+                // workout, so the official Suunto app / SuuntoLink treat it as already
+                // synced. Deliberately spells out the tradeoff so nobody turns it on
+                // without understanding the data-loss risk. ---
+                Item { width: 1; height: Theme.spacingSmall }
+                Text {
+                    text: qsTr("Mark synced workouts as synced for Suunto app and SuuntoLink")
+                    font.bold: true
+                    font.pixelSize: Theme.fontSizeBody
+                    color: Theme.text
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                }
+                Text {
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    text: qsTr("Once a workout has been read here, tell the watch it is already " +
+                                "synced. This avoids duplicated workouts in the Suunto app and " +
+                                "SuuntoLink - but it also means the workout can no longer be " +
+                                "retrieved again from the watch if the Suunto app fails to keep " +
+                                "it. Leave off unless you understand this tradeoff.")
+                    color: Theme.mutedText
+                    font.pixelSize: Theme.fontSizeBody
+                }
+                Row {
+                    spacing: Theme.spacingSmall
+                    RoundedSwitch {
+                        anchors.verticalCenter: parent.verticalCenter
+                        checked: DeviceService.markSyncedEnabled
+                        onToggled: DeviceService.markSyncedEnabled = checked
+                    }
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: DeviceService.markSyncedEnabled ? qsTr("On") : qsTr("Off")
+                        color: DeviceService.markSyncedEnabled ? Theme.primary : Theme.mutedText
+                        font.pixelSize: Theme.fontSizeBody
+                    }
+                }
             }
         }
 

@@ -22,6 +22,10 @@ DeviceService::DeviceService(QObject *parent) : QObject(parent)
     // Off by default - real decision, 2026-08-11 (see this property's own header comment).
     m_bleExperimentEnabled =
         QSettings().value(QStringLiteral("experimental/bluetooth"), false).toBool();
+    // Off by default - see this property's own header comment. Opt-in write-back of the
+    // watch's per-move synced flag.
+    m_markSyncedEnabled =
+        QSettings().value(QStringLiteral("experimental/markSynced"), false).toBool();
     m_pollTimer.setSingleShot(true);
     connect(&m_pollTimer, &QTimer::timeout, this, &DeviceService::refresh);
 
@@ -538,4 +542,13 @@ void DeviceService::setBleExperimentEnabled(bool value)
         disconnectBle();
     }
     emit bleExperimentEnabledChanged();
+}
+
+void DeviceService::setMarkSyncedEnabled(bool value)
+{
+    if (m_markSyncedEnabled == value)
+        return;
+    m_markSyncedEnabled = value;
+    QSettings().setValue(QStringLiteral("experimental/markSynced"), value);
+    emit markSyncedEnabledChanged();
 }

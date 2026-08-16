@@ -121,6 +121,20 @@ class DeviceService : public QObject
     Q_PROPERTY(bool bleExperimentEnabled READ bleExperimentEnabled
                WRITE setBleExperimentEnabled NOTIFY bleExperimentEnabledChanged)
 
+    // "Mark synced workouts as synced for Suunto app and SuuntoLink" - experimental,
+    // OFF by default (André, 2026-08-16). When on, after this app reads an activity off
+    // the watch it writes the watch's own per-move synced flag (command 0x1201, the same
+    // marker SuuntoLink writes over cable - entry 0x8b timestamp + synced=1 on Ambit3
+    // GEN4 fw; see tools/mark_synced.py and the activity-sync-no-delete finding). Upside:
+    // the official Suunto app / SuuntoLink then see the move as already synced and won't
+    // duplicate it. Downside: the move can no longer be re-retrieved from the watch if the
+    // Suunto app later fails to keep it - which is exactly why this is opt-in and default
+    // off (nothing this app does to the watch is destructive unless the user asks). The
+    // watch reclaims log space by circular-buffer wraparound regardless of this flag.
+    // Persisted via QSettings, same mechanism as bleExperimentEnabled above.
+    Q_PROPERTY(bool markSyncedEnabled READ markSyncedEnabled
+               WRITE setMarkSyncedEnabled NOTIFY markSyncedEnabledChanged)
+
 public:
     explicit DeviceService(QObject *parent = nullptr);
 
@@ -216,6 +230,8 @@ public:
 
     bool bleExperimentEnabled() const { return m_bleExperimentEnabled; }
     void setBleExperimentEnabled(bool value);
+    bool markSyncedEnabled() const { return m_markSyncedEnabled; }
+    void setMarkSyncedEnabled(bool value);
 
 signals:
     void loadingChanged();
@@ -230,6 +246,7 @@ signals:
     void demoModeChanged();
     void bleStateChanged();
     void bleExperimentEnabledChanged();
+    void markSyncedEnabledChanged();
 
 private:
     QNetworkAccessManager m_network;
@@ -286,6 +303,7 @@ private:
     QString m_blePendingPasskeyDevice;
     QString m_bleError;
     bool m_bleExperimentEnabled = false;
+    bool m_markSyncedEnabled = false;
     // Polls /api/ble/status while connectBle() is in progress - separate from
     // m_pollTimer/m_heartbeatTimer (those poll /api/device, which only starts answering
     // once a BLE watch has actually subscribed; this tracks getting there, including a

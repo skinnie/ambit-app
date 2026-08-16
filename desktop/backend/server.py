@@ -287,6 +287,8 @@ class Handler(BaseHTTPRequestHandler):
             self._handle_agps_status()
         elif self.path == "/api/apps":
             self._handle_apps_read()
+        elif self.path == "/api/apps/catalog_status":
+            self._handle_apps_catalog_status()
         elif self.path.startswith("/api/apps/catalog"):
             self._handle_apps_catalog()
         elif self.path == "/api/time/zones":
@@ -346,6 +348,8 @@ class Handler(BaseHTTPRequestHandler):
             self._handle_customodes_multisport(body)
         elif self.path == "/api/apps/install":
             self._handle_apps_install(body)
+        elif self.path == "/api/apps/import":
+            self._handle_apps_import(body)
         elif self.path == "/api/pois":
             self._handle_poi_add(body)
         elif self.path == "/api/smartsensor/forget":
@@ -1743,6 +1747,45 @@ class Handler(BaseHTTPRequestHandler):
                                    "parseable JSON", "raw_output": out, "stderr": err})
             return
         self._send_json(200 if info.get("ok") else 502, info)
+
+    def _handle_apps_catalog_status(self):
+        """GET /api/apps/catalog_status - whether a Suunto Apps catalog is present and how many
+        entries it has, so the UI can show the "Import from SuuntoLink" prompt vs. the browser.
+        No watch access, no --write - a local file check."""
+        try:
+            exists = (CATALOG_DIR / "catalog.json").exists() and (CATALOG_DIR / "catalog.bin").exists()
+            count = len(load_catalog_entries()) if exists else 0
+        except OSError:
+            exists, count = False, 0
+        self._send_json(200, {"ok": True, "hasCatalog": exists, "count": count})
+
+    def _handle_apps_import(self, body):
+        """POST /api/apps/import  Body: {"path": "<the user's SuuntoLink suunto-apps/index.json>"}.
+        Extracts that real, user-supplied index.json into this app's compact catalog.json +
+        catalog.bin (extract_apps_catalog.extract), exactly the split the bundled copy uses.
+        This is how the catalog is meant to be supplied everywhere now (André, 2026-08-14): the
+        App Zone catalog is Suunto's proprietary content and the service is dead, so nothing is
+        shipped/hosted - each user imports their own licensed copy. Local file surgery only, no
+        watch access."""
+        path = body.get("path")
+        if not path:
+            self._send_json(400, {"error": "missing \"path\" to the SuuntoLink index.json"})
+            return
+        src = Path(path)
+        if not src.exists():
+            self._send_json(404, {"ok": False, "error": f"file not found: {path}"})
+            return
+        try:
+            import extract_apps_catalog
+            _, _, count, _ = extract_apps_catalog.extract(src, CATALOG_DIR)
+        except Exception as exc:  # noqa: BLE001 - report, never mask
+            self._send_json(502, {"ok": False, "error": f"import failed: {exc}"})
+            return
+        # Drop the metadata cache so the next search reads the freshly imported catalog.
+        global _catalog_entries
+        with _CATALOG_LOCK:
+            _catalog_entries = None
+        self._send_json(200, {"ok": True, "count": count})
 
     def _handle_apps_catalog(self):
         """GET /api/apps/catalog?q=&variant=&category=&limit= - real, 2026-08-09 ("2
