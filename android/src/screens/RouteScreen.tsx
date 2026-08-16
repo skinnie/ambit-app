@@ -148,14 +148,20 @@ export default function RouteScreen() {
           <Pressable style={styles.dialogCard} onPress={() => {}}>
             <Text style={styles.dialogTitle}>{t.routePlannerTitle}</Text>
             <Text style={styles.dialogText}>{t.routePlannerIntro}</Text>
-            <TouchableOpacity style={styles.dialogLinkRow} onPress={() => Linking.openURL('https://routeplanner.suunto.com/')}>
-              <Text style={styles.dialogLink}>•  Suunto planner </Text>
-              <Text style={styles.dialogMuted}>{t.routePlannerOnline}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.dialogLinkRow} onPress={() => Linking.openURL('https://www.komoot.com/')}>
-              <Text style={styles.dialogLink}>•  Komoot </Text>
-              <Text style={styles.dialogMuted}>{t.routePlannerOnline}</Text>
-            </TouchableOpacity>
+            {[
+              { name: 'Suunto planner', qual: t.routePlannerOnline, url: 'https://routeplanner.suunto.com/' },
+              { name: 'Komoot', qual: t.routePlannerOnline, url: 'https://www.komoot.com/' },
+              { name: 'Openrunner', qual: t.routePlannerOnline, url: 'https://www.openrunner.com/' },
+              { name: 'Garmin Basecamp', qual: t.routePlannerOfflineWinMac, url: 'https://www.garmin.com/en-GB/software/basecamp/' },
+              { name: 'Qmapshack', qual: t.routePlannerOfflineAll, url: 'https://github.com/Maproom/qmapshack' },
+              { name: 'Maps for Basecamp/garmin devices', qual: '', url: 'http://www.frikart.no/garmin/index.html' },
+              { name: 'Maps for Basecamp/Qmapshack', qual: '', url: 'https://download2.bbbike.org/osm/' },
+            ].map(p => (
+              <TouchableOpacity key={p.url} style={styles.dialogLinkRow} onPress={() => Linking.openURL(p.url)}>
+                <Text style={styles.dialogLink}>•  {p.name} </Text>
+                {!!p.qual && <Text style={styles.dialogMuted}>{p.qual}</Text>}
+              </TouchableOpacity>
+            ))}
             <TouchableOpacity style={styles.dialogClose} onPress={() => setPlannerOpen(false)}>
               <Text style={styles.dialogCloseText}>{t.close}</Text>
             </TouchableOpacity>
@@ -252,11 +258,11 @@ const createStyles = (t: ReturnType<typeof useV3Theme>) => StyleSheet.create({
   cardTitle: { fontSize: v3Type.heading, fontWeight: '700', color: t.text },
   // "little i" info badge next to the title (matches desktop's RoutesPage).
   infoBadge: {
-    width: 18, height: 18, borderRadius: 9,
+    width: 15, height: 15, borderRadius: 7.5,
     borderWidth: 1, borderColor: t.mutedText,
     alignItems: 'center', justifyContent: 'center',
   },
-  infoBadgeText: { fontSize: 11, fontWeight: '700', color: t.mutedText, lineHeight: 13 },
+  infoBadgeText: { fontSize: 10, fontWeight: '700', color: t.mutedText, lineHeight: 11 },
   // Route-planner help dialog.
   backdrop: {
     flex: 1, backgroundColor: '#00000066',
@@ -270,10 +276,11 @@ const createStyles = (t: ReturnType<typeof useV3Theme>) => StyleSheet.create({
   },
   dialogTitle: { fontSize: v3Type.bodyLarge, fontWeight: '700', color: t.text },
   dialogText: { fontSize: v3Type.body, color: t.text, marginTop: 2 },
-  dialogLinkRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 4 },
+  dialogLinkRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', paddingVertical: 4 },
   dialogLink: { fontSize: v3Type.body, color: t.primary, fontWeight: '600' },
   dialogMuted: { fontSize: v3Type.body, color: t.mutedText },
-  dialogClose: { alignSelf: 'flex-end', marginTop: v3Spacing.small, paddingVertical: 6, paddingHorizontal: 10 },
+  // Close on the last line's right corner to save space (André, 2026-08-16).
+  dialogClose: { position: 'absolute', right: 10, bottom: 8, paddingVertical: 4, paddingHorizontal: 8 },
   dialogCloseText: { fontSize: v3Type.body, color: t.primary, fontWeight: '700' },
   row: { flexDirection: 'row', alignItems: 'center', gap: v3Spacing.small },
   itemName: { fontSize: v3Type.bodyLarge, fontWeight: '700', color: t.text },

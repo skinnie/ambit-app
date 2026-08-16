@@ -91,15 +91,16 @@ PageFlickable {
                         color: Theme.text
                     }
                     Rectangle {
+                        id: routeInfoBadge
                         anchors.verticalCenter: parent.verticalCenter
-                        width: 18; height: 18; radius: 9
+                        width: 15; height: 15; radius: 7.5
                         color: "transparent"
                         border.width: 1
                         border.color: Theme.mutedText
                         Text {
                             anchors.centerIn: parent
                             text: "i"
-                            font.pixelSize: Theme.fontSizeCaption
+                            font.pixelSize: Theme.fontSizeLabel
                             font.bold: true
                             color: Theme.mutedText
                         }
@@ -476,40 +477,68 @@ PageFlickable {
     // via the same Qt.openUrlExternally() used for the user manual elsewhere.
     ThemedDialog {
         id: routePlannerDialog
-        anchors.centerIn: Overlay.overlay
+        // Open next to the "i" that triggers it (André, 2026-08-16: "can the screen open more
+        // near the i?") - dropped just below the badge rather than centered on the whole window.
+        // Parent stays Overlay.overlay (reparenting to the tiny badge stopped it rendering); the
+        // position is the badge's own spot mapped into the overlay, computed as it opens.
+        parent: Overlay.overlay
+        onAboutToShow: {
+            const p = routeInfoBadge.mapToItem(Overlay.overlay, 0, routeInfoBadge.height + Theme.spacingSmall);
+            x = p.x;
+            y = p.y;
+        }
         title: qsTr("Plan a route")
-        standardButtons: Dialog.Close
+        // No footer button row (André, 2026-08-16: "the square seems too big") - the Close sits
+        // on the last line's right corner instead, inside the content, to save that vertical space.
+        standardButtons: Dialog.NoButton
 
-        contentItem: Column {
-            width: 340
-            spacing: Theme.spacingSmall
+        contentItem: Item {
+            implicitWidth: plannerCol.width
+            implicitHeight: plannerCol.height
 
-            Text {
-                width: parent.width
-                wrapMode: Text.WordWrap
-                text: qsTr("To plan your routes you can use:")
-                color: Theme.text
-                font.pixelSize: Theme.fontSizeBody
+            Column {
+                id: plannerCol
+                width: 360
+                spacing: Theme.spacingSmall
+
+                Text {
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    text: qsTr("You can export your routes from Suunto App to gpx and import them here, or you can use any of these or others:")
+                    color: Theme.text
+                    font.pixelSize: Theme.fontSizeBody
+                }
+                Repeater {
+                    model: [
+                        { name: "Suunto planner", qual: qsTr("(online)"), url: "https://routeplanner.suunto.com/" },
+                        { name: "Komoot", qual: qsTr("(online)"), url: "https://www.komoot.com/" },
+                        { name: "Openrunner", qual: qsTr("(online)"), url: "https://www.openrunner.com/" },
+                        { name: "Garmin Basecamp", qual: qsTr("(offline, Win/Mac)"), url: "https://www.garmin.com/en-GB/software/basecamp/" },
+                        { name: "Qmapshack", qual: qsTr("(offline, Linux/Win/Mac)"), url: "https://github.com/Maproom/qmapshack" },
+                        { name: "Maps for Basecamp/garmin devices", qual: "", url: "http://www.frikart.no/garmin/index.html" },
+                        { name: "Maps for Basecamp/Qmapshack", qual: "", url: "https://download2.bbbike.org/osm/" },
+                    ]
+                    delegate: Text {
+                        required property var modelData
+                        width: 360
+                        wrapMode: Text.WordWrap
+                        textFormat: Text.StyledText
+                        linkColor: Theme.primary
+                        color: Theme.text
+                        font.pixelSize: Theme.fontSizeBody
+                        text: "•  <a href=\"" + modelData.url + "\">" + modelData.name + "</a>"
+                              + (modelData.qual.length > 0 ? " " + modelData.qual : "")
+                        onLinkActivated: (link) => Qt.openUrlExternally(link)
+                    }
+                }
             }
-            Text {
-                width: parent.width
-                wrapMode: Text.WordWrap
-                textFormat: Text.StyledText
-                linkColor: Theme.primary
-                color: Theme.text
-                font.pixelSize: Theme.fontSizeBody
-                text: qsTr("•  <a href=\"https://routeplanner.suunto.com/\">Suunto planner</a> (online)")
-                onLinkActivated: (link) => Qt.openUrlExternally(link)
-            }
-            Text {
-                width: parent.width
-                wrapMode: Text.WordWrap
-                textFormat: Text.StyledText
-                linkColor: Theme.primary
-                color: Theme.text
-                font.pixelSize: Theme.fontSizeBody
-                text: qsTr("•  <a href=\"https://www.komoot.com/\">Komoot</a> (online)")
-                onLinkActivated: (link) => Qt.openUrlExternally(link)
+
+            // Close on the last line's right corner (André, 2026-08-16).
+            RoundedButton {
+                anchors.right: plannerCol.right
+                anchors.bottom: plannerCol.bottom
+                text: qsTr("Close")
+                onClicked: routePlannerDialog.close()
             }
         }
     }
