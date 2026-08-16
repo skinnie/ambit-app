@@ -16,6 +16,7 @@ import {
   setDateTime,
 } from '../native/AmbitUsbModule';
 import RNFS from 'react-native-fs';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   scanAndConnect as bleScanAndConnect, scanAndConnectTo as bleScanAndConnectTo,
   listBondedWatches, BondedWatch,
@@ -63,6 +64,12 @@ type SwitcherWatch = {
 };
 // Trim the redundant "Suunto " so a pill reads "Kailash", "Ambit3 Peak", etc.
 const watchPillName = (name: string) => name.replace(/^Suunto\s+/i, '');
+
+// Persisted switcher choice (2026-08-16), so the app reconnects to the watch the user last
+// picked instead of grabbing whichever enumerates first on every launch. Keyed by USB productId
+// (stable per model across replug, unlike the USB path) or BLE address, never the volatile path.
+const SELECTED_WATCH_KEY = 'ambit.selectedWatch.v1';
+type SavedWatch = { transport: 'usb'; productId: number } | { transport: 'ble'; bleAddress: string };
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Home'>;
 type ActiveAction = 'sync' | 'orbital';
@@ -300,6 +307,7 @@ export default function HomeScreen() {
   // button uses, pinned to that watch, so the user just triggers "Sync now"/"Pair Mobile App"
   // on it. No-op if the watch is already the active one.
   async function handleSelectWatch(watch: SwitcherWatch) {
+    persistSelection(watch); // remember the choice for next launch
     if (watch.transport === 'usb') {
       if (selectedWatch === watch.usbDeviceName && !bleConnectedRef.current) return;
       setSelectedWatch(watch.usbDeviceName ?? null);
@@ -416,6 +424,9 @@ export default function HomeScreen() {
     refreshWatchLists();
 
     const poll = async () => {
+      // Hold the first auto-connect until the persisted watch choice has been restored (below),
+      // so we connect straight to the saved watch instead of first-found then switching.
+      if (!restoredRef.current) return;
       const type = await detectAttachedDeviceType().catch(() => 'none' as const);
       if (type !== 'none') {
         stopSearchTimers();
@@ -431,6 +442,46 @@ export default function HomeScreen() {
   }
   const startSearchingRef = useRef(startSearching);
   startSearchingRef.current = startSearching;
+
+  // Restore the persisted watch choice once, before the first auto-connect (poll() waits on
+  // restoredRef). For USB we prime the native selection so the very first connect targets the
+  // saved watch; for BLE we only remember it (auto-connecting BLE on launch would drain the
+  // watch's short advertising window), so a paired watch is just highlighted, tap to connect.
+  const restoredRef = useRef(false);
+  useEffect(() => {
+    (async () => {
+      try {
+        const raw = await AsyncStorage.getItem(SELECTED_WATCH_KEY);
+        if (raw) {
+          const saved: SavedWatch = JSON.parse(raw);
+          if (saved.transport === 'usb') {
+            const devs = await listDevices().catch(() => [] as AmbitUsbDevice[]);
+            const match = devs.find(d => d.productId === saved.productId);
+            if (match) {
+              await selectDevice(match.deviceName).catch(() => {});
+              setSelectedWatch(match.deviceName);
+            }
+          }
+        }
+      } catch { /* corrupt/empty selection - fall back to first-found */ }
+      restoredRef.current = true;
+      startSearchingRef.current(); // now connect, honoring any restored selection
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Persist the switcher choice so it survives an app restart. Keyed by the stable productId /
+  // BLE address, not the volatile USB path.
+  const persistSelection = useCallback((watch: SwitcherWatch) => {
+    let saved: SavedWatch | null = null;
+    if (watch.transport === 'usb') {
+      const pid = attachedDevices.find(d => d.deviceName === watch.usbDeviceName)?.productId;
+      if (pid != null) saved = { transport: 'usb', productId: pid };
+    } else if (watch.bleAddress) {
+      saved = { transport: 'ble', bleAddress: watch.bleAddress };
+    }
+    if (saved) AsyncStorage.setItem(SELECTED_WATCH_KEY, JSON.stringify(saved)).catch(() => {});
+  }, [attachedDevices]);
 
   // On every focus: if we're already showing a connected device, just check
   // it's still there rather than restarting the whole search/connect dance
