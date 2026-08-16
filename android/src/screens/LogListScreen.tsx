@@ -12,33 +12,90 @@ import {
   deleteActivity, updateActivityType, isActivityDeleted,
 } from '../database/db';
 import { readGpxFile, listGpxFiles } from '../services/GpxService';
-import { extractGpxMetadata } from '../services/GpxParser';
+import { extractGpxMetadata, GpxMetadata } from '../services/GpxParser';
 import RNFS from 'react-native-fs';
 import { t, dateLocale } from '../i18n';
 import { useV3Theme } from '../theme/v3';
 import { ActivityThumbnail } from '../components/ActivityThumbnail';
 import Icon, { IconName } from '../components/ui/Icon';
-import { SortBar } from '../components/ui/SortBar';
 import {
-  getViewMode, sortItems, sortKeysFor, SortKey, ViewMode,
+  getViewMode, getActivityColumns, setActivityColumns, ViewMode,
 } from '../services/ListViewPrefs';
+import {
+  ALL_METRICS, MetricValues, metricLabel, metricValue, metricRaw, metricsAvailableFor,
+} from '../services/ActivityMetrics';
+import { MetricColumnMenu } from '../components/ui/MetricColumnMenu';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'LogList'>;
 
 const ALL = t.all;
 
+// An activity plus its richer metrics (re-parsed from the move's GPX for the configurable
+// columns). Cached module-wide by id+synced_at so re-focusing the screen doesn't re-read files.
+type EnrichedActivity = ActivityRecord & { metrics: MetricValues };
+const _metricsCache = new Map<string, GpxMetadata>();
+
+function buildMetrics(a: ActivityRecord, gpx?: GpxMetadata): MetricValues {
+  const distanceM = a.distance_m || 0;
+  const durationS = a.duration_s || 0;
+  return {
+    distanceM, durationS,
+    ascentM: a.d_plus || 0,
+    descentM: gpx?.descentM || 0,
+    energyKcal: gpx?.energyKcal || 0,
+    avgHr: gpx?.avgHr || 0,
+    maxHr: gpx?.maxHr || 0,
+    avgCadence: gpx?.avgCadence || 0,
+    maxCadence: gpx?.maxCadence || 0,
+    avgSpeedMh: gpx?.avgSpeedMh || (distanceM > 0 && durationS > 0 ? distanceM / (durationS / 3600) : 0),
+    maxSpeedMh: gpx?.maxSpeedMh || 0,
+    recoveryS: gpx?.recoveryS || 0,
+    peakTe: gpx?.peakTe || 0,
+    poolLengths: gpx?.poolLengths || 0,
+    maxAltM: gpx?.maxAltM || 0,
+    paceSecPerKm: gpx?.paceSecPerKm || (distanceM > 0 && durationS > 0 ? durationS / (distanceM / 1000) : 0),
+  };
+}
+
 export default function LogListScreen() {
   const theme = useV3Theme();
   const styles = createStyles(theme);
   const navigation = useNavigation<Nav>();
-  const [activities, setActivities] = useState<ActivityRecord[]>([]);
+  const [activities, setActivities] = useState<EnrichedActivity[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [activeFilter, setActiveFilter] = useState<string>(ALL);
   // View mode (map/list) is the persisted Settings preference; re-read on focus so a change
-  // in Settings takes effect when the user returns here. Sort is an in-page control.
+  // in Settings takes effect when the user returns here.
   const [viewMode, setViewMode] = useState<ViewMode>('map');
-  const [sortKey, setSortKey] = useState<SortKey>('uploaded');
-  useFocusEffect(useCallback(() => { getViewMode('activities').then(setViewMode); }, []));
+  // Configurable metric columns (persisted) + sort. Sorting is by whichever column, chosen
+  // from that column's dropdown, or the default newest-first by upload date.
+  const [columns, setColumns] = useState<string[]>(['distance', 'duration', 'ascent', 'calories']);
+  const [sortKey, setSortKey] = useState<string>('uploaded');
+  const [sortDesc, setSortDesc] = useState(true);
+  const [menuCol, setMenuCol] = useState<number | null>(null);   // which column's dropdown is open
+  useFocusEffect(useCallback(() => {
+    getViewMode('activities').then(setViewMode);
+    getActivityColumns().then(setColumns);
+  }, []));
+
+  function persistColumns(next: string[]) {
+    setColumns(next);
+    setActivityColumns(next);
+  }
+  function setColumn(idx: number, key: string) {
+    const c = columns.slice(); c[idx] = key; persistColumns(c);
+  }
+  function removeColumn(idx: number) {
+    if (columns.length <= 1) return;
+    const c = columns.slice(); c.splice(idx, 1); persistColumns(c);
+  }
+  function addColumn() {
+    const unused = ALL_METRICS.find(m => columns.indexOf(m.key) === -1);
+    if (unused) persistColumns(columns.concat([unused.key]));
+  }
+  function sortByColumn(key: string, desc: boolean) {
+    setSortKey(key); setSortDesc(desc);
+  }
 
   // Calendar + Totals are activity-analytics views (desktop TotalsPage/CalendarPage parity).
   // On Android they're reached from here, the Activities screen, rather than the Home nav
@@ -97,7 +154,21 @@ export default function LogListScreen() {
           }
         } catch (_) {}
       }
-      setActivities([...data]);
+      // Enrich each activity with its richer metrics for the configurable columns. Read from
+      // the move's own GPX (the DB only stores the core four); cached by id+synced_at so
+      // re-focusing doesn't re-read the files. Reads run in parallel and never fail the list.
+      const enriched: EnrichedActivity[] = await Promise.all(data.map(async a => {
+        const cacheKey = `${a.id}:${a.synced_at}`;
+        let gpx = _metricsCache.get(cacheKey);
+        if (!gpx && a.gpx_path) {
+          try {
+            gpx = extractGpxMetadata(await readGpxFile(a.gpx_path));
+            _metricsCache.set(cacheKey, gpx);
+          } catch { /* keep whatever the DB core gives */ }
+        }
+        return { ...a, metrics: buildMetrics(a, gpx) };
+      }));
+      setActivities(enriched);
     } catch (e) {
       Alert.alert(t.loadError, String(e));
     }
@@ -140,15 +211,18 @@ export default function LogListScreen() {
   }, [activities]);
 
   const filtered = useMemo(() => {
-    const base = activeFilter === ALL
+    const base = (activeFilter === ALL
       ? activities
-      : activities.filter(a => a.activity_type === activeFilter);
-    // Sort via the shared comparator (maps ActivityRecord onto the generic Sortable fields).
-    const withKeys = base.map(a => ({
-      a, uploadedAt: a.synced_at, name: a.activity_type, distanceM: a.distance_m, ascentM: a.d_plus,
-    }));
-    return sortItems(withKeys, sortKey).map(x => x.a);
-  }, [activities, activeFilter, sortKey]);
+      : activities.filter(a => a.activity_type === activeFilter)).slice();
+    // Sort by the chosen column (any metric), or newest-first by upload date (default).
+    base.sort((a, b) => {
+      let c: number;
+      if (sortKey === 'uploaded') c = (a.synced_at || 0) - (b.synced_at || 0);
+      else c = metricRaw(a.metrics, sortKey) - metricRaw(b.metrics, sortKey);
+      return sortDesc ? -c : c;
+    });
+    return base;
+  }, [activities, activeFilter, sortKey, sortDesc]);
 
   // ─── Rendu ──────────────────────────────────────────────────────────────────
 
@@ -199,8 +273,36 @@ export default function LogListScreen() {
         </ScrollView>
       )}
 
-      {/* Sort control (in-page, per André). Last uploaded / name / distance / ascent. */}
-      <SortBar keys={sortKeysFor('activities')} value={sortKey} onChange={setSortKey} />
+      {/* Configurable metric columns (port of desktop): a scrollable row of dropdown pills,
+          one per column, plus an elegant "+" to add. Each pill opens a menu to sort by it,
+          change which metric it shows (no duplicates), or remove it. */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.colBar}
+        contentContainerStyle={styles.colBarContent}
+      >
+        {columns.map((key, idx) => {
+          const active = sortKey === key;
+          return (
+            <TouchableOpacity
+              key={`${key}-${idx}`}
+              style={[styles.colPill, active && styles.colPillActive]}
+              onPress={() => setMenuCol(idx)}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.colPillText, active && styles.colPillTextActive]}>{metricLabel(key)}</Text>
+              {active && <Text style={styles.colPillArrow}>{sortDesc ? '↓' : '↑'}</Text>}
+              <Text style={[styles.colCaret, active && styles.colPillTextActive]}>▾</Text>
+            </TouchableOpacity>
+          );
+        })}
+        {columns.length < ALL_METRICS.length && (
+          <TouchableOpacity style={styles.addPill} onPress={addColumn} activeOpacity={0.7}>
+            <Text style={styles.addPillText}>+</Text>
+          </TouchableOpacity>
+        )}
+      </ScrollView>
 
       <FlatList
         style={styles.list}
@@ -236,16 +338,39 @@ export default function LogListScreen() {
                     <Text style={styles.cardType}>{capitalize(item.activity_type)}</Text>
                   </View>
                 )}
-                <Text style={styles.cardSub}>{formatDuration(item.duration_s)} · {formatDist(item.distance_m)}</Text>
               </View>
-              <View style={styles.cardRight}>
-                <Text style={styles.cardDPlus}>▲ {item.d_plus} m</Text>
-                <Text style={styles.cardArrow}>›</Text>
-              </View>
+              <Text style={styles.cardArrow}>›</Text>
+            </View>
+            {/* The configured metrics, in the watch's own values. A metric the move never
+                recorded is skipped (metricValue returns ""), so cards stay tidy. */}
+            <View style={styles.metricsRow}>
+              {columns.map(key => {
+                const val = metricValue(item.metrics, key);
+                if (!val) return null;
+                return (
+                  <View key={key} style={styles.metricCell}>
+                    <Text style={styles.metricValue}>{val}</Text>
+                    <Text style={styles.metricLabel}>{metricLabel(key)}</Text>
+                  </View>
+                );
+              })}
             </View>
           </TouchableOpacity>
         )}
       />
+
+      {menuCol !== null && (
+        <MetricColumnMenu
+          visible
+          currentKey={columns[menuCol]}
+          metrics={metricsAvailableFor(columns, menuCol)}
+          canRemove={columns.length > 1}
+          onSort={desc => sortByColumn(columns[menuCol], desc)}
+          onPick={key => setColumn(menuCol, key)}
+          onRemove={() => removeColumn(menuCol)}
+          onClose={() => setMenuCol(null)}
+        />
+      )}
     </View>
   );
 }
@@ -372,6 +497,35 @@ const createStyles = (t: ReturnType<typeof useV3Theme>) => StyleSheet.create({
   cardTypeRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 3 },
   cardType: { fontSize: 12, color: t.mutedText },
   cardSub: { fontSize: 13, color: t.mutedText },
+  // ── Configurable column bar + metric cells ──
+  colBar: { maxHeight: 48, backgroundColor: t.background },
+  colBarContent: { paddingHorizontal: 12, paddingVertical: 8, gap: 8, alignItems: 'center' },
+  colPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: t.card,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: t.mutedText + '33',
+  },
+  colPillActive: { backgroundColor: t.primary + '1F', borderColor: t.primary },
+  colPillText: { fontSize: 12.5, color: t.text, fontWeight: '500' },
+  colPillTextActive: { color: t.primary, fontWeight: '700' },
+  colPillArrow: { fontSize: 12.5, color: t.primary, fontWeight: '700' },
+  colCaret: { fontSize: 11, color: t.mutedText },
+  addPill: {
+    width: 30, height: 30, borderRadius: 15,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: t.mutedText + '55',
+  },
+  addPillText: { fontSize: 18, color: t.mutedText, lineHeight: 20 },
+  metricsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 18, marginTop: 10 },
+  metricCell: { minWidth: 60 },
+  metricValue: { fontSize: 14, color: t.text, fontWeight: '700' },
+  metricLabel: { fontSize: 10.5, color: t.mutedText, marginTop: 1 },
   cardRight: { alignItems: 'flex-end' },
   cardDPlus: { fontSize: 13, color: t.mutedText, marginBottom: 4 },
   cardArrow: { fontSize: 22, color: t.mutedText },

@@ -25,6 +25,31 @@ export interface GpxMetadata {
   distanceM: number;
   dPlus: number;
   activityType: string; // ex: "Orienteering", "Running", "Cycling"…
+  // Richer summary metrics from the watch log header, carried through as GPX extensions by
+  // exercise_log.py (shared with desktop). 0 = not recorded. For the configurable Activities
+  // columns (ActivityMetrics.ts). Units: hr = bpm, cadence = rpm, speed = m/h, descent = m,
+  // recovery = s, peakTe = value*10, poolLengths = count, maxAlt = m, energy = kcal.
+  energyKcal: number;
+  avgHr: number;
+  maxHr: number;
+  avgCadence: number;
+  maxCadence: number;
+  avgSpeedMh: number;
+  maxSpeedMh: number;
+  descentM: number;
+  recoveryS: number;
+  peakTe: number;
+  poolLengths: number;
+  maxAltM: number;
+  paceSecPerKm: number;   // derived
+}
+
+/** Read a numeric <tag>value</tag> summary extension from the raw GPX. Regex (not the XML
+ * parser) for the same reason activityType uses it - more reliable for the flat extensions
+ * block. Returns 0 when absent. */
+function extTag(gpxXml: string, tag: string): number {
+  const m = gpxXml.match(new RegExp(`<${tag}>(-?\\d+(?:\\.\\d+)?)</${tag}>`));
+  return m ? parseFloat(m[1]) : 0;
 }
 
 // ─── Suunto sport_type uint8 → readable name ──────────────────────────────────
@@ -166,6 +191,31 @@ export function extractGpxMetadata(gpxXml: string): GpxMetadata {
       const m = gpxXml.match(/<sport_type>(\d+)<\/sport_type>/);
       const code = m ? parseInt(m[1], 10) : -1;
       return SPORT_TYPE_MAP[code] ?? '';
+    })(),
+    energyKcal:  extTag(gpxXml, 'energy'),
+    avgHr:       extTag(gpxXml, 'avg_hr'),
+    maxHr:       extTag(gpxXml, 'max_hr'),
+    avgCadence:  extTag(gpxXml, 'avg_cadence'),
+    maxCadence:  extTag(gpxXml, 'max_cadence'),
+    avgSpeedMh:  (() => {
+      const s = extTag(gpxXml, 'avg_speed');
+      const distM = stats?.totalDistance ?? 0;
+      const durS = last?.timestamp && first?.timestamp ? (last.timestamp - first.timestamp) / 1000 : 0;
+      // Derive from distance/duration when the watch didn't record it (older GPX / some sports).
+      return s > 0 ? s : (distM > 0 && durS > 0 ? distM / (durS / 3600) : 0);
+    })(),
+    maxSpeedMh:  extTag(gpxXml, 'max_speed'),
+    descentM:    extTag(gpxXml, 'descent'),
+    recoveryS:   extTag(gpxXml, 'recovery_time'),
+    peakTe:      extTag(gpxXml, 'peak_training_effect'),
+    poolLengths: extTag(gpxXml, 'pool_lengths'),
+    maxAltM:     extTag(gpxXml, 'max_altitude'),
+    paceSecPerKm: (() => {
+      const distM = stats?.totalDistance ?? 0;
+      const durS = last?.timestamp && first?.timestamp ? (last.timestamp - first.timestamp) / 1000 : 0;
+      const s = extTag(gpxXml, 'avg_speed');
+      if (s > 0) return 3600 * 1000 / s;
+      return distM > 0 && durS > 0 ? durS / (distM / 1000) : 0;
     })(),
   };
 }

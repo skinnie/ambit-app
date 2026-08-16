@@ -39,6 +39,30 @@ export async function setViewMode(surface: ListSurface, mode: ViewMode): Promise
   }
 }
 
+// ─── Configurable Activities columns ──────────────────────────────────────────
+// The ordered metric keys shown as columns in the Activities list (ActivityMetrics). Persisted
+// as CSV, default matches the original fixed columns.
+const COLUMNS_KEY = 'ambitapp:activityColumns';
+const DEFAULT_COLUMNS = ['distance', 'duration', 'ascent', 'calories'];
+
+export async function getActivityColumns(): Promise<string[]> {
+  try {
+    const raw = await AsyncStorage.getItem(COLUMNS_KEY);
+    if (raw && raw.length > 0) return raw.split(',');
+  } catch {
+    // fall through to default
+  }
+  return DEFAULT_COLUMNS.slice();
+}
+
+export async function setActivityColumns(keys: string[]): Promise<void> {
+  try {
+    await AsyncStorage.setItem(COLUMNS_KEY, keys.join(','));
+  } catch {
+    // non-persisted this run; not fatal
+  }
+}
+
 // ─── Sorting ────────────────────────────────────────────────────────────────
 
 export type SortKey = 'uploaded' | 'name' | 'distance' | 'ascent';
