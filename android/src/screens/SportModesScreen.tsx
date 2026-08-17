@@ -458,25 +458,9 @@ export default function SportModesScreen() {
             </View>
           )}
 
-          {summary.modes.map(m => (
-            <View key={`${m.order}-${m.name}`} style={styles(theme).manageRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles(theme).manageName}>{m.name}</Text>
-                {m.multisport && <Text style={styles(theme).manageSub}>{m.legs.join(' → ')}</Text>}
-                {!m.multisport && m.usedBy.length > 0 && (
-                  <Text style={styles(theme).manageSub}>{t.sportModesUsedByBadge(m.usedBy.join(', '))}</Text>
-                )}
-              </View>
-              {m.multisport && <Text style={styles(theme).multiBadge}>{t.sportModesMultiBadge}</Text>}
-              <TouchableOpacity
-                style={[styles(theme).smallBtn, styles(theme).deleteBtn]}
-                disabled={manageBusy}
-                onPress={() => confirmDelete(m.name, m.multisport)}
-              >
-                <Text style={styles(theme).deleteBtnText}>{t.sportModesDeleteBtn}</Text>
-              </TouchableOpacity>
-            </View>
-          ))}
+          {/* The mode list itself lives once, below this card (single sports there + any
+              multisport modes appended). This card keeps only the counts, the warning and the
+              Create buttons, so a mode is never listed twice. André, 2026-08-17. */}
 
           <View style={[styles(theme).row, { marginTop: 12 }]}>
             <TouchableOpacity
@@ -499,12 +483,13 @@ export default function SportModesScreen() {
         </Card>
       )}
 
+      {/* The one and only mode list: tap a mode to edit its displays/settings, delete inline
+          (delete needs the structural codec, so it shows only once `summary` has loaded). Icon +
+          colour come from the mode's own ActivityID (the same table Calendar/Totals/log use),
+          falling back to the generic glyph for an unknown id. André, 2026-08-17. */}
       {modes && modes.map(mode => {
         const name = mode.settings.name;
         const realCount = mode.displays.filter(d => !d.isBuiltIn).length;
-        // Per-sport icon + colour, keyed on the mode's own ActivityID (the same table the
-        // Calendar/Totals/log screens use). Falls back to the generic activity glyph in the
-        // theme's muted colour for an id we have no colour/icon for. André, 2026-08-17.
         const activity = ACTIVITY_TYPES[mode.settings.activityId];
         const iconColor = activity ? activity.color : theme.mutedText;
         return (
@@ -518,10 +503,36 @@ export default function SportModesScreen() {
                     {t.sportModesDisplaysCount(realCount, maxDisplays)}
                   </Text>
                 </View>
+                {summary && (
+                  <TouchableOpacity style={[styles(theme).smallBtn, styles(theme).deleteBtn]} disabled={manageBusy} onPress={() => confirmDelete(name, false)}>
+                    <Text style={styles(theme).deleteBtnText}>{t.sportModesDeleteBtn}</Text>
+                  </TouchableOpacity>
+                )}
                 <Icon name="chevronRight" size={20} color={theme.mutedText} />
               </View>
             </Card>
           </TouchableOpacity>
+        );
+      })}
+
+      {/* Multisport modes group other modes and have no single-mode editor, so they aren't in
+          `modes` (the reader) - append them here from the codec summary as their own rows. */}
+      {summary && summary.modes.filter(m => m.multisport).map(m => {
+        const activity = ACTIVITY_TYPES[m.activityId];
+        return (
+          <Card key={`multi-${m.order}-${m.name}`} style={{ width: '100%' }}>
+            <View style={styles(theme).listRow}>
+              <Icon name="activity" size={22} color={activity ? activity.color : theme.mutedText} />
+              <View style={{ flex: 1, marginLeft: 10 }}>
+                <Text style={styles(theme).cardTitle}>{m.name}</Text>
+                <Text style={styles(theme).sectionDesc}>{m.legs.join(' → ')}</Text>
+              </View>
+              <Text style={styles(theme).multiBadge}>{t.sportModesMultiBadge}</Text>
+              <TouchableOpacity style={[styles(theme).smallBtn, styles(theme).deleteBtn]} disabled={manageBusy} onPress={() => confirmDelete(m.name, true)}>
+                <Text style={styles(theme).deleteBtnText}>{t.sportModesDeleteBtn}</Text>
+              </TouchableOpacity>
+            </View>
+          </Card>
         );
       })}
 
