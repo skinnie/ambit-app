@@ -42,7 +42,6 @@ interface TrackLogPoint {
 function walkRecords(bytes: Uint8Array): TrackLogPoint[] {
   const points: TrackLogPoint[] = [];
   const n = Math.floor((bytes.length - RECORD_START) / RECORD_SIZE);
-  let badStreak = 0;
   for (let i = 0; i < n; i++) {
     const off = RECORD_START + i * RECORD_SIZE;
     const view = new DataView(bytes.buffer, bytes.byteOffset + off, RECORD_SIZE);
@@ -61,12 +60,14 @@ function walkRecords(bytes: Uint8Array): TrackLogPoint[] {
       lat >= -900000000 && lat <= 900000000 && lon >= -1800000000 && lon <= 1800000000 &&
       third >= 500 && third <= 50000;
 
+    // Do NOT stop at a run of implausible records. A real mid-track gap (seen live on a
+    // Kailash: a 65-min loop whose points resumed after a 6+ record gap at slot 36 - the old
+    // `badStreak > 5` break read only the first 15 min, 30 of 112 points) would otherwise
+    // truncate the track. The plausibility filter already rejects the region's padding tail
+    // record-by-record, and splitIntoActivities() windows the survivors to each session, so
+    // scanning the whole region is safe and keeps the full track.
     if (plausible) {
-      badStreak = 0;
       points.push({ lat: lat / 1e7, lon: lon / 1e7, year, month, day, hour, minute });
-    } else {
-      badStreak++;
-      if (badStreak > 5) break;
     }
   }
   return points;
@@ -110,7 +111,7 @@ function pointsToGpx(
   return `<?xml version="1.0" encoding="UTF-8"?>\n` +
     `<gpx version="1.1" creator="Sommet" xmlns="http://www.topografix.com/GPX/1/1">\n` +
     (metaTime ? `  <metadata><time>${escapeXml(metaTime)}</time></metadata>\n` : '') +
-    `  <trk><name>Walk</name>\n${ext}    <trkseg>\n${trkpts}\n  </trkseg></trk>\n</gpx>\n`;
+    `  <trk><name>Walking</name>\n${ext}    <trkseg>\n${trkpts}\n  </trkseg></trk>\n</gpx>\n`;
 }
 
 /** Decodes a base64 TrackLog region dump (see readRegion() in native/AmbitUsbModule.ts) into

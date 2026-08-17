@@ -337,7 +337,7 @@ QVariantMap GarminService::parseActivityGpx(const QString &gpxText)
     // resolves both to id 12 "Walking"), which is what lets TotalsPage.qml group these
     // together across devices instead of splitting them into an unclassified pile per
     // device.
-    result[QStringLiteral("name")] = QStringLiteral("Walk");
+    result[QStringLiteral("name")] = QStringLiteral("Walking");
     return result;
 }
 

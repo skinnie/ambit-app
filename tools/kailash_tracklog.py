@@ -96,38 +96,48 @@ def _plausible_record(rec):
 TRACKLOG_PROBE_SIZE = 65536  # ~32x more than every real capture has needed so far
 
 
+# A real record run is only judged "ended" when this many confirmed-implausible (padding)
+# records follow the last real one. Much larger than any real mid-track gap (a live Kailash
+# loop had a 6-record gap mid-track), so a gap never ends the scan, but far smaller than the
+# region's true unused tail (thousands of records), so the probe optimization still fires.
+PADDING_MARGIN_RECORDS = 64
+
+
 def _real_data_end(data):
-    """Byte offset just past the last real-looking record in `data` (mirrors
-    walk_records()'s own bad_streak cutoff exactly), or None if `data` runs out before that
-    cutoff is reached - meaning this buffer is too short to know where the real data ends,
-    and the caller should read more (or the full region) instead of trusting a truncated
-    guess."""
+    """Byte offset just past the LAST real-looking record in `data`, or None if the probe
+    isn't conclusive - the last real record sits within PADDING_MARGIN_RECORDS of the probe's
+    end, so real data may continue past it and the caller must read the full region instead.
+
+    Unlike a first-gap cutoff, a short run of implausible records mid-track does NOT end the
+    scan: a real Kailash loop had a 6-record gap partway through, and stopping there truncated
+    the track (read only the first 15 min of a 65-min walk). Scanning to the last real record
+    and requiring a clear padding margin after it distinguishes a mid-track gap from the
+    region's genuine unused tail."""
     n = (len(data) - RECORD_START) // RECORD_SIZE
-    bad_streak = 0
-    end = RECORD_START
+    last_end = None
     for i in range(n):
         off = RECORD_START + i * RECORD_SIZE
         if _plausible_record(data[off:off + RECORD_SIZE]):
-            bad_streak = 0
-            end = off + RECORD_SIZE
-        else:
-            bad_streak += 1
-            if bad_streak > 5:
-                return end
+            last_end = off + RECORD_SIZE
+    if last_end is None:
+        return None
+    if (len(data) - last_end) // RECORD_SIZE >= PADDING_MARGIN_RECORDS:
+        return last_end
     return None
 
 
 def walk_records(data):
     """Every 20-byte slot (starting at RECORD_START, not 0) that looks like a real GPS fix,
-    in order, stopping at the first run of implausible ones (the region's own unused/padding
-    tail - see module docstring)."""
+    in order. Does NOT stop at the first run of implausible records: a real mid-track gap
+    (a live Kailash loop had a 6-record gap at slot 36, resuming afterwards) would otherwise
+    truncate the track to its first 15 minutes. The plausibility filter rejects the region's
+    padding tail record-by-record, and split_into_activities() windows the survivors to each
+    session, so scanning the whole buffer is safe and keeps the full track."""
     n = (len(data) - RECORD_START) // RECORD_SIZE
-    bad_streak = 0
     for i in range(n):
         off = RECORD_START + i * RECORD_SIZE
         rec = data[off:off + RECORD_SIZE]
         if _plausible_record(rec):
-            bad_streak = 0
             lat, lon, third = struct.unpack_from("<iii", rec, 0)
             year = struct.unpack_from("<H", rec, 12)[0]
             month, day, hour, minute = rec[14], rec[15], rec[16], rec[17]
@@ -136,10 +146,6 @@ def walk_records(data):
                 "year": year, "month": month, "day": day, "hour": hour, "minute": minute,
                 "trailer": rec[18:20],
             }
-        else:
-            bad_streak += 1
-            if bad_streak > 5:
-                return
 
 
 def haversine_meters(lat1, lon1, lat2, lon2):
@@ -176,7 +182,7 @@ def to_activity(points):
         # would is what lets ActivityTypes.forName() (desktop/qml/ActivityTypes.qml) resolve
         # both to the same "Walking" id, so TotalsPage.qml groups them into one bucket
         # instead of splitting Kailash's walks into their own device-specific pile.
-        "name": "Walk",
+        "name": "Walking",
         "startTime": start,
         "distanceMeters": round(distance, 1),
         "durationSeconds": max(0, end_minutes * 60),
@@ -276,12 +282,12 @@ def split_into_activities(points, sessions):
             matched = [p for dt, p in point_dts if lo <= dt <= hi]
 
         activity = to_activity(matched) or {
-            "name": "Walk", "startTime": None, "distanceMeters": 0,
+            "name": "Walking", "startTime": None, "distanceMeters": 0,
             "durationSeconds": 0, "track": [], "gpxText": "",
         }
         # Same "Walk" as to_activity()'s own comment - matches Ambit's real default sport
         # mode name so ActivityTypes.forName() classifies this the same way across devices.
-        activity["name"] = "Walk"
+        activity["name"] = "Walking"
         # The session's own real watch-reported stats win over the GPS-derived ones.
         if s.get("when") is not None:
             activity["startTime"] = s["when"]
