@@ -224,7 +224,7 @@ export function builtInScreenName(templateName: string): string {
     return templateName.indexOf('MILS') >= 0 ? 'Compass / Navigate (mils)' : 'Compass / Navigate';
   if (templateName.indexOf('NAVIGATION') >= 0) return 'Navigation';
   if (templateName.indexOf('GRAPH') >= 0) return 'Graph';
-  return 'Built-in screen';
+  return '';
 }
 
 export function fieldTypeLabel(name: string): string {

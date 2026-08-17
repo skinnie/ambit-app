@@ -254,7 +254,7 @@ PageFlickable {
             return template.indexOf("MILS") >= 0 ? qsTr("Compass / Navigate (mils)") : qsTr("Compass / Navigate")
         if (template.indexOf("NAVIGATION") >= 0) return qsTr("Navigation")
         if (template.indexOf("GRAPH") >= 0) return qsTr("Graph")
-        return qsTr("Built-in screen")
+        return ""
     }
 
     // Real, 2026-08-09 ("sport mode return bad gateway") - the connected watch had become
@@ -1081,7 +1081,7 @@ PageFlickable {
                                     width: 100
                                     horizontalAlignment: Text.AlignHCenter
                                     text: filmItem.modelData.isBuiltIn
-                                          ? root.builtInScreenName(filmItem.modelData.template)
+                                          ? (root.builtInScreenName(filmItem.modelData.template) || qsTr("Built-in"))
                                           : qsTr("Display %1").arg(filmItem.index + 1)
                                     color: filmItem.index === root.currentDisplayIndex
                                            ? Theme.text : Theme.mutedText
