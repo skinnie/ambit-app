@@ -32,6 +32,25 @@ jobs:
       - name: Install JavaScript dependencies
         working-directory: android
         run: npm ci
+      # src/config/version.ts and src/config/secrets.ts are gitignored (not in the repo), but
+      # the RELEASE JS bundle imports both (a debug build doesn't bundle, which is why build.yml
+      # never needed them). Regenerate them here: the version from package.json (single source
+      # of truth) plus the short commit SHA; the Strava OAuth creds from repo Actions secrets
+      # when configured (empty otherwise - Strava sign-in is then inert in the release APK, and
+      # everything else works). Set STRAVA_CLIENT_ID / STRAVA_CLIENT_SECRET as repo secrets to
+      # enable Strava in released builds.
+      - name: Generate build-time config (version + secrets)
+        working-directory: android
+        env:
+          STRAVA_CLIENT_ID: ${{ secrets.STRAVA_CLIENT_ID }}
+          STRAVA_CLIENT_SECRET: ${{ secrets.STRAVA_CLIENT_SECRET }}
+        run: |
+          V=$(node -p "require('./package.json').version")
+          mkdir -p src/config
+          printf "export const BUILD_SHA = '%s';\nexport const APP_VERSION = '%s';\n" \
+            "${GITHUB_SHA::7}" "$V" > src/config/version.ts
+          printf "export const STRAVA_CLIENT_ID = '%s';\nexport const STRAVA_CLIENT_SECRET = '%s';\n" \
+            "$STRAVA_CLIENT_ID" "$STRAVA_CLIENT_SECRET" > src/config/secrets.ts
       - name: Build the standalone release APK (bundle baked in)
         working-directory: android/android
         run: ./gradlew :app:assembleRelease --no-daemon
