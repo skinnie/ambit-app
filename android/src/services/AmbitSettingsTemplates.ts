@@ -736,24 +736,6 @@ export const AMBIT3_FIELDS: SettingField[] = [
     "screen": "personal",
     "min": 1.0,
     "max": 10.0
-  },
-  {
-    "key": "plans_source",
-    "entryId": 44,
-    "byteWidth": 1,
-    "kind": "enum",
-    "choices": [
-      {
-        "value": 0,
-        "label": "Off"
-      },
-      {
-        "value": 1,
-        "label": "Manual"
-      }
-    ],
-    "label": "Use training program",
-    "control": "radio"
   }
 ];
 
@@ -1488,24 +1470,6 @@ export const TRAVERSE_FIELDS: SettingField[] = [
     "screen": "personal",
     "min": 1.0,
     "max": 10.0
-  },
-  {
-    "key": "plans_source",
-    "entryId": 48,
-    "byteWidth": 1,
-    "kind": "enum",
-    "choices": [
-      {
-        "value": 0,
-        "label": "Off"
-      },
-      {
-        "value": 1,
-        "label": "Manual"
-      }
-    ],
-    "label": "Use training program",
-    "control": "radio"
   }
 ];
 

@@ -136,6 +136,12 @@ def device_tables(device, product_id):
     table = S.KAILASH_SETTINGS if device == "kailash" else S.AMBIT3_SETTINGS
     fields = []
     for key, suffix in table.items():
+        # plans_source ("Use training program") is on none of SuuntoLink's own settings screens
+        # - the planned-moves source flag, set by that feature, not a user toggle. Hidden from
+        # the settings UI on every device, current and future (André 2026-08-17). It stays in
+        # writeTemplates/keyScreen below, so writes still carry it.
+        if key == "plans_source":
+            continue
         try:
             fields.append(field_meta(schema, key, suffix, product_id))
         except KeyError:

@@ -658,6 +658,13 @@ def read_all(payload, descriptor, product_id=None):
     entries = dict(sbem_schema.entries(payload[head:]))
     out = {}
     for key, suffix in settings_table(product_id).items():
+        # plans_source ("Use training program") is on none of SuuntoLink's own settings
+        # screens - it is the planned-moves source flag, set by that feature, not a user
+        # toggle. It only ever appeared here because it rides in every write template. Hide it
+        # from the settings UI on every device, current and future (André 2026-08-17); it still
+        # rides in the write templates, so writes are unaffected.
+        if key == "plans_source":
+            continue
         try:
             field = _find_field(schema, suffix)
         except KeyError as exc:
