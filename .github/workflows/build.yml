@@ -4,9 +4,12 @@
 # can be red while the others stay green.
 name: build
 
-# When it runs: every push to any branch, and every pull request.
+# When it runs: every push to the main branch, and every pull request. (Scoped to
+# main so one branch = one run per push — no duplicate runs that hammer GitHub's
+# action downloads and trip its rate limiter.)
 on:
   push:
+    branches: [main]
   pull_request:
 
 jobs:
