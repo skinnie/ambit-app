@@ -32,14 +32,16 @@ export interface SportModeManageState {
 
 export type SportSummary = ReturnType<typeof summarise>;
 
-/** Read + decode + summarise the current sport modes. Read-only, safe any time connected. */
-export async function readSportModes(): Promise<SportSummary> {
-  await connect();
+/** Read + decode + summarise the current sport modes. Read-only, safe any time connected.
+ * Over BLE (overBle) runs on the already-open link - see CustomModesService.ts's own transport
+ * note for why we must not call the USB connect()/disconnect() over a live BLE session. */
+export async function readSportModes(overBle = false): Promise<SportSummary> {
+  if (!overBle) await connect();
   try {
     const bytes = base64ToBytes(await readCustomModesRaw());
     return summarise(decode(bytes));
   } finally {
-    await disconnect().catch(() => {});
+    if (!overBle) await disconnect().catch(() => {});
   }
 }
 
@@ -80,13 +82,16 @@ export const plans = {
 export async function applySportModeEdit(
   build: PlanBuilder,
   onState: (s: SportModeManageState) => void,
+  overBle = false,
 ): Promise<SportSummary | undefined> {
-  onState({ phase: 'connecting' });
-  try {
-    await connect();
-  } catch (e: any) {
-    onState({ phase: 'error', error: e?.message ?? 'Connection to the watch failed' });
-    return undefined;
+  onState({ phase: overBle ? 'reading' : 'connecting' });
+  if (!overBle) {
+    try {
+      await connect();
+    } catch (e: any) {
+      onState({ phase: 'error', error: e?.message ?? 'Connection to the watch failed' });
+      return undefined;
+    }
   }
   try {
     onState({ phase: 'reading' });
@@ -138,6 +143,6 @@ export async function applySportModeEdit(
     onState({ phase: 'error', error: e?.message ?? 'Failed to apply the change' });
     return undefined;
   } finally {
-    await disconnect().catch(() => {});
+    if (!overBle) await disconnect().catch(() => {});
   }
 }

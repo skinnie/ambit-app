@@ -8,12 +8,22 @@ import {
 } from './CustomModesWriter';
 
 // Thin connect/read/disconnect and connect/write/disconnect orchestration, matching
-// AmbitSettingsService.ts's own pattern exactly - this screen owns its own short-lived
-// connection per action rather than assuming one is already open. Ambit3-only: Kailash's
-// own memory map reports no CustomModes region at all (confirmed empty, see
-// custom_modes_andre.md's Kailash section) - the caller (SportModesScreen.tsx) is
-// responsible for not showing this feature for a Kailash connection, the same
-// !HomeViewModel.isKailash gate the desktop app's own NavRail.qml uses.
+// AmbitSettingsService.ts's own pattern exactly - over USB this screen owns its own
+// short-lived connection per action rather than assuming one is already open.
+//
+// Transport (André, 2026-08-17): every op takes `overBle`. Over BLE the GATT link is already
+// open and owned by the Home screen, and the underlying readCustomModesRaw()/writeField() act
+// on the same shared native g_device regardless of transport - so over BLE we must NOT call
+// the USB connect()/disconnect() (that opens a USB device, popping the "insert USB / OTG"
+// permission prompt and tearing down the live BLE session). This mirrors SgeeService's own
+// USB-vs-BLE branch: over USB (overBle=false) open/close a short-lived cable link; over BLE
+// (overBle=true) just run the op on the already-open link. The caller (SportModesScreen) gets
+// `overBle` from HomeScreen's bleConnected via the navigation param.
+//
+// Ambit3-only: Kailash's own memory map reports no CustomModes region at all (confirmed empty,
+// see custom_modes_andre.md's Kailash section) - the caller is responsible for not showing this
+// feature for a Kailash connection, the same !HomeViewModel.isKailash gate the desktop app's
+// own NavRail.qml uses.
 
 export interface ReadCustomModesState {
   phase: 'idle' | 'connecting' | 'reading' | 'done' | 'error';
@@ -21,14 +31,19 @@ export interface ReadCustomModesState {
   error?: string;
 }
 
-/** Real, read-only (0x0b17 flash read) - safe any time the watch is connected. */
-export async function readCustomModes(onState: (s: ReadCustomModesState) => void): Promise<void> {
-  onState({ phase: 'connecting' });
-  try {
-    await connect();
-  } catch (e: any) {
-    onState({ phase: 'error', error: e?.message ?? 'Connection to the watch failed' });
-    return;
+/** Real, read-only (0x0b17 flash read) - safe any time the watch is connected. Over BLE
+ * (overBle) runs on the already-open link; over USB opens its own short-lived connection. */
+export async function readCustomModes(
+  onState: (s: ReadCustomModesState) => void, overBle = false,
+): Promise<void> {
+  onState({ phase: overBle ? 'reading' : 'connecting' });
+  if (!overBle) {
+    try {
+      await connect();
+    } catch (e: any) {
+      onState({ phase: 'error', error: e?.message ?? 'Connection to the watch failed' });
+      return;
+    }
   }
   onState({ phase: 'reading' });
   try {
@@ -38,7 +53,7 @@ export async function readCustomModes(onState: (s: ReadCustomModesState) => void
   } catch (e: any) {
     onState({ phase: 'error', error: e?.message ?? 'Failed to read CustomModes' });
   } finally {
-    await disconnect().catch(() => {});
+    if (!overBle) await disconnect().catch(() => {});
   }
 }
 
@@ -51,14 +66,16 @@ export interface CustomModesWriteState {
  * doc comment in native/AmbitUsbModule.ts). Renames one mode everywhere it appears in the
  * real parsed tree; re-reads afterward to confirm. */
 export async function renameCustomMode(
-  fromName: string, toName: string, onState: (s: CustomModesWriteState) => void,
+  fromName: string, toName: string, onState: (s: CustomModesWriteState) => void, overBle = false,
 ): Promise<RenameModeResult | undefined> {
-  onState({ phase: 'connecting' });
-  try {
-    await connect();
-  } catch (e: any) {
-    onState({ phase: 'error', error: e?.message ?? 'Connection to the watch failed' });
-    return undefined;
+  onState({ phase: overBle ? 'writing' : 'connecting' });
+  if (!overBle) {
+    try {
+      await connect();
+    } catch (e: any) {
+      onState({ phase: 'error', error: e?.message ?? 'Connection to the watch failed' });
+      return undefined;
+    }
   }
   onState({ phase: 'writing' });
   try {
@@ -70,7 +87,7 @@ export async function renameCustomMode(
     onState({ phase: 'error', error: e?.message ?? 'Failed to rename' });
     return undefined;
   } finally {
-    await disconnect().catch(() => {});
+    if (!overBle) await disconnect().catch(() => {});
   }
 }
 
@@ -78,13 +95,16 @@ export async function renameCustomMode(
  * fixed uint16 settings fields (Autolap, HrHigh, HrLow, HrLimitsUse, UseHw, ...). */
 export async function writeCustomModeField(
   modeName: string, fields: Record<string, number>, onState: (s: CustomModesWriteState) => void,
+  overBle = false,
 ): Promise<WriteFieldResult | undefined> {
-  onState({ phase: 'connecting' });
-  try {
-    await connect();
-  } catch (e: any) {
-    onState({ phase: 'error', error: e?.message ?? 'Connection to the watch failed' });
-    return undefined;
+  onState({ phase: overBle ? 'writing' : 'connecting' });
+  if (!overBle) {
+    try {
+      await connect();
+    } catch (e: any) {
+      onState({ phase: 'error', error: e?.message ?? 'Connection to the watch failed' });
+      return undefined;
+    }
   }
   onState({ phase: 'writing' });
   try {
@@ -96,7 +116,7 @@ export async function writeCustomModeField(
     onState({ phase: 'error', error: e?.message ?? 'Failed to write field(s)' });
     return undefined;
   } finally {
-    await disconnect().catch(() => {});
+    if (!overBle) await disconnect().catch(() => {});
   }
 }
 
@@ -108,14 +128,16 @@ export async function writeCustomModeField(
 export async function writeCustomModeDisplayField(
   modeName: string, displayIndex: number, fieldIndex: number,
   newIndexName: string | undefined, newTypeName: string | undefined,
-  onState: (s: CustomModesWriteState) => void,
+  onState: (s: CustomModesWriteState) => void, overBle = false,
 ): Promise<WriteDisplayFieldResult | undefined> {
-  onState({ phase: 'connecting' });
-  try {
-    await connect();
-  } catch (e: any) {
-    onState({ phase: 'error', error: e?.message ?? 'Connection to the watch failed' });
-    return undefined;
+  onState({ phase: overBle ? 'writing' : 'connecting' });
+  if (!overBle) {
+    try {
+      await connect();
+    } catch (e: any) {
+      onState({ phase: 'error', error: e?.message ?? 'Connection to the watch failed' });
+      return undefined;
+    }
   }
   onState({ phase: 'writing' });
   try {
@@ -127,6 +149,6 @@ export async function writeCustomModeDisplayField(
     onState({ phase: 'error', error: e?.message ?? 'Failed to write display field' });
     return undefined;
   } finally {
-    await disconnect().catch(() => {});
+    if (!overBle) await disconnect().catch(() => {});
   }
 }

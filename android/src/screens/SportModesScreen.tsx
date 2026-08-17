@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { useRoute, RouteProp } from '@react-navigation/native';
+import { RootStackParamList } from '../../App';
 import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, Alert, ScrollView, ActivityIndicator, Modal, FlatList,
@@ -66,6 +68,11 @@ type CreateKind = 'single' | 'multi';
 
 export default function SportModesScreen() {
   const theme = useV3Theme();
+  // The watch may be connected over USB or BLE. Over BLE the link is already open and owned
+  // by the Home screen, so the sport-mode reads/writes must run on it directly - calling the
+  // USB connect() would pop the OTG prompt and tear down the BLE session (André, 2026-08-17).
+  const route = useRoute<RouteProp<RootStackParamList, 'SportModes'>>();
+  const overBle = route.params?.overBle ?? false;
   const [modes, setModes] = useState<ExerciseMode[] | null>(null);
   const [phase, setPhase] = useState<Phase>('idle');
   const [error, setError] = useState<string | undefined>();
@@ -117,11 +124,11 @@ export default function SportModesScreen() {
       setPhase(s.phase);
       setError(s.error);
       if (s.modes) applyModes(s.modes);
-    });
+    }, overBle);
     // Also load the structural view (menu order, multisport combos, slot counts) via the
     // full codec. Separate short read; best-effort so a failure here never blocks the editor.
     try {
-      setSummary(await readSportModes());
+      setSummary(await readSportModes(overBle));
     } catch {
       setSummary(null);
     }
@@ -134,7 +141,7 @@ export default function SportModesScreen() {
     const fresh = await applySportModeEdit(build, s => {
       setWriteState(s);
       if (s.phase === 'error') errorMsg = s.error;
-    });
+    }, overBle);
     if (fresh) {
       setSummary(fresh);
       await handleRead();
@@ -181,7 +188,7 @@ export default function SportModesScreen() {
     const newName = (nameEdits[originalName] ?? '').trim();
     if (!newName || newName === originalName) return;
     withWrite(originalName, () =>
-      renameCustomMode(originalName, newName, () => {}));
+      renameCustomMode(originalName, newName, () => {}, overBle));
     setSelectedName(newName);
   }
 
@@ -189,7 +196,7 @@ export default function SportModesScreen() {
     const value = parseInt(autolapEdits[modeName] ?? '', 10);
     if (!Number.isFinite(value)) return;
     withWrite(modeName, () =>
-      writeCustomModeField(modeName, { Autolap: value }, () => {}));
+      writeCustomModeField(modeName, { Autolap: value }, () => {}, overBle));
   }
 
   function handleSetHrLimits(modeName: string) {
@@ -199,13 +206,13 @@ export default function SportModesScreen() {
     withWrite(modeName, () =>
       writeCustomModeField(modeName, {
         HrLow: low, HrHigh: high, HrLimitsUse: hrLimitsEdits[modeName] ? 1 : 0,
-      }, () => {}));
+      }, () => {}, overBle));
   }
 
   function handleTogglePod(modeName: string, currentUseHw: number, bit: number, enabled: boolean) {
     const newUseHw = enabled ? (currentUseHw | bit) : (currentUseHw & ~bit);
     withWrite(modeName, () =>
-      writeCustomModeField(modeName, { UseHw: newUseHw }, () => {}));
+      writeCustomModeField(modeName, { UseHw: newUseHw }, () => {}, overBle));
   }
 
   function handleSelectFieldType(typeName: string) {
@@ -213,7 +220,7 @@ export default function SportModesScreen() {
     const { mode, display, field } = picker;
     setPicker(null);
     withWrite(mode, () =>
-      writeCustomModeDisplayField(mode, display, field, undefined, typeName, () => {}));
+      writeCustomModeDisplayField(mode, display, field, undefined, typeName, () => {}, overBle));
   }
 
   const busy = phase === 'connecting' || phase === 'reading';
