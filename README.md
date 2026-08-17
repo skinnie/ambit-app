@@ -28,18 +28,12 @@ Within the features we have:
 
 ## Screenshots
 
-The desktop app (Linux), showing a connected Suunto Kailash:
+The desktop app (Linux):
 
 | | | |
 |:---:|:---:|:---:|
-| ![Home](screenshots/01-home.png)<br>**Home** | ![Activities](screenshots/02-activities.png)<br>**Activities** | ![Totals](screenshots/03-totals.png)<br>**Totals** |
-| ![Calendar](screenshots/04-calendar.png)<br>**Calendar** | ![Backup](screenshots/05-backup.png)<br>**Backup** | ![Watch settings](screenshots/06-watch-settings.png)<br>**Watch settings** |
-| ![Firmware](screenshots/07-firmware.png)<br>**Firmware** | ![Smart Sensor](screenshots/08-smart-sensor.png)<br>**Smart Sensor** | ![GPS Track Pod](screenshots/09-gps-track-pod.png)<br>**GPS Track Pod** |
-| ![Suunto T6](screenshots/10-suunto-t6.png)<br>**Suunto T6** | ![Settings](screenshots/11-settings.png)<br>**Settings** | |
-
-Several Suunto watches on the USB bus at once — tap to switch which one you manage:
-
-![Multi-watch switcher](screenshots/12-watch-switcher.png)
+| ![Home](screenshots/01-home.png)<br>**Home** | ![Routes](screenshots/02-routes.png)<br>**Routes** | ![POIs](screenshots/03-pois.png)<br>**POIs** |
+| ![Backup](screenshots/04-backup.png)<br>**Backup** | ![Settings](screenshots/05-settings.png)<br>**Settings** | |
 
 
 I am not at all responsible for errors, failures, bricked devices, etc. This software is provided as is.
