@@ -240,7 +240,7 @@ function decodeDispField(bytes: Uint8Array, offset: number, length: number): Dis
   let cursor = offset;
   const field: DisplayField = {
     index: 0, indexName: fieldTypeName(0), type: 0, typeName: fieldTypeName(0),
-    typeLabel: 'Empty',
+    typeLabel: fieldTypeLabel(fieldTypeName(0)),
   };
   while (cursor < end) {
     const tag = readTag(bytes, cursor);
@@ -253,11 +253,7 @@ function decodeDispField(bytes: Uint8Array, offset: number, length: number): Dis
       field.indexName = fieldTypeName(idx);
       field.type = typ;
       field.typeName = fieldTypeName(typ);
-      // A shortcut field (type 0) reads as "Empty", not the raw "Shortcut" - same as
-      // custom_modes.py's row_values() on desktop. 0x00 doubles as the empty-slot marker; a
-      // shortcut carrying an installed app also shows here until the app list is decoded (the
-      // common case is an empty slot, e.g. Running's default screens). André, 2026-08-17.
-      field.typeLabel = field.type === 0 ? 'Empty' : fieldTypeLabel(field.typeName);
+      field.typeLabel = fieldTypeLabel(field.typeName);
     }
     cursor = content + tag.length;
   }
