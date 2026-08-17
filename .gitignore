@@ -94,3 +94,43 @@ desktop/*.exitcode
 
 # Stray CMake configure artifacts if cmake is ever run from the repo root.
 /CMakeFiles/
+
+# ---- 2026-08-17 public-repo cleanup: Suunto proprietary material, reverse-engineering
+# findings, and internal notes. Purged from history and kept off GitHub. They may still
+# exist locally (backed up off-repo); NEVER re-commit them. ----
+/appzone_corpus/
+/reference/movescount_workouts/
+/tools/ghidra_scripts/
+/tools/appzone_corpus.py
+/tools/harvest_appzone.py
+/obsolete/
+/CLAUDE.md
+/PROJECT_RULES.md
+/BUGS_ANDRE.md
+/HANDOFF.md
+/HANDOFF_ANDRE.md
+/SUMMARY-FOR-ANDRE-2026-08-03.md
+/SUUNTOLINK-DUMP-REVIEW-2026-08-03.md
+/SUUNTO_BUG_REPORTS.md
+/SUUNTO_DEV_REQUESTS.md
+/step3output.md
+/trainingplan_gpt.md
+/tools/NewSources.md
+/tools/README_ANDRE.md
+/docs/GITHUB_README_DRAFT.md
+/docs/explanation/ble-findings-apk-analysis.md
+/docs/explanation/custom-modes.md
+/docs/explanation/exercise-log.md
+/docs/explanation/firmware-flasher-design.md
+/docs/explanation/ghidra-finish-plan.md
+/docs/explanation/kailash-ble-findings.md
+/docs/explanation/openambit-audit.md
+/docs/explanation/orbital-data-analysis.md
+/docs/explanation/route-encoding-summary.md
+/docs/explanation/route-encoding-update.md
+/docs/explanation/sgee.md
+/docs/explanation/steps-encoding-checked.md
+/docs/explanation/steps-wellness-data.md
+/docs/explanation/suunto-cloud-api-note.md
+/docs/explanation/training-program.md
+/docs/explanation/unresolved-questions.md
