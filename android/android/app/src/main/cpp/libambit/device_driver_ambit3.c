@@ -1026,7 +1026,16 @@ static int log_synced(ambit_object_t *object, ambit_log_entry_t *log_entry)
  * always a red herring; Kailash's real clock write never touches firmware or
  * a mode transition on either transport.
  */
-static int kailash_time_sync(ambit_object_t *object, struct tm *tm)
+/* The SBEM0102 time push (command 0x1201): one entry - a NUL-terminated ISO8601-with-offset
+ * string - is what actually sets the clock on the watches that ignore the legacy 0x0300/0x0302
+ * command pair. The ENTRY ID is schema-specific:
+ *   - Kailash (Hoopoe):        0x34
+ *   - Traverse (Jabiru) fw2.x: 0x3f  (fw 1.0.4 used 0x3d - confirmed in the real
+ *     traverseoldfirmwaretonew capture, entry id changed across the firmware update; 0x3f is
+ *     fw 2.0.22, the shipping firmware)
+ * All confirmed byte-exact against real SuuntoLink/7R captures. The legacy 0x0300/0x0302 is
+ * MovesLink-era and these firmwares ACK it but never apply it. */
+static int ambit3_sbem_time_sync(ambit_object_t *object, struct tm *tm, uint8_t entry_id, bool send_next_time)
 {
     libambit_sbem0102_data_t send_data_object, reply_data_object;
     char iso8601[32];
@@ -1039,19 +1048,19 @@ static int kailash_time_sync(ambit_object_t *object, struct tm *tm)
     // gmtime_r(), for tm_gmtoff to be populated.
     strftime(iso8601, sizeof(iso8601), "%Y-%m-%dT%H:%M:%S%z", tm);
 
-    LOG_INFO("Kailash time sync: %s", iso8601);
+    LOG_INFO("SBEM time sync (entry 0x%02x): %s", entry_id, iso8601);
 
     libambit_sbem0102_data_init(&send_data_object);
     libambit_sbem0102_data_init(&reply_data_object);
-    libambit_sbem0102_data_add(&send_data_object, 0x34, (uint8_t*)iso8601, (uint8_t)(strlen(iso8601) + 1));
+    libambit_sbem0102_data_add(&send_data_object, entry_id, (uint8_t*)iso8601, (uint8_t)(strlen(iso8601) + 1));
     if (libambit_sbem0102_command_request(&object->driver_data->sbem0102, ambit_command_ambit3_log_synced, &send_data_object, &reply_data_object) != 0) {
-        LOG_WARNING("Kailash time sync: failed to write Time.TimeISO8601");
+        LOG_WARNING("SBEM time sync: failed to write Time.TimeISO8601");
         ret = -1;
     }
     libambit_sbem0102_data_free(&send_data_object);
     libambit_sbem0102_data_free(&reply_data_object);
 
-    if (ret == 0 && object->transport == AMBIT_TRANSPORT_BLE) {
+    if (ret == 0 && send_next_time && object->transport == AMBIT_TRANSPORT_BLE) {
         libambit_sbem0102_data_init(&send_data_object);
         libambit_sbem0102_data_init(&reply_data_object);
         libambit_sbem0102_data_add(&send_data_object, 0x48, &next_time, sizeof(next_time));
@@ -1068,12 +1077,24 @@ static int kailash_time_sync(ambit_object_t *object, struct tm *tm)
     return ret;
 }
 
+/* Kailash (Hoopoe): entry 0x34, plus the BLE-only NextTime (0x48) follow-up its own captures show. */
+static int kailash_time_sync(ambit_object_t *object, struct tm *tm)
+{
+    return ambit3_sbem_time_sync(object, tm, 0x34, true);
+}
+
+/* Traverse (Jabiru): entry 0x3f on fw 2.x, no NextTime push (its cable capture never sends one). */
+static int traverse_time_sync(ambit_object_t *object, struct tm *tm)
+{
+    return ambit3_sbem_time_sync(object, tm, 0x3f, false);
+}
+
 /**
- * date_time_set dispatch: Kailash only ever accepts its clock being set via
- * kailash_time_sync() above (see that function's own comment for the
- * evidence - now confirmed identical on BOTH USB and BLE) - every other
- * Ambit3-family device keeps using the shared, MovesLink-confirmed
- * 0x0300/0x0302 pair unchanged.
+ * date_time_set dispatch: Kailash and Traverse ignore the legacy 0x0300/0x0302 clock command
+ * pair (they ACK it but never apply it) - both take their clock as an SBEM 0x1201 ISO8601 push
+ * instead, at their own schema's Time.TimeISO8601 entry id (Kailash 0x34, Traverse fw2.x 0x3f;
+ * confirmed byte-exact against real SuuntoLink/7R captures). The Ambit3 Peak/Sport still use the
+ * MovesLink-confirmed 0x0300/0x0302 pair, which works there.
  *
  * Real bug, caught live 2026-08-10 ("libambit_protocol_command_ble: watch
  * returned errFlags for command 0x0302" - the write silently fell through to
@@ -1089,9 +1110,11 @@ static int kailash_time_sync(ambit_object_t *object, struct tm *tm)
  */
 static int date_time_set(ambit_object_t *object, struct tm *tm)
 {
-    if (object->device_info.model != NULL &&
-        strcmp(object->device_info.model, "Hoopoe") == 0) {
-        return kailash_time_sync(object, tm);
+    if (object->device_info.model != NULL) {
+        if (strcmp(object->device_info.model, "Hoopoe") == 0)
+            return kailash_time_sync(object, tm);
+        if (strcmp(object->device_info.model, "Jabiru") == 0)
+            return traverse_time_sync(object, tm);
     }
     return libambit_device_driver_date_time_set(object, tm);
 }

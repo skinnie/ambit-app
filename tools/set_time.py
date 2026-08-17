@@ -64,7 +64,12 @@ CMD_DATE = 0x0302
 CMD_KAILASH_TIME_PUSH = 0x1201  # "log_synced" opcode, reused for single-entry pushes
 KAILASH_PRODUCT_ID = 0x002A
 SBEM0102_MAGIC = b"SBEM0102"
-KAILASH_TIME_ENTRY_ID = 0x34  # sml.DeviceSettings.Time.TimeISO8601
+KAILASH_TIME_ENTRY_ID = 0x34  # sml.DeviceSettings.Time.TimeISO8601 (Kailash schema)
+# Traverse (Jabiru) uses the SAME 0x1201 SBEM ISO8601 mechanism, but its Time.TimeISO8601 entry
+# id is schema-specific: fw 2.x = 0x3f (the shipping firmware), fw 1.0.4 = 0x3d. Confirmed
+# byte-exact in the real traverseoldfirmwaretonew capture - the id changed across the firmware
+# update. The Traverse ACKs but ignores the legacy 0x0300/0x0302 pair, same as the Kailash.
+TRAVERSE_TIME_ENTRY_ID = 0x3f
 
 
 def build_date_payload(dt):
@@ -88,7 +93,17 @@ def build_kailash_time_push(dt):
     encoded = dt.strftime("%Y-%m-%dT%H:%M:%S%z").encode("ascii") + b"\x00"
     if len(encoded) >= 0xFF:
         raise ValueError(f"ISO8601 string unexpectedly long ({len(encoded)} bytes)")
-    return bytes([0, 0, 0, 0, 1, 0]) + SBEM0102_MAGIC + bytes([KAILASH_TIME_ENTRY_ID, len(encoded)]) + encoded
+    return build_sbem_time_push(dt, KAILASH_TIME_ENTRY_ID)
+
+
+def build_sbem_time_push(dt, entry_id):
+    """The 0x1201 SBEM0102 single-entry time push, parameterized by the schema's own
+    Time.TimeISO8601 entry id (Kailash 0x34, Traverse fw2.x 0x3f). Byte-identical framing to
+    build_kailash_time_push()'s original."""
+    encoded = dt.strftime("%Y-%m-%dT%H:%M:%S%z").encode("ascii") + b"\x00"
+    if len(encoded) >= 0xFF:
+        raise ValueError(f"ISO8601 string unexpectedly long ({len(encoded)} bytes)")
+    return bytes([0, 0, 0, 0, 1, 0]) + SBEM0102_MAGIC + bytes([entry_id, len(encoded)]) + encoded
 
 
 def main():
@@ -131,8 +146,12 @@ def main():
     try:
         label = link.open()
         is_kailash = link.device is not None and "Kailash" in (label or "")
+        is_traverse = link.device is not None and "Traverse" in (label or "")
         if is_kailash:
-            link.command(CMD_KAILASH_TIME_PUSH, build_kailash_time_push(now), quiet=args.json)
+            link.command(CMD_KAILASH_TIME_PUSH, build_sbem_time_push(now, KAILASH_TIME_ENTRY_ID), quiet=args.json)
+        elif is_traverse:
+            # Traverse ignores 0x0300/0x0302 too - same 0x1201 SBEM push, its own entry id.
+            link.command(CMD_KAILASH_TIME_PUSH, build_sbem_time_push(now, TRAVERSE_TIME_ENTRY_ID), quiet=args.json)
         else:
             link.command(CMD_DATE, date_payload, quiet=args.json)
             link.command(CMD_TIME, time_payload, quiet=args.json)
