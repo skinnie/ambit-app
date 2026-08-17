@@ -13,10 +13,29 @@ PageFlickable {
     contentHeight: column.height + Theme.spacingLarge * 2
     clip: true
 
-    Component.onCompleted: {
-        if (!HomeViewModel.isGarmin) {
+    // Auto-read on page load...
+    Component.onCompleted: root.autoRead()
+
+    property bool _wasConnected: false
+    function autoRead() {
+        if (!HomeViewModel.isGarmin && DeviceService.deviceInfoOk) {
             SettingsWriteService.device = HomeViewModel.isKailash ? "kailash" : "";
             SettingsWriteService.refresh();
+        }
+    }
+    // ...and again the moment a watch connects while this page is already open, so the read
+    // is automatic on connect over either transport - never a manual button (André,
+    // 2026-08-18). Guarded to the not-connected -> connected transition so the 10s device
+    // poll (which also fires deviceInfoChanged for battery, etc.) doesn't re-read on a loop.
+    Connections {
+        target: DeviceService
+        function onDeviceInfoChanged() {
+            if (DeviceService.deviceInfoOk && !root._wasConnected) {
+                root._wasConnected = true;
+                root.autoRead();
+            } else if (!DeviceService.deviceInfoOk) {
+                root._wasConnected = false;
+            }
         }
     }
 

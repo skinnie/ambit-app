@@ -45,7 +45,7 @@ import {
 import {
   getMapProvider, setMapProvider, MapProvider, MAP_PROVIDER_LABELS,
 } from '../services/MapProviderService';
-import { detectAttachedDeviceType } from '../native/AmbitUsbModule';
+import { detectAttachedDeviceType, isBleTransportActive } from '../native/AmbitUsbModule';
 import { getTileCacheSizeBytes, clearTileCache } from '../services/TileCache';
 import { t } from '../i18n';
 import { APP_VERSION } from '../config/version';
@@ -175,7 +175,15 @@ export default function SettingsScreen() {
   // context/prop-drilling from Home - this screen queries what it needs itself).
   const [isGarminAttached, setIsGarminAttached] = useState(false);
   useFocusEffect(useCallback(() => {
-    detectAttachedDeviceType().then(t => setIsGarminAttached(t === 'garmin')).catch(() => {});
+    detectAttachedDeviceType().then(t => {
+      setIsGarminAttached(t === 'garmin');
+      // Auto-read the watch's settings the moment one is connected (USB or BLE) - no manual
+      // "Read settings" tap (André, 2026-08-18: automatic on connect, either transport, any
+      // watch, both platforms - the desktop already auto-reads on page load).
+      if (t === 'ambit' || isBleTransportActive()) handleReadAmbitSettings();
+    }).catch(() => {
+      if (isBleTransportActive()) handleReadAmbitSettings();
+    });
     AsyncStorage.getItem(EPHEMERIS_GPS_ONLY_KEY).then(v => setEphemerisGpsOnly(v === 'true')).catch(() => {});
   }, []));
 
@@ -591,9 +599,6 @@ export default function SettingsScreen() {
         <Text style={styles.sectionDesc}>{t.ambitSettingsDesc}</Text>
         {ambitReadOnly && <Text style={styles.sectionDesc}>{t.ambitSettingsReadOnly}</Text>}
 
-        {!ambitSettings && ambitSettingsPhase !== 'connecting' && ambitSettingsPhase !== 'reading' && (
-          <Button label={t.ambitSettingsReadBtn} icon="sync" onPress={handleReadAmbitSettings} style={{ marginTop: 10 }} />
-        )}
 
         {(ambitSettingsPhase === 'connecting' || ambitSettingsPhase === 'reading') && (
           <View style={styles.statusRow}>
@@ -778,9 +783,6 @@ export default function SettingsScreen() {
           );
         })}
 
-        {ambitSettings && (
-          <Button label={t.ambitSettingsRefreshBtn} icon="sync" onPress={handleReadAmbitSettings} style={{ marginTop: 14 }} />
-        )}
       </View>
       )}
 
