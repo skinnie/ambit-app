@@ -512,7 +512,9 @@ export default function SettingsScreen() {
                 <Text style={styles.sectionDesc}>{f.desc}</Text>
               </View>
               {on && <View style={{ marginRight: 6 }}><Icon name="chevronRight" size={18} color={theme.mutedText} /></View>}
-              <Toggle value={on} onValueChange={v => setFeature(f.flag, v)} />
+              {/* Enabling a feature opens it right away (André, 2026-08-17: App Zone should jump
+                  straight to the Suunto catalog). The row stays tappable to reopen it later. */}
+              <Toggle value={on} onValueChange={v => { setFeature(f.flag, v); if (v) navigation.navigate(f.screen); }} />
             </TouchableOpacity>
           );
         })}
