@@ -92,7 +92,6 @@ function readOnlyValue(row: DecodedSetting): string {
 }
 
 export default function SettingsScreen() {
-  const navigation = useNavigation<any>();
   const theme = useV3Theme();
   const styles = createStyles(theme);
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
