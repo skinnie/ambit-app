@@ -273,9 +273,9 @@ Item {
             anchors.horizontalCenter: parent.horizontalCenter
             color: Theme.mutedText
             text: HomeViewModel.isGarmin
-                ? qsTr("No recorded activities on this Garmin device.")
+                ? qsTr("Nothing to sync.")
                 : (ActivityService.ok
-                    ? qsTr("No recorded activities on the watch.")
+                    ? qsTr("Nothing to sync.")
                     : qsTr("Couldn't load activities: %1").arg(ActivityService.lastError))
         }
         // Real fix, not cosmetic: the only way to retry used to be navigating away and
@@ -554,7 +554,10 @@ Item {
         anchors.top: activitiesHeader.visible ? activitiesHeader.bottom
                      : trackLogLoadingBanner.visible ? trackLogLoadingBanner.bottom
                      : activityLoadingPill.visible ? activityLoadingPill.bottom : parent.top
-        anchors.topMargin: activitiesHeader.visible ? Theme.spacingLarge
+        // Extra gap under the column headers so the first row doesn't crowd the "List"/metric
+        // titles (André, 2026-08-17: "the hiking activity is very near 'list', a bit more
+        // spacing"). spacingLarge alone still read as too tight.
+        anchors.topMargin: activitiesHeader.visible ? Theme.spacingLarge + Theme.spacingMedium
                            : (trackLogLoadingBanner.visible || activityLoadingPill.visible)
                            ? Theme.spacingMedium : Theme.spacingLarge
         visible: root.selectedActivity === null && Theme.activitiesView === "list"

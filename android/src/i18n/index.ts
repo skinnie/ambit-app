@@ -151,7 +151,7 @@ const fr = {
     `Supprimer l'activité du ${date} ?\n\nElle ne sera pas rechargée lors des prochaines synchronisations.`,
   cancel:       'Annuler',
   delete:       'Supprimer',
-  noActivities: 'Aucune activité synchronisée',
+  noActivities: 'Rien à synchroniser.',
   connectHint:  'Connectez la montre et lancez une synchronisation',
   noFilter:     'Aucune activité pour ce filtre',
   deleteHint:   'Appui long sur une activité pour la supprimer',
@@ -360,7 +360,7 @@ const fr = {
   // v3.0 UI port - real "On the watch" list (RoutesPage.qml parity, 2026-08-09)
   routeOnWatchSection: 'Sur la montre',
   routeOnWatchReading: 'Lecture des routes sur la montre…',
-  routeOnWatchEmpty: 'Aucune route sur la montre.',
+  routeOnWatchEmpty: 'Rien à synchroniser.',
   routeOnWatchError: (msg: string) => `Impossible de lire les routes : ${msg}`,
   routeStats: (dist: string, points: number, ascent: number, descent: number) =>
     `${dist} · ${points} points · D+ ${ascent} m · D- ${descent} m`,
@@ -412,7 +412,7 @@ const fr = {
   // v3.0 UI port - real "On the watch" list + real import preview (PoisPage.qml parity)
   poiOnWatchSection: 'Sur la montre',
   poiOnWatchReading: 'Lecture des POI sur la montre…',
-  poiOnWatchEmpty: 'Aucun POI sur la montre.',
+  poiOnWatchEmpty: 'Rien à synchroniser.',
   poiOnWatchError: (msg: string) => `Impossible de lire les POI : ${msg}`,
   poiItemExportBtn: 'Exporter',
   poiItemAddBtn: 'Ajouter',
@@ -856,7 +856,7 @@ const en: typeof fr = {
     `Delete activity from ${date}?\n\nIt won't be re-imported on next sync.`,
   cancel:       'Cancel',
   delete:       'Delete',
-  noActivities: 'No synced activities',
+  noActivities: 'Nothing to sync.',
   connectHint:  'Connect the watch and start a sync',
   noFilter:     'No activities for this filter',
   deleteHint:   'Long press on an activity to delete it',
@@ -1049,7 +1049,7 @@ const en: typeof fr = {
   // v3.0 UI port - real "On the watch" list (RoutesPage.qml parity, 2026-08-09)
   routeOnWatchSection: 'On the watch',
   routeOnWatchReading: 'Reading routes off the watch...',
-  routeOnWatchEmpty: 'No routes on the watch.',
+  routeOnWatchEmpty: 'Nothing to sync.',
   routeOnWatchError: (msg: string) => `Couldn't read routes: ${msg}`,
   routeStats: (dist: string, points: number, ascent: number, descent: number) =>
     `${dist} · ${points} points · ascent ${ascent} m · descent ${descent} m`,
@@ -1101,7 +1101,7 @@ const en: typeof fr = {
   // v3.0 UI port - real "On the watch" list + real import preview (PoisPage.qml parity)
   poiOnWatchSection: 'On the watch',
   poiOnWatchReading: 'Reading POIs off the watch...',
-  poiOnWatchEmpty: 'No POIs on the watch.',
+  poiOnWatchEmpty: 'Nothing to sync.',
   poiOnWatchError: (msg: string) => `Couldn't read POIs: ${msg}`,
   poiItemExportBtn: 'Export',
   poiItemAddBtn: 'Add',

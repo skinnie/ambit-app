@@ -536,9 +536,7 @@ PageFlickable {
                     visible: !onDevicePoiCard.loading && onDevicePoiCard.onDevicePois.length === 0
                              && (HomeViewModel.isGarmin || PoiService.ok)
                     color: Theme.mutedText
-                    text: HomeViewModel.isGarmin
-                        ? qsTr("No POIs on this Garmin device.")
-                        : qsTr("No POIs on the watch.")
+                    text: qsTr("Nothing to sync.")
                 }
                 Text {
                     visible: root.saveError.length > 0

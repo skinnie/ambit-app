@@ -447,9 +447,7 @@ PageFlickable {
                     // error concept here - a local file read just finds nothing or it doesn't.
                     visible: !onDeviceCard.loading && onDeviceCard.onDeviceRoutes.length === 0
                              && (HomeViewModel.isGarmin || RouteService.lastError.length === 0)
-                    text: HomeViewModel.isGarmin
-                        ? qsTr("No routes on this Garmin device.")
-                        : qsTr("No routes on the watch.")
+                    text: qsTr("Nothing to sync.")
                     color: Theme.mutedText
                     font.pixelSize: Theme.fontSizeLabel
                 }
