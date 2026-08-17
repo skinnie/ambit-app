@@ -308,7 +308,7 @@ static int gps_orbit_write(ambit_object_t *object, uint8_t *data, size_t datalen
 
         // Check if new data differs 
         if (memcmp(header, cmpheader, 8) != 0) {
-            ret = libambit_pmem20_gps_orbit_write(&object->driver_data->pmem20, data, datalen, false);
+            ret = libambit_pmem20_gps_orbit_write(&object->driver_data->pmem20, data, datalen, false, PMEM20_GPS_ORBIT_START);
         }
         else {
             LOG_INFO("Current GPS orbit data is already up to date, skipping");

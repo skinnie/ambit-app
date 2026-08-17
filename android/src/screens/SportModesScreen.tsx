@@ -340,11 +340,16 @@ export default function SportModesScreen() {
           </Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: v3Spacing.small }}>
             <View style={{ flexDirection: 'row', gap: v3Spacing.small }}>
-              {selectedMode.displays.map((display, i) => (
+              {/* Only the real user displays (per-device max: Traverse=4, rest=8). The
+                  built-in system screens beyond that are hidden - the watch doesn't show them
+                  as editable screens either (André, 2026-08-18: "if more than 4, hide it"). */}
+              {selectedMode.displays.map((display, i) => ({ display, i }))
+                .filter(({ display }) => !display.isBuiltIn)
+                .map(({ display, i }) => (
                 <TouchableOpacity key={i} onPress={() => setSelectedDisplayIndex(i)} style={{ alignItems: 'center' }}>
                   <WatchFacePreview layoutType={displayLayoutType(display)} selected={i === selectedDisplayIndex} diameter={80} />
                   <Text style={[styles(theme).filmLabel, { color: i === selectedDisplayIndex ? theme.primary : theme.mutedText }]}>
-                    {display.isBuiltIn ? t.sportModesBuiltInShort : String(display.screenNumber)}
+                    {String(display.screenNumber)}
                   </Text>
                 </TouchableOpacity>
               ))}

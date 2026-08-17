@@ -663,9 +663,19 @@ static int gps_orbit_write(ambit_object_t *object, uint8_t *data, size_t datalen
         cmpheader[6] = data[11];
         cmpheader[7] = data[10];
 
-        // Check if new data differs 
+        // Check if new data differs
         if (memcmp(header, cmpheader, 8) != 0) {
-            ret = libambit_pmem20_gps_orbit_write(&object->driver_data->pmem20, data, datalen, true);
+            // Per-device GpsSGEE base (memory_maps.gps): the Traverse keeps this region at a
+            // different offset than the Ambit3 Peak's PMEM20_GPS_ORBIT_START, and writing the
+            // wrong base resets the watch mid-write (re-enumerates to fw 0.0.0.0 / BSL). Resolve
+            // it from the watch's own 0x0b21 map, populating on demand; fall back to the Peak
+            // base only if the watch declares no GpsSGEE region.
+            if (object->driver_data->memory_maps.initialized == 0) {
+                get_memory_maps(object);
+            }
+            uint32_t gps_base = object->driver_data->memory_maps.gps.start;
+            if (gps_base == 0) gps_base = PMEM20_GPS_ORBIT_START;
+            ret = libambit_pmem20_gps_orbit_write(&object->driver_data->pmem20, data, datalen, true, gps_base);
         }
         else {
             LOG_INFO("Current GPS orbit data is already up to date, skipping");

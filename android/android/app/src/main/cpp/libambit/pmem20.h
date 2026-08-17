@@ -63,7 +63,11 @@ ambit_log_entry_t *libambit_pmem20_log_read_entry_address(libambit_pmem20_t *obj
                                                           uint32_t address2, uint32_t length2,
                                                           uint32_t flags);
 int libambit_pmem20_log_parse_header(uint8_t *data, size_t datalen, ambit_log_header_t *log_header, uint32_t flags);
-int libambit_pmem20_gps_orbit_write(libambit_pmem20_t *object, const uint8_t *data, size_t datalen, bool include_sha256_hash);
+/* Ambit3 Peak's GpsSGEE base - the default for watches with no per-device memory map
+ * (Ambit1/2). Ambit3-family resolves the real base from the watch's 0x0b21 map instead. */
+#define PMEM20_GPS_ORBIT_START            0x000704e0
+
+int libambit_pmem20_gps_orbit_write(libambit_pmem20_t *object, const uint8_t *data, size_t datalen, bool include_sha256_hash, uint32_t start_address);
 int libambit_pmem20_sport_mode_write(libambit_pmem20_t *object, const uint8_t *data, size_t datalen, bool include_sha256_hash);
 int libambit_pmem20_app_data_write(libambit_pmem20_t *object, const uint8_t *data, size_t datalen, bool include_sha256_hash);
 // Raw chunked write at an arbitrary address, no length-prefix/hash wrapping

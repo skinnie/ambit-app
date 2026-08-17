@@ -36,7 +36,8 @@
 #define PMEM20_LOG_WRAP_BUFFER_MARGIN     0x00010000 /* Max theoretical size of sample */
 #define PMEM20_LOG_HEADER_MIN_LEN                512 /* Header actually longer, but not interesting*/
 
-#define PMEM20_GPS_ORBIT_START            0x000704e0
+/* PMEM20_GPS_ORBIT_START now lives in pmem20.h (the Ambit1/2 driver needs it too as the
+ * default GpsSGEE base; Ambit3 resolves the real per-device base from the memory map). */
 #define PMEM20_SPORT_MODE_START          0x00002000
 #define PMEM20_APP_START                  0x000927c0
 
@@ -532,7 +533,7 @@ int libambit_pmem20_log_parse_header(uint8_t *data, size_t datalen, ambit_log_he
     return 0;
 }
 
-int libambit_pmem20_gps_orbit_write(libambit_pmem20_t *object, const uint8_t *data, size_t datalen, bool include_sha256_hash)
+int libambit_pmem20_gps_orbit_write(libambit_pmem20_t *object, const uint8_t *data, size_t datalen, bool include_sha256_hash, uint32_t start_address)
 {
     int ret = -1;
     const uint8_t *bufptrs[2];
@@ -543,7 +544,12 @@ int libambit_pmem20_gps_orbit_write(libambit_pmem20_t *object, const uint8_t *da
     sha256_ctx ctx;
     uint8_t hash[32];
     uint32_t *_sizeptr = (uint32_t*)&startheader[0];
-    uint32_t address = PMEM20_GPS_ORBIT_START;
+    /* Per-device GpsSGEE base: the Traverse keeps this region at a DIFFERENT offset than the
+     * Ambit3 Peak (PMEM20_GPS_ORBIT_START). Writing the hardcoded Peak base on a Traverse hit
+     * the wrong flash and RESET the watch mid-write (seen live 2026-08-17: re-enumerated to
+     * fw 0.0.0.0 / BSL during the orbit write). Caller resolves the real base from the 0x0b21
+     * memory map; only Ambit1/2 (no memory map) still pass the constant. */
+    uint32_t address = start_address;
     size_t offset = 0;
 
     *_sizeptr = htole32(datalen);
@@ -579,7 +585,7 @@ int libambit_pmem20_gps_orbit_write(libambit_pmem20_t *object, const uint8_t *da
             tail_datalen += 64;
         }
         if ((tailbuf = malloc(tail_datalen + 1)) != NULL) {
-            *((uint32_t*)(&tailbuf[0])) = htole32(PMEM20_GPS_ORBIT_START);
+            *((uint32_t*)(&tailbuf[0])) = htole32(start_address);
             *((uint32_t*)(&tailbuf[4])) = htole32(bufsizes[0]);
             if (include_sha256_hash) {
                 for (int i=0; i<32; i++) {
