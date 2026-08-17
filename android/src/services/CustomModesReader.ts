@@ -230,9 +230,24 @@ export interface DisplayField {
   indexName: string;
   type: number;
   typeName: string;
-  // Real, 2026-08-09 - human-readable label (fieldTypeLabel(typeName)), same real fix
-  // desktop's DataPickerDialog.qml already has.
+  // The DISP_FIELD_SHORTCUT leaves (u16 each). A data field (or an installed Suunto App) is
+  // encoded as a shortcut, NOT as the field Type - so a field showing "Avg pace" has Type 0
+  // and a shortcut for it. Ported from custom_modes.py's decode, 2026-08-17.
+  shortcuts: number[];
+  // What the row actually shows (fieldDisplayLabel = custom_modes.py's row_values()): the
+  // shortcut's data field when Type is 0 with a shortcut, "Empty" when Type 0 and none, else
+  // the Type's label. Was showing the raw Type label ("Shortcut") for shortcut fields.
   typeLabel: string;
+}
+
+// custom_modes.py row_values(): a shortcut field (Type 0) reads as its shortcut's data field,
+// or "Empty" if it has none; any other Type reads as that Type's label.
+function fieldDisplayLabel(type: number, shortcuts: number[]): string {
+  if (type === 0 && shortcuts.length > 0) {
+    return shortcuts.map(t => fieldTypeLabel(fieldTypeName(t))).join(', ');
+  }
+  if (type === 0) return 'Empty';
+  return fieldTypeLabel(fieldTypeName(type));
 }
 
 function decodeDispField(bytes: Uint8Array, offset: number, length: number): DisplayField {
@@ -240,7 +255,7 @@ function decodeDispField(bytes: Uint8Array, offset: number, length: number): Dis
   let cursor = offset;
   const field: DisplayField = {
     index: 0, indexName: fieldTypeName(0), type: 0, typeName: fieldTypeName(0),
-    typeLabel: fieldTypeLabel(fieldTypeName(0)),
+    shortcuts: [], typeLabel: 'Empty',
   };
   while (cursor < end) {
     const tag = readTag(bytes, cursor);
@@ -253,10 +268,12 @@ function decodeDispField(bytes: Uint8Array, offset: number, length: number): Dis
       field.indexName = fieldTypeName(idx);
       field.type = typ;
       field.typeName = fieldTypeName(typ);
-      field.typeLabel = fieldTypeLabel(field.typeName);
+    } else if (tag.tagId === EXERCISE_MODES_DISP_FIELD_SHORTCUT) {
+      field.shortcuts.push(bytes[content] | (bytes[content + 1] << 8));
     }
     cursor = content + tag.length;
   }
+  field.typeLabel = fieldDisplayLabel(field.type, field.shortcuts);
   return field;
 }
 
