@@ -157,6 +157,11 @@ class DeviceService : public QObject
     // has never been hardware-confirmed" reasoning. Persisted via QSettings.
     Q_PROPERTY(bool suuntoT6ExperimentEnabled READ suuntoT6ExperimentEnabled
                WRITE setSuuntoT6ExperimentEnabled NOTIFY suuntoT6ExperimentEnabledChanged)
+    // GPS Track Pod - a separate, standalone Suunto GPS logger (not a watch), integrated
+    // built-blind and opt-in since none of it has ever been hardware-confirmed. Persisted
+    // via QSettings. NavRail gates its item on this.
+    Q_PROPERTY(bool gpsTrackPodExperimentEnabled READ gpsTrackPodExperimentEnabled
+               WRITE setGpsTrackPodExperimentEnabled NOTIFY gpsTrackPodExperimentEnabledChanged)
 
 public:
     explicit DeviceService(QObject *parent = nullptr);
@@ -280,6 +285,9 @@ public:
 
     bool suuntoT6ExperimentEnabled() const { return m_suuntoT6ExperimentEnabled; }
     void setSuuntoT6ExperimentEnabled(bool value);
+
+    bool gpsTrackPodExperimentEnabled() const { return m_gpsTrackPodExperimentEnabled; }
+    void setGpsTrackPodExperimentEnabled(bool value);
 
 signals:
     void loadingChanged();

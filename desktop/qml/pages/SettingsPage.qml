@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Dialogs
 import AmbitApp
 
 // Step 11, the last one. General/Connections/Maps/Weather/Backup/About per the spec.
@@ -561,6 +562,50 @@ PageFlickable {
                         anchors.verticalCenter: parent.verticalCenter
                         text: DeviceService.smartSensorEnabled ? qsTr("On") : qsTr("Off")
                         color: DeviceService.smartSensorEnabled ? Theme.primary : Theme.mutedText
+                        font.pixelSize: Theme.fontSizeBody
+                    }
+                }
+
+                // GPS Track Pod and Suunto T6 are standalone legacy Suunto devices
+                // integrated built-blind (never hardware-confirmed). Each reveals its own
+                // side-menu item when turned on, off by default. NavRail gates on these.
+                Item { width: 1; height: Theme.spacingSmall }
+                Text {
+                    width: parent.width; wrapMode: Text.WordWrap
+                    text: qsTr("GPS Track Pod menu (standalone Suunto GPS logger)")
+                    font.bold: true; font.pixelSize: Theme.fontSizeBody; color: Theme.text
+                }
+                Row {
+                    spacing: Theme.spacingSmall
+                    RoundedSwitch {
+                        anchors.verticalCenter: parent.verticalCenter
+                        checked: DeviceService.gpsTrackPodExperimentEnabled
+                        onToggled: DeviceService.gpsTrackPodExperimentEnabled = checked
+                    }
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: DeviceService.gpsTrackPodExperimentEnabled ? qsTr("On") : qsTr("Off")
+                        color: DeviceService.gpsTrackPodExperimentEnabled ? Theme.primary : Theme.mutedText
+                        font.pixelSize: Theme.fontSizeBody
+                    }
+                }
+                Item { width: 1; height: Theme.spacingSmall }
+                Text {
+                    width: parent.width; wrapMode: Text.WordWrap
+                    text: qsTr("Suunto T6 menu (2004-2010 HR training computer)")
+                    font.bold: true; font.pixelSize: Theme.fontSizeBody; color: Theme.text
+                }
+                Row {
+                    spacing: Theme.spacingSmall
+                    RoundedSwitch {
+                        anchors.verticalCenter: parent.verticalCenter
+                        checked: DeviceService.suuntoT6ExperimentEnabled
+                        onToggled: DeviceService.suuntoT6ExperimentEnabled = checked
+                    }
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: DeviceService.suuntoT6ExperimentEnabled ? qsTr("On") : qsTr("Off")
+                        color: DeviceService.suuntoT6ExperimentEnabled ? Theme.primary : Theme.mutedText
                         font.pixelSize: Theme.fontSizeBody
                     }
                 }

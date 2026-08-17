@@ -654,3 +654,12 @@ void DeviceService::setSuuntoT6ExperimentEnabled(bool value)
     QSettings().setValue(QStringLiteral("experimental/suuntoT6"), value);
     emit suuntoT6ExperimentEnabledChanged();
 }
+
+void DeviceService::setGpsTrackPodExperimentEnabled(bool value)
+{
+    if (m_gpsTrackPodExperimentEnabled == value)
+        return;
+    m_gpsTrackPodExperimentEnabled = value;
+    QSettings().setValue(QStringLiteral("experimental/gpsTrackPod"), value);
+    emit gpsTrackPodExperimentEnabledChanged();
+}
