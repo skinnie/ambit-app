@@ -2,7 +2,7 @@ import { DeviceProvider } from './devices/DeviceProvider';
 import { ambitDeviceProvider } from './devices/AmbitDeviceProvider';
 import { writeGpxFile } from './GpxService';
 import { extractGpxMetadata } from './GpxParser';
-import { isActivitySynced, markActivitySynced, getAllSyncedIds } from '../database/db';
+import { isActivitySynced, isActivityDeleted, markActivitySynced, getAllSyncedIds } from '../database/db';
 import { isMarkSyncedEnabled } from './MarkSynced';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -100,9 +100,13 @@ export async function runSync(
 
     onState({ phase: 'writing', current: i + 1, total: gpxLogs.length, newCount, deviceName });
 
-    if (await isActivitySynced(id)) continue;
+    // A live re-read device (Kailash) refreshes existing activities so a re-sync adopts a
+    // better decode; an immutable logbook (Ambit3) skips ones already synced. Either way a
+    // user-DELETED activity is never resurrected.
+    if (await isActivityDeleted(id)) continue;
+    if (!provider.refreshExisting && await isActivitySynced(id)) continue;
 
-    const gpxPath = await writeGpxFile(id, gpxXml);
+    const gpxPath = await writeGpxFile(id, gpxXml, !!provider.refreshExisting);
     if (!gpxPath) continue;
 
     await markActivitySynced({

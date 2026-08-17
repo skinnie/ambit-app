@@ -23,6 +23,10 @@ import { decodeDeviceHistory, KailashSession } from '../KailashHistoryReader';
 
 export class KailashDeviceProvider implements DeviceProvider {
   readonly deviceName = 'Suunto Kailash';
+  // TrackLog + DeviceHistory are re-read whole on every sync, so refresh existing activities
+  // rather than skip them - a re-sync should adopt a better decode (e.g. the session's real
+  // distance now carried as a <distance> extension) instead of keeping the first, stale one.
+  readonly refreshExisting = true;
 
   connect(): Promise<DeviceInfo> {
     return AmbitUsbModule.connect();

@@ -83,7 +83,10 @@ function pad2(n: number): string {
 /** GPX for the whole real track, and its own <metadata><time> (matching the convention
  * extractGpxMetadata()/SyncService.ts already read `metadata.time` from for regular Ambit3
  * moves) so this slots into the exact same sync pipeline - see KailashDeviceProvider.ts. */
-function pointsToGpx(points: TrackLogPoint[]): string {
+function pointsToGpx(
+  points: TrackLogPoint[],
+  summary?: { distanceMeters?: number; durationSeconds?: number },
+): string {
   const first = points[0];
   const metaTime = first
     ? `${first.year}-${pad2(first.month)}-${pad2(first.day)}T${pad2(first.hour)}:${pad2(first.minute)}:00Z`
@@ -92,10 +95,22 @@ function pointsToGpx(points: TrackLogPoint[]): string {
     const t = `${p.year}-${pad2(p.month)}-${pad2(p.day)}T${pad2(p.hour)}:${pad2(p.minute)}:00Z`;
     return `    <trkpt lat="${p.lat.toFixed(7)}" lon="${p.lon.toFixed(7)}"><time>${t}</time></trkpt>`;
   }).join('\n');
+  // Carry the DeviceHistory session's own distance/duration as <extensions> (the same block
+  // shape and the same tags the native Ambit3 GPX uses, which GpxParser + desktop both read).
+  // TrackLog is a SPARSE passive log, so a point-to-point sum badly under-reports - the watch's
+  // own session summary (5.44 km, not the ~1 km the points straight-line to) is the real value.
+  const dur = Math.round(summary?.durationSeconds ?? 0);
+  const dist = Math.round(summary?.distanceMeters ?? 0);
+  const ext = (dur > 0 || dist > 0)
+    ? `    <extensions>\n` +
+      (dur > 0 ? `      <duration>${dur}</duration>\n` : '') +
+      (dist > 0 ? `      <distance>${dist}</distance>\n` : '') +
+      `    </extensions>\n`
+    : '';
   return `<?xml version="1.0" encoding="UTF-8"?>\n` +
     `<gpx version="1.1" creator="Sommet" xmlns="http://www.topografix.com/GPX/1/1">\n` +
     (metaTime ? `  <metadata><time>${escapeXml(metaTime)}</time></metadata>\n` : '') +
-    `  <trk><name>Walk</name><trkseg>\n${trkpts}\n  </trkseg></trk>\n</gpx>\n`;
+    `  <trk><name>Walk</name>\n${ext}    <trkseg>\n${trkpts}\n  </trkseg></trk>\n</gpx>\n`;
 }
 
 /** Decodes a base64 TrackLog region dump (see readRegion() in native/AmbitUsbModule.ts) into
@@ -167,7 +182,12 @@ export function splitIntoActivities(points: TrackLogPoint[], sessions: KailashSe
     const lo = start - MATCH_TOLERANCE_MINUTES;
     const hi = end + MATCH_TOLERANCE_MINUTES;
     const matched = pointMins.filter(({ mins }) => mins >= lo && mins <= hi).map(({ p }) => p);
-    if (matched.length > 0) gpxList.push(pointsToGpx(matched));
+    if (matched.length > 0) {
+      gpxList.push(pointsToGpx(matched, {
+        distanceMeters: s.distanceMeters,
+        durationSeconds: s.durationSeconds,
+      }));
+    }
   }
   return gpxList;
 }

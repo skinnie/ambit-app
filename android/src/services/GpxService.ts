@@ -14,10 +14,10 @@ async function ensureDir(): Promise<void> {
  * @param gpxXml  Contenu GPX en string
  * @returns       Chemin absolu du fichier écrit, ou null si déjà existant
  */
-export async function writeGpxFile(id: string, gpxXml: string): Promise<string | null> {
+export async function writeGpxFile(id: string, gpxXml: string, overwrite = false): Promise<string | null> {
   await ensureDir();
   const path = `${ACTIVITIES_DIR}/${id}.gpx`;
-  if (await RNFS.exists(path)) return null; // doublon, ne pas écraser
+  if (!overwrite && await RNFS.exists(path)) return null; // doublon, ne pas écraser
   await RNFS.writeFile(path, gpxXml, 'utf8');
   return path;
 }

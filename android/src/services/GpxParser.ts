@@ -177,10 +177,25 @@ export function extractGpxMetadata(gpxXml: string): GpxMetadata {
     date: metaTime
       ? new Date(metaTime).toISOString()
       : (first?.timestamp ? new Date(first.timestamp).toISOString() : ''),
-    durationS: last?.timestamp && first?.timestamp
-      ? Math.round((last.timestamp - first.timestamp) / 1000)
-      : 0,
-    distanceM: stats?.totalDistance ?? 0,
+    durationS: (() => {
+      // The watch's own move duration (a <duration> summary extension - what the native GPX
+      // emits and what desktop activityservice.cpp reads) is authoritative; the trkpt time
+      // span is only the fallback when there's no such extension.
+      const summary = extTag(gpxXml, 'duration');
+      return summary > 0
+        ? Math.round(summary)
+        : (last?.timestamp && first?.timestamp ? Math.round((last.timestamp - first.timestamp) / 1000) : 0);
+    })(),
+    distanceM: (() => {
+      // The watch's own reported distance (a <distance> summary extension - exactly what the
+      // native GPX emits and desktop activityservice.cpp reads) is authoritative; use it
+      // whenever present. Only sum the track points when there's no such extension: fine for
+      // dense 1 Hz Ambit3 tracks, but the Kailash's sparse passive TrackLog badly
+      // under-reports otherwise (a 5.44 km walk logged shows as ~1 km of straight
+      // point-to-point). Matches desktop, which never computed distance from the points.
+      const summary = extTag(gpxXml, 'distance');
+      return summary > 0 ? summary : (stats?.totalDistance ?? 0);
+    })(),
     dPlus:     stats?.dPlus ?? 0,
     activityType: (() => {
       // 1. Essayer activity_name (peut être vide sur Ambit 1)

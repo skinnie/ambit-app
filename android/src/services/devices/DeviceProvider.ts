@@ -35,4 +35,12 @@ export interface DeviceProvider {
    *  duplicate them. Optional — only watches with a known synced entry id implement it, and
    *  it no-ops on unsupported devices. Returns how many moves were marked. */
   markSyncedLogs?(count: number): Promise<number>;
+
+  /** When true, a sync REFRESHES already-synced activities (overwrites their GPX + row)
+   *  instead of skipping them. For a live re-read device like the Kailash, getLogs() rebuilds
+   *  every activity from a fresh read of the TrackLog + DeviceHistory each time, so re-syncing
+   *  should pick up a better decode (e.g. the session's real distance) rather than keep a stale
+   *  one. Immutable per-move logbooks (Ambit3) leave this false. A user-DELETED activity is
+   *  still never resurrected. */
+  readonly refreshExisting?: boolean;
 }
