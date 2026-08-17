@@ -230,7 +230,7 @@ available. For a normal firmware update, use SuuntoLink; the in-app flasher is a
 not the default path.
 
 This is **especially true on Android**, where flashing goes over a USB-OTG cable: OTG cables
-and adapters are unreliable, and USB power delivery during the flash can be marginal. A
+and adapters may be unreliable, and USB power delivery during the flash can be marginal. A
 failure mid-flash can leave the watch in bootloader mode.
 
 Whenever you do flash — desktop or Android — make sure the **phone/computer, the watch, and
@@ -274,8 +274,9 @@ Built on the real work of others:
 - **[openambit](https://github.com/openambitproject/openambit)** — `libambit`, the reference the
   USB/BLE protocol work is checked against (GPLv3).
 - **opensportsync** — the starting point for the Android app.
-- **marguslt** — firmware-download recipe, gists, openmoves.
+- **marguslt** — firmware-download recipe, gists, movescount knownledge.
 - **sebchastang** — published Suunto App Zone interval-training scripts.
+-  **[bwaldvogel](https://github.com/bwaldvogel/openmoves)** — Openmoves 
 - **[iwanders/gps_track_pod](https://github.com/iwanders/gps_track_pod)** — Suunto GPS Track Pod
   support (MIT), vendored in `tools/vendor/gpspod/`.
 - **[evelbulgroz/suunto-t6-sync](https://github.com/evelbulgroz/suunto-t6-sync)** — Suunto
