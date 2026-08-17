@@ -59,14 +59,18 @@ function reEncodesExact(original: Uint8Array): boolean {
 // codec - correct for the whole Ambit3 family this feature is gated to (all share 10/2 limits).
 export type PlanBuilder = (live: DecodedRegion) => DecodedRegion[];
 
+// `variant` is the connected watch's codename (getDeviceInfo().model, e.g. Emu/Jabiru/Loon) so
+// creation defaults and limits come from that device's own row in SPORT_MODE_ROWS, not always
+// the Emu default. The screen passes it through; omitting it keeps the Emu fallback. André,
+// 2026-08-17 ("we have pcaps/screenshots for traverse ambit3 kailash").
 export const plans = {
-  create: (name: string, activityId: number): PlanBuilder =>
-    live => createSportMode(live, name, activityId),
+  create: (name: string, activityId: number, variant?: string): PlanBuilder =>
+    live => createSportMode(live, name, activityId, { variant }),
   delete: (name: string): PlanBuilder =>
     live => deleteSportMode(live, name),
-  createMultisport: (name: string, activityId: number, legs: string[]): PlanBuilder =>
-    live => createMultisport(live, name, activityId, legs),
-  editMultisport: (name: string, opts: { newName?: string; activityId?: number; legs?: string[] }): PlanBuilder =>
+  createMultisport: (name: string, activityId: number, legs: string[], variant?: string): PlanBuilder =>
+    live => createMultisport(live, name, activityId, legs, { variant }),
+  editMultisport: (name: string, opts: { newName?: string; activityId?: number; legs?: string[]; variant?: string }): PlanBuilder =>
     live => editMultisport(live, name, opts),
   deleteMultisport: (name: string): PlanBuilder =>
     live => deleteMultisport(live, name),

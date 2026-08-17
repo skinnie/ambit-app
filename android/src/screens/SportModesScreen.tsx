@@ -13,7 +13,7 @@ import {
   readSportModes, applySportModeEdit, plans, SportSummary, SportModeManageState,
 } from '../services/SportModeManage';
 import { ACTIVITY_TYPES, activityIconName } from '../services/ActivityColors';
-import { SPORT_MODE_ROWS } from '../services/SportModeRows';
+import { SPORT_MODE_ROWS, maxDisplaysForVariant } from '../services/SportModeRows';
 import { t } from '../i18n';
 import { useV3Theme, v3Spacing, v3Type } from '../theme/v3';
 import { Card } from '../components/ui/Card';
@@ -38,10 +38,11 @@ const PODS: { bit: number; label: string }[] = [
   { bit: 0x0040, label: 'Power pod' },
 ];
 
-// Max user displays per mode (SuuntoLink's getMaxDisplays()): Traverse/Traverse Alpha = 4,
-// the rest of the Ambit3 family = 8. Now wired per-device via the `maxDisplays` navigation
-// param HomeScreen passes (it knows the connected watch), used both for the "N/max" label here
-// and for the read-time cap in CustomModesReader. See custom_modes.py's _MAX_DISPLAYS_BY_VARIANT.
+// Per-device limits now flow from the connected watch's codename (the `variant` navigation
+// param HomeScreen passes from getDeviceInfo().model): maxDisplaysForVariant() gives the display
+// ceiling (Traverse/Traverse Alpha = 4, rest of the Ambit3 family = 8) and the codec reads that
+// variant's own create/limits row from SPORT_MODE_ROWS. See custom_modes.py's own
+// max_displays_for_variant / _MAX_DISPLAYS_BY_VARIANT.
 
 type Phase = 'idle' | 'connecting' | 'reading' | 'done' | 'error';
 
@@ -70,9 +71,12 @@ export default function SportModesScreen() {
   // USB connect() would pop the OTG prompt and tear down the BLE session (André, 2026-08-17).
   const route = useRoute<RouteProp<RootStackParamList, 'SportModes'>>();
   const overBle = route.params?.overBle ?? false;
-  // Per-device max user displays (Ambit3 family = 8, Traverse / Traverse Alpha = 4). Passed
-  // from HomeScreen, which knows the connected device. See ambit-app-sport-modes-display-limits.
-  const maxDisplays = route.params?.maxDisplays ?? 8;
+  // The connected watch's codename (getDeviceInfo().model, e.g. Emu/Jabiru/Loon), passed from
+  // HomeScreen. Everything per-device flows from it: the max-displays cap AND the create/limits
+  // the codec applies (SPORT_MODE_ROWS has real rows for every variant). Undefined -> the Emu
+  // default. André, 2026-08-17.
+  const variant = route.params?.variant;
+  const maxDisplays = maxDisplaysForVariant(variant);
   const [modes, setModes] = useState<ExerciseMode[] | null>(null);
   const [phase, setPhase] = useState<Phase>('idle');
   const [error, setError] = useState<string | undefined>();
@@ -172,8 +176,8 @@ export default function SportModesScreen() {
     if (!name || createActivityId == null) return;
     const kind = createKind;
     setCreateKind(null);
-    if (kind === 'single') await runEdit(plans.create(name, createActivityId));
-    else if (kind === 'multi') await runEdit(plans.createMultisport(name, createActivityId, legs));
+    if (kind === 'single') await runEdit(plans.create(name, createActivityId, variant));
+    else if (kind === 'multi') await runEdit(plans.createMultisport(name, createActivityId, legs, variant));
   }
 
   async function withWrite(modeName: string, action: () => Promise<{ ok: boolean; error?: string } | undefined>) {

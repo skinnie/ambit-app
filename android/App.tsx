@@ -57,7 +57,7 @@ export type RootStackParamList = {
   // HomeScreen only routes here for that device type - see SportModesScreen.tsx.
   // overBle: the watch is connected over Bluetooth, so the sport-mode reads/writes must run on
   // the already-open BLE link instead of opening a USB connection (which pops the OTG prompt).
-  SportModes: { overBle?: boolean; maxDisplays?: number } | undefined;
+  SportModes: { overBle?: boolean; variant?: string } | undefined;
   Firmware: undefined;
   // Activity-analytics views (2026-08-13, port of desktop TotalsPage/CalendarPage). Both are
   // derived purely from the local activity DB, so they're reachable any time (no device

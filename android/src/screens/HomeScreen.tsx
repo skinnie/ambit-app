@@ -724,7 +724,7 @@ export default function HomeScreen() {
         : []),
     ...(connected ? [{ id: 'backup', label: t.backupButton, icon: 'backup' as const, onPress: () => navigation.navigate('Backup') }] : []),
     ...(connected && deviceType === 'ambit' && !isKailash(ambitInfo)
-      ? [{ id: 'sportModes', label: t.sportModesButton, icon: 'watch' as const, onPress: () => navigation.navigate('SportModes', { overBle: bleConnectedRef.current, maxDisplays: (ambitInfo?.name ?? '').startsWith('Suunto Traverse') ? 4 : 8 }) }]
+      ? [{ id: 'sportModes', label: t.sportModesButton, icon: 'watch' as const, onPress: () => navigation.navigate('SportModes', { overBle: bleConnectedRef.current, variant: ambitInfo?.model }) }]
       : []),
     { id: 'settings', label: t.settingsTitle, icon: 'settings', onPress: () => navigation.navigate('Settings') },
   ];
