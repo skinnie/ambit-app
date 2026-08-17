@@ -8,6 +8,13 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
 import { useThemeMode, ThemeMode } from '../theme/ThemeModeContext';
 import { useExperimental } from '../config/ExperimentalContext';
+// The experimental features, one toggle each (André, 2026-08-17). Screen names must match the
+// RootStackParamList routes; icons/labels reuse the existing i18n strings.
+const EXP_FEATURE_ROWS = [
+  { flag: 'appZone' as const,     label: t.experimentalAppZone,     desc: t.experimentalAppZoneDesc,     screen: 'AppZone' as const,     icon: 'watch' as const },
+  { flag: 'intervals' as const,   label: t.experimentalIntervals,   desc: t.experimentalIntervalsDesc,   screen: 'Intervals' as const,   icon: 'chart' as const },
+  { flag: 'smartSensor' as const, label: t.experimentalSmartSensor, desc: t.experimentalSmartSensorDesc, screen: 'SmartSensor' as const, icon: 'link' as const },
+];
 import { isMarkSyncedEnabled, setMarkSyncedEnabled as persistMarkSynced } from '../services/MarkSynced';
 import { useDemo } from '../config/DemoContext';
 import { DemoDevicePicker } from '../components/ui/DemoDevicePicker';
@@ -95,7 +102,7 @@ export default function SettingsScreen() {
   const theme = useV3Theme();
   const styles = createStyles(theme);
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const { enabled: experimentalEnabled, setEnabled: setExperimentalEnabled } = useExperimental();
+  const { features, setFeature, anyEnabled } = useExperimental();
   const demo = useDemo();
   const [demoPickerOpen, setDemoPickerOpen] = useState(false);
   const { mode, setMode } = useThemeMode();
@@ -486,14 +493,32 @@ export default function SettingsScreen() {
           <IconBadge icon="warning" />
           <Text style={styles.cardTitle}>{t.experimentalSection}</Text>
         </View>
-        <View style={[styles.row, { justifyContent: 'space-between', alignItems: 'center' }]}>
-          <Text style={[styles.connRowText, { flex: 1, marginRight: 12 }]}>{t.experimentalToggleLabel}</Text>
-          <Toggle
-            value={experimentalEnabled}
-            onValueChange={setExperimentalEnabled}
-          />
-        </View>
         <Text style={styles.sectionDesc}>{t.experimentalToggleDesc}</Text>
+
+        {/* One toggle per experimental feature (André, 2026-08-17): toggle on = enabled, and the
+            row is then tappable to open that feature's screen. */}
+        {EXP_FEATURE_ROWS.map(f => {
+          const on = features[f.flag];
+          return (
+            <TouchableOpacity
+              key={f.flag}
+              style={[styles.row, { alignItems: 'center', marginTop: 10 }]}
+              activeOpacity={on ? 0.7 : 1}
+              onPress={() => { if (on) navigation.navigate(f.screen); }}
+            >
+              <Icon name={f.icon} size={18} color={on ? theme.text : theme.mutedText} />
+              <View style={{ flex: 1, marginHorizontal: 10 }}>
+                <Text style={[styles.connRowText, { color: on ? theme.text : theme.mutedText }]}>{f.label}</Text>
+                <Text style={styles.sectionDesc}>{f.desc}</Text>
+              </View>
+              {on && <View style={{ marginRight: 6 }}><Icon name="chevronRight" size={18} color={theme.mutedText} /></View>}
+              <Toggle value={on} onValueChange={v => setFeature(f.flag, v)} />
+            </TouchableOpacity>
+          );
+        })}
+        {anyEnabled && (
+          <Text style={[styles.sectionDesc, { color: theme.warning, marginTop: 10 }]}>{t.experimentalWarningBanner}</Text>
+        )}
 
         {/* Mark-synced write-back - independent opt-in, not gated by the master toggle
             (2026-08-16). Writes the watch's own per-move synced flag so the Suunto app /
@@ -507,35 +532,6 @@ export default function SettingsScreen() {
         </View>
         <Text style={styles.sectionDesc}>{t.markSyncedDesc}</Text>
 
-        {experimentalEnabled && (
-          <>
-            <Text style={[styles.sectionDesc, { color: theme.warning }]}>{t.experimentalWarningBanner}</Text>
-            <TouchableOpacity style={styles.connRow} activeOpacity={0.7} onPress={() => navigation.navigate('AppZone')}>
-              <Icon name="watch" size={18} color={theme.text} />
-              <View style={{ flex: 1, marginLeft: 10 }}>
-                <Text style={styles.connRowText}>{t.experimentalAppZone}</Text>
-                <Text style={styles.sectionDesc}>{t.experimentalAppZoneDesc}</Text>
-              </View>
-              <Icon name="chevronRight" size={18} color={theme.mutedText} />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.connRow} activeOpacity={0.7} onPress={() => navigation.navigate('Intervals')}>
-              <Icon name="chart" size={18} color={theme.text} />
-              <View style={{ flex: 1, marginLeft: 10 }}>
-                <Text style={styles.connRowText}>{t.experimentalIntervals}</Text>
-                <Text style={styles.sectionDesc}>{t.experimentalIntervalsDesc}</Text>
-              </View>
-              <Icon name="chevronRight" size={18} color={theme.mutedText} />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.connRow} activeOpacity={0.7} onPress={() => navigation.navigate('SmartSensor')}>
-              <Icon name="link" size={18} color={theme.text} />
-              <View style={{ flex: 1, marginLeft: 10 }}>
-                <Text style={styles.connRowText}>{t.experimentalSmartSensor}</Text>
-                <Text style={styles.sectionDesc}>{t.experimentalSmartSensorDesc}</Text>
-              </View>
-              <Icon name="chevronRight" size={18} color={theme.mutedText} />
-            </TouchableOpacity>
-          </>
-        )}
       </View>
 
       {/* ── Watch Settings - real, 2026-08-08. Cable settings-write is confirmed working

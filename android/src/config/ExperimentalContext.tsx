@@ -1,42 +1,65 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// Experimental features flag (2026-08-14, André: "add app zone, intervals workout, smart
-// sensor ... enable it with a toggle on experimental. this way I can test all at once and I
-// launch to the community they can also test"). One persisted boolean, mirrored on the same
-// AsyncStorage/context pattern as ThemeModeContext, gating a whole "Experimental" section in
-// Settings and the three unproven features behind it (App-Zone install, Intervals builder,
-// Smart Sensor). Default OFF so nobody who never opens the toggle is exposed to an unproven
-// flash write - these are cable-tested, community-feedback features, not shipped-on behaviour.
+// Experimental features (2026-08-14, André: "add app zone, intervals workout, smart sensor").
+// Reworked 2026-08-17 (André: "make a toggle for each one of them, put experimental features on
+// title") from ONE master switch to one persisted flag per feature, so each unproven feature can
+// be enabled independently. All default OFF so nobody who never opens the section is exposed to
+// an unproven flash write - these are cable-tested, community-feedback features. Same
+// AsyncStorage/context pattern as ThemeModeContext. The three feature SCREENS are always
+// registered in navigation; a flag only controls whether Settings offers its entry point.
 
-const STORAGE_KEY = 'ambitapp:experimental';
+export type ExpFeature = 'appZone' | 'intervals' | 'smartSensor';
+export const EXP_FEATURES: ExpFeature[] = ['appZone', 'intervals', 'smartSensor'];
+const storageKey = (f: ExpFeature) => `ambitapp:experimental:${f}`;
+
+type FeatureFlags = Record<ExpFeature, boolean>;
+const ALL_OFF: FeatureFlags = { appZone: false, intervals: false, smartSensor: false };
 
 interface ExperimentalContextValue {
-  enabled: boolean;
-  setEnabled: (v: boolean) => void;
+  features: FeatureFlags;
+  setFeature: (f: ExpFeature, v: boolean) => void;
+  anyEnabled: boolean;
 }
 
 const ExperimentalContext = createContext<ExperimentalContextValue>({
-  enabled: false,
-  setEnabled: () => {},
+  features: ALL_OFF,
+  setFeature: () => {},
+  anyEnabled: false,
 });
 
 export function ExperimentalProvider({ children }: { children: React.ReactNode }) {
-  const [enabled, setEnabledState] = useState(false);
+  const [features, setFeatures] = useState<FeatureFlags>(ALL_OFF);
 
   useEffect(() => {
-    AsyncStorage.getItem(STORAGE_KEY).then(v => {
-      if (v === '1') setEnabledState(true);
-    }).catch(() => {});
+    (async () => {
+      const loaded: FeatureFlags = { ...ALL_OFF };
+      for (const f of EXP_FEATURES) {
+        try {
+          if ((await AsyncStorage.getItem(storageKey(f))) === '1') loaded[f] = true;
+        } catch { /* ignore */ }
+      }
+      // One-time migration from the old single master toggle: if it was on, enable all three.
+      try {
+        if ((await AsyncStorage.getItem('ambitapp:experimental')) === '1') {
+          for (const f of EXP_FEATURES) loaded[f] = true;
+          await AsyncStorage.removeItem('ambitapp:experimental');
+          for (const f of EXP_FEATURES) await AsyncStorage.setItem(storageKey(f), '1');
+        }
+      } catch { /* ignore */ }
+      setFeatures(loaded);
+    })();
   }, []);
 
-  function setEnabled(v: boolean) {
-    setEnabledState(v);
-    AsyncStorage.setItem(STORAGE_KEY, v ? '1' : '0').catch(() => {});
+  function setFeature(f: ExpFeature, v: boolean) {
+    setFeatures(prev => ({ ...prev, [f]: v }));
+    AsyncStorage.setItem(storageKey(f), v ? '1' : '0').catch(() => {});
   }
 
+  const anyEnabled = EXP_FEATURES.some(f => features[f]);
+
   return (
-    <ExperimentalContext.Provider value={{ enabled, setEnabled }}>
+    <ExperimentalContext.Provider value={{ features, setFeature, anyEnabled }}>
       {children}
     </ExperimentalContext.Provider>
   );

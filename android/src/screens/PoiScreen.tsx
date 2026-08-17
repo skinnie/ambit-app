@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { View, Text, StyleSheet, Alert, ScrollView, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, Alert, ScrollView, TouchableOpacity, Modal, Pressable } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   addPoiToWatch, AddPoiState, readOnWatchPois, getCachedPois, exportSinglePoiToGpx, pickAndParseWaypoints,
@@ -47,6 +47,7 @@ export default function PoiScreen() {
   const [poiLon, setPoiLon]   = useState('');
   const [poiType, setPoiType] = useState(17);  // Ambit POI type byte 0-17 (icon)
   const [poiState, setPoiState] = useState<AddPoiState>({ phase: 'idle' });
+  const [infoOpen, setInfoOpen] = useState(false);  // the little "i" POI-note dialog
   const poiBusy = poiState.phase === 'connecting' || poiState.phase === 'writing';
 
   const [imported, setImported] = useState<WatchPoi[] | null>(null);
@@ -163,8 +164,27 @@ export default function PoiScreen() {
     <ScrollView style={styles.root} contentContainerStyle={styles.content}>
 
       {/* ── Add a POI ── */}
+      {/* POI note dialog: what happens to POIs sent to the watch (André, 2026-08-17), same
+          little "i" affordance as the Routes screen. */}
+      <Modal visible={infoOpen} transparent animationType="fade" onRequestClose={() => setInfoOpen(false)}>
+        <Pressable style={styles.backdrop} onPress={() => setInfoOpen(false)}>
+          <Pressable style={styles.dialogCard} onPress={() => {}}>
+            <Text style={styles.dialogTitle}>{t.poiInfoTitle}</Text>
+            <Text style={[styles.dialogText, { fontWeight: '700', marginTop: 4 }]}>{t.poiWatchNote}</Text>
+            <TouchableOpacity style={styles.dialogClose} onPress={() => setInfoOpen(false)}>
+              <Text style={styles.dialogCloseText}>{t.close}</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
       <Card style={{ width: '100%' }}>
-        <Text style={styles.cardTitle}>{t.poiSection}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Text style={styles.cardTitle}>{t.poiSection}</Text>
+          <TouchableOpacity style={styles.infoBadge} onPress={() => setInfoOpen(true)} hitSlop={8}>
+            <Text style={styles.infoBadgeText}>i</Text>
+          </TouchableOpacity>
+        </View>
         <FieldRow icon="poi" value={poiName} onChangeText={setPoiName} placeholder={t.poiNamePlaceholder} editable={!poiBusy} style={{ marginTop: v3Spacing.small }} />
         <View style={styles.row}>
           {/* Real bug, found live on device (2026-08-09): FieldRow's own `style` prop only
@@ -262,6 +282,14 @@ const createStyles = (t: ReturnType<typeof useV3Theme>) => StyleSheet.create({
   root: { flex: 1, backgroundColor: t.background },
   content: { padding: v3Spacing.medium, gap: v3Spacing.medium },
   cardTitle: { fontSize: v3Type.heading, fontWeight: '700', color: t.text },
+  infoBadge: { width: 17, height: 17, borderRadius: 9, borderWidth: 1, borderColor: t.mutedText, alignItems: 'center', justifyContent: 'center' },
+  infoBadgeText: { fontSize: 10, fontWeight: '700', color: t.mutedText, lineHeight: 11 },
+  backdrop: { flex: 1, backgroundColor: '#00000066', alignItems: 'center', justifyContent: 'center', padding: 24 },
+  dialogCard: { width: '100%', maxWidth: 420, backgroundColor: t.card, borderRadius: 14, padding: 16, paddingBottom: 40 },
+  dialogTitle: { fontSize: v3Type.bodyLarge, fontWeight: '700', color: t.text },
+  dialogText: { fontSize: v3Type.body, color: t.text, marginTop: 2 },
+  dialogClose: { position: 'absolute', right: 10, bottom: 8, paddingVertical: 4, paddingHorizontal: 8 },
+  dialogCloseText: { fontSize: v3Type.body, color: t.primary, fontWeight: '700' },
   row: { flexDirection: 'row', alignItems: 'center', gap: v3Spacing.small, marginTop: v3Spacing.small },
   itemName: { fontSize: v3Type.bodyLarge, fontWeight: '700', color: t.text },
   itemStats: { fontSize: v3Type.label, color: t.mutedText, marginTop: 2 },

@@ -1,4 +1,4 @@
-import { connect, disconnect, getDeviceInfo, readSettingsRaw, readPersonalSettings } from '../native/AmbitUsbModule';
+import { connect, disconnect, getDeviceInfo, readSettingsRaw, readPersonalSettings, isBleTransportActive } from '../native/AmbitUsbModule';
 import {
   AMBIT3_SETTINGS_FIELDS, TRAVERSE_SETTINGS_FIELDS, KAILASH_SETTINGS_FIELDS, SettingField,
   decodeSettings, DecodedSetting,
@@ -60,12 +60,18 @@ export interface ReadSettingsState {
 
 /** Real, read-only (0x1100, four zero bytes) - safe any time the watch is connected. */
 export async function readAmbitSettings(onState: (s: ReadSettingsState) => void): Promise<void> {
-  onState({ phase: 'connecting' });
-  try {
-    await connect();
-  } catch (e: any) {
-    onState({ phase: 'error', error: e?.message ?? 'Connection to the watch failed' });
-    return;
+  // Over BLE the link is already open (HomeScreen owns it); the USB connect() would pop the
+  // OTG prompt and tear down the BLE session. read/writeSettingsRaw act on the shared native
+  // device either way. Same transport fix as CustomModesService. André, 2026-08-17.
+  const overBle = isBleTransportActive();
+  onState({ phase: overBle ? 'reading' : 'connecting' });
+  if (!overBle) {
+    try {
+      await connect();
+    } catch (e: any) {
+      onState({ phase: 'error', error: e?.message ?? 'Connection to the watch failed' });
+      return;
+    }
   }
   onState({ phase: 'reading' });
   try {
@@ -96,7 +102,7 @@ export async function readAmbitSettings(onState: (s: ReadSettingsState) => void)
   } catch (e: any) {
     onState({ phase: 'error', error: e?.message ?? 'Failed to read settings' });
   } finally {
-    await disconnect().catch(() => {});
+    if (!overBle) await disconnect().catch(() => {});
   }
 }
 
@@ -118,12 +124,18 @@ export async function writeAmbitSetting(
   device: WriteDevice,
   onState: (s: WriteSettingState) => void,
 ): Promise<void> {
-  onState({ phase: 'connecting' });
-  try {
-    await connect();
-  } catch (e: any) {
-    onState({ phase: 'error', error: e?.message ?? 'Connection to the watch failed' });
-    return;
+  // Over BLE the link is already open (HomeScreen owns it); the USB connect() would pop the
+  // OTG prompt and tear down the BLE session. read/writeSettingsRaw act on the shared native
+  // device either way. Same transport fix as CustomModesService. André, 2026-08-17.
+  const overBle = isBleTransportActive();
+  onState({ phase: overBle ? 'writing' : 'connecting' });
+  if (!overBle) {
+    try {
+      await connect();
+    } catch (e: any) {
+      onState({ phase: 'error', error: e?.message ?? 'Connection to the watch failed' });
+      return;
+    }
   }
   onState({ phase: 'writing' });
   try {
@@ -136,6 +148,6 @@ export async function writeAmbitSetting(
   } catch (e: any) {
     onState({ phase: 'error', error: e?.message ?? 'Failed to write the setting' });
   } finally {
-    await disconnect().catch(() => {});
+    if (!overBle) await disconnect().catch(() => {});
   }
 }

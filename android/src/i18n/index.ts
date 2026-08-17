@@ -76,7 +76,7 @@ const fr = {
   homeNoDeviceSub: 'Branchez-la en USB, ou recherchez-la en Bluetooth ci-dessous.',
   homeConnectingAmbit: 'Connexion à la montre…',
   homeConnectRetryBtn: 'Réessayer',
-  homeBleConnectBtn: 'Associer en Bluetooth (expérimental)',
+  homeBleConnectBtn: 'Associer en Bluetooth',
   homeBleConnectWatchBtn: (name: string) => `Connecter ${name} en Bluetooth`,
   homePairWatchPill: 'Associer',
   homeBleReadyTitle: 'Prêt à associer',
@@ -334,6 +334,9 @@ const fr = {
   routeScreenTitle:   'Route',
   routeSendSection:   'Envoyer une route',
   routePlannerTitle:  'Planifier une route',
+  routeWatchNote: 'Les routes envoyées à la montre seront effacées par SuuntoLink et ne sont pas transmises à l’app Suunto.',
+  poiWatchNote: 'Les POI envoyés à la montre sont transmis à l’app Suunto par SuuntoLink.',
+  poiInfoTitle: 'Points d’intérêt',
   routePlannerIntro:  'Vous pouvez exporter vos routes depuis l\'app Suunto en gpx et les importer ici, ou utiliser l\'un de ceux-ci ou d\'autres :',
   routePlannerOnline: '(en ligne)',
   routePlannerOfflineWinMac: '(hors ligne, Win/Mac)',
@@ -431,9 +434,7 @@ const fr = {
   sportModesButton:      'MODES SPORT',
   sportModesScreenTitle: 'Modes sport',
   sportModesDesc:
-    'Modifie les modes sport réels de la montre (noms, autolap, limites FC, capteurs, ' +
-    'affichages) par câble USB — mécanisme confirmé sur le bureau, pas encore confirmé sur ' +
-    'du matériel réel via Android.',
+    'Modifie les modes sport de la montre : noms, autolap, limites FC, capteurs et les écrans.',
   sportModesReadBtn: 'Lire les modes sport',
   sportModesReading: 'Lecture des modes sport…',
   sportModesCheckConnection: 'Vérifiez la connexion de la montre.',
@@ -459,8 +460,7 @@ const fr = {
   sportModesNoLegsYet: 'Aucune étape choisie',
   sportModesCreateConfirm: 'Créer',
   sportModesWriteWarning:
-    '⚠️ Les écritures sur la montre ne sont pas encore testées sur matériel réel via Android. ' +
-    'Les octets envoyés sont identiques à ceux de SuuntoLink, mais faites d’abord une sauvegarde par câble.',
+    'Les changements sont écrits directement sur la montre. Faites une sauvegarde d’abord par sécurité.',
   sportModesWritingStep: (step: number, total: number) => total > 1 ? `Écriture ${step}/${total}…` : 'Écriture…',
   sportModesVerifying: 'Vérification…',
   sportModesManageReadError: 'Impossible de lire la structure des modes sport.',
@@ -640,11 +640,12 @@ const fr = {
   calendarLegendActivity: 'Activité',
 
   // Fonctionnalités expérimentales (2026-08-14) - App Zone, Intervalles, Smart Sensor
-  experimentalSection: 'Expérimental',
+  experimentalSection: 'Fonctionnalités expérimentales',
   experimentalToggleLabel: 'Activer les fonctionnalités expérimentales',
   experimentalToggleDesc:
-    'Fonctions non testées sur matériel réel via Android, à tester par câble. Faites d’abord ' +
-    'une sauvegarde. Retours communautaires bienvenus.',
+    'Affiche des outils encore en test sur Android : App Zone (installer des apps Suunto), ' +
+    'entraînements par intervalles et la ceinture cardio Smart Sensor. Certains écrivent sur ' +
+    'la montre, faites d’abord une sauvegarde.',
   markSyncedLabel: 'Marquer les activités comme synchronisées pour l’app Suunto et SuuntoLink',
   markSyncedDesc:
     'Une fois une activité lue ici, indiquer à la montre qu’elle est déjà synchronisée. Cela ' +
@@ -780,7 +781,7 @@ const en: typeof fr = {
   homeNoDeviceSub: 'Plug it in via USB, or search for it over Bluetooth below.',
   homeConnectingAmbit: 'Connecting to watch…',
   homeConnectRetryBtn: 'Retry',
-  homeBleConnectBtn: 'Pair via Bluetooth (experimental)',
+  homeBleConnectBtn: 'Pair via Bluetooth',
   homeBleConnectWatchBtn: (name: string) => `Connect ${name} via Bluetooth`,
   homePairWatchPill: 'Pair',
   homeBleReadyTitle: 'Ready to pair',
@@ -1021,6 +1022,9 @@ const en: typeof fr = {
   routeScreenTitle:   'Route',
   routeSendSection:   'Send a route',
   routePlannerTitle:  'Plan a route',
+  routeWatchNote: 'Routes that are sent to the watch will be erased by SuuntoLink and not pushed to the Suunto app.',
+  poiWatchNote: 'POIs that are sent to the watch will be pushed to the Suunto app by SuuntoLink.',
+  poiInfoTitle: 'Points of interest',
   routePlannerIntro:  'You can export your routes from Suunto App to gpx and import them here, or you can use any of these or others:',
   routePlannerOnline: '(online)',
   routePlannerOfflineWinMac: '(offline, Win/Mac)',
@@ -1118,9 +1122,7 @@ const en: typeof fr = {
   sportModesButton:      'SPORT MODES',
   sportModesScreenTitle: 'Sport Modes',
   sportModesDesc:
-    'Edits the watch\'s real sport modes (names, autolap, HR limits, sensors, displays) ' +
-    'over USB cable - the write mechanism is confirmed working on desktop, not yet ' +
-    'hardware-confirmed via Android.',
+    'Edit the watch\'s sport modes: names, autolap, HR limits, sensors and the display screens.',
   sportModesReadBtn: 'Read Sport Modes',
   sportModesReading: 'Reading sport modes...',
   sportModesCheckConnection: 'Check your watch connection.',
@@ -1146,8 +1148,7 @@ const en: typeof fr = {
   sportModesNoLegsYet: 'No legs chosen yet',
   sportModesCreateConfirm: 'Create',
   sportModesWriteWarning:
-    "⚠️ Writing to the watch isn't hardware-tested on Android yet. The bytes sent are " +
-    "identical to SuuntoLink's, but take a cable backup first.",
+    'Changes are written straight to the watch. Take a backup first if you want to be safe.',
   sportModesWritingStep: (step: number, total: number) => total > 1 ? `Writing ${step}/${total}...` : 'Writing...',
   sportModesVerifying: 'Verifying...',
   sportModesManageReadError: 'Could not read the sport-mode structure.',
@@ -1324,11 +1325,12 @@ const en: typeof fr = {
   calendarLegendActivity: 'Activity',
 
   // Experimental features (2026-08-14) - App Zone, Intervals, Smart Sensor
-  experimentalSection: 'Experimental',
+  experimentalSection: 'Experimental features',
   experimentalToggleLabel: 'Enable experimental features',
   experimentalToggleDesc:
-    "Features not hardware-tested on Android yet, to test over cable. Back up first. " +
-    'Community feedback welcome.',
+    'Reveals extra tools still being tried out on Android: App Zone (install Suunto Apps), ' +
+    'Intervals workouts, and the Smart Sensor HR belt. Some write to the watch, so take a ' +
+    'backup first.',
   markSyncedLabel: 'Mark synced workouts as synced for Suunto app and SuuntoLink',
   markSyncedDesc:
     'Once a workout has been read here, tell the watch it is already synced. This avoids ' +

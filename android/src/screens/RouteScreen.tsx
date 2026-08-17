@@ -167,6 +167,7 @@ export default function RouteScreen() {
         <Pressable style={styles.backdrop} onPress={() => setPlannerOpen(false)}>
           <Pressable style={[styles.dialogCard, { position: 'absolute', left: anchor.x, top: anchor.y, width: CARD_W }]} onPress={() => {}}>
             <Text style={styles.dialogTitle}>{t.routePlannerTitle}</Text>
+            <Text style={[styles.dialogText, { fontWeight: '700', marginTop: 4 }]}>{t.routeWatchNote}</Text>
             <Text style={styles.dialogText}>{t.routePlannerIntro}</Text>
             {[
               { name: 'Suunto planner', qual: t.routePlannerOnline, url: 'https://routeplanner.suunto.com/' },
