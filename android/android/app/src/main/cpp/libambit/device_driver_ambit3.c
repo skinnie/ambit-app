@@ -1660,6 +1660,26 @@ int ambit3_write_settings_raw(ambit_object_t *object, const uint8_t *data, size_
 #define AMBIT3_CUSTOM_MODES_SIZE 12288
 
 /*
+ * The CustomModes region base is device-specific: the Traverse keeps it at a DIFFERENT
+ * offset than the Ambit3 Peak (confirmed - tools/custom_modes.py resolves it from the
+ * watch's own 0x0b21 memory map for exactly this reason). Reading/writing the hardcoded
+ * Ambit3 base 0x002000 on a Traverse hits the wrong flash - it breaks the sport-modes read
+ * AND faults the watch firmware into a reset (seen live 2026-08-17: repeated Traverse resets
+ * while connected). Resolve the real base from the watch's memory map (populating it on
+ * demand exactly like the Routes/Waypoints per-device read already does), falling back to the
+ * hardcoded Ambit3 base only if the map has no CustomModes entry. The region SIZE is a fixed
+ * 12288 across the family, so only the base varies.
+ */
+static uint32_t ambit3_custom_modes_base(ambit_object_t *object)
+{
+    if (object->driver_data->memory_maps.initialized == 0) {
+        if (get_memory_maps(object) != 0) return AMBIT3_CUSTOM_MODES_BASE;
+    }
+    uint32_t base = object->driver_data->memory_maps.sport_modes.start;
+    return base != 0 ? base : AMBIT3_CUSTOM_MODES_BASE;
+}
+
+/*
  * Reads the watch's real CustomModes flash region (sport modes) - the same 12288-byte
  * region the companion research project's tools/custom_modes.py already reads via 0x0b17.
  * Thin wrapper over the existing generic ambit3_read_flash_region(). Returns 0 on success,
@@ -1668,7 +1688,7 @@ int ambit3_write_settings_raw(ambit_object_t *object, const uint8_t *data, size_
 int ambit3_read_custom_modes_raw(ambit_object_t *object, uint8_t *out_buffer)
 {
     if (object == NULL || out_buffer == NULL) return -1;
-    return ambit3_read_flash_region(object, AMBIT3_CUSTOM_MODES_BASE, AMBIT3_CUSTOM_MODES_SIZE, out_buffer);
+    return ambit3_read_flash_region(object, ambit3_custom_modes_base(object), AMBIT3_CUSTOM_MODES_SIZE, out_buffer);
 }
 
 /* DEVICE_CUSTOM - the BXml root tag every real CustomModes region starts with (a 4-byte
@@ -1739,7 +1759,11 @@ int ambit3_write_custom_modes_raw(ambit_object_t *object, const uint8_t *data, s
         return -1;
     }
 
-    if (libambit_pmem20_data_write(&object->driver_data->pmem20, AMBIT3_CUSTOM_MODES_BASE, data, extent) != 0) {
+    /* Device-specific base (Traverse != Ambit3 Peak) - the same resolution the read uses, so a
+     * write never lands on the wrong flash region (which would corrupt the watch). */
+    uint32_t cm_base = ambit3_custom_modes_base(object);
+
+    if (libambit_pmem20_data_write(&object->driver_data->pmem20, cm_base, data, extent) != 0) {
         LOG_ERROR("ambit3_write_custom_modes_raw: region write failed");
         return -1;
     }
@@ -1753,7 +1777,7 @@ int ambit3_write_custom_modes_raw(ambit_object_t *object, const uint8_t *data, s
     hash_hex[64] = '\0';
 
     uint8_t tail[4 + 4 + 64];
-    uint32_t addr_le = htole32((uint32_t)AMBIT3_CUSTOM_MODES_BASE);
+    uint32_t addr_le = htole32(cm_base);
     memcpy(tail, &addr_le, 4);
     memset(tail + 4, 0, 4);
     memcpy(tail + 8, hash_hex, 64);
