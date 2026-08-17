@@ -8,6 +8,8 @@
 // activityIconName), and nothing on Android renders the per-sport SVG the way desktop's
 // ActivityBadge does. Keep this in sync with assets/activity_types.json if that file changes.
 
+import { IconName } from '../components/ui/Icon';
+
 export interface ActivityType {
   id: number;
   name: string;
@@ -132,4 +134,36 @@ export function activityForName(name: string | null | undefined): ActivityType {
 
 export function colorForName(name: string | null | undefined): string {
   return activityForName(name).color;
+}
+
+// ─── Activity icon glyphs (Android's monochrome Icon.tsx set) ──────────────────
+// Ported from LogListScreen so both the activity log and the sport-mode list draw the same
+// per-sport icon, keyed on the lowercased activity name (ACTIVITY_TYPES[id].name or a log's
+// activity_type). Falls back to the generic 'activity' glyph for a name with no dedicated
+// codepoint in this app's subset (e.g. swimming/transition) - the colour still tells sports
+// apart. André, 2026-08-17.
+export const ACTIVITY_ICON_NAMES: Record<string, IconName> = {
+  'course à pied':        'running',
+  'running':               'running',
+  'trail running':         'running',
+  'cyclisme':              'cycling',
+  'cycling':               'cycling',
+  'vtt':                   'cycling',
+  'mountain biking':       'cycling',
+  'randonnée':             'walking',
+  'marche':                'walking',
+  'trekking':              'walking',
+  'hiking':                'walking',
+  'trail':                 'mountain',
+  'alpinisme':             'mountain',
+  'ski alpin':             'mountain',
+  'ski de fond':           'mountain',
+  'ski de randonnée':      'mountain',
+  'skiing':                'mountain',
+  'cross country skiing':  'mountain',
+  'snowboard':             'mountain',
+};
+
+export function activityIconName(type: string | null | undefined): IconName {
+  return ACTIVITY_ICON_NAMES[(type ?? '').toLowerCase()] ?? 'activity';
 }

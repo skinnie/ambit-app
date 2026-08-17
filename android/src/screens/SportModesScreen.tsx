@@ -12,7 +12,7 @@ import {
 import {
   readSportModes, applySportModeEdit, plans, SportSummary, SportModeManageState,
 } from '../services/SportModeManage';
-import { ACTIVITY_TYPES } from '../services/ActivityColors';
+import { ACTIVITY_TYPES, activityIconName } from '../services/ActivityColors';
 import { SPORT_MODE_ROWS } from '../services/SportModeRows';
 import { t } from '../i18n';
 import { useV3Theme, v3Spacing, v3Type } from '../theme/v3';
@@ -498,11 +498,17 @@ export default function SportModesScreen() {
       {modes && modes.map(mode => {
         const name = mode.settings.name;
         const realCount = mode.displays.filter(d => !d.isBuiltIn).length;
+        // Per-sport icon + colour, keyed on the mode's own ActivityID (the same table the
+        // Calendar/Totals/log screens use). Falls back to the generic activity glyph in the
+        // theme's muted colour for an id we have no colour/icon for. André, 2026-08-17.
+        const activity = ACTIVITY_TYPES[mode.settings.activityId];
+        const iconColor = activity ? activity.color : theme.mutedText;
         return (
           <TouchableOpacity key={name} onPress={() => setSelectedName(name)} activeOpacity={0.7}>
             <Card style={{ width: '100%' }}>
               <View style={styles(theme).listRow}>
-                <View style={{ flex: 1 }}>
+                <Icon name={activityIconName(activity?.name)} size={22} color={iconColor} />
+                <View style={{ flex: 1, marginLeft: 10 }}>
                   <Text style={styles(theme).cardTitle}>{name}</Text>
                   <Text style={styles(theme).sectionDesc}>
                     {t.sportModesDisplaysCount(realCount, MAX_DISPLAYS)}

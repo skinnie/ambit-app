@@ -18,6 +18,7 @@ import { t, dateLocale } from '../i18n';
 import { useV3Theme } from '../theme/v3';
 import { ActivityThumbnail } from '../components/ActivityThumbnail';
 import Icon, { IconName } from '../components/ui/Icon';
+import { activityIconName } from '../services/ActivityColors';
 import {
   getViewMode, setViewMode as persistViewMode, getActivityColumns, setActivityColumns, ViewMode,
 } from '../services/ListViewPrefs';
@@ -389,32 +390,6 @@ export default function LogListScreen() {
 // Icon.tsx's own small set (cycling/running/walking are new; trail/ski/alpinisme types
 // reuse the existing 'mountain' icon rather than drawing a one-off glyph for a handful of
 // rarer types; anything else falls back to the existing generic 'activity' icon).
-const ACTIVITY_ICON_NAMES: Record<string, IconName> = {
-  'course à pied':        'running',
-  'running':               'running',
-  'trail running':         'running',
-  'cyclisme':              'cycling',
-  'cycling':               'cycling',
-  'vtt':                   'cycling',
-  'mountain biking':       'cycling',
-  'randonnée':             'walking',
-  'marche':                'walking',
-  'trekking':              'walking',
-  'hiking':                'walking',
-  'trail':                 'mountain',
-  'alpinisme':             'mountain',
-  'ski alpin':             'mountain',
-  'ski de fond':           'mountain',
-  'ski de randonnée':      'mountain',
-  'skiing':                'mountain',
-  'cross country skiing':  'mountain',
-  'snowboard':             'mountain',
-};
-
-function activityIconName(type: string): IconName {
-  return ACTIVITY_ICON_NAMES[type.toLowerCase()] ?? 'activity';
-}
-
 function capitalize(s: string): string {
   if (!s) return s;
   return s.charAt(0).toUpperCase() + s.slice(1);
