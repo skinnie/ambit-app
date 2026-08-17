@@ -67,10 +67,9 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist\windows\Sommet | Out-Null
-          # The internal CMake target is still named ambitapp; rename its .exe to Sommet.exe
-          # so the download the user double-clicks is branded Sommet (Qt apps don't depend on
-          # the executable's filename - the app name/window title come from setApplicationName).
-          Copy-Item desktop\build\Release\ambitapp.exe dist\windows\Sommet\Sommet.exe
+          # The CMake target's OUTPUT_NAME is Sommet (see desktop/CMakeLists.txt), so the build
+          # already produces Sommet.exe - the download the user double-clicks is branded Sommet.
+          Copy-Item desktop\build\Release\Sommet.exe dist\windows\Sommet\Sommet.exe
           windeployqt --qmldir desktop\qml --release dist\windows\Sommet\Sommet.exe
           New-Item -ItemType Directory -Force -Path dist\windows\Sommet\backend | Out-Null
           Copy-Item dist\backend\ambit-backend.exe dist\windows\Sommet\backend\

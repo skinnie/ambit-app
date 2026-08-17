@@ -24,6 +24,20 @@ qt_add_executable(ambitapp
     src/main.cpp
 )
 
+# The QML module URI is "AmbitApp" (below), which Qt materialises as an "AmbitApp" directory
+# in the build tree. On a case-INSENSITIVE filesystem (macOS APFS, Windows) a target output
+# also named "ambitapp" collides with that directory - the macOS linker fails with
+# "ld: open() failed, errno=21 (Is a directory) for 'ambitapp'". Naming the OUTPUT "Sommet"
+# both dodges the collision and is the correct user-facing brand (the internal target/module
+# names stay ambitapp/AmbitApp so nothing else in this file changes). MACOSX_BUNDLE makes the
+# macOS output a real Sommet.app (the release .dmg wraps it); WIN32_EXECUTABLE drops the
+# console window on the Windows GUI build. All three are no-ops on Linux except the rename.
+set_target_properties(ambitapp PROPERTIES
+    OUTPUT_NAME Sommet
+    MACOSX_BUNDLE TRUE
+    WIN32_EXECUTABLE TRUE
+)
+
 # Pure-QML singletons - see qml/Theme.qml's own header comment for why these are QML, not
 # C++ types: no native state or backend calls belong in any of them. MUST be set before
 # qt_add_qml_module() below, not after: it reads this property while generating qmldir, so
