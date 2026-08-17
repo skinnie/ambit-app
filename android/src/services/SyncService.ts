@@ -4,6 +4,7 @@ import { writeGpxFile } from './GpxService';
 import { extractGpxMetadata } from './GpxParser';
 import { isActivitySynced, isActivityDeleted, markActivitySynced, getAllSyncedIds } from '../database/db';
 import { isMarkSyncedEnabled } from './MarkSynced';
+import { attributeMoveToGear } from './GearAutoAssign';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -119,6 +120,9 @@ export async function runSync(
       d_plus: meta.dPlus,
       activity_type: meta.activityType,
     });
+    // Attribute this move to its default gear in the local usage ledger (best-effort) so the app
+    // tallies gear mileage itself — the step toward not needing intervals.icu (GearTotals).
+    await attributeMoveToGear(id, meta.activityType, meta.distanceM, meta.durationS, meta.date);
     newCount++;
   }
 

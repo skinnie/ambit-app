@@ -38,6 +38,7 @@ ApplicationWindow {
         intervals: "pages/IntervalsPage.qml",
         totals: "pages/TotalsPage.qml",
         calendar: "pages/CalendarPage.qml",
+        gear: "pages/GearPage.qml",
         gpsTrackPod: "pages/GpsTrackPodPage.qml",
         suuntoT6: "pages/SuuntoT6Page.qml",
         trainingProgram: "pages/TrainingProgramPage.qml",

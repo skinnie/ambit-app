@@ -19,7 +19,7 @@ export interface ActivityRecord {
 
 let _db: SQLiteDatabase | null = null;
 
-async function getDb(): Promise<SQLiteDatabase> {
+export async function getDb(): Promise<SQLiteDatabase> {
   if (_db) return _db;
   _db = await SQLite.openDatabase({ name: 'ambitsync.db', location: 'default' });
   await _db.executeSql(`
@@ -45,6 +45,79 @@ async function getDb(): Promise<SQLiteDatabase> {
   await _db.executeSql(
     `ALTER TABLE activities ADD COLUMN activity_type TEXT NOT NULL DEFAULT ''`
   ).catch(() => {});
+  // ── Gear tracker (v3) — see gearDb.ts. Local-first, mirrored to intervals.icu. ──
+  // A component (part) is a gear row with parent_id set. remote_id is the intervals.icu id
+  // once mirrored (null for local-only, not-yet-pushed rows). last_synced_at + a stored
+  // snapshot of the remote state let the mirror tell a one-sided edit from a real conflict.
+  await _db.executeSql(`
+    CREATE TABLE IF NOT EXISTS gear (
+      id            TEXT    PRIMARY KEY,           -- local id (uuid or the remote id)
+      remote_id     TEXT,                          -- intervals.icu id, null until pushed
+      parent_id     TEXT,                          -- parent gear's local id, null for top gear
+      name          TEXT    NOT NULL DEFAULT '',
+      type          TEXT    NOT NULL DEFAULT 'bike',
+      distance_m    INTEGER NOT NULL DEFAULT 0,    -- read-only mirror of remote total
+      time_s        INTEGER NOT NULL DEFAULT 0,
+      retired       INTEGER NOT NULL DEFAULT 0,
+      is_primary    INTEGER NOT NULL DEFAULT 0,
+      updated_at    INTEGER NOT NULL DEFAULT 0,    -- local last-edit (ms)
+      last_synced_at INTEGER NOT NULL DEFAULT 0,
+      remote_snapshot TEXT   NOT NULL DEFAULT '',  -- JSON of remote state at last sync
+      deleted       INTEGER NOT NULL DEFAULT 0     -- tombstone (push delete, then purge)
+    )
+  `);
+  // Reminder intervals mirror intervals.icu exactly (a reminder can combine several units):
+  // distance (m), time (s), days, activities. percent_used (>=100 => due) comes from the server.
+  await _db.executeSql(`
+    CREATE TABLE IF NOT EXISTS gear_reminder (
+      id            TEXT    PRIMARY KEY,
+      remote_id     TEXT,
+      gear_id       TEXT    NOT NULL,
+      name          TEXT    NOT NULL DEFAULT '',
+      distance_m    REAL    NOT NULL DEFAULT 0,
+      time_s        REAL    NOT NULL DEFAULT 0,
+      days          INTEGER NOT NULL DEFAULT 0,
+      activities    INTEGER NOT NULL DEFAULT 0,
+      percent_used  REAL    NOT NULL DEFAULT 0,
+      snoozed_until INTEGER,                             -- epoch ms, null if not snoozed
+      -- reset-baseline: the gear's cumulative counters at last reset, for LOCAL due-ness
+      starting_distance_m REAL    NOT NULL DEFAULT 0,
+      starting_time_s     REAL    NOT NULL DEFAULT 0,
+      starting_activities INTEGER NOT NULL DEFAULT 0,
+      last_reset          INTEGER,                       -- epoch ms of last reset
+      updated_at    INTEGER NOT NULL DEFAULT 0,
+      deleted       INTEGER NOT NULL DEFAULT 0
+    )
+  `);
+  await _db.executeSql(`ALTER TABLE gear_reminder ADD COLUMN starting_distance_m REAL NOT NULL DEFAULT 0`).catch(() => {});
+  await _db.executeSql(`ALTER TABLE gear_reminder ADD COLUMN starting_time_s REAL NOT NULL DEFAULT 0`).catch(() => {});
+  await _db.executeSql(`ALTER TABLE gear_reminder ADD COLUMN starting_activities INTEGER NOT NULL DEFAULT 0`).catch(() => {});
+  await _db.executeSql(`ALTER TABLE gear_reminder ADD COLUMN last_reset INTEGER`).catch(() => {});
+  // Default gear per Ambit sport type (e.g. "Cycling" -> a bike's local id). Auto-assign source.
+  await _db.executeSql(`
+    CREATE TABLE IF NOT EXISTS gear_assignment (
+      activity_type TEXT    PRIMARY KEY,
+      gear_id       TEXT    NOT NULL
+    )
+  `);
+  // The LOCAL gear-usage ledger: which gear each synced watch move is attributed to, plus its
+  // distance/time, so the app tallies gear mileage ITSELF (independence from intervals.icu — the
+  // aim is to ditch it). Displayed gear distance = imported baseline (gear.distance_m at last
+  // import) + sum of ledger entries recorded AFTER that import (assigned_at > gear.last_synced_at),
+  // which avoids double-counting anything intervals already had in its total.
+  await _db.executeSql(`
+    CREATE TABLE IF NOT EXISTS activity_gear (
+      activity_id   TEXT    PRIMARY KEY,
+      gear_id       TEXT    NOT NULL,
+      distance_m    REAL    NOT NULL DEFAULT 0,
+      time_s        REAL    NOT NULL DEFAULT 0,
+      activity_date TEXT    NOT NULL DEFAULT '',
+      assigned_at   INTEGER NOT NULL DEFAULT 0
+    )
+  `);
+  await _db.executeSql(`ALTER TABLE activity_gear ADD COLUMN distance_m REAL NOT NULL DEFAULT 0`).catch(() => {});
+  await _db.executeSql(`ALTER TABLE activity_gear ADD COLUMN time_s REAL NOT NULL DEFAULT 0`).catch(() => {});
+  await _db.executeSql(`ALTER TABLE activity_gear ADD COLUMN activity_date TEXT NOT NULL DEFAULT ''`).catch(() => {});
   return _db;
 }
 

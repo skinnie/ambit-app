@@ -19,6 +19,7 @@ QtObject {
     readonly property string sportModes: ""        // sports
     readonly property string calendar: ""          // calendar_month
     readonly property string trainingProgram: "\ue8df" // today (a dated calendar page)
+    readonly property string gear: "\ue52f"            // directions_bike
 
     readonly property string add: ""
     readonly property string arrowBack: ""

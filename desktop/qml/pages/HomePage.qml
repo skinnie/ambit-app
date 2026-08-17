@@ -106,6 +106,43 @@ PageFlickable {
         // width; below that they stack, and nothing else changes.
         readonly property bool twoColumn: width >= 760
 
+        // Gear maintenance summary — only when something needs attention; clicks through to Gear.
+        Rectangle {
+            id: gearAlert
+            width: parent.width
+            visible: GearService.dueCount > 0 || GearService.soonCount > 0
+            height: visible ? gearAlertRow.implicitHeight + 2 * Theme.spacingMedium : 0
+            radius: Theme.radiusCard
+            readonly property bool anyDue: GearService.dueCount > 0
+            readonly property color accent: anyDue ? Theme.error : Theme.warning
+            color: Qt.rgba(accent.r, accent.g, accent.b, 0.10)
+            border.color: accent
+            border.width: 1
+
+            RowLayout {
+                id: gearAlertRow
+                anchors.fill: parent
+                anchors.margins: Theme.spacingMedium
+                spacing: Theme.spacingSmall
+                Text {
+                    text: Icons.warningAmber
+                    font.family: Icons.fontFamily
+                    font.pixelSize: 18
+                    color: gearAlert.accent
+                }
+                Text {
+                    Layout.fillWidth: true
+                    color: Theme.text
+                    font.pixelSize: Theme.fontSizeBody
+                    text: GearService.dueCount > 0
+                          ? qsTr("%n gear service(s) due", "", GearService.dueCount)
+                          : qsTr("%n gear service(s) due soon", "", GearService.soonCount)
+                }
+                Text { text: Icons.chevronRight; font.family: Icons.fontFamily; color: Theme.mutedText }
+            }
+            MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: NavBus.navigate("gear") }
+        }
+
         // Testing mode is deliberately loud: a sample watch that looks like a real one is
         // only useful if it can never be mistaken for one.
         Rectangle {

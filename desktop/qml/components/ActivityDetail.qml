@@ -41,6 +41,28 @@ Item {
                                     qsTr("Export"), qsTr("Upload"), qsTr("Notes")]
     property int currentTab: 0
 
+    // Gear attribution (manual per-activity picker). Key = the activity's start time (stable).
+    // Sport name is decoded from the raw activity-type byte via ActivityTypes (D2-c).
+    function gearKey() { return activity ? (activity.startTime || activity.name || "") : "" }
+    function sportName() {
+        if (!activity) return ""
+        var st = ActivityTypes.byId[activity.sportTypeRaw]
+        return st ? st.name : ""
+    }
+    function gearChoices() {
+        var out = [{ text: qsTr("None"), id: "" }]
+        var all = GearService.gears
+        for (var i = 0; i < all.length; ++i)
+            if (!all[i].parentId && !all[i].retired) out.push({ text: all[i].name, id: all[i].id })
+        return out
+    }
+    function currentGearIndex(choices) {
+        var id = GearService.activityGearId(gearKey())
+        if (!id) id = GearService.defaultGearForSport(sportName())  // fall back to the sport default
+        for (var i = 0; i < choices.length; ++i) if (choices[i].id === id) return i
+        return 0
+    }
+
     Column {
         anchors.fill: parent
         spacing: Theme.spacingMedium
@@ -161,6 +183,27 @@ Item {
                     text: activity ? qsTr("%1 GPS points recorded").arg(activity.track.length) : ""
                     color: Theme.mutedText
                     font.pixelSize: Theme.fontSizeLabel
+                }
+                // Gear used — attribute this move's mileage to a bike/shoes (local tally).
+                Row {
+                    spacing: Theme.spacingSmall
+                    visible: GearService.gears.length > 0
+                    Text {
+                        text: qsTr("Gear used")
+                        color: Theme.mutedText
+                        font.pixelSize: Theme.fontSizeLabel
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+                    ComboBox {
+                        id: gearCombo
+                        model: root.gearChoices()
+                        textRole: "text"
+                        currentIndex: root.currentGearIndex(model)
+                        onActivated: GearService.attributeActivity(
+                            root.gearKey(), model[currentIndex].id,
+                            activity ? activity.distanceMeters : 0,
+                            activity ? activity.durationSeconds : 0)
+                    }
                 }
             }
 

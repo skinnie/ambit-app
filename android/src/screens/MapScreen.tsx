@@ -5,6 +5,8 @@ import { WebView, WebViewMessageEvent } from 'react-native-webview';
 import { uploadGpxToStrava, isAuthenticated as stravaIsAuthenticated } from '../services/ApiStrava';
 import { getRunalyzeApiKey, uploadFitToRunalyze } from '../services/ApiRunalyze';
 import { getIntervalsIcuCredentials, uploadFitToIntervalsIcu } from '../services/ApiIntervalsIcu';
+import { pushGearToIntervals } from '../services/GearAutoAssign';
+import { GearPicker } from '../components/GearPicker';
 import { generateFitFile } from '../services/FitExport';
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -247,6 +249,7 @@ export default function MapScreen() {
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
+  const [showGearPicker, setShowGearPicker] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState<DownloadRegionProgress | null>(null);
 
   // ── Replay State
@@ -474,9 +477,11 @@ export default function MapScreen() {
     try {
       const fitPath = await generateFitFile(activity.gpx_path, activity);
       const result  = await uploadFitToIntervalsIcu(fitPath, creds.athleteId, creds.apiKey);
+      // Auto-assign the default bike/shoes for this sport type (best-effort, non-fatal).
+      const assignedGear = await pushGearToIntervals(result.activityId, activity.activity_type);
       Alert.alert(
         'Intervals.icu ✓',
-        t.intervalsSuccess,
+        assignedGear ? `${t.intervalsSuccess}\n${t.gearAssignedTo(assignedGear)}` : t.intervalsSuccess,
         [
           { text: t.close, style: 'cancel' },
           { text: t.viewOnIntervals, onPress: () => Linking.openURL(result.viewerUrl) },
@@ -674,8 +679,18 @@ export default function MapScreen() {
           <ExportMenuItem styles={styles} label={t.uploadRunalyze} onPress={handleUploadRunalyze} />
           <ExportMenuItem styles={styles} label={t.uploadIntervals} onPress={handleUploadIntervals} />
           <ExportMenuItem styles={styles} label={t.uploadStrava}   onPress={handleUploadStrava} />
+          <ExportMenuItem styles={styles} label={t.gearSetForActivity} onPress={() => { setShowExportMenu(false); setShowGearPicker(true); }} />
         </View>
       )}
+
+      <GearPicker
+        visible={showGearPicker}
+        activityId={activity.id}
+        distanceM={activity.distance_m}
+        timeS={activity.duration_s}
+        date={activity.date}
+        onClose={() => setShowGearPicker(false)}
+      />
 
       {/* ── Barre de Replay ── */}
       <View style={styles.replayBar}>

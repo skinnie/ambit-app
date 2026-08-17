@@ -1,0 +1,42 @@
+[
+  {
+    "id": "1001", "athlete_id": "9999", "type": "Bike", "name": "Road Bike",
+    "purchased": "2025-01-01", "notes": null, "distance": 12345678.0, "time": 1200000.0,
+    "activities": 210, "use_elapsed_time": false, "retired": null,
+    "component_ids": ["2001", "2002"], "reminders": [], "activity_filters": null, "component": false
+  },
+  {
+    "id": "1002", "athlete_id": "9999", "type": "Bike", "name": "Old Bike",
+    "purchased": "2018-06-01", "notes": null, "distance": 4000000.0, "time": 0.0,
+    "activities": 90, "use_elapsed_time": false, "retired": true,
+    "component_ids": null, "reminders": [], "activity_filters": null, "component": false
+  },
+  {
+    "id": "1003", "athlete_id": "9999", "type": "Shoes", "name": "Trail Shoes",
+    "purchased": "2025-03-01", "notes": null, "distance": 300000.0, "time": 90000.0,
+    "activities": 40, "use_elapsed_time": false, "retired": null,
+    "component_ids": null, "reminders": [], "activity_filters": null, "component": false
+  },
+  {
+    "id": "2001", "athlete_id": "9999", "type": "Chain", "name": "SRAM Chain",
+    "purchased": "2026-02-07", "notes": null, "distance": 2000000.0, "time": 0.0,
+    "activities": 30, "use_elapsed_time": false, "retired": null,
+    "component_ids": null, "component": true, "activity_filters": null,
+    "reminders": [
+      {
+        "id": 8648, "gear_id": "2001", "name": "check chain",
+        "distance": 500000.0, "time": 0.0, "activities": 0, "days": 0,
+        "last_reset": "2026-02-07T00:00:00.000+00:00", "starting_distance": 1500000.0,
+        "starting_time": 0.0, "starting_activities": 0, "snoozed_until": null,
+        "percent_used": 100.0, "distance_used": 500000.0, "time_used": 0.0,
+        "activities_used": 0, "days_used": 191
+      }
+    ]
+  },
+  {
+    "id": "2002", "athlete_id": "9999", "type": "Cassette", "name": "Force 10-36",
+    "purchased": "2026-02-07", "notes": null, "distance": 2000000.0, "time": 0.0,
+    "activities": 30, "use_elapsed_time": false, "retired": null,
+    "component_ids": null, "reminders": [], "activity_filters": null, "component": true
+  }
+]

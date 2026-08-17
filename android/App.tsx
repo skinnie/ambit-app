@@ -27,6 +27,7 @@ import CalendarScreen from './src/screens/CalendarScreen';
 import SmartSensorScreen from './src/screens/SmartSensorScreen';
 import AppZoneScreen from './src/screens/AppZoneScreen';
 import IntervalsScreen from './src/screens/IntervalsScreen';
+import GearScreen from './src/screens/GearScreen';
 import type { GarminConnectResult } from './src/native/GarminModule';
 import { ActivityRecord } from './src/database/db';
 import { handleOAuthCallback as handleStravaCallback } from './src/services/ApiStrava';
@@ -70,6 +71,9 @@ export type RootStackParamList = {
   SmartSensor: undefined;
   AppZone: undefined;
   Intervals: undefined;
+  // Gear tracker (v3): bikes/shoes + components (parts) + service reminders, local-first and
+  // mirrored two-way to intervals.icu. Derived from the local gear DB, no device needed.
+  Gear: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -231,6 +235,11 @@ function AppShell() {
             name="Intervals"
             component={IntervalsScreen}
             options={{ title: t.intervalsScreenTitle }}
+          />
+          <Stack.Screen
+            name="Gear"
+            component={GearScreen}
+            options={{ title: t.gearScreenTitle }}
           />
         </Stack.Navigator>
       </NavigationContainer>

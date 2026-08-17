@@ -1,0 +1,104 @@
+#pragma once
+
+#include <QJsonObject>
+#include <QNetworkAccessManager>
+#include <QObject>
+#include <QQmlEngine>
+#include <QSqlDatabase>
+#include <QVariantList>
+#include <functional>
+
+// Gear tracker (v3, desktop) — parity with the Android feature, import-first (André 2026-08-18:
+// "get the info from intervals.icu… the aim is to ditch intervals in the future"). This service
+// IMPORTS gear + components + maintenance reminders from intervals.icu (GET /gear, HTTP Basic
+// API_KEY:<key>) and OWNS them in a local SQLite DB (gear.db), so the data survives without
+// intervals. A component/part is child gear linked from its parent's `component_ids`; reminder
+// due-ness is computed LOCALLY here (from each reminder's reset-baseline + the gear's distance),
+// not read from intervals' percent_used. Schema is the one confirmed against a live GET /gear —
+// see docs/reference/intervals-gear-schema.md.
+//
+// The intervals.icu credentials come from the same QSettings keys ConnectionsService writes
+// (connections/intervals_icu/{athleteId,apiKey}); this service reads them directly rather than
+// coupling to that singleton in C++.
+class GearService : public QObject
+{
+    Q_OBJECT
+    QML_ELEMENT
+    QML_SINGLETON
+
+    Q_PROPERTY(bool loading READ loading NOTIFY loadingChanged)
+    Q_PROPERTY(QString lastError READ lastError NOTIFY lastErrorChanged)
+    Q_PROPERTY(bool connected READ connected NOTIFY gearsChanged)
+    // Each entry: {id, remoteId, parentId, name, type, component (bool), distanceKm (int),
+    // retired (bool), reminders: [{name, label, percent (int), due (bool), soon (bool)}]}
+    Q_PROPERTY(QVariantList gears READ gears NOTIFY gearsChanged)
+    // Maintenance summary for Home: how many reminders are due (>=100%) / soon (>=90%).
+    Q_PROPERTY(int dueCount READ dueCount NOTIFY gearsChanged)
+    Q_PROPERTY(int soonCount READ soonCount NOTIFY gearsChanged)
+    // Default gear per decoded sport name (sportName -> gear id). Drives the picker's pre-select.
+    Q_PROPERTY(QVariantMap assignments READ assignments NOTIFY gearsChanged)
+
+public:
+    explicit GearService(QObject *parent = nullptr);
+
+    bool loading() const { return m_loading; }
+    QString lastError() const { return m_lastError; }
+    bool connected() const;
+    QVariantList gears() const { return m_gears; }
+    int dueCount() const { return m_dueCount; }
+    int soonCount() const { return m_soonCount; }
+    QVariantMap assignments() const { return m_assignments; }
+
+    // Local distance tally + manual per-activity gear (D2-a). All local — no network. The
+    // activity key is a stable per-activity string (its start time). Gear distance shown =
+    // imported intervals baseline + these locally-attributed activities.
+    Q_INVOKABLE void setAssignment(const QString &sport, const QString &gearId);
+    Q_INVOKABLE QString defaultGearForSport(const QString &sport) const;
+    Q_INVOKABLE void attributeActivity(const QString &key, const QString &gearId,
+                                       double distanceM, double timeS);
+    Q_INVOKABLE void clearActivity(const QString &key);
+    Q_INVOKABLE QString activityGearId(const QString &key) const;
+
+    // Pull-only import from intervals.icu into the local store, then rebuild gears[].
+    Q_INVOKABLE void importFromIntervals();
+
+    // Editing (write-through: push to intervals.icu, then re-import to refresh). Parity with the
+    // Android manager. `type` is a free-form gear type ("Bike"/"Shoes"/"Chain"/...).
+    Q_INVOKABLE void addGear(const QString &name, const QString &type);
+    Q_INVOKABLE void addComponent(const QString &parentId, const QString &name, const QString &type);
+    Q_INVOKABLE void renameGear(const QString &id, const QString &name);
+    Q_INVOKABLE void setRetired(const QString &id, bool retired);
+    Q_INVOKABLE void removeGear(const QString &id);
+    Q_INVOKABLE void addReminder(const QString &gearId, const QString &name,
+                                 double km, double hours, int days, int activities);
+    Q_INVOKABLE void removeReminder(const QString &gearId, const QString &reminderId);
+
+signals:
+    void loadingChanged();
+    void lastErrorChanged();
+    void gearsChanged();
+    void importFinished(int count);
+
+private:
+    void openDatabase();
+    void loadFromDb();          // rebuild m_gears from the DB
+    void storeGear(const QVariantMap &g, const QString &parentId);
+    // Authenticated request to intervals.icu; onOk gets the parsed reply on success, errors are
+    // routed to lastError. verb is GET/POST/PUT/DELETE; body is sent as JSON when non-empty.
+    void send(const QByteArray &verb, const QString &path, const QJsonObject &body,
+              std::function<void(const QJsonDocument &)> onOk);
+    QString componentIdsJson(const QString &gearId) const; // parent's stored component_ids
+    void setLoading(bool v);
+    void setLastError(const QString &e);
+    QString apiKey() const;
+    QString athleteId() const;
+
+    QNetworkAccessManager m_net;
+    QSqlDatabase m_db;
+    QVariantList m_gears;
+    QVariantMap m_assignments;
+    int m_dueCount = 0;
+    int m_soonCount = 0;
+    bool m_loading = false;
+    QString m_lastError;
+};

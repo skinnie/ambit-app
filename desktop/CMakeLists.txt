@@ -111,6 +111,7 @@ qt_add_qml_module(ambitapp
         qml/components/PlaceSearchBar.qml
         qml/pages/TotalsPage.qml
         qml/pages/CalendarPage.qml
+        qml/pages/GearPage.qml
         qml/components/Icon.qml
         qml/components/RoundedComboBox.qml
         qml/components/ThemedMenu.qml
@@ -166,6 +167,8 @@ qt_add_qml_module(ambitapp
         src/services/weatherservice.cpp
         src/services/activityservice.h
         src/services/activityservice.cpp
+        src/services/gearservice.h
+        src/services/gearservice.cpp
         src/services/routeservice.h
         src/services/routeservice.cpp
         src/services/poiservice.h
