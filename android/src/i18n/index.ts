@@ -436,6 +436,7 @@ const fr = {
   sportModesDesc:
     'Modifie les modes sport de la montre : noms, autolap, limites FC, capteurs et les écrans.',
   sportModesReadBtn: 'Lire les modes sport',
+  sportModesInstallApp: 'Installer une app Suunto…',
   sportModesReading: 'Lecture des modes sport…',
   sportModesCheckConnection: 'Vérifiez la connexion de la montre.',
   sportModesRefreshBtn: 'Actualiser',
@@ -1124,6 +1125,7 @@ const en: typeof fr = {
   sportModesDesc:
     'Edit the watch\'s sport modes: names, autolap, HR limits, sensors and the display screens.',
   sportModesReadBtn: 'Read Sport Modes',
+  sportModesInstallApp: 'Install a Suunto App…',
   sportModesReading: 'Reading sport modes...',
   sportModesCheckConnection: 'Check your watch connection.',
   sportModesRefreshBtn: 'Refresh',

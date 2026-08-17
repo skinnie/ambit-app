@@ -32,6 +32,7 @@ import { getAllActivities, ActivityRecord } from '../database/db';
 import { distanceLines } from '../services/TotalsFacts';
 import { APP_VERSION } from '../config/version';
 import { useDemo } from '../config/DemoContext';
+import { useExperimental } from '../config/ExperimentalContext';
 import { manualUrlFor, garminManualUrlFor } from '../config/manuals';
 import { t } from '../i18n';
 import Icon from '../components/ui/Icon';
@@ -104,6 +105,7 @@ export default function HomeScreen() {
   const styles = createStyles(theme);
   const navigation = useNavigation<Nav>();
   const demo = useDemo();
+  const { features: expFeatures } = useExperimental();  // gate Intervals / Smart Sensor menu items
   // deviceName/deviceSub keep their existing font metrics (createStyles(theme) above still
   // owns size/weight/spacing) - these two exist only because deviceName/deviceSub are style
   // *objects* (not just color), so overriding color needs a second style-array entry rather
@@ -729,6 +731,16 @@ export default function HomeScreen() {
     ...(connected ? [{ id: 'backup', label: t.backupButton, icon: 'backup' as const, onPress: () => navigation.navigate('Backup') }] : []),
     ...(connected && deviceType === 'ambit' && !isKailash(ambitInfo)
       ? [{ id: 'sportModes', label: t.sportModesButton, icon: 'watch' as const, onPress: () => navigation.navigate('SportModes', { overBle: bleConnectedRef.current, variant: ambitInfo?.model }) }]
+      : []),
+    // Experimental menu items - appear only when their toggle is on (Settings > Experimental
+    // features). Intervals rides the Suunto App-Zone/CustomModes mechanism, so it's Ambit-only
+    // and needs a connected watch, same gating as the desktop's NavRail. Smart Sensor is a
+    // standalone BLE HR belt, so it shows whenever enabled. André, 2026-08-17.
+    ...(expFeatures.intervals && connected && deviceType === 'ambit' && !isKailash(ambitInfo)
+      ? [{ id: 'intervals', label: t.experimentalIntervals, icon: 'chart' as const, onPress: () => navigation.navigate('Intervals') }]
+      : []),
+    ...(expFeatures.smartSensor
+      ? [{ id: 'smartSensor', label: t.experimentalSmartSensor, icon: 'link' as const, onPress: () => navigation.navigate('SmartSensor') }]
       : []),
     { id: 'settings', label: t.settingsTitle, icon: 'settings', onPress: () => navigation.navigate('Settings') },
   ];

@@ -93,7 +93,9 @@ Rectangle {
         // Sport Modes page exclusion is based on (no CustomModes region on that watch).
         NavItem {
             width: parent.width
-            visible: HomeViewModel.anyDevice
+            // Experimental menu feature (2026-08-17): gated on its own toggle in Settings, the
+            // same per-feature model the Android app uses. Still Ambit-only (rides App-Zone).
+            visible: DeviceService.intervalsEnabled && HomeViewModel.anyDevice
                      && !HomeViewModel.isGarmin && !HomeViewModel.isKailash
             useIntervalsIcon: true
             label: qsTr("Intervals")
@@ -167,6 +169,9 @@ Rectangle {
         // activities glyph (worn during exercise); the label tells it apart.
         NavItem {
             width: parent.width
+            // Experimental menu feature (2026-08-17): standalone BLE HR belt, shown whenever its
+            // own toggle is on (no watch needed), matching the Android app's gating.
+            visible: DeviceService.smartSensorEnabled
             glyph: Icons.activities
             label: qsTr("Smart Sensor")
             selected: root.currentPage === "smartSensor"

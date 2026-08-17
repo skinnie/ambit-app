@@ -143,6 +143,12 @@ class DeviceService : public QObject
     // Persisted via QSettings, same mechanism as bleExperimentEnabled above.
     Q_PROPERTY(bool markSyncedEnabled READ markSyncedEnabled
                WRITE setMarkSyncedEnabled NOTIFY markSyncedEnabledChanged)
+    // Experimental menu features (2026-08-17): each gates its own menu item (NavRail), the
+    // same per-feature-toggle model the Android app uses. Persisted via QSettings.
+    Q_PROPERTY(bool intervalsEnabled READ intervalsEnabled
+               WRITE setIntervalsEnabled NOTIFY intervalsEnabledChanged)
+    Q_PROPERTY(bool smartSensorEnabled READ smartSensorEnabled
+               WRITE setSmartSensorEnabled NOTIFY smartSensorEnabledChanged)
 
     // Suunto T6 family (2026-08-14, "implement Suunto t6 ... only as experimental") - a
     // different, older Suunto product from the watches this app targets (a 2004-2010
@@ -266,7 +272,11 @@ public:
     bool bleExperimentEnabled() const { return m_bleExperimentEnabled; }
     void setBleExperimentEnabled(bool value);
     bool markSyncedEnabled() const { return m_markSyncedEnabled; }
+    bool intervalsEnabled() const { return m_intervalsEnabled; }
+    bool smartSensorEnabled() const { return m_smartSensorEnabled; }
     void setMarkSyncedEnabled(bool value);
+    void setIntervalsEnabled(bool value);
+    void setSmartSensorEnabled(bool value);
 
     bool suuntoT6ExperimentEnabled() const { return m_suuntoT6ExperimentEnabled; }
     void setSuuntoT6ExperimentEnabled(bool value);
@@ -287,6 +297,8 @@ signals:
     void bleStateChanged();
     void bleExperimentEnabledChanged();
     void markSyncedEnabledChanged();
+    void intervalsEnabledChanged();
+    void smartSensorEnabledChanged();
     void connectedWatchesChanged();
 
 private:
@@ -347,6 +359,8 @@ private:
     QString m_bleError;
     int m_bleAttemptSeconds = 0;
     bool m_bleExperimentEnabled = false;
+    bool m_intervalsEnabled = false;
+    bool m_smartSensorEnabled = false;
     bool m_markSyncedEnabled = false;
     bool m_gpsTrackPodExperimentEnabled = false;
     bool m_suuntoT6ExperimentEnabled = false;

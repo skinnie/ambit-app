@@ -26,6 +26,10 @@ DeviceService::DeviceService(QObject *parent) : QObject(parent)
     // watch's per-move synced flag.
     m_markSyncedEnabled =
         QSettings().value(QStringLiteral("experimental/markSynced"), false).toBool();
+    m_intervalsEnabled =
+        QSettings().value(QStringLiteral("experimental/intervals"), false).toBool();
+    m_smartSensorEnabled =
+        QSettings().value(QStringLiteral("experimental/smartSensor"), false).toBool();
     // Off by default - see this property's own header comment (built blind, never
     // hardware-confirmed).
     m_gpsTrackPodExperimentEnabled =
@@ -622,6 +626,24 @@ void DeviceService::setMarkSyncedEnabled(bool value)
     m_markSyncedEnabled = value;
     QSettings().setValue(QStringLiteral("experimental/markSynced"), value);
     emit markSyncedEnabledChanged();
+}
+
+void DeviceService::setIntervalsEnabled(bool value)
+{
+    if (m_intervalsEnabled == value)
+        return;
+    m_intervalsEnabled = value;
+    QSettings().setValue(QStringLiteral("experimental/intervals"), value);
+    emit intervalsEnabledChanged();
+}
+
+void DeviceService::setSmartSensorEnabled(bool value)
+{
+    if (m_smartSensorEnabled == value)
+        return;
+    m_smartSensorEnabled = value;
+    QSettings().setValue(QStringLiteral("experimental/smartSensor"), value);
+    emit smartSensorEnabledChanged();
 }
 
 void DeviceService::setSuuntoT6ExperimentEnabled(bool value)

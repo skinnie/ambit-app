@@ -11,7 +11,6 @@ import { useExperimental } from '../config/ExperimentalContext';
 // The experimental features, one toggle each (André, 2026-08-17). Screen names must match the
 // RootStackParamList routes; icons/labels reuse the existing i18n strings.
 const EXP_FEATURE_ROWS = [
-  { flag: 'appZone' as const,     label: t.experimentalAppZone,     desc: t.experimentalAppZoneDesc,     screen: 'AppZone' as const,     icon: 'watch' as const },
   { flag: 'intervals' as const,   label: t.experimentalIntervals,   desc: t.experimentalIntervalsDesc,   screen: 'Intervals' as const,   icon: 'chart' as const },
   { flag: 'smartSensor' as const, label: t.experimentalSmartSensor, desc: t.experimentalSmartSensorDesc, screen: 'SmartSensor' as const, icon: 'link' as const },
 ];

@@ -520,6 +520,51 @@ PageFlickable {
                     }
                 }
 
+                // --- Intervals + Smart Sensor menu features (2026-08-17): one toggle each,
+                // each reveals its own menu item in the side menu, matching the Android app.
+                // Intervals rides the Suunto App-Zone/CustomModes mechanism (needs SuuntoLink to
+                // compile), so it stays experimental; Smart Sensor is the standalone BLE HR belt.
+                Item { width: 1; height: Theme.spacingSmall }
+                Text {
+                    width: parent.width; wrapMode: Text.WordWrap
+                    text: qsTr("Intervals menu (build interval workouts)")
+                    font.bold: true; font.pixelSize: Theme.fontSizeBody; color: Theme.text
+                }
+                Row {
+                    spacing: Theme.spacingSmall
+                    RoundedSwitch {
+                        anchors.verticalCenter: parent.verticalCenter
+                        checked: DeviceService.intervalsEnabled
+                        onToggled: DeviceService.intervalsEnabled = checked
+                    }
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: DeviceService.intervalsEnabled ? qsTr("On") : qsTr("Off")
+                        color: DeviceService.intervalsEnabled ? Theme.primary : Theme.mutedText
+                        font.pixelSize: Theme.fontSizeBody
+                    }
+                }
+                Item { width: 1; height: Theme.spacingSmall }
+                Text {
+                    width: parent.width; wrapMode: Text.WordWrap
+                    text: qsTr("Smart Sensor menu (Suunto HR belt over Bluetooth)")
+                    font.bold: true; font.pixelSize: Theme.fontSizeBody; color: Theme.text
+                }
+                Row {
+                    spacing: Theme.spacingSmall
+                    RoundedSwitch {
+                        anchors.verticalCenter: parent.verticalCenter
+                        checked: DeviceService.smartSensorEnabled
+                        onToggled: DeviceService.smartSensorEnabled = checked
+                    }
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: DeviceService.smartSensorEnabled ? qsTr("On") : qsTr("Off")
+                        color: DeviceService.smartSensorEnabled ? Theme.primary : Theme.mutedText
+                        font.pixelSize: Theme.fontSizeBody
+                    }
+                }
+
                 // --- Mark synced workouts. Opt-in, OFF by default (André, 2026-08-16).
                 // Writes the watch's own per-move synced flag after this app reads a
                 // workout, so the official Suunto app / SuuntoLink treat it as already

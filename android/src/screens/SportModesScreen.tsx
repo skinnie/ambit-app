@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { useRoute, RouteProp } from '@react-navigation/native';
+import { useRoute, RouteProp, useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
 import {
   View, Text, TextInput, TouchableOpacity,
@@ -70,6 +71,7 @@ export default function SportModesScreen() {
   // by the Home screen, so the sport-mode reads/writes must run on it directly - calling the
   // USB connect() would pop the OTG prompt and tear down the BLE session (André, 2026-08-17).
   const route = useRoute<RouteProp<RootStackParamList, 'SportModes'>>();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const overBle = route.params?.overBle ?? false;
   // The connected watch's codename (getDeviceInfo().model, e.g. Emu/Jabiru/Loon), passed from
   // HomeScreen. Everything per-device flows from it: the max-displays cap AND the create/limits
@@ -380,6 +382,17 @@ export default function SportModesScreen() {
           <View style={styles(theme).modalOverlay}>
             <View style={styles(theme).modalBox}>
               <Text style={styles(theme).cardTitle}>{t.sportModesPickerTitle}</Text>
+              {/* Install a Suunto App onto this row - the App Zone catalog now lives inside Sport
+                  Modes (André, 2026-08-17), matching the desktop. Opens the catalog browser. */}
+              <TouchableOpacity
+                style={[styles(theme).pickerRow, { flexDirection: 'row', alignItems: 'center', gap: 10 }]}
+                onPress={() => { setPicker(null); navigation.navigate('AppZone'); }}
+              >
+                <Icon name="watch" size={18} color={theme.primary} />
+                <Text style={[styles(theme).pickerRowText, { color: theme.primary, fontWeight: '700' }]}>
+                  {t.sportModesInstallApp}
+                </Text>
+              </TouchableOpacity>
               <FlatList
                 data={FIELD_TYPES}
                 keyExtractor={item => String(item.value)}

@@ -9,12 +9,12 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 // AsyncStorage/context pattern as ThemeModeContext. The three feature SCREENS are always
 // registered in navigation; a flag only controls whether Settings offers its entry point.
 
-export type ExpFeature = 'appZone' | 'intervals' | 'smartSensor';
-export const EXP_FEATURES: ExpFeature[] = ['appZone', 'intervals', 'smartSensor'];
+export type ExpFeature = 'intervals' | 'smartSensor';
+export const EXP_FEATURES: ExpFeature[] = ['intervals', 'smartSensor'];
 const storageKey = (f: ExpFeature) => `ambitapp:experimental:${f}`;
 
 type FeatureFlags = Record<ExpFeature, boolean>;
-const ALL_OFF: FeatureFlags = { appZone: false, intervals: false, smartSensor: false };
+const ALL_OFF: FeatureFlags = { intervals: false, smartSensor: false };
 
 interface ExperimentalContextValue {
   features: FeatureFlags;
