@@ -245,6 +245,18 @@ PageFlickable {
         return n === 1 ? "1row" : n === 2 ? "2rows" : "3rows"
     }
 
+    // Friendly name for a built-in (non-editable) system screen, from its template - so the
+    // filmstrip labels these "Map"/"Compass"/... instead of "Display N". Matches the Android
+    // app's builtInScreenName(). André, 2026-08-17.
+    function builtInScreenName(template) {
+        if (template.indexOf("MAP_DRAW") >= 0) return qsTr("Map")
+        if (template.indexOf("COMPASS_NAVIGATE") >= 0)
+            return template.indexOf("MILS") >= 0 ? qsTr("Compass / Navigate (mils)") : qsTr("Compass / Navigate")
+        if (template.indexOf("NAVIGATION") >= 0) return qsTr("Navigation")
+        if (template.indexOf("GRAPH") >= 0) return qsTr("Graph")
+        return qsTr("Built-in screen")
+    }
+
     // Real, 2026-08-09 ("sport mode return bad gateway") - the connected watch had become
     // Kailash, which genuinely has no CustomModes region at all (confirmed empty - see
     // custom_modes_andre.md's Kailash section), so custom_modes.py's own real flash read
@@ -1068,7 +1080,9 @@ PageFlickable {
                                 Text {
                                     width: 100
                                     horizontalAlignment: Text.AlignHCenter
-                                    text: qsTr("Display %1").arg(filmItem.index + 1)
+                                    text: filmItem.modelData.isBuiltIn
+                                          ? root.builtInScreenName(filmItem.modelData.template)
+                                          : qsTr("Display %1").arg(filmItem.index + 1)
                                     color: filmItem.index === root.currentDisplayIndex
                                            ? Theme.text : Theme.mutedText
                                     font.pixelSize: Theme.fontSizeCaption

@@ -215,6 +215,18 @@ const PID_PREFIX = 'PID_RUNNER_GPS_TEMPLATE_';
  * project has never confirmed the visual meaning of: strips the common prefix and reformats
  * the enum's own real suffix, without inventing new meaning. Direct port of
  * custom_modes.py's own field_type_label(). */
+// Friendly name for a built-in (non-editable) system screen, from its template. The desktop
+// renders these as icons (Map/Compass...); Android shows a text message, so map the template to
+// the same short name instead of the raw PID_RUNNER_GPS_TEMPLATE_* code. André, 2026-08-17.
+export function builtInScreenName(templateName: string): string {
+  if (templateName.indexOf('MAP_DRAW') >= 0) return 'Map';
+  if (templateName.indexOf('COMPASS_NAVIGATE') >= 0)
+    return templateName.indexOf('MILS') >= 0 ? 'Compass / Navigate (mils)' : 'Compass / Navigate';
+  if (templateName.indexOf('NAVIGATION') >= 0) return 'Navigation';
+  if (templateName.indexOf('GRAPH') >= 0) return 'Graph';
+  return 'Built-in screen';
+}
+
 export function fieldTypeLabel(name: string): string {
   if (name in FIELD_TYPE_LABELS) return FIELD_TYPE_LABELS[name];
   if (name.startsWith(PID_PREFIX)) {

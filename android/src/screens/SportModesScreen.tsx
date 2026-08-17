@@ -6,7 +6,7 @@ import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, Alert, ScrollView, ActivityIndicator, Modal, FlatList,
 } from 'react-native';
-import { ExerciseMode, FIELD_TYPES, fieldTypeLabel } from '../services/CustomModesReader';
+import { ExerciseMode, FIELD_TYPES, fieldTypeLabel, builtInScreenName } from '../services/CustomModesReader';
 import {
   readCustomModes, renameCustomMode, writeCustomModeField, writeCustomModeDisplayField,
 } from '../services/CustomModesService';
@@ -355,7 +355,7 @@ export default function SportModesScreen() {
             <View style={{ marginTop: v3Spacing.medium }}>
               {currentDisplay.isBuiltIn ? (
                 <Text style={styles(theme).sectionDesc}>
-                  {t.sportModesBuiltInMsg(currentDisplay.templateLabel)}
+                  {t.sportModesBuiltInMsg(builtInScreenName(currentDisplay.templateName))}
                 </Text>
               ) : (
                 <>
