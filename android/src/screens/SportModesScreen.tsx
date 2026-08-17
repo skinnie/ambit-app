@@ -38,13 +38,10 @@ const PODS: { bit: number; label: string }[] = [
   { bit: 0x0040, label: 'Power pod' },
 ];
 
-// Real, from SuuntoLink's own real JS source (getMaxDisplays()) - Traverse/Traverse Alpha
-// cap at 4, every other variant in this family caps at 8 (see custom_modes.py's own
-// _MAX_DISPLAYS_BY_VARIANT). Not wired to the connected device's real variant here yet -
-// this screen doesn't currently know which watch is connected (no DeviceCapabilities
-// equivalent plumbed in) - hardcoded to the default 8, a real, explicit simplification, not
-// a silent gap.
-const MAX_DISPLAYS = 8;
+// Max user displays per mode (SuuntoLink's getMaxDisplays()): Traverse/Traverse Alpha = 4,
+// the rest of the Ambit3 family = 8. Now wired per-device via the `maxDisplays` navigation
+// param HomeScreen passes (it knows the connected watch), used both for the "N/max" label here
+// and for the read-time cap in CustomModesReader. See custom_modes.py's _MAX_DISPLAYS_BY_VARIANT.
 
 type Phase = 'idle' | 'connecting' | 'reading' | 'done' | 'error';
 
@@ -73,6 +70,9 @@ export default function SportModesScreen() {
   // USB connect() would pop the OTG prompt and tear down the BLE session (André, 2026-08-17).
   const route = useRoute<RouteProp<RootStackParamList, 'SportModes'>>();
   const overBle = route.params?.overBle ?? false;
+  // Per-device max user displays (Ambit3 family = 8, Traverse / Traverse Alpha = 4). Passed
+  // from HomeScreen, which knows the connected device. See ambit-app-sport-modes-display-limits.
+  const maxDisplays = route.params?.maxDisplays ?? 8;
   const [modes, setModes] = useState<ExerciseMode[] | null>(null);
   const [phase, setPhase] = useState<Phase>('idle');
   const [error, setError] = useState<string | undefined>();
@@ -124,7 +124,7 @@ export default function SportModesScreen() {
       setPhase(s.phase);
       setError(s.error);
       if (s.modes) applyModes(s.modes);
-    }, overBle);
+    }, overBle, maxDisplays);
     // Also load the structural view (menu order, multisport combos, slot counts) via the
     // full codec. Separate short read; best-effort so a failure here never blocks the editor.
     try {
@@ -330,7 +330,7 @@ export default function SportModesScreen() {
 
         <Card style={{ width: '100%' }}>
           <Text style={styles(theme).cardTitle}>
-            {t.sportModesDisplaysCount(realDisplays.length, MAX_DISPLAYS)}
+            {t.sportModesDisplaysCount(realDisplays.length, maxDisplays)}
           </Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: v3Spacing.small }}>
             <View style={{ flexDirection: 'row', gap: v3Spacing.small }}>
@@ -511,7 +511,7 @@ export default function SportModesScreen() {
                 <View style={{ flex: 1, marginLeft: 10 }}>
                   <Text style={styles(theme).cardTitle}>{name}</Text>
                   <Text style={styles(theme).sectionDesc}>
-                    {t.sportModesDisplaysCount(realCount, MAX_DISPLAYS)}
+                    {t.sportModesDisplaysCount(realCount, maxDisplays)}
                   </Text>
                 </View>
                 <Icon name="chevronRight" size={20} color={theme.mutedText} />

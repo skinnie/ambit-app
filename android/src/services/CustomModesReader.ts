@@ -341,11 +341,14 @@ function systemTailLength(templateNames: string[]): number {
 // signature above, systemTailLength() returns 0 and every screen counts as "real" - which is
 // how a mode showed "11/8" (more than the watch can hold). Capping here treats the overflow as
 // built-in, matching the desktop. André, 2026-08-17 ("we already fixed this on desktop").
-const MAX_USER_DISPLAYS = 8;
+// Default ceiling (Ambit3 family = 8). Callers pass the connected variant's own max
+// (Traverse / Traverse Alpha = 4) so the cap is per-device, matching custom_modes.py's
+// max_displays_for_variant. André, 2026-08-17.
+const DEFAULT_MAX_USER_DISPLAYS = 8;
 
-function numberDisplays(displays: Display[]): void {
+function numberDisplays(displays: Display[], maxUserDisplays: number = DEFAULT_MAX_USER_DISPLAYS): void {
   const tailLen = systemTailLength(displays.map(d => d.templateName));
-  const realCount = Math.min(displays.length - tailLen, MAX_USER_DISPLAYS);
+  const realCount = Math.min(displays.length - tailLen, maxUserDisplays);
   displays.forEach((d, i) => {
     d.isBuiltIn = i >= realCount;
     d.screenNumber = d.isBuiltIn ? null : i + 1;
@@ -357,7 +360,7 @@ export interface ExerciseMode {
   displays: Display[];
 }
 
-function decodeExerciseMode(bytes: Uint8Array, offset: number, length: number): ExerciseMode {
+function decodeExerciseMode(bytes: Uint8Array, offset: number, length: number, maxUserDisplays: number = DEFAULT_MAX_USER_DISPLAYS): ExerciseMode {
   const end = offset + length;
   let cursor = offset;
   const mode: ExerciseMode = {
@@ -386,7 +389,7 @@ function decodeExerciseMode(bytes: Uint8Array, offset: number, length: number): 
     }
     cursor = content + tag.length;
   }
-  numberDisplays(mode.displays);
+  numberDisplays(mode.displays, maxUserDisplays);
   return mode;
 }
 
@@ -423,7 +426,7 @@ export interface DecodedCustomModes {
 
 /** Decodes a raw CustomModes flash dump (12288 bytes, from readCustomModesRaw()). Mirrors
  * custom_modes.py's own decode() exactly - same tag walk, same field names. */
-export function decode(bytes: Uint8Array): DecodedCustomModes {
+export function decode(bytes: Uint8Array, maxUserDisplays: number = DEFAULT_MAX_USER_DISPLAYS): DecodedCustomModes {
   const root = readTag(bytes, 0);
   if (!root || root.tagId !== DEVICE_CUSTOM) {
     throw new Error(`expected DEVICE_CUSTOM at offset 0, got ${root ? `0x${root.tagId.toString(16)}` : 'nothing'}`);
@@ -445,7 +448,7 @@ export function decode(bytes: Uint8Array): DecodedCustomModes {
         if (!subTag) break;
         const subContent = subCursor + 4;
         if (subTag.tagId === EXERCISE_MODES_MODE) {
-          result.exerciseModes.push(decodeExerciseMode(bytes, subContent, subTag.length));
+          result.exerciseModes.push(decodeExerciseMode(bytes, subContent, subTag.length, maxUserDisplays));
         }
         subCursor = subContent + subTag.length;
       }

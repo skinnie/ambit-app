@@ -34,7 +34,7 @@ export interface ReadCustomModesState {
 /** Real, read-only (0x0b17 flash read) - safe any time the watch is connected. Over BLE
  * (overBle) runs on the already-open link; over USB opens its own short-lived connection. */
 export async function readCustomModes(
-  onState: (s: ReadCustomModesState) => void, overBle = false,
+  onState: (s: ReadCustomModesState) => void, overBle = false, maxUserDisplays = 8,
 ): Promise<void> {
   onState({ phase: overBle ? 'reading' : 'connecting' });
   if (!overBle) {
@@ -48,7 +48,7 @@ export async function readCustomModes(
   onState({ phase: 'reading' });
   try {
     const bytes = base64ToBytes(await readCustomModesRaw());
-    const decoded = decode(bytes);
+    const decoded = decode(bytes, maxUserDisplays);
     onState({ phase: 'done', modes: decoded.exerciseModes });
   } catch (e: any) {
     onState({ phase: 'error', error: e?.message ?? 'Failed to read CustomModes' });
