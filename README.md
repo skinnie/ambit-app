@@ -55,28 +55,7 @@ cd ambit-app
 ### Android
 
 **The recommended path is to install the prebuilt APK — you do not need to build anything.**
-- **[openambit](https://github.com/openambitproject/openambit)** — `libambit`, the reference the
-  USB/BLE protocol work is checked against (GPLv3).
-- **opensportsync** — the starting point for the Android app.
-- **marguslt** — firmware-download recipe, gists, openmoves.
-- **sebchastang** — published Suunto App Zone interval-training scripts.
-- **[iwanders/gps_track_pod](https://github.com/iwanders/gps_track_pod)** — Suunto GPS Track Pod
-  support (MIT), vendored in `tools/vendor/gpspod/`.
-- **[evelbulgroz/suunto-t6-sync](https://github.com/evelbulgroz/suunto-t6-sync)** — Suunto
-  T6/T6c/T6d read support (MIT), vendored in `tools/vendor/suunto_t6_sync/`; basis for the
-  experimental T6 heart-rate export and GPS-Track-Pod merge.
-- **App Zone workout examples** — real published App-Zone interval scripts the workout findings
-  were checked against: [claha/suunto](https://github.com/claha/suunto) (its `Suunto.mod(STEP,N)`
-  repeat encoding), [follesoe/suunto-ambit-intervals](https://github.com/follesoe/suunto-ambit-intervals),
-  [hefler/SuuntoApps](https://github.com/hefler/SuuntoApps),
-  [AdamHodgson/Suunto-Interval-Training](https://github.com/AdamHodgson/Suunto-Interval-Training),
-  [Httqm/Suunto](https://github.com/Httqm/Suunto).
-- **[ruvido/goambit](https://github.com/ruvido/goambit)** & **[AlexLBraits/ambit2gpx](https://github.com/AlexLBraits/ambit2gpx)**
-  — independent implementations of the same cloud-free USB paths (route upload / activity read),
-  confirming they're real.
-- **[mihaildemidoff/suunto-sml-model](https://github.com/mihaildemidoff/suunto-sml-model)** —
-  a JAXB model of Suunto's SML format, a reference for the exercise-log work.
-- the **Suunto forum community** and **wanarun.net**.
+
 
 1. On your Android device, open the [latest release](https://github.com/skinnie/sommet/releases/latest)
    and download `app-release-testing.apk`.
@@ -237,12 +216,28 @@ Built on the real work of others:
 - **[openambit](https://github.com/openambitproject/openambit)** — `libambit`, the reference the
   USB/BLE protocol work is checked against (GPLv3).
 - **opensportsync** — the starting point for the Android app.
-- **marguslt** — firmware-download recipe, gists, openmoves.
+- **Suunto** — for these great watches, support after movescount closing and sharing compiler for Suunto apps on suunto-forum
+- **marguslt** — RE work, gists, openmoves.
 - **sebchastang** — published Suunto App Zone interval-training scripts.
 - **[iwanders/gps_track_pod](https://github.com/iwanders/gps_track_pod)** — Suunto GPS Track Pod
   support (MIT), vendored in `tools/vendor/gpspod/`.
 - the **Suunto forum community** and **wanarun.net**.
-
+- **[evelbulgroz/suunto-t6-sync](https://github.com/evelbulgroz/suunto-t6-sync)** — Suunto
+  T6/T6c/T6d read support (MIT), vendored in `tools/vendor/suunto_t6_sync/`; basis for the
+  experimental T6 heart-rate export and GPS-Track-Pod merge.
+- **App Zone workout examples** — real published App-Zone interval scripts the workout findings
+  were checked against: [claha/suunto](https://github.com/claha/suunto) (its `Suunto.mod(STEP,N)`
+  repeat encoding), [follesoe/suunto-ambit-intervals](https://github.com/follesoe/suunto-ambit-intervals),
+  [hefler/SuuntoApps](https://github.com/hefler/SuuntoApps),
+  [AdamHodgson/Suunto-Interval-Training](https://github.com/AdamHodgson/Suunto-Interval-Training),
+  [Httqm/Suunto](https://github.com/Httqm/Suunto).
+- **[ruvido/goambit](https://github.com/ruvido/goambit)** & **[AlexLBraits/ambit2gpx](https://github.com/AlexLBraits/ambit2gpx)**
+  — independent implementations of the same cloud-free USB paths (route upload / activity read),
+  confirming they're real.
+- **[mihaildemidoff/suunto-sml-model](https://github.com/mihaildemidoff/suunto-sml-model)** —
+  a JAXB model of Suunto's SML format, a reference for the exercise-log work.
+- the **Suunto forum community** and **wanarun.net**.
+- 
 Data & assets:
 
 - Map data © **OpenStreetMap** contributors, under the **Open Database License (ODbL)**. Tiles:
