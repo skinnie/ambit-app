@@ -259,7 +259,21 @@ void DeviceService::refreshDevices()
         m_connectedWatches = watches;
         const auto sel = obj.value(QStringLiteral("selected"));
         m_selectedProductId = sel.isNull() ? -1 : sel.toInt();
+
+        // If the pinned watch isn't actually on the bus - a stale selection carried over
+        // from a previous session, or a different watch plugged in since - every tool would
+        // keep targeting the absent one (write_nav defaults to the Ambit3 Peak when nothing
+        // present matches) and the app would sit on "no watch" while one is clearly
+        // connected. Fall back to a watch that IS present so it just works. selectWatch()
+        // re-pins the backend, re-reads identity and re-fetches this list; once the pinned
+        // id is in the list this branch is skipped, so it can't loop.
+        bool selectedPresent = false;
+        for (const auto &w : watches)
+            if (w.toMap().value(QStringLiteral("productId")).toInt() == m_selectedProductId)
+                selectedPresent = true;
         emit connectedWatchesChanged();
+        if (!watches.isEmpty() && !selectedPresent)
+            selectWatch(watches.first().toMap().value(QStringLiteral("productId")).toInt());
     });
 }
 
@@ -280,6 +294,13 @@ void DeviceService::selectWatch(int productId)
         m_autoSyncedThisConnection = false;
         refresh();
         refreshDevices();
+        // GLONASS support and orbit freshness are per-WATCH, read from the watch itself
+        // (sgee.py glonass_status). Without this, switching e.g. Ambit3 -> Traverse kept the
+        // previous watch's glonassSupported, so a Traverse (which HAS GlonassSGEE) wrongly
+        // showed no GLONASS while an Ambit3 (which has none) could still show it. The
+        // backend already targets the just-selected watch (the /api/device/select POST above
+        // completed before this reply), so re-asking now reflects the new watch.
+        checkGpsOrbitStatus();
     });
 }
 
