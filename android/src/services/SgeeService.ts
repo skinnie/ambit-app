@@ -87,6 +87,43 @@ function todayUtc(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+export interface GlonassStatus {
+  supported: boolean; // does this watch declare a GlonassSGEE region at all?
+  valid?: boolean;    // is that region written with a decodable ephemeris (not erased)?
+  date?: string;      // its generation date (YYYY-MM-DD), when valid
+}
+
+/**
+ * Reads the GLONASS region's own state, mirroring the desktop tools/sgee.py glonass_status():
+ * capability comes from the WATCH (does its 0x0b21 map declare GlonassSGEE), and freshness from
+ * the region's own header (offset 10..13: big-endian year, then month, day; erased flash is all
+ * 0xFF) since there is no 0x0b15-style query for GLONASS. Read-only, and assumes the caller
+ * already holds the link open (readMemoryMap()/readRegion() act on the shared native device).
+ */
+export async function readGlonassStatus(): Promise<GlonassStatus> {
+  let region;
+  try {
+    region = (await readMemoryMap())['GlonassSGEE'];
+  } catch {
+    return { supported: false };
+  }
+  if (!region) return { supported: false };
+  try {
+    const head = base64ToBytes(await readRegion(region.base, 16));
+    if (head.every((b) => b === 0xff)) return { supported: true, valid: false };
+    const year = (head[10] << 8) | head[11];
+    const month = head[12];
+    const day = head[13];
+    if (year >= 2000 && year <= 2100 && month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      const date = `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      return { supported: true, valid: true, date };
+    }
+    return { supported: true, valid: false };
+  } catch {
+    return { supported: true }; // region declared but header unreadable - still "supported"
+  }
+}
+
 /**
  * Writes GLONASS extended ephemeris to the watches that declare a GlonassSGEE region. Mirrors
  * the desktop tools/sgee.py --glonass byte-for-byte: the SAME length-prefixed blob as GPS

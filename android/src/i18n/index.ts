@@ -429,6 +429,9 @@ const fr = {
   ambitSettingsRefreshBtn: 'Actualiser',
   ambitSettingsReading: 'Lecture des réglages…',
   ambitSettingsReadOnly: 'Lecture seule pour le moment — les réglages sont affichés mais leur modification n\'est pas encore prise en charge pour ce modèle.',
+  orbitalDataTitle: 'Données orbitales',
+  ephemerisGpsOnly: 'Éphémérides GPS uniquement',
+  ephemerisGpsOnlyInfo: 'Cette montre peut aussi utiliser les satellites GLONASS et dispose de sa propre mémoire pour leurs données orbitales. Les logiciels Suunto ne les lui envoient jamais, donc ces satellites démarrent « à froid » à chaque fois. Sommet envoie les données orbitales GPS et GLONASS, ce qui peut accélérer l\'acquisition d\'une position. Cochez pour n\'envoyer que le GPS.',
 
   // SportModesScreen — Ambit3 CustomModes (2026-08-08), Ambit3-only, pas disponible sur Kailash
   sportModesButton:      'MODES SPORT',
@@ -1118,6 +1121,9 @@ const en: typeof fr = {
   ambitSettingsRefreshBtn: 'Refresh',
   ambitSettingsReading: 'Reading settings...',
   ambitSettingsReadOnly: 'Read-only for now — settings are shown but changing them isn\'t supported yet for this model.',
+  orbitalDataTitle: 'Orbital data',
+  ephemerisGpsOnly: 'Ephemeris GPS only',
+  ephemerisGpsOnlyInfo: 'This watch can also use GLONASS satellites, and has its own storage for their orbital data. Suunto\'s software never sends it to this model, so those satellites start cold every time. Sommet sends both GPS and GLONASS orbital data, which can speed up getting a fix. Tick this to send GPS only.',
 
   // SportModesScreen — Ambit3 CustomModes (2026-08-08), Ambit3-only, not available on Kailash
   sportModesButton:      'SPORT MODES',

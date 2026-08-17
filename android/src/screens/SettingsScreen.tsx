@@ -21,6 +21,8 @@ import Icon, { IconName } from '../components/ui/Icon';
 import { CREDITS } from '../legal/credits';
 import { DecodedSetting, SettingField, SettingScreen } from '../services/AmbitSettingsReader';
 import { readAmbitSettings, writeAmbitSetting } from '../services/AmbitSettingsService';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { EPHEMERIS_GPS_ONLY_KEY, GlonassStatus } from '../services/SgeeService';
 import type { WriteDevice } from '../services/AmbitSettingsWriter';
 import {
   getRunalyzeApiKey, saveRunalyzeApiKey, removeRunalyzeApiKey,
@@ -174,6 +176,7 @@ export default function SettingsScreen() {
   const [isGarminAttached, setIsGarminAttached] = useState(false);
   useFocusEffect(useCallback(() => {
     detectAttachedDeviceType().then(t => setIsGarminAttached(t === 'garmin')).catch(() => {});
+    AsyncStorage.getItem(EPHEMERIS_GPS_ONLY_KEY).then(v => setEphemerisGpsOnly(v === 'true')).catch(() => {});
   }, []));
 
   const [ambitSettings, setAmbitSettings] = useState<DecodedSetting[] | null>(null);
@@ -186,6 +189,12 @@ export default function SettingsScreen() {
   // their value statically and the write controls are hidden.
   const [ambitReadOnly, setAmbitReadOnly] = useState(false);
   const [ambitWriteDevice, setAmbitWriteDevice] = useState<WriteDevice | undefined>();
+  // GLONASS orbital data - desktop parity (WatchSettingsPage's "Orbital data" group). Shown
+  // only when the connected watch declares a GlonassSGEE region (Traverse/Kailash, not the
+  // Ambit3 Peak/Sport), answered by the watch itself via readAmbitSettings' same connection.
+  const [ambitGlonass, setAmbitGlonass] = useState<GlonassStatus | undefined>();
+  const [ephemerisGpsOnly, setEphemerisGpsOnly] = useState(false);
+  const [orbitalInfoOpen, setOrbitalInfoOpen] = useState(false);
   const [ambitSettingsPhase, setAmbitSettingsPhase] =
     useState<'idle' | 'connecting' | 'reading' | 'done' | 'error'>('idle');
   const [ambitSettingsError, setAmbitSettingsError] = useState<string | undefined>();
@@ -213,8 +222,14 @@ export default function SettingsScreen() {
       if (s.deviceName) setAmbitDeviceName(s.deviceName);
       setAmbitWriteDevice(s.writeDevice);
       setAmbitReadOnly(!!s.readOnly);
+      if (s.glonass !== undefined) setAmbitGlonass(s.glonass);
       setAmbitSettingsError(s.error);
     });
+  }
+
+  async function handleEphemerisGpsOnly(v: boolean) {
+    setEphemerisGpsOnly(v);
+    await AsyncStorage.setItem(EPHEMERIS_GPS_ONLY_KEY, v ? 'true' : 'false');
   }
 
   async function handleWriteAmbitSetting(key: string, value: number) {
@@ -588,6 +603,36 @@ export default function SettingsScreen() {
           <Text style={[styles.sectionDesc, { color: theme.error, marginTop: 10 }]}>
             {ambitSettingsError}
           </Text>
+        )}
+
+        {/* Orbital data (GLONASS) - shown only when the watch declares a GlonassSGEE region
+            (Traverse/Kailash, not the Ambit3 Peak/Sport), read in the same connection above.
+            Desktop parity: WatchSettingsPage's "Orbital data" group with the "Ephemeris GPS
+            only" switch + a tap-to-expand "i". The write itself rides the Home orbital update. */}
+        {ambitGlonass?.supported && (
+          <>
+            <Text style={styles.settingsGroupTitle}>{t.orbitalDataTitle}</Text>
+            <View style={styles.ambitSettingRow}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 10 }}>
+                <Text style={[styles.ambitSettingLabel, { flex: 0, marginRight: 8 }]}>{t.ephemerisGpsOnly}</Text>
+                <TouchableOpacity
+                  onPress={() => setOrbitalInfoOpen(o => !o)}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  style={{
+                    width: 18, height: 18, borderRadius: 9, borderWidth: 1,
+                    alignItems: 'center', justifyContent: 'center',
+                    borderColor: orbitalInfoOpen ? theme.primary : theme.mutedText,
+                  }}
+                >
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: orbitalInfoOpen ? theme.primary : theme.mutedText }}>i</Text>
+                </TouchableOpacity>
+              </View>
+              <Toggle value={ephemerisGpsOnly} onValueChange={handleEphemerisGpsOnly} />
+            </View>
+            {orbitalInfoOpen && (
+              <Text style={[styles.sectionDesc, { marginTop: 4 }]}>{t.ephemerisGpsOnlyInfo}</Text>
+            )}
+          </>
         )}
 
         {ambitSettings && ambitSettings

@@ -5,6 +5,7 @@ import {
 } from './AmbitSettingsReader';
 import { decodePersonalSettings } from './AmbitPersonalSettingsReader';
 import { writeSetting as writeSettingRaw, WriteSettingResult, WriteDevice } from './AmbitSettingsWriter';
+import { readGlonassStatus, GlonassStatus } from './SgeeService';
 
 // The Ambit 1 / Ambit 2 family (Ambit, Ambit2, Ambit2 S, Ambit2 R) uses the older legacy
 // personal-settings mechanism, not the Ambit3/Kailash SBEM 0x1100 - a different read path
@@ -55,6 +56,11 @@ export interface ReadSettingsState {
   // settings write exists in libambit). The UI renders values statically and hides the
   // write controls.
   readOnly?: boolean;
+  // Whether the connected watch declares a GlonassSGEE region (Traverse/Kailash yes, the
+  // Ambit3 Peak/Sport no), read from its 0x0b21 map in this same connection so the settings
+  // screen can show the "Orbital data / Ephemeris GPS only" group without a second round trip.
+  // Desktop parity: DeviceService.glonassSupported.
+  glonass?: GlonassStatus;
   error?: string;
 }
 
@@ -98,7 +104,11 @@ export async function readAmbitSettings(onState: (s: ReadSettingsState) => void)
       : AMBIT3_SETTINGS_FIELDS;
     const writeDevice: WriteDevice = isKailash ? 'kailash' : traverse ? 'traverse' : 'ambit3';
     const settings = decodeSettings(await readSettingsRaw(), fields);
-    onState({ phase: 'done', settings, fields, writeDevice, isKailash, deviceName });
+    // Same connection: does this watch carry a GLONASS ephemeris region? Non-fatal - a map
+    // read that fails just means the "Orbital data" group stays hidden, never a failed read.
+    let glonass: GlonassStatus | undefined;
+    try { glonass = await readGlonassStatus(); } catch { /* leave undefined */ }
+    onState({ phase: 'done', settings, fields, writeDevice, isKailash, deviceName, glonass });
   } catch (e: any) {
     onState({ phase: 'error', error: e?.message ?? 'Failed to read settings' });
   } finally {
