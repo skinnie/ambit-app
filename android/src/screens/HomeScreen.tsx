@@ -408,9 +408,13 @@ export default function HomeScreen() {
       setSelectedWatch(null);
       refreshWatchLists();
       setPhase('connected');
-      // No auto-sync on BLE connect — let the user pick an action from the menu.
-      // (Auto-sync on connect is a USB-attach convenience; over BLE the connect
-      // is already an explicit user action and the sync path is experimental.)
+      // Auto-sync on BLE connect (André, 2026-08-17). The Ambit3's Bluetooth link is watch-
+      // driven and short-lived - it comes up when the user triggers "Sync now"/"Pair Mobile
+      // App" on the watch and can close again within seconds. Waiting for the user to then tap
+      // Sync in the app often missed that window ("activities didn't sync"), so we spend the
+      // freshly-open link immediately, the same convenience USB attach already has. handleSync
+      // is transport-aware (uses the BLE provider here), so this reads over the live link.
+      handleSyncRef.current();
     } catch (e: any) {
       setBleConnected(false);
       bleConnectedRef.current = false;
