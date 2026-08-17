@@ -1,4 +1,4 @@
-import { connect, disconnect, readRegion, writeRegion } from '../native/AmbitUsbModule';
+import { connect, disconnect, readRegion, writeRegion, isBleTransportActive } from '../native/AmbitUsbModule';
 import { base64ToBytes, bytesToBase64 } from './Base64';
 import { generateSource, buildCompileRequest, Workout } from './WorkoutSource';
 import { installCompiledApp, InstallState } from './AppInstall';
@@ -97,9 +97,15 @@ export interface PlannedMoveState {
 export async function writePlannedMoves(
   items: TrainingItem[], baseDate: number, onState: (s: PlannedMoveState) => void,
 ): Promise<boolean> {
-  onState({ phase: 'connecting' });
-  try { await connect(); } catch (e: any) {
-    onState({ phase: 'error', error: e?.message ?? 'Connection to the watch failed' }); return false;
+  // Transport (André, 2026-08-17): over BLE the link is already open; the USB connect() would
+  // pop the OTG prompt and tear down the BLE session. read/writeRegion + writeCustomModesRaw act
+  // on the shared native device either way. Same fix as CustomModesService.
+  const overBle = isBleTransportActive();
+  onState({ phase: overBle ? 'writing' : 'connecting' });
+  if (!overBle) {
+    try { await connect(); } catch (e: any) {
+      onState({ phase: 'error', error: e?.message ?? 'Connection to the watch failed' }); return false;
+    }
   }
   try {
     const blob = buildTrainingProgram(items.map(buildTrainingItem), baseDate);
@@ -118,6 +124,6 @@ export async function writePlannedMoves(
     onState({ phase: 'error', error: e?.message ?? 'Write failed' });
     return false;
   } finally {
-    await disconnect().catch(() => {});
+    if (!overBle) await disconnect().catch(() => {});
   }
 }
