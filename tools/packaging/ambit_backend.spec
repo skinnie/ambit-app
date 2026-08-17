@@ -42,8 +42,13 @@ def _is_excluded(dest):
 # the excluded RE/corpus files are filtered out of a.datas after Analysis (below).
 datas = [
     (str(REPO / "tools"), "tools"),
-    (str(REPO / "data" / "suunto_apps"), "data/suunto_apps"),
 ]
+# The SuuntoLink app catalog (data/suunto_apps) is deliberately NOT in the repo - it's the
+# not-ours-to-redistribute corpus kept out of version control (see .gitignore / assets-hygiene).
+# So it's absent on a clean CI checkout; guard it the same way demo_data is, or PyInstaller
+# aborts with "Unable to find .../data/suunto_apps". When present locally it's still bundled.
+if (REPO / "data" / "suunto_apps").is_dir():
+    datas.append((str(REPO / "data" / "suunto_apps"), "data/suunto_apps"))
 if (BACKEND / "demo_data").is_dir():
     datas.append((str(BACKEND / "demo_data"), "backend/demo_data"))
 
