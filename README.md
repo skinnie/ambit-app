@@ -1,42 +1,91 @@
-# ambit-app
+# Sommet
 
-Interoperability reverse engineering, to send GPX routes to a **Suunto Ambit3** without
-Movescount, which is dead, without an account and without a server.
+Sommet, french name for Peak, is an application to sync and manage Suunto Ambit 1, Ambit 2, Ambit 3, Traverse , Traverse Alpha and Kailash families/variants + Garmin Etrex 10/20/20x/30/30x GPSr.
+The aim is to provide the same features to Android, Linux and later on if possible Mac and Windows.
 
-The binary format of the watch's navigation database is decoded and verified byte for byte
-against USB captures of SuuntoLink. The serializer exists in Python and in C, the latter
-written to drop into openambit's `libambit` unmodified.
 
-**It works on hardware.** On 2026-08-04 a route built from a GPX file alone was written to a real
-Ambit3 over USB, and the watch shows it with its waypoints. What remains is packaging: Android
-USB-OTG, then Bluetooth, then iOS.
+All features that are visible in the app are available by USB/USB-OTG, and some are also available/being tested by bluetooth.
+Bluetooth currently is only available as experimental feature, which can be enabled in settings. Currently it works on the first pair, but then it is flaky.
+Within the features we have:
+- Sync time with watch: from the current time of the device or another timezone
+- Update orbital data: gps and glonass (for the glonass devices)
+- Device manual: download them in pdf format
+- Activities: download from the watch,view on a map, export them in gpx, fit, to local, cloud or 3rd party services (strava, runalyze, intervals.icu, others to come)
+- Routes: Import/send a gpx route to the watch. export the routes on the watch to gpx format
+- POIs: Import/send a POI to the watch (via a map search, or coordinates), export the POIs on the map to gpx
+- Calendar: visual calendar with days where activities were done
+- Totals: totals of a certain activity
+- Backup: backup routes and POI altogether to a folder. Backup of your watch firmware (these watches firmwares should be matching the hw version)
+- Intervals: a visual workout builder, which later can be used as an app on the watch (I recommend to use suunto link to install them)
+- Sports modes: sports mode editor for the watches
+- Firmware: flasher of firmware to the watch
+- Suunto HR Sensor: connection of the sensor, check battery level, firmware version, etc
+- Kailash specific: places visit, countries visited, export activity (categorized by default as walk)
+- Etrex specific: download activities (categorized by default as walk), import/export POIs, import/export routes.
+- GPS Pod Support : integration of Suunto GPS Pod support (experimental - no device to test)
+- Suunto T6 support: integration of Suunto T6 support (experimental - no device to test)
 
-- [Documentation site](docs/index.md) (`mkdocs serve` to browse locally) — tutorials, how-to
-  guides, reference and explanations, organized per [Diataxis](https://diataxis.fr/).
-- [`docs/tutorials/runbook.md`](docs/tutorials/runbook.md) — step-by-step instructions for whoever has the watch.
-- [`HANDOFF.md`](HANDOFF.md) — project state, prerequisites and remaining work. **Start here** -
-  it also has a pointer near the top for whoever is building the app specifically.
-- [`tools/README.md`](tools/README.md) — format specification and tooling usage.
-- [`docs/explanation/history.md`](docs/explanation/history.md) — watch-family background (codenames, hardware), the
-  Movescount/Suunto-app timeline, and adjacent open-source/reference material
-  (openambit, opensportsync, marguslt's writeups, AmbitConnect/AmbitSync).
 
-A few other top-level `.md` files are earlier drafts or preliminary research, superseded by
-`HANDOFF.md` - each says so at its own top if you open it directly. Beyond the original
-GPX/route goal, this repo also has verified-on-hardware work on recorded-move export and AGPS
-data, plus a paused investigation into recreating Movescount's training-plan feature - see
-`HANDOFF.md`'s "Work done beyond these 8 milestones" section for all of it; none of it is
-required for the core GPX-over-cable-and-Bluetooth deliverable.
+## Screenshots
 
-```
-make -C csrc && python3 tools/selftest.py
-```
+The desktop app (Linux), showing a connected Suunto Kailash:
 
-The analysis artifacts (captures, SuuntoLink binaries, decompiled APK) are not versioned:
-proprietary software and personal data. See `HANDOFF.md`.
+| | | |
+|:---:|:---:|:---:|
+| ![Home](screenshots/01-home.png)<br>**Home** | ![Activities](screenshots/02-activities.png)<br>**Activities** | ![Totals](screenshots/03-totals.png)<br>**Totals** |
+| ![Calendar](screenshots/04-calendar.png)<br>**Calendar** | ![Backup](screenshots/05-backup.png)<br>**Backup** | ![Watch settings](screenshots/06-watch-settings.png)<br>**Watch settings** |
+| ![Firmware](screenshots/07-firmware.png)<br>**Firmware** | ![Smart Sensor](screenshots/08-smart-sensor.png)<br>**Smart Sensor** | ![GPS Track Pod](screenshots/09-gps-track-pod.png)<br>**GPS Track Pod** |
+| ![Suunto T6](screenshots/10-suunto-t6.png)<br>**Suunto T6** | ![Settings](screenshots/11-settings.png)<br>**Settings** | |
 
-Interoperability with owned hardware, to put one's own data back on it after a service was
-shut down. No protection is circumvented.
+Several Suunto watches on the USB bus at once — tap to switch which one you manage:
+
+![Multi-watch switcher](screenshots/12-watch-switcher.png)
+
+
+I am not at all responsible for errors, failures, bricked devices, etc. This software is provided as is.
+Currently main features were tested with Ambit 3, Traverse and Kailash in Android and Linux Mint 22. Normally most features work with Ambit 1 and 2 (I don't have yet the watches to test). Complications of each feature may require further testing (sports modes, settings, etc)
+
+
+The app was entirely vibe coded with Claude, given my lack of knowledge. It was fueled in stubbornness, coffee and good will to bring some features for these watches for some operative systems.
+The app is free, no login/account and can be used almost fully offline (Orbital data, and intervals workout builder need internet)
+
+
+
+
+
+## F.A.Q.:
+
+
+- Found something that you think is not correct from a dev perspective, contact me. I have zero experience, but willing to learn.
+- Found a bug? open an issue with logs and screenshots. Easier if you follow up [this](https://claude.ai/code/artifact/c88a8a2b-31cc-4ca1-93ef-b120a48fc1ae)
+- Are the Spartan, Suunto 5,9, and later suuntos be supported: No. Suunto link and suunto app already provide great features for them.
+- Can we get back scheduled workouts, guided workouts and training plans feature back from Movescount? I didn't arrive, if you have material that can help feel free to contact me
+- Can you implement X,Y,Z feature? Propose, beware that if I don't have the hardware if may be complicated to implement it
+- My watch bugged, what I do now?! Go to mac or windows, connect to suunto link and reset. Your settings will be lost but your watch will be alive.
+- Are you gonna implement translations to X,Y,Z language? For the moment no, but if anyone has envy to do it go ahead.
+
+
+## Why?
+
+
+There are newer watches, "better watches", more accurate watches, more confortable, more everything. And I also enjoy them, but I always enjoyed the Ambit line up.
+Using an Ambit is like driving a classic car, is like home. 
+
+When movescount was closed features were lost, and some were unfortunately not able to be implemented due to complexity/lack of resources/timeline from Suunto. 
+The use of suunto app + suunto link although grateful was far from easy for the average joe, putting these watches to the side. The main of this app is also to bring some easyness to this and so that these devices could be used for more people and not end in the landfill.
+Fortunately we leave wonderful times, and with AI and community work, why not try to get those features back? 
+
+
+## Desktop: Why Linux first?
+First because there was one projects already advanced: openambit.
+Second, because linux is also, on my opinion a great way to "revive" old hardware and make usable again.
+Third: windows and mac users have suunto app which can get them to the functionalities. Mormally the app will run on mac and windows, I just haven't tested it.
+
+
+## Mobile: why android?
+First because there was one projects already advanced: opensportsync.
+Second because I have an old Panasonic Thoughpad windows tablet that I can get android on it, also lots of old android tablets/phones that can be used for this and/or be revived with custom roms.
+
 
 ## Building and installing
 
@@ -188,17 +237,26 @@ Whenever you do flash — desktop or Android — make sure the **phone/computer,
 (on Android) everything on the OTG chain are fully charged** before you start, and don't
 interrupt it.
 
-## License and credits
-## Legal & licenses
 
+## How can I contribute to this project?
+Donations are welcome, paypal, mbway, bank transfer, but also captures of watches I don't have as explained [here](https://claude.ai/code/artifact/c88a8a2b-31cc-4ca1-93ef-b120a48fc1ae).
+Also with your time and skills to correct bugs/implement features.
+To share it, so more people put these devices to use and not on the landfill
+
+
+## I loved so much my watch but it has:
+- Dead battery: amazon, aliexpress and youtube are your friends
+- Strap is broken: suunto still sells them new, also amazon, aliexpress, etc
+- Connect to moveslink icon: try to charge it overnight, connect and disconnect on suunto link and reset firmware
+
+
+## Legal & licenses
 Independent, unofficial software — **not affiliated with, endorsed by, or supported by Suunto or
-Garmin.** Suunto, Ambit, Traverse, Kailash, Garmin and eTrex are trademarks of their respective
+Garmin.** Suunto, Ambit, Traverse, Kailash, T6 Garmin and eTrex are trademarks of their respective
 owners, used here only to describe compatibility.
 
-See [`docs/reference/credits.md`](docs/reference/credits.md) for the people and projects this work builds on: openambit,
-opensportsync, marguslt, sebchastang, the Suunto forum community, and wanarun.net.
 This software is provided **as is, without warranty of any kind** — you are responsible for
-anything that happens to your device (see the firmware notes above).
+anything that happens to your device.
 
 Licensed under the **[GNU GPLv3](LICENSE)** — the same license as
 [openambit](https://github.com/openambitproject/openambit), whose `libambit` this project's
@@ -216,12 +274,10 @@ Built on the real work of others:
 - **[openambit](https://github.com/openambitproject/openambit)** — `libambit`, the reference the
   USB/BLE protocol work is checked against (GPLv3).
 - **opensportsync** — the starting point for the Android app.
-- **Suunto** — for these great watches, support after movescount closing and sharing compiler for Suunto apps on suunto-forum
-- **marguslt** — RE work, gists, openmoves.
+- **marguslt** — firmware-download recipe, gists, openmoves.
 - **sebchastang** — published Suunto App Zone interval-training scripts.
 - **[iwanders/gps_track_pod](https://github.com/iwanders/gps_track_pod)** — Suunto GPS Track Pod
   support (MIT), vendored in `tools/vendor/gpspod/`.
-- the **Suunto forum community** and **wanarun.net**.
 - **[evelbulgroz/suunto-t6-sync](https://github.com/evelbulgroz/suunto-t6-sync)** — Suunto
   T6/T6c/T6d read support (MIT), vendored in `tools/vendor/suunto_t6_sync/`; basis for the
   experimental T6 heart-rate export and GPS-Track-Pod merge.
@@ -236,9 +292,12 @@ Built on the real work of others:
   confirming they're real.
 - **[mihaildemidoff/suunto-sml-model](https://github.com/mihaildemidoff/suunto-sml-model)** —
   a JAXB model of Suunto's SML format, a reference for the exercise-log work.
+- GPS Track Pod support from [iwanders/gps_track_pod](https://github.com/iwanders/gps_track_pod) (MIT).
+- Suunto T6 support https://github.com/evelbulgroz/suunto-t6-sync  
 - the **Suunto forum community** and **wanarun.net**.
-- 
-Data & assets:
+
+
+## Data & assets:
 
 - Map data © **OpenStreetMap** contributors, under the **Open Database License (ODbL)**. Tiles:
   **CyclOSM** / OpenStreetMap France, standard OSM, and **IGN Géoplateforme** (France).
