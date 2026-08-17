@@ -23,6 +23,11 @@ QtObject {
     // write_nav.py's PRODUCT_IDS fix), so `connected` is already true for it; this just picks
     // out which real device is actually plugged in, the same way isGarmin/isAmbit already do.
     readonly property bool isKailash: connected && DeviceService.model === "Hoopoe"
+    // Traverse (Jabiru) / Traverse Alpha (Loon). Used to hide features these watches don't
+    // have - e.g. planned moves: their 0x0b21 memory map declares NO TrainingProgram region
+    // (confirmed in the real traverse pcaps), so Intervals must not be offered for them, same
+    // as it already isn't for the Kailash. André, 2026-08-18.
+    readonly property bool isTraverse: connected && (DeviceService.model === "Jabiru" || DeviceService.model === "Loon")
 
     // 2026-08-07: switched from DeviceService.navOk to deviceInfoOk - navOk came from a
     // slow, unnecessary full flash read (see DeviceService's own header comment); a

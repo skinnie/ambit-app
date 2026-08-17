@@ -76,6 +76,16 @@ Rectangle {
             selected: root.currentPage === "calendar"
             onClicked: root.pageSelected("calendar")
         }
+        // Gear tracker (v3, 2026-08-18): bikes/shoes + components + service reminders, imported
+        // from intervals.icu and owned locally. No device support to gate on (same as Totals/
+        // Calendar) — it's about your gear, not the connected watch.
+        NavItem {
+            width: parent.width
+            glyph: Icons.gear
+            label: qsTr("Gear")
+            selected: root.currentPage === "gear"
+            onClicked: root.pageSelected("gear")
+        }
         NavItem {
             width: parent.width
             // Nothing to back up, and nothing to restore to, without a device.
@@ -97,6 +107,8 @@ Rectangle {
             // same per-feature model the Android app uses. Still Ambit-only (rides App-Zone).
             visible: DeviceService.intervalsEnabled && HomeViewModel.anyDevice
                      && !HomeViewModel.isGarmin && !HomeViewModel.isKailash
+                     // Traverse/Traverse Alpha have no TrainingProgram region - no planned moves.
+                     && !HomeViewModel.isTraverse
             useIntervalsIcon: true
             label: qsTr("Intervals")
             selected: root.currentPage === "intervals"

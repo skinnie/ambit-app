@@ -7,6 +7,7 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
 import { runSync, SyncState } from '../services/SyncService';
+import { getGearAlerts } from '../services/GearAlerts';
 import { updateOrbitalData, OrbitalUpdateState } from '../services/SgeeService';
 import {
   connect as ambitConnect, disconnect as ambitDisconnect, getDeviceInfo, AmbitDeviceInfo,
@@ -53,6 +54,10 @@ import { NavShell, NavShellItem } from '../navigation/NavShell';
 // that distinguishes it: everywhere below that would otherwise assume Ambit3's own
 // ExerciseLog/sport-mode shape switches to the Kailash-specific path instead.
 const isKailash = (info: AmbitDeviceInfo | null) => info?.model === 'Hoopoe';
+// Traverse (Jabiru) / Traverse Alpha (Loon) - no TrainingProgram region in their 0x0b21 map
+// (confirmed in the real traverse pcaps), so they can't hold planned moves. Used to hide
+// Intervals for them, same as it's already hidden for the Kailash. André, 2026-08-18.
+const isTraverse = (info: AmbitDeviceInfo | null) => info?.model === 'Jabiru' || info?.model === 'Loon';
 
 // Multi-watch switcher (2026-08-16): one unified entry per pickable watch, spanning both
 // transports — a cabled watch (USB, keyed by its stable USB path) or a paired one (BLE, keyed
@@ -194,6 +199,12 @@ export default function HomeScreen() {
   const [activities, setActivities] = useState<ActivityRecord[]>([]);
   useFocusEffect(useCallback(() => {
     getAllActivities().then(setActivities).catch(() => {});
+  }, []));
+
+  // Gear maintenance summary — surface due/soon service reminders where the user actually looks.
+  const [gearAlerts, setGearAlerts] = useState<{ due: number; soon: number }>({ due: 0, soon: 0 });
+  useFocusEffect(useCallback(() => {
+    getGearAlerts().then(a => setGearAlerts({ due: a.due.length, soon: a.soon.length })).catch(() => {});
   }, []));
 
   // "This year" = the most recent year that has data (matches desktop/TotalsScreen: a January
@@ -736,12 +747,15 @@ export default function HomeScreen() {
     // features). Intervals rides the Suunto App-Zone/CustomModes mechanism, so it's Ambit-only
     // and needs a connected watch, same gating as the desktop's NavRail. Smart Sensor is a
     // standalone BLE HR belt, so it shows whenever enabled. André, 2026-08-17.
-    ...(expFeatures.intervals && connected && deviceType === 'ambit' && !isKailash(ambitInfo)
+    ...(expFeatures.intervals && connected && deviceType === 'ambit' && !isKailash(ambitInfo) && !isTraverse(ambitInfo)
       ? [{ id: 'intervals', label: t.experimentalIntervals, icon: 'chart' as const, onPress: () => navigation.navigate('Intervals') }]
       : []),
     ...(expFeatures.smartSensor
       ? [{ id: 'smartSensor', label: t.experimentalSmartSensor, icon: 'link' as const, onPress: () => navigation.navigate('SmartSensor') }]
       : []),
+    // Gear tracker (v3): derived from the local gear DB + intervals.icu, so it's always
+    // reachable — no connected watch needed, not gated behind Experimental.
+    { id: 'gear', label: t.gearButton, icon: 'cycling' as const, onPress: () => navigation.navigate('Gear') },
     { id: 'settings', label: t.settingsTitle, icon: 'settings', onPress: () => navigation.navigate('Settings') },
   ];
 
@@ -758,6 +772,26 @@ export default function HomeScreen() {
         <Text style={styles.appName}>Sommet</Text>
         <Badge label={`v${APP_VERSION}`} />
       </View>
+
+      {/* Gear maintenance summary — only when something needs attention; taps through to Gear. */}
+      {(gearAlerts.due > 0 || gearAlerts.soon > 0) && (
+        <TouchableOpacity
+          activeOpacity={0.8}
+          onPress={() => navigation.navigate('Gear')}
+          style={{
+            flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 16, marginBottom: 8,
+            paddingVertical: 10, paddingHorizontal: 14, borderRadius: 10, borderWidth: 1,
+            backgroundColor: (gearAlerts.due > 0 ? theme.error : theme.warning) + '14',
+            borderColor: (gearAlerts.due > 0 ? theme.error : theme.warning) + '80',
+          }}
+        >
+          <Icon name="warning" size={16} color={gearAlerts.due > 0 ? theme.error : theme.warning} />
+          <Text style={{ flex: 1, fontSize: 13, color: theme.text }}>
+            {gearAlerts.due > 0 ? t.gearDueCount(gearAlerts.due) : t.gearSoonCount(gearAlerts.soon)}
+          </Text>
+          <Icon name="chevronRight" size={16} color={theme.mutedText} />
+        </TouchableOpacity>
+      )}
       {/* Real, 2026-08-09 ("the icon of the watch could be like 20% bigger while in
           vertical, on horizontal is ok") - portrait-only scale-up; roomy (landscape+wide)
           keeps the original 40. Not tied to `roomy` itself since a narrow landscape phone
