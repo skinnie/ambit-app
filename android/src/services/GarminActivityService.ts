@@ -19,6 +19,20 @@ export interface GarminActivitySyncState {
   error?: string;
 }
 
+/** eTrex tracks carry their own titles ("Morning walk", "Park loop") that match none of the
+ * 84 Suunto activity types, so GpxParser -> activityForName() would land every one on the
+ * generic "Unspecified sport" badge. Desktop (garminservice.cpp) always names an eTrex
+ * activity "Walk", which forName() resolves to id 12 "Walking" - the same bucket/colour an
+ * Ambit "Walk" sport mode gets, so Totals groups them together. Mirror that by setting the
+ * track's own <name> to "Walk" before storing (GpxParser reads gpx.trk.name for the type). */
+function forceWalkTrackName(gpx: string): string {
+  if (/<trk\b[^>]*>\s*<name>/.test(gpx)) {
+    return gpx.replace(/(<trk\b[^>]*>\s*<name>)[\s\S]*?(<\/name>)/, '$1Walk$2');
+  }
+  // No track name to replace - inject one right after the opening <trk>.
+  return gpx.replace(/(<trk\b[^>]*>)/, '$1<name>Walk</name>');
+}
+
 /** Non-cryptographic, just for de-duplicating imported activities that have
  * no parseable <time> in their GPX metadata — same content in, same ID out. */
 function simpleChecksum(s: string): string {
@@ -61,9 +75,11 @@ export async function syncGarminActivities(
     try {
       const content = await Garmin.readActivityFile(internalVolume.volumeIndex, gpxFiles[i]);
       const meta = extractGpxMetadata(content);
+      // id from the ORIGINAL content so the walk-name rewrite below never changes an
+      // activity's identity (no spurious re-import of anything already synced).
       const idBase = meta.date ? meta.date.replace(/[^0-9]/g, '') : simpleChecksum(content);
       const id = `garmin_${modelSlug}_${idBase}`;
-      const written = await writeGpxFile(id, content); // null if already imported — not an error
+      const written = await writeGpxFile(id, forceWalkTrackName(content)); // null if already imported — not an error
       if (written) newCount++;
     } catch {
       // one bad file shouldn't abort the whole sync — skip it, keep going

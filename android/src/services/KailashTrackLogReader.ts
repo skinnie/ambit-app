@@ -95,7 +95,7 @@ function pointsToGpx(points: TrackLogPoint[]): string {
   return `<?xml version="1.0" encoding="UTF-8"?>\n` +
     `<gpx version="1.1" creator="Sommet" xmlns="http://www.topografix.com/GPX/1/1">\n` +
     (metaTime ? `  <metadata><time>${escapeXml(metaTime)}</time></metadata>\n` : '') +
-    `  <trk><name>Kailash TrackLog</name><trkseg>\n${trkpts}\n  </trkseg></trk>\n</gpx>\n`;
+    `  <trk><name>Walk</name><trkseg>\n${trkpts}\n  </trkseg></trk>\n</gpx>\n`;
 }
 
 /** Decodes a base64 TrackLog region dump (see readRegion() in native/AmbitUsbModule.ts) into
