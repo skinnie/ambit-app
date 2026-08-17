@@ -1,8 +1,9 @@
 import { connect, disconnect, readRegion, writeRegion, isBleTransportActive } from '../native/AmbitUsbModule';
 import { base64ToBytes, bytesToBase64 } from './Base64';
+import { resolveRegion } from './MemoryMap';
 import { generateSource, buildCompileRequest, Workout } from './WorkoutSource';
 import { installCompiledApp, InstallState } from './AppInstall';
-import { buildTrainingItem, buildTrainingProgram, TrainingItem, TRAINING_PROGRAM_BASE } from './TrainingProgramCodec';
+import { buildTrainingItem, buildTrainingProgram, TrainingItem } from './TrainingProgramCodec';
 
 // EXPERIMENTAL - the two Intervals mechanisms (André 2026-08-14, "ship both"):
 //  1) an interval Suunto App: build workout -> App-Zone source -> the user compiles it on
@@ -108,13 +109,25 @@ export async function writePlannedMoves(
     }
   }
   try {
+    // Only watches that actually declare a TrainingProgram region can take planned moves - the
+    // Traverse and Kailash don't have one at all, and writing the hardcoded Ambit3 base to them
+    // would hit the wrong flash. Resolve the real base from the watch's own map; refuse if absent.
+    const region = await resolveRegion('TrainingProgram');
+    if (!region) {
+      onState({ phase: 'error', error: 'This watch has no planned-moves (TrainingProgram) region.' });
+      return false;
+    }
     const blob = buildTrainingProgram(items.map(buildTrainingItem), baseDate);
+    if (blob.length > region.size) {
+      onState({ phase: 'error', error: 'Planned moves exceed the watch\'s TrainingProgram region.' });
+      return false;
+    }
     onState({ phase: 'writing' });
-    if (!await writeRegion(TRAINING_PROGRAM_BASE, bytesToBase64(blob), blob.length)) {
+    if (!await writeRegion(region.base, bytesToBase64(blob), blob.length)) {
       onState({ phase: 'error', error: 'TrainingProgram write was not acknowledged.' }); return false;
     }
     onState({ phase: 'verifying' });
-    const back = base64ToBytes(await readRegion(TRAINING_PROGRAM_BASE, blob.length));
+    const back = base64ToBytes(await readRegion(region.base, blob.length));
     for (let i = 0; i < blob.length; i++) if (back[i] !== blob[i]) {
       onState({ phase: 'error', error: 'TrainingProgram read back different bytes than written.' }); return false;
     }

@@ -1,7 +1,8 @@
 import { connect, disconnect, readRegion, readCustomModesRaw, writeRegion, writeCustomModesRaw, isBleTransportActive } from '../native/AmbitUsbModule';
 import { base64ToBytes, bytesToBase64 } from './Base64';
 import { decode as decodeCM, encodeRegion, DecodedRegion } from './SportModeCodec';
-import { decodeApps, buildAppsRegion, APPS_BASE, APPS_REGION_SIZE } from './AppsCodec';
+import { decodeApps, buildAppsRegion } from './AppsCodec';
+import { resolveRegion } from './MemoryMap';
 import { CatalogEntry, getBinary } from './CatalogService';
 import { installShortcutIntoMode } from './AppInstallCore';
 
@@ -73,16 +74,24 @@ export async function installCompiledApp(
   try {
     onState({ phase: 'reading' });
 
+    // The Apps region base/size come from the watch's OWN 0x0b21 map, not a hardcoded Ambit3
+    // constant - and a watch that doesn't really have Apps (the Kailash declares it as a
+    // placeholder base 0xffffffff/size 0) is refused rather than written at the wrong flash.
+    const apps = await resolveRegion('Apps');
+    if (!apps) {
+      onState({ phase: 'error', error: 'This watch has no App Zone (Apps) region.' }); return false;
+    }
+
     // Apps region: probe the directory, then read exactly the used extent so existing entries'
     // raw blocks are complete (a truncated read would corrupt them on rebuild).
-    const probe = base64ToBytes(await readRegion(APPS_BASE, 8192));
+    const probe = base64ToBytes(await readRegion(apps.base, 8192));
     const usedLen = appsUsedLength(probe);
-    const appsRegion = usedLen > 0 ? base64ToBytes(await readRegion(APPS_BASE, usedLen)) : new Uint8Array(0);
+    const appsRegion = usedLen > 0 ? base64ToBytes(await readRegion(apps.base, usedLen)) : new Uint8Array(0);
     const existing = decodeApps(appsRegion);
     const ruleIdx = existing.length; // the new app's 0-based index in the Apps region
 
     const newApps = buildAppsRegion(existing.map(e => e.rawBlock), { binary, activityId, name });
-    if (newApps.length > APPS_REGION_SIZE) {
+    if (newApps.length > apps.size) {
       onState({ phase: 'error', error: 'The Apps region would overflow - remove an app first.' }); return false;
     }
 
@@ -99,7 +108,7 @@ export async function installCompiledApp(
 
     // Write Apps first, then CustomModes - the order a real SuuntoLink install uses.
     onState({ phase: 'writingApps' });
-    if (!await writeRegion(APPS_BASE, bytesToBase64(newApps), newApps.length)) {
+    if (!await writeRegion(apps.base, bytesToBase64(newApps), newApps.length)) {
       onState({ phase: 'error', error: 'Apps region write was not acknowledged.' }); return false;
     }
     onState({ phase: 'writingModes' });
@@ -109,7 +118,7 @@ export async function installCompiledApp(
 
     // Prove it: re-read and require both regions to match what we sent.
     onState({ phase: 'verifying' });
-    const appsBack = base64ToBytes(await readRegion(APPS_BASE, newApps.length));
+    const appsBack = base64ToBytes(await readRegion(apps.base, newApps.length));
     if (!bytesEqualPrefix(appsBack, newApps, newApps.length)) {
       onState({ phase: 'error', error: 'Apps region read back different bytes than written.' }); return false;
     }

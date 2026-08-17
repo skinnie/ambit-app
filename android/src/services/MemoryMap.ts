@@ -86,6 +86,21 @@ export async function readMemoryMap(): Promise<MemoryMap> {
   }
 }
 
+/**
+ * Resolve a flash region from the watch's OWN 0x0b21 map, or null if the watch doesn't really
+ * have it. A watch can DECLARE a region name it doesn't implement with a placeholder base
+ * 0xffffffff / size 0 (real, seen on the Kailash: Apps/CustomModes/ExerciseLog are all
+ * 0xffffffff there), so those are treated as absent. Callers that WRITE a region (App install,
+ * planned moves) must use this and refuse when it's null - writing the hardcoded Ambit3-Peak
+ * base to a watch that keeps the region elsewhere, or doesn't have it, hits the wrong flash and
+ * can fault the firmware. Requires the watch to be connected (acts on the shared native device).
+ */
+export async function resolveRegion(name: string): Promise<MemoryRegion | null> {
+  const r = (await readMemoryMap())[name];
+  if (!r || r.base === 0xffffffff || r.size === 0) return null;
+  return r;
+}
+
 export interface NavBases {
   waypointBase: number;
   waypointSize: number;
