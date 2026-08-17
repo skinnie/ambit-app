@@ -30,7 +30,7 @@ on:
       - "v[0-9]+.[0-9]+.[0-9]+-*"   # v1.2.3-rc.1 -> attach to the pre-release
 
 jobs:
-  # ---- Windows: produce a .zip containing ambitapp.exe and everything it needs -----------
+  # ---- Windows: produce a .zip containing Sommet.exe and everything it needs -------------
   windows:
     runs-on: windows-latest
     steps:
@@ -66,25 +66,28 @@ jobs:
       - name: Bundle Qt runtime + helper, then zip
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path dist\windows\AmbitApp | Out-Null
-          Copy-Item desktop\build\Release\ambitapp.exe dist\windows\AmbitApp\
-          windeployqt --qmldir desktop\qml --release dist\windows\AmbitApp\ambitapp.exe
-          New-Item -ItemType Directory -Force -Path dist\windows\AmbitApp\backend | Out-Null
-          Copy-Item dist\backend\ambit-backend.exe dist\windows\AmbitApp\backend\
-          Compress-Archive -Path dist\windows\AmbitApp\* -DestinationPath dist\AmbitApp-windows.zip
+          New-Item -ItemType Directory -Force -Path dist\windows\Sommet | Out-Null
+          # The internal CMake target is still named ambitapp; rename its .exe to Sommet.exe
+          # so the download the user double-clicks is branded Sommet (Qt apps don't depend on
+          # the executable's filename - the app name/window title come from setApplicationName).
+          Copy-Item desktop\build\Release\ambitapp.exe dist\windows\Sommet\Sommet.exe
+          windeployqt --qmldir desktop\qml --release dist\windows\Sommet\Sommet.exe
+          New-Item -ItemType Directory -Force -Path dist\windows\Sommet\backend | Out-Null
+          Copy-Item dist\backend\ambit-backend.exe dist\windows\Sommet\backend\
+          Compress-Archive -Path dist\windows\Sommet\* -DestinationPath dist\Sommet-windows.zip
 
       - name: Keep the download
         uses: actions/upload-artifact@v4
         with:
-          name: AmbitApp-windows
-          path: dist/AmbitApp-windows.zip
+          name: Sommet-windows
+          path: dist/Sommet-windows.zip
 
       # Only when this run was started by a version tag: attach the .zip to the Release.
       - name: Attach to the Release (tag builds only)
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/AmbitApp-windows.zip
+          files: dist/Sommet-windows.zip
 
   # ---- macOS: produce a .dmg the user drags into Applications -----------------------------
   macos:
@@ -121,21 +124,32 @@ jobs:
         run: |
           APP=$(find desktop/build -maxdepth 1 -name "*.app" | head -1)
           echo "Found app bundle: $APP"
+          # The internal CMake target is still named ambitapp, so the bundle builds as
+          # ambitapp.app. Rename the bundle directory to Sommet.app so the user drags a
+          # "Sommet" app into Applications. The executable inside (Contents/MacOS/ambitapp)
+          # and its Info.plist CFBundleExecutable are unchanged, so it still launches; the
+          # dock/menu name is already "Sommet" via setApplicationDisplayName in main.cpp.
+          if [ "$(basename "$APP")" != "Sommet.app" ]; then
+            SOMMET="$(dirname "$APP")/Sommet.app"
+            mv "$APP" "$SOMMET"
+            APP="$SOMMET"
+          fi
+          echo "Packaging bundle: $APP"
           macdeployqt "$APP" -qmldir=desktop/qml
           mkdir -p "$APP/Contents/Resources/backend"
           cp dist/backend/ambit-backend "$APP/Contents/Resources/backend/"
           chmod +x "$APP/Contents/Resources/backend/ambit-backend"
           mkdir -p dist
-          hdiutil create -volname AmbitApp -srcfolder "$APP" -ov -format UDZO dist/AmbitApp-macos.dmg
+          hdiutil create -volname Sommet -srcfolder "$APP" -ov -format UDZO dist/Sommet-macos.dmg
 
       - name: Keep the download
         uses: actions/upload-artifact@v4
         with:
-          name: AmbitApp-macos
-          path: dist/AmbitApp-macos.dmg
+          name: Sommet-macos
+          path: dist/Sommet-macos.dmg
 
       - name: Attach to the Release (tag builds only)
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/AmbitApp-macos.dmg
+          files: dist/Sommet-macos.dmg

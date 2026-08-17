@@ -34,15 +34,6 @@ import {
   isAuthenticated as stravaIsAuth, getAuthorizationUrl as stravaAuthUrl, logout as stravaLogout,
 } from '../services/ApiStrava';
 import {
-  isAuthenticated as dropboxIsAuth, getAuthorizationUrl as dropboxAuthUrl, logout as dropboxLogout,
-} from '../services/ApiDropbox';
-import {
-  isAuthenticated as gdriveIsAuth, getAuthorizationUrl as gdriveAuthUrl, logout as gdriveLogout,
-} from '../services/ApiGoogleDrive';
-import {
-  isAuthenticated as onedriveIsAuth, getAuthorizationUrl as onedriveAuthUrl, logout as onedriveLogout,
-} from '../services/ApiOneDrive';
-import {
   getMapProvider, setMapProvider, MapProvider, MAP_PROVIDER_LABELS,
 } from '../services/MapProviderService';
 import { detectAttachedDeviceType, isBleTransportActive } from '../native/AmbitUsbModule';
@@ -112,18 +103,6 @@ export default function SettingsScreen() {
   const [savedKey, setSavedKey]           = useState<string | null>(null);
   const [saving, setSaving]               = useState(false);
   const [stravaAuth, setStravaAuth]       = useState(false);
-
-  // Dropbox / Google Drive / OneDrive - added 2026-08-12, Backup & Restore cloud
-  // destinations (see NavBackupService.ts / BackupScreen.tsx). Self-serve: the user pastes
-  // their own registered app's credentials here, same shape as desktop's ConnectionsService.
-  const [dropboxAuth, setDropboxAuth]     = useState(false);
-  const [dropboxClientId, setDropboxClientId]         = useState('');
-  const [dropboxClientSecret, setDropboxClientSecret] = useState('');
-  const [gdriveAuth, setGdriveAuth]       = useState(false);
-  const [gdriveClientId, setGdriveClientId]           = useState('');
-  const [gdriveClientSecret, setGdriveClientSecret]   = useState('');
-  const [onedriveAuth, setOnedriveAuth]   = useState(false);
-  const [onedriveClientId, setOnedriveClientId]       = useState('');
 
   const [intervalsAthleteId, setIntervalsAthleteId] = useState('');
   const [intervalsApiKey, setIntervalsApiKey]       = useState('');
@@ -310,9 +289,6 @@ export default function SettingsScreen() {
       setRunalyzeKey(k ?? '');
     });
     stravaIsAuth().then(setStravaAuth);
-    dropboxIsAuth().then(setDropboxAuth);
-    gdriveIsAuth().then(setGdriveAuth);
-    onedriveIsAuth().then(setOnedriveAuth);
     getIntervalsIcuCredentials().then(creds => {
       setIntervalsSaved(!!creds);
       setIntervalsAthleteId(creds?.athleteId ?? '');
@@ -391,64 +367,6 @@ export default function SettingsScreen() {
     setStravaAuth(false);
     Alert.alert('Strava', t.stravaDisconnected);
   }
-
-  // ── Cloud backup destinations (Dropbox / Google Drive / OneDrive), added 2026-08-12.
-  // Connect opens the provider in the browser; the callback returns via App.tsx's deep-link
-  // handler. OneDrive uses PKCE, so it takes only a client ID (no secret). ──
-  async function handleDropboxConnect() {
-    if (!dropboxClientId.trim() || !dropboxClientSecret.trim()) {
-      Alert.alert(t.emptyCreds, t.emptyCredsMsg);
-      return;
-    }
-    try {
-      const url = await dropboxAuthUrl(dropboxClientId.trim(), dropboxClientSecret.trim());
-      await Linking.openURL(url);
-    } catch (e: any) {
-      Alert.alert(t.cloudError, e?.message ?? String(e));
-    }
-  }
-  async function handleDropboxDisconnect() {
-    await dropboxLogout();
-    setDropboxAuth(false);
-    Alert.alert('Dropbox', t.cloudDisconnected);
-  }
-
-  async function handleGdriveConnect() {
-    if (!gdriveClientId.trim() || !gdriveClientSecret.trim()) {
-      Alert.alert(t.emptyCreds, t.emptyCredsMsg);
-      return;
-    }
-    try {
-      const url = await gdriveAuthUrl(gdriveClientId.trim(), gdriveClientSecret.trim());
-      await Linking.openURL(url);
-    } catch (e: any) {
-      Alert.alert(t.cloudError, e?.message ?? String(e));
-    }
-  }
-  async function handleGdriveDisconnect() {
-    await gdriveLogout();
-    setGdriveAuth(false);
-    Alert.alert('Google Drive', t.cloudDisconnected);
-  }
-
-  async function handleOnedriveConnect() {
-    if (!onedriveClientId.trim()) {
-      Alert.alert(t.emptyCreds, t.emptyCredsMsg);
-      return;
-    }
-    try {
-      const url = await onedriveAuthUrl(onedriveClientId.trim());
-      await Linking.openURL(url);
-    } catch (e: any) {
-      Alert.alert(t.cloudError, e?.message ?? String(e));
-    }
-  }
-  async function handleOnedriveDisconnect() {
-    await onedriveLogout();
-    setOnedriveAuth(false);
-    Alert.alert('OneDrive', t.cloudDisconnected);
-  }
-
 
   return (
     <ScrollView style={styles.root} contentContainerStyle={styles.content}>

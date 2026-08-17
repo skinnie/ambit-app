@@ -39,7 +39,7 @@ jobs:
         run: |
           mkdir -p out
           cp android/android/app/build/outputs/apk/release/*.apk \
-             "out/ambitsyncmodern_${GITHUB_REF_NAME}.apk"
+             "out/Sommet_${GITHUB_REF_NAME}.apk"
       - uses: actions/upload-artifact@v4
         with:
           name: apk

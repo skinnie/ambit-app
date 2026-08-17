@@ -742,7 +742,7 @@ PageFlickable {
                     Column {
                         anchors.verticalCenter: parent.verticalCenter
                         Text {
-                            text: qsTr("Sommet v0.1.0")
+                            text: qsTr("Sommet v0.1.46")
                             color: Theme.text
                             font.pixelSize: Theme.fontSizeBody
                             font.bold: true

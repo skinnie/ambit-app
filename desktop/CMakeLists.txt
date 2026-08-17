@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(AmbitApp VERSION 0.1.1 LANGUAGES CXX)
+project(AmbitApp VERSION 0.1.46 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -177,8 +177,6 @@ qt_add_qml_module(ambitapp
         src/services/backupservice.cpp
         src/services/connectionsservice.h
         src/services/connectionsservice.cpp
-        src/services/cloudstorageservice.h
-        src/services/cloudstorageservice.cpp
         src/services/localfileservice.h
         src/services/localfileservice.cpp
         src/services/garminservice.h
