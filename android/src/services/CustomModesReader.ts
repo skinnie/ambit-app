@@ -335,9 +335,17 @@ function systemTailLength(templateNames: string[]): number {
  * system-tail screen) and isBuiltIn flag - same real invariant as custom_modes.py's own
  * _displays_to_json(): index (this array's own position) never changes, only these two new
  * fields get added. */
+// SuuntoLink's own getMaxDisplays() ceiling for the Ambit3 family this screen is gated to.
+// The cap is the safety net custom_modes.py already has (real_count = min(len - tail,
+// max_displays_for_variant)): when a mode's system tail doesn't exactly match the known
+// signature above, systemTailLength() returns 0 and every screen counts as "real" - which is
+// how a mode showed "11/8" (more than the watch can hold). Capping here treats the overflow as
+// built-in, matching the desktop. André, 2026-08-17 ("we already fixed this on desktop").
+const MAX_USER_DISPLAYS = 8;
+
 function numberDisplays(displays: Display[]): void {
   const tailLen = systemTailLength(displays.map(d => d.templateName));
-  const realCount = displays.length - tailLen;
+  const realCount = Math.min(displays.length - tailLen, MAX_USER_DISPLAYS);
   displays.forEach((d, i) => {
     d.isBuiltIn = i >= realCount;
     d.screenNumber = d.isBuiltIn ? null : i + 1;
