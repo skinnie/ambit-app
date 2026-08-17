@@ -40,6 +40,36 @@ PageFlickable {
         onAccepted: root.saveError = LocalFileService.saveText(selectedFile, pendingGpx)
     }
 
+    // POI note dialog - what happens to POIs sent to the watch (André, 2026-08-17), the same
+    // little "i" affordance as the Routes page. Opens next to its badge.
+    ThemedDialog {
+        id: poiInfoDialog
+        parent: Overlay.overlay
+        title: qsTr("Points of interest")
+        standardButtons: Dialog.NoButton
+        onAboutToShow: {
+            const p = poiInfoBadge.mapToItem(Overlay.overlay, 0, poiInfoBadge.height + Theme.spacingSmall);
+            x = Math.max(Theme.spacingLarge, Math.min(p.x, Overlay.overlay.width - width - Theme.spacingLarge));
+            y = Math.min(p.y, Overlay.overlay.height - height - Theme.spacingLarge);
+        }
+        contentItem: Column {
+            width: 360
+            spacing: Theme.spacingSmall
+            Text {
+                width: parent.width
+                wrapMode: Text.WordWrap
+                text: qsTr("POIs that are sent to the watch will be pushed to the Suunto app by SuuntoLink.")
+                color: Theme.text
+                font.bold: true
+                font.pixelSize: Theme.fontSizeBody
+            }
+            RoundedButton {
+                text: qsTr("Close")
+                onClicked: poiInfoDialog.close()
+            }
+        }
+    }
+
     property string poiName: ""
     // Real request 2026-08-07: this used to default to an arbitrary Alps coordinate (46.8,
     // 8.2), so the preview map below showed some unrelated place until the user typed real
@@ -80,7 +110,33 @@ PageFlickable {
                 width: parent.width
                 spacing: Theme.spacingSmall
 
-                Text { text: qsTr("Add a POI"); font.bold: true; color: Theme.text }
+                Row {
+                    spacing: Theme.spacingSmall
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: qsTr("Add a POI"); font.bold: true; color: Theme.text
+                    }
+                    Rectangle {
+                        id: poiInfoBadge
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 15; height: 15; radius: 7.5
+                        color: "transparent"
+                        border.width: 1
+                        border.color: Theme.mutedText
+                        Text {
+                            anchors.centerIn: parent
+                            text: "i"
+                            font.pixelSize: Theme.fontSizeLabel
+                            font.bold: true
+                            color: Theme.mutedText
+                        }
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: poiInfoDialog.open()
+                        }
+                    }
+                }
 
                 // The whole picker lives right here, no dialog - André, 2026-08-11, after
                 // trying the button-plus-window version: "delete pick on a map ... and just

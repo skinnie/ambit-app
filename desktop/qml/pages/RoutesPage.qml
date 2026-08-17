@@ -504,6 +504,14 @@ PageFlickable {
                 Text {
                     width: parent.width
                     wrapMode: Text.WordWrap
+                    text: qsTr("Routes that are sent to the watch will be erased by SuuntoLink and not pushed to the Suunto app.")
+                    color: Theme.text
+                    font.bold: true
+                    font.pixelSize: Theme.fontSizeBody
+                }
+                Text {
+                    width: parent.width
+                    wrapMode: Text.WordWrap
                     text: qsTr("You can export your routes from Suunto App to gpx and import them here, or you can use any of these or others:")
                     color: Theme.text
                     font.pixelSize: Theme.fontSizeBody
