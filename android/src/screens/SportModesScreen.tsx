@@ -421,8 +421,18 @@ export default function SportModesScreen() {
           </View>
         )}
 
-        {phase === 'error' && error && !modes && (
-          <Text style={[styles(theme).sectionDesc, { color: theme.error, marginTop: 10 }]}>{error}</Text>
+        {phase === 'error' && !modes && (
+          <>
+            {/* The read only fails when there's no live link, so lead with a plain
+                "check your watch connection" instead of the raw (USB-worded) error. The detail
+                stays below, muted, for when it's something else. André, 2026-08-17. */}
+            <Text style={[styles(theme).sectionDesc, { color: theme.error, marginTop: 10 }]}>
+              {t.sportModesCheckConnection}
+            </Text>
+            {error ? (
+              <Text style={[styles(theme).sectionDesc, { color: theme.mutedText, marginTop: 2 }]}>{error}</Text>
+            ) : null}
+          </>
         )}
 
         {modes && (

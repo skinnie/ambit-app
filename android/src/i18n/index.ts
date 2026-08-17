@@ -436,6 +436,7 @@ const fr = {
     'du matériel réel via Android.',
   sportModesReadBtn: 'Lire les modes sport',
   sportModesReading: 'Lecture des modes sport…',
+  sportModesCheckConnection: 'Vérifiez la connexion de la montre.',
   sportModesRefreshBtn: 'Actualiser',
   // Création / suppression / multisport (2026-08-14, portage de tools/sport_mode_manage.py)
   sportModesManageTitle: 'Modes sport sur la montre',
@@ -1122,6 +1123,7 @@ const en: typeof fr = {
     'hardware-confirmed via Android.',
   sportModesReadBtn: 'Read Sport Modes',
   sportModesReading: 'Reading sport modes...',
+  sportModesCheckConnection: 'Check your watch connection.',
   sportModesRefreshBtn: 'Refresh',
   // Create / delete / multisport (2026-08-14, port of tools/sport_mode_manage.py)
   sportModesManageTitle: 'Sport modes on the watch',
