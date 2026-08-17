@@ -265,7 +265,13 @@ PageFlickable {
     // already hides this page's own nav entry for Kailash, but that alone doesn't cover
     // reaching this page some other way (open before a cable swap, deep navigation) - guard
     // here too, and directly, rather than trusting the nav item to always be the only way in.
-    Component.onCompleted: {
+    Component.onCompleted: root.autoRead()
+
+    // Automatic on connect (André, 2026-08-18): read on page load AND again the moment a watch
+    // connects while the page is open, never a manual "read" button. Guarded to the
+    // not-connected -> connected transition so the 10s device poll doesn't re-read on a loop.
+    property bool _wasConnected: false
+    function autoRead() {
         if (HomeViewModel.isKailash) return
         CustomModesService.refreshFieldTypes()
         CustomModesService.refresh()
@@ -278,6 +284,17 @@ PageFlickable {
         // connected could otherwise leave it pointed at Kailash's own smaller table.
         SettingsWriteService.device = ""
         SettingsWriteService.refresh()
+    }
+    Connections {
+        target: DeviceService
+        function onDeviceInfoChanged() {
+            if (DeviceService.deviceInfoOk && !root._wasConnected) {
+                root._wasConnected = true;
+                root.autoRead();
+            } else if (!DeviceService.deviceInfoOk) {
+                root._wasConnected = false;
+            }
+        }
     }
 
     // Real, 2026-08-09 ("Autolap...let's make mit more elegant with a toggle => off or

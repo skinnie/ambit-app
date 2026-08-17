@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRoute, RouteProp, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
@@ -139,6 +139,11 @@ export default function SportModesScreen() {
       setSummary(null);
     }
   }
+
+  // Auto-read on open - this screen is only reachable from Home while a watch is connected
+  // (USB or BLE, `overBle` says which), so read the modes automatically instead of making the
+  // user tap a button (André, 2026-08-18: automatic on connect, either transport, both apps).
+  useEffect(() => { handleRead(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Run one structural edit (create/delete/multisport), then refresh both views. The error, if
   // any, is captured from the state callback (async state can't be read back after the await).
@@ -424,12 +429,6 @@ export default function SportModesScreen() {
       <Card style={{ width: '100%' }}>
         <Text style={styles(theme).sectionDesc}>{t.sportModesDesc}</Text>
 
-        {!modes && !busy && (
-          <TouchableOpacity style={[styles(theme).smallBtn, { marginTop: 10, alignSelf: 'flex-start' }]} onPress={handleRead}>
-            <Text style={styles(theme).smallBtnText}>{t.sportModesReadBtn}</Text>
-          </TouchableOpacity>
-        )}
-
         {busy && (
           <View style={styles(theme).statusRow}>
             <ActivityIndicator size="small" color={theme.primary} />
@@ -453,11 +452,6 @@ export default function SportModesScreen() {
           </>
         )}
 
-        {modes && (
-          <TouchableOpacity style={[styles(theme).smallBtn, { marginTop: 10, alignSelf: 'flex-start' }]} onPress={handleRead} disabled={busy}>
-            <Text style={styles(theme).smallBtnText}>{t.sportModesRefreshBtn}</Text>
-          </TouchableOpacity>
-        )}
       </Card>
 
       {/* ── Manage: create / delete / multisport (full-codec structural view) ── */}
