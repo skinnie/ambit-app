@@ -1,6 +1,6 @@
 import RNFS from 'react-native-fs';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { connect, disconnect, updateSgee, writeRegion, readRegion } from '../native/AmbitUsbModule';
+import { connect, disconnect, updateSgee, writeRegion, readRegion, isBleTransportActive } from '../native/AmbitUsbModule';
 import { readMemoryMap } from './MemoryMap';
 import { base64ToBytes, bytesToBase64 } from './Base64';
 
@@ -100,6 +100,31 @@ export interface GlonassStatus {
  * 0xFF) since there is no 0x0b15-style query for GLONASS. Read-only, and assumes the caller
  * already holds the link open (readMemoryMap()/readRegion() act on the shared native device).
  */
+/**
+ * getGlonassStatus() - readGlonassStatus() with its OWN short-lived connection, so it is fully
+ * isolated from the settings read. Deliberately NOT folded into readAmbitSettings: the extra
+ * 0x0b21 map read it does is only hardware-confirmed on the Traverse (the Ambit3 Peak reconfirm
+ * is still pending), and sharing the settings link risked desyncing it - a real regression seen
+ * live 2026-08-17 (the Ambit3 then "can't read settings"). Over BLE the link is already open and
+ * owned by HomeScreen, so we must not connect()/disconnect(); over USB this owns a throwaway
+ * connection, exactly like PoiService/updateOrbitalData. Never throws - returns unsupported.
+ */
+export async function getGlonassStatus(): Promise<GlonassStatus> {
+  const overBle = isBleTransportActive();
+  if (!overBle) {
+    try {
+      await connect();
+    } catch {
+      return { supported: false };
+    }
+  }
+  try {
+    return await readGlonassStatus();
+  } finally {
+    if (!overBle) await disconnect().catch(() => {});
+  }
+}
+
 export async function readGlonassStatus(): Promise<GlonassStatus> {
   let region;
   try {

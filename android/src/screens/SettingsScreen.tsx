@@ -22,7 +22,7 @@ import { CREDITS } from '../legal/credits';
 import { DecodedSetting, SettingField, SettingScreen } from '../services/AmbitSettingsReader';
 import { readAmbitSettings, writeAmbitSetting } from '../services/AmbitSettingsService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { EPHEMERIS_GPS_ONLY_KEY, GlonassStatus } from '../services/SgeeService';
+import { EPHEMERIS_GPS_ONLY_KEY, GlonassStatus, getGlonassStatus } from '../services/SgeeService';
 import type { WriteDevice } from '../services/AmbitSettingsWriter';
 import {
   getRunalyzeApiKey, saveRunalyzeApiKey, removeRunalyzeApiKey,
@@ -222,9 +222,14 @@ export default function SettingsScreen() {
       if (s.deviceName) setAmbitDeviceName(s.deviceName);
       setAmbitWriteDevice(s.writeDevice);
       setAmbitReadOnly(!!s.readOnly);
-      if (s.glonass !== undefined) setAmbitGlonass(s.glonass);
       setAmbitSettingsError(s.error);
     });
+    // GLONASS support is read in its OWN isolated connection AFTER the settings read has fully
+    // finished (and, over USB, disconnected) - never sharing that link, so the extra 0x0b21 map
+    // read can't desync the settings read on watches where it isn't hardware-confirmed (the
+    // Ambit3 Peak). A watch without a GlonassSGEE region just reports unsupported and no group
+    // shows. Best-effort: its failure never affects the settings already displayed.
+    try { setAmbitGlonass(await getGlonassStatus()); } catch { /* group stays hidden */ }
   }
 
   async function handleEphemerisGpsOnly(v: boolean) {
