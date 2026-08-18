@@ -33,6 +33,10 @@ jobs:
   # ---- Windows: produce a .zip containing Sommet.exe and everything it needs -------------
   windows:
     runs-on: windows-latest
+    # Needed for the tag build's "Attach to the Release" step to create/update the Release
+    # (the default GITHUB_TOKEN is read-only otherwise -> 403 "Resource not accessible").
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -118,6 +122,9 @@ jobs:
   # ---- macOS: produce a .dmg the user drags into Applications -----------------------------
   macos:
     runs-on: macos-latest
+    # See the windows job: contents:write lets the tag build attach its .dmg to the Release.
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
