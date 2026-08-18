@@ -89,6 +89,20 @@ export async function getDb(): Promise<SQLiteDatabase> {
       deleted       INTEGER NOT NULL DEFAULT 0
     )
   `);
+  // Idempotent migrations for tables created by an EARLIER gear build (CREATE TABLE IF NOT
+  // EXISTS won't add columns to a table that already exists). A DB that predates any of these
+  // columns is missing them -> "table gear_reminder has no column named distance_m" on insert.
+  // Each ADD COLUMN throws (and is swallowed) when the column is already present, so running
+  // them every launch is safe. The reset-baseline set was already here; the core interval +
+  // sync columns (distance_m/time_s/days/activities/percent_used/snoozed_until/remote_id) were
+  // missing, which is the real bug the gear import hit (André's tablet, 2026-08-18).
+  await _db.executeSql(`ALTER TABLE gear_reminder ADD COLUMN distance_m REAL NOT NULL DEFAULT 0`).catch(() => {});
+  await _db.executeSql(`ALTER TABLE gear_reminder ADD COLUMN time_s REAL NOT NULL DEFAULT 0`).catch(() => {});
+  await _db.executeSql(`ALTER TABLE gear_reminder ADD COLUMN days INTEGER NOT NULL DEFAULT 0`).catch(() => {});
+  await _db.executeSql(`ALTER TABLE gear_reminder ADD COLUMN activities INTEGER NOT NULL DEFAULT 0`).catch(() => {});
+  await _db.executeSql(`ALTER TABLE gear_reminder ADD COLUMN percent_used REAL NOT NULL DEFAULT 0`).catch(() => {});
+  await _db.executeSql(`ALTER TABLE gear_reminder ADD COLUMN snoozed_until INTEGER`).catch(() => {});
+  await _db.executeSql(`ALTER TABLE gear_reminder ADD COLUMN remote_id TEXT`).catch(() => {});
   await _db.executeSql(`ALTER TABLE gear_reminder ADD COLUMN starting_distance_m REAL NOT NULL DEFAULT 0`).catch(() => {});
   await _db.executeSql(`ALTER TABLE gear_reminder ADD COLUMN starting_time_s REAL NOT NULL DEFAULT 0`).catch(() => {});
   await _db.executeSql(`ALTER TABLE gear_reminder ADD COLUMN starting_activities INTEGER NOT NULL DEFAULT 0`).catch(() => {});
