@@ -35,6 +35,7 @@ import {
 // when you connect to intervals.icu"). The Gear screen just shows the gear now.
 import { importFromIntervals, runGearMirror, resolveConflict } from '../services/GearMirrorService';
 import { GearConflict } from '../services/GearDiff';
+import { importActivitiesFromIntervals } from '../services/IntervalsImport';
 import {
   isAuthenticated as stravaIsAuth, getAuthorizationUrl as stravaAuthUrl, logout as stravaLogout,
 } from '../services/ApiStrava';
@@ -115,6 +116,7 @@ export default function SettingsScreen() {
   const [savingIntervals, setSavingIntervals]       = useState(false);
   const [gearImporting, setGearImporting]           = useState(false);
   const [gearSyncing, setGearSyncing]               = useState(false);
+  const [actsImporting, setActsImporting]           = useState(false);
 
   // v3.0 UI port (2026-08-09, "settings was completely reworked in our desktop app...
   // proceed") - desktop's real Connections card (SettingsPage.qml) is one compact card with
@@ -405,6 +407,22 @@ export default function SettingsScreen() {
       };
       next();
     });
+  }
+
+  // Import ALL activities from intervals.icu into the local DB (André, 2026-08-18). Pull-only;
+  // idempotent (dedups against what's already here + watch moves). Lives in the intervals.icu
+  // connection, like the gear import.
+  async function handleImportActivities() {
+    setActsImporting(true);
+    try {
+      const r = await importActivitiesFromIntervals();
+      Alert.alert(t.intervalsSection,
+        `Imported ${r.imported} activit${r.imported === 1 ? 'y' : 'ies'} from intervals.icu.`);
+    } catch (e: any) {
+      Alert.alert(t.error, e?.message ?? String(e));
+    } finally {
+      setActsImporting(false);
+    }
   }
 
   async function handleStravaConnect() {
@@ -886,6 +904,15 @@ export default function SettingsScreen() {
                   <Button label={t.gearSyncBtn} variant="outline" grow={false} loading={gearSyncing} onPress={handleGearSync} />
                 </View>
                 <Text style={styles.sectionDesc}>{t.gearImportHint}</Text>
+                {/* Import ALL activities from intervals.icu into the app (André, 2026-08-18). */}
+                <Text style={[styles.cardTitle, { marginTop: 16 }]}>Activities</Text>
+                <View style={styles.row}>
+                  <Button label="Import activities" variant="filled" loading={actsImporting} onPress={handleImportActivities} />
+                </View>
+                <Text style={styles.sectionDesc}>
+                  Pulls every activity from intervals.icu into the app (list, Totals, Calendar).
+                  Already-synced watch moves are skipped, so nothing double-counts.
+                </Text>
               </>
             )}
             <Button label={t.closeBtn} variant="text" onPress={() => setOpenConnection(null)} style={{ marginTop: 12 }} />
