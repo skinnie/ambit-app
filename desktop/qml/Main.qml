@@ -55,6 +55,36 @@ ApplicationWindow {
         value: DeviceService.demoGarminRoot
     }
 
+    // Recalculate the watch's activity class from the athlete's latest intervals.icu training
+    // on every connect/sync (André, 2026-08-18: "recalculate activity level on each sync usb
+    // and bluetooth"). Fires once on the false->true deviceInfoOk transition, only when
+    // intervals.icu is connected; the backend recomputes the 4-week class and writes
+    // Personal.ActivityLevel ONLY if it changed (idempotent), over whichever transport is
+    // live (USB or BLE). Fire-and-forget - a background refresh, not a user action.
+    property bool _wasConnectedForClass: false
+    Connections {
+        target: DeviceService
+        function onDeviceInfoChanged() {
+            var nowConnected = DeviceService.deviceInfoOk
+            if (nowConnected && !window._wasConnectedForClass
+                    && ConnectionsService.intervalsIcuConnected) {
+                var xhr = new XMLHttpRequest()
+                xhr.onreadystatechange = function () {
+                    if (xhr.readyState === XMLHttpRequest.DONE && xhr.status !== 200)
+                        console.log("[activity-class] refresh failed:", xhr.status, xhr.responseText)
+                }
+                xhr.open("POST", "http://127.0.0.1:8766/api/intervals/activity-level")
+                xhr.setRequestHeader("Content-Type", "application/json")
+                xhr.send(JSON.stringify({
+                    athlete_id: ConnectionsService.intervalsIcuAthleteId,
+                    api_key: ConnectionsService.intervalsIcuApiKey(),
+                    confirm: true
+                }))
+            }
+            window._wasConnectedForClass = nowConnected
+        }
+    }
+
     Row {
         anchors.fill: parent
 

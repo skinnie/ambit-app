@@ -144,11 +144,27 @@ def fetch_watch_stats(athlete_id: str, api_key: str, weeks: int = 4) -> dict:
 
 
 if __name__ == "__main__":
-    import sys
-    if len(sys.argv) < 3:
-        print("usage: intervals_stats.py <athleteId> <apiKey>", file=sys.stderr)
-        sys.exit(2)
-    stats = fetch_watch_stats(sys.argv[1], sys.argv[2])
-    print("Personal stats to write to the watch:")
-    for k, v in stats.items():
-        print(f"  {k:14} = {v['value']!s:<10} ({v['source']})")
+    import argparse
+    ap = argparse.ArgumentParser(description="Fetch intervals.icu personal stats for the watch.")
+    ap.add_argument("athlete_id")
+    ap.add_argument("api_key")
+    ap.add_argument("--weeks", type=int, default=4)
+    ap.add_argument("--activity-class", action="store_true",
+                    help="print ONLY the computed Suunto activity class (for the on-sync "
+                         "refresh) - no watch and no other fields needed")
+    args = ap.parse_args()
+
+    if args.activity_class:
+        # Cheap path: just the activities -> avg weekly hours -> class. No profile/wellness.
+        import datetime as __dt
+        newest = __dt.date.today()
+        oldest = newest - __dt.timedelta(weeks=args.weeks)
+        acts = _get("/activities", args.athlete_id, args.api_key, f"oldest={oldest}&newest={newest}")
+        acts = acts if isinstance(acts, list) else []
+        cls = activity_class_from_weekly_hours(_avg_weekly_hours(acts, args.weeks)) if acts else 1.0
+        print(cls)
+    else:
+        stats = fetch_watch_stats(args.athlete_id, args.api_key, args.weeks)
+        print("Personal stats to write to the watch:")
+        for k, v in stats.items():
+            print(f"  {k:14} = {v['value']!s:<10} ({v['source']})")

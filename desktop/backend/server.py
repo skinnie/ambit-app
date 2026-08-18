@@ -417,6 +417,8 @@ class Handler(BaseHTTPRequestHandler):
             self._handle_restore(body)
         elif self.path == "/api/settings":
             self._handle_settings_write(body)
+        elif self.path == "/api/intervals/activity-level":
+            self._handle_intervals_activity_level(body)
         elif self.path == "/api/device/select":
             self._handle_device_select(body)
         elif self.path == "/api/time/sync":
@@ -1376,6 +1378,57 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(502, {"ok": False, "error": str(exc)})
             return
         self._send_json(200 if info.get("ok") else 502, {"transport": "ble", **info})
+
+    def _handle_intervals_activity_level(self, body):
+        """POST /api/intervals/activity-level. Body: {athlete_id, api_key, confirm, device?}.
+        Recompute the Suunto activity class from the athlete's last 4 weeks of intervals.icu
+        training and write it to Personal.ActivityLevel. The app calls this on every sync (USB
+        or BLE) so the class stays current with real training load (André, 2026-08-18); only
+        the activity class is refreshed here - weight/height/HR are static. Reuses the shared
+        settings-write path, so it works over both transports; without confirm:true it's a
+        dry-run (computes + shows current vs new, writes nothing)."""
+        athlete_id = body.get("athlete_id")
+        api_key = body.get("api_key")
+        if not athlete_id or not api_key:
+            self._send_json(400, {"ok": False, "error": "missing athlete_id/api_key"})
+            return
+        if demo_ambit():
+            self._send_json(200, {"ok": True, "activity_class": 6.0, "wrote": False, "demo": True})
+            return
+        confirm = bool(body.get("confirm", False))
+        if not ble_bridge.bridge.status().get("handshake_done"):
+            # USB: stats_to_watch computes the class AND only writes when it actually differs
+            # from the watch (idempotent - safe to fire on every connect).
+            args = [str(athlete_id), str(api_key), "--only", "activity_level", "--json"]
+            if body.get("device"):
+                args += ["--device", body["device"]]
+            if confirm:
+                args.append("--write")
+            code, out, err = run_tool("stats_to_watch.py", args)
+            info = self._parse_last_json_line(out)
+            if info is None:
+                self._send_json(502, {"ok": False, "error": ("stats_to_watch produced no JSON: "
+                                       + (err or out or "")).strip()[:200]})
+                return
+            self._send_json(200 if info.get("ok") else 502, info)
+            return
+        # BLE: compute the class (network only), then write it through the BLE settings path.
+        code, out, err = run_tool("intervals_stats.py",
+                                  [str(athlete_id), str(api_key), "--activity-class"])
+        lines = (out or "").strip().splitlines()
+        try:
+            cls_val = float(lines[-1]) if lines else None
+        except ValueError:
+            cls_val = None
+        if cls_val is None:
+            self._send_json(502, {"ok": False, "error": ("could not compute activity class: "
+                                   + (err or out or "no output")).strip()[:200]})
+            return
+        if confirm:
+            self._handle_settings_write_ble("activity_level", cls_val, True)
+        else:
+            self._send_json(200, {"ok": True, "activity_class": cls_val, "wrote": False,
+                                  "dry_run": True, "transport": "ble"})
 
     def _handle_settings_write(self, body):
         """POST /api/settings. Body: {"key": str, "value": number, "confirm": bool,
