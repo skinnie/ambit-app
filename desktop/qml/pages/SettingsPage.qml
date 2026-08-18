@@ -862,6 +862,17 @@ PageFlickable {
                         }
                     }
                 }
+                // Gear import lives here in the intervals.icu connection (André, 2026-08-18:
+                // "that options regarding intervals.icu should be on settings, when you connect
+                // to intervals.icu"), shown once connected. Pulls bikes/shoes/parts down; the
+                // Gear page just shows and edits them.
+                RoundedButton {
+                    width: parent.width
+                    visible: ConnectionsService.intervalsIcuConnected
+                    enabled: !GearService.loading
+                    text: qsTr("Import gear from Intervals.icu")
+                    onClicked: GearService.importFromIntervals()
+                }
             }
         }
 

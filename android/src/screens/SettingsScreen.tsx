@@ -30,6 +30,11 @@ import {
 import {
   getIntervalsIcuCredentials, saveIntervalsIcuCredentials, removeIntervalsIcuCredentials,
 } from '../services/ApiIntervalsIcu';
+// Gear <-> intervals.icu import/sync lives here (in the intervals.icu connection), not on the
+// Gear screen (André, 2026-08-18: "that options regarding intervals.icu should be on settings,
+// when you connect to intervals.icu"). The Gear screen just shows the gear now.
+import { importFromIntervals, runGearMirror, resolveConflict } from '../services/GearMirrorService';
+import { GearConflict } from '../services/GearDiff';
 import {
   isAuthenticated as stravaIsAuth, getAuthorizationUrl as stravaAuthUrl, logout as stravaLogout,
 } from '../services/ApiStrava';
@@ -108,6 +113,8 @@ export default function SettingsScreen() {
   const [intervalsApiKey, setIntervalsApiKey]       = useState('');
   const [intervalsSaved, setIntervalsSaved]         = useState(false);
   const [savingIntervals, setSavingIntervals]       = useState(false);
+  const [gearImporting, setGearImporting]           = useState(false);
+  const [gearSyncing, setGearSyncing]               = useState(false);
 
   // v3.0 UI port (2026-08-09, "settings was completely reworked in our desktop app...
   // proceed") - desktop's real Connections card (SettingsPage.qml) is one compact card with
@@ -351,6 +358,53 @@ export default function SettingsScreen() {
     setIntervalsAthleteId('');
     setIntervalsApiKey('');
     Alert.alert(t.deleted, t.credsDeleted);
+  }
+
+  // ── Gear <-> intervals.icu (moved here from the Gear screen). Import (pull-only) is the
+  // primary path; two-way Sync is secondary and stops on a real two-sided edit to ask. ──
+  async function handleGearImport() {
+    setGearImporting(true);
+    try {
+      const n = await importFromIntervals();
+      Alert.alert(t.gearScreenTitle, t.gearImportDone(n));
+    } catch (e: any) {
+      Alert.alert(t.error, e?.message ?? String(e));
+    } finally {
+      setGearImporting(false);
+    }
+  }
+
+  async function handleGearSync() {
+    setGearSyncing(true);
+    try {
+      const res = await runGearMirror();
+      if (res.conflicts.length > 0) await resolveGearConflictsSequentially(res.conflicts);
+      else Alert.alert(t.gearScreenTitle, t.gearSyncDone(res.pulled, res.pushed));
+    } catch (e: any) {
+      Alert.alert(t.error, e?.message ?? String(e));
+    } finally {
+      setGearSyncing(false);
+    }
+  }
+
+  function resolveGearConflictsSequentially(conflicts: GearConflict[]): Promise<void> {
+    return new Promise(resolve => {
+      let i = 0;
+      const next = () => {
+        if (i >= conflicts.length) { resolve(); return; }
+        const c = conflicts[i++];
+        Alert.alert(
+          t.gearConflictTitle,
+          t.gearConflictBody(c.local.name || c.remote?.name || ''),
+          [
+            { text: t.gearConflictKeepLocal, onPress: async () => { await resolveConflict(c, 'local'); next(); } },
+            { text: t.gearConflictKeepRemote, onPress: async () => { await resolveConflict(c, 'remote'); next(); } },
+          ],
+          { cancelable: false },
+        );
+      };
+      next();
+    });
   }
 
   async function handleStravaConnect() {
@@ -822,6 +876,18 @@ export default function SettingsScreen() {
               )}
             </View>
             {intervalsSaved && <StatusLine text={t.credsStored} />}
+            {/* Gear import/sync - lives here in the intervals.icu connection (André, 2026-08-18),
+                only once credentials are stored. Import pulls your gear down; Sync is two-way. */}
+            {intervalsSaved && (
+              <>
+                <Text style={[styles.cardTitle, { marginTop: 16 }]}>{t.gearScreenTitle}</Text>
+                <View style={styles.row}>
+                  <Button label={t.gearImportBtn} variant="filled" loading={gearImporting} onPress={handleGearImport} />
+                  <Button label={t.gearSyncBtn} variant="outline" grow={false} loading={gearSyncing} onPress={handleGearSync} />
+                </View>
+                <Text style={styles.sectionDesc}>{t.gearImportHint}</Text>
+              </>
+            )}
             <Button label={t.closeBtn} variant="text" onPress={() => setOpenConnection(null)} style={{ marginTop: 12 }} />
           </View>
         </View>

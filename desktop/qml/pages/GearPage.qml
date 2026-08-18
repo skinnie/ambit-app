@@ -126,11 +126,8 @@ Item {
                 enabled: GearService.connected && !GearService.loading
                 onClicked: root.askName(qsTr("Add shoes"), "", function (n) { GearService.addGear(n, "Shoes") })
             }
-            Button {
-                text: qsTr("Import from Intervals.icu")
-                enabled: GearService.connected && !GearService.loading
-                onClicked: GearService.importFromIntervals()
-            }
+            // Import from Intervals.icu moved to Settings -> Intervals.icu connection
+            // (André, 2026-08-18). This page just shows and edits your gear now.
         }
 
         Text {

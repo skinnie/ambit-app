@@ -124,6 +124,10 @@ void GearService::send(const QByteArray &verb, const QString &path, const QJsonO
     QNetworkRequest req(QUrl(QStringLiteral("%1/athlete/%2%3").arg(kBase, athleteId(), path)));
     const QByteArray basic = QByteArrayLiteral("API_KEY:") + apiKey().toUtf8();
     req.setRawHeader("Authorization", "Basic " + basic.toBase64());
+    // Cloudflare in front of intervals.icu returns 1010 (banned) for QNetworkAccessManager's
+    // empty default User-Agent — proven live 2026-08-18. A normal Mozilla-style UA passes.
+    req.setRawHeader("User-Agent",
+                     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Sommet/1.0");
     QByteArray data;
     if (!body.isEmpty()) {
         data = QJsonDocument(body).toJson(QJsonDocument::Compact);

@@ -6,25 +6,22 @@ import { Card } from '../components/ui/Card';
 import Icon from '../components/ui/Icon';
 import { useV3Theme } from '../theme/v3';
 import { t } from '../i18n';
-import { getIntervalsIcuCredentials } from '../services/ApiIntervalsIcu';
 import {
   LocalGear, LocalReminder, getAllGear, getReminders, upsertGear, softDeleteGear,
   getAssignments, setAssignment, newLocalId, getGearLedger,
 } from '../database/gearDb';
 import { computeGearTotals, reminderPercentUsed, GearTotal } from '../services/GearTotals';
 import {
-  runGearMirror, importFromIntervals, resolveConflict,
   createReminderNow, deleteReminderNow, snoozeReminderNow,
 } from '../services/GearMirrorService';
 
 // Reminder interval unit chosen in the add-reminder modal.
 type ReminderUnit = 'distance' | 'time' | 'days' | 'activities';
-import { GearConflict } from '../services/GearDiff';
 
-// Gear tracker (v3). Local-first store, mirrored two-way to intervals.icu (a genuine two-sided
-// edit stops and asks the user — see GearMirrorService/GearDiff). A component/part is a gear row
-// with parentId set to its parent; reminders hang off a gear. Auto-assign of the default
-// bike/shoes to a synced move lives in GearAutoAssign (wired into the intervals.icu upload).
+// Gear tracker (v3). Local-first store; the intervals.icu Import/Sync controls now live in
+// Settings -> intervals.icu connection (André, 2026-08-18), so this screen just shows and edits
+// your gear. A component/part is a gear row with parentId set to its parent; reminders hang off
+// a gear. Auto-assign of the default bike/shoes to a synced move lives in GearAutoAssign.
 
 // Common Ambit sport types offered in the default-gear picker.
 const SPORT_TYPES = ['Cycling', 'Mountain biking', 'Running', 'Trail running', 'Walking', 'Hiking', 'Orienteering'];
@@ -35,13 +32,10 @@ export default function GearScreen() {
   const theme = useV3Theme();
   const s = styles(theme);
 
-  const [connected, setConnected] = useState(false);
   const [gear, setGear] = useState<GearWithReminders[]>([]);
   const [assignments, setAssignments] = useState<Record<string, string>>({});
   const [totals, setTotals] = useState<Map<string, GearTotal>>(new Map());
   const [loading, setLoading] = useState(true);
-  const [syncing, setSyncing] = useState(false);
-  const [importing, setImporting] = useState(false);
 
   const reload = useCallback(async () => {
     const all = await getAllGear();
@@ -57,7 +51,6 @@ export default function GearScreen() {
 
   useEffect(() => {
     (async () => {
-      setConnected(!!(await getIntervalsIcuCredentials()));
       await reload();
       setLoading(false);
     })();
@@ -67,55 +60,6 @@ export default function GearScreen() {
   const bikes = tops.filter(g => g.type.toLowerCase() === 'bike');
   const shoes = tops.filter(g => g.type.toLowerCase().startsWith('shoe'));
   const partsOf = (id: string) => gear.filter(g => g.parentId === id);
-
-  // ── Import (pull-only) — the primary "get the info from intervals.icu" path ──
-  async function handleImport() {
-    setImporting(true);
-    try {
-      const n = await importFromIntervals();
-      await reload();
-      Alert.alert(t.gearScreenTitle, t.gearImportDone(n));
-    } catch (e: any) {
-      Alert.alert(t.error, e?.message ?? String(e));
-    } finally {
-      setImporting(false);
-    }
-  }
-
-  // ── Sync + sequential conflict resolution ──────────────────────────────────
-  async function handleSync() {
-    setSyncing(true);
-    try {
-      const res = await runGearMirror();
-      await reload();
-      if (res.conflicts.length > 0) await resolveConflictsSequentially(res.conflicts);
-      else Alert.alert(t.gearScreenTitle, t.gearSyncDone(res.pulled, res.pushed));
-    } catch (e: any) {
-      Alert.alert(t.error, e?.message ?? String(e));
-    } finally {
-      setSyncing(false);
-    }
-  }
-
-  function resolveConflictsSequentially(conflicts: GearConflict[]): Promise<void> {
-    return new Promise(resolve => {
-      let i = 0;
-      const next = () => {
-        if (i >= conflicts.length) { reload().then(() => resolve()); return; }
-        const c = conflicts[i++];
-        Alert.alert(
-          t.gearConflictTitle,
-          t.gearConflictBody(c.local.name || c.remote?.name || ''),
-          [
-            { text: t.gearConflictKeepLocal, onPress: async () => { await resolveConflict(c, 'local'); next(); } },
-            { text: t.gearConflictKeepRemote, onPress: async () => { await resolveConflict(c, 'remote'); next(); } },
-          ],
-          { cancelable: false },
-        );
-      };
-      next();
-    });
-  }
 
   // ── Text-input modal (add/rename) ───────────────────────────────────────────
   const [prompt, setPrompt] = useState<{ title: string; value: string; onOk: (v: string) => void } | null>(null);
@@ -231,24 +175,6 @@ export default function GearScreen() {
 
   return (
     <ScrollView style={s.root} contentContainerStyle={s.content}>
-      {/* Sync */}
-      <Card style={{ width: '100%' }}>
-        {!connected && <Text style={[s.desc, { color: theme.warning }]}>{t.gearNoConnection}</Text>}
-        {/* Import (pull-only) is the primary action — bring gear down and OWN it locally. */}
-        <TouchableOpacity style={[s.btn, (!connected || importing || syncing) && { opacity: 0.5 }]} disabled={!connected || importing || syncing} onPress={handleImport}>
-          {importing
-            ? <View style={s.rowCenter}><ActivityIndicator size="small" color={theme.primary} /><Text style={[s.btnText, { marginLeft: 8 }]}>{t.gearImporting}</Text></View>
-            : <Text style={s.btnText}>{t.gearImportBtn}</Text>}
-        </TouchableOpacity>
-        <Text style={[s.desc, { marginTop: 8 }]}>{t.gearImportHint}</Text>
-        {/* Two-way sync is secondary while intervals.icu is still the upstream. */}
-        <TouchableOpacity style={[s.btnGhost, (!connected || importing || syncing) && { opacity: 0.5 }]} disabled={!connected || importing || syncing} onPress={handleSync}>
-          {syncing
-            ? <View style={s.rowCenter}><ActivityIndicator size="small" color={theme.mutedText} /><Text style={[s.btnGhostText, { marginLeft: 8 }]}>{t.gearSyncing}</Text></View>
-            : <Text style={s.btnGhostText}>{t.gearSyncBtn}</Text>}
-        </TouchableOpacity>
-      </Card>
-
       {gear.length === 0 && <Text style={s.desc}>{t.gearEmpty}</Text>}
 
       {/* Bikes & shoes */}
