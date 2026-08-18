@@ -73,7 +73,7 @@ Item {
             TextField { id: remName; implicitWidth: 320; placeholderText: qsTr("Name (e.g. check chain)") }
             RowLayout {
                 TextField { id: remValue; Layout.fillWidth: true; placeholderText: qsTr("Every…"); inputMethodHints: Qt.ImhFormattedNumbersOnly }
-                ComboBox { id: remUnit; model: ["km", "h", "days", "activities"] }
+                RoundedComboBox { id: remUnit; model: ["km", "h", "days", "activities"]; Layout.preferredWidth: 140 }
             }
         }
         onAccepted: {
@@ -116,12 +116,12 @@ Item {
                 Layout.fillWidth: true
             }
             BusyIndicator { running: GearService.loading; visible: GearService.loading; implicitWidth: 22; implicitHeight: 22 }
-            Button {
+            RoundedButton {
                 text: qsTr("Add bike")
                 enabled: GearService.connected && !GearService.loading
                 onClicked: root.askName(qsTr("Add bike"), "", function (n) { GearService.addGear(n, "Bike") })
             }
-            Button {
+            RoundedButton {
                 text: qsTr("Add shoes")
                 enabled: GearService.connected && !GearService.loading
                 onClicked: root.askName(qsTr("Add shoes"), "", function (n) { GearService.addGear(n, "Shoes") })
@@ -180,7 +180,8 @@ Item {
                                 Layout.fillWidth: true
                                 readonly property var choices: root.gearChoices()
                                 Text { Layout.fillWidth: true; text: modelData; color: Theme.text; font.pixelSize: Theme.fontSizeBody }
-                                ComboBox {
+                                RoundedComboBox {
+                                    Layout.preferredWidth: 200
                                     model: choices
                                     textRole: "text"
                                     currentIndex: root.assignedIndex(modelData, choices)
