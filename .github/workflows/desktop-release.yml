@@ -36,22 +36,37 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # install-qt-action let aqt pick a download mirror, and on the Windows runner that mirror
-      # was missing 6.12.0's Updates.xml -> "Failed to locate XML data for Qt version 6.12.0"
-      # (macOS, which happened to get a complete mirror, installed the same version fine). Run
-      # aqt directly and pin --base to Qt's OFFICIAL server so the version listing is always
-      # found, then put its bin on PATH (windeployqt) and point CMake at it.
+      # Installing Qt on Windows via aqt is doubly broken for the newest releases: (1) Qt split
+      # the Windows repo by compiler for 6.11+ (qt6_61x0/qt6_61x0_msvc2022_64/ ...) and aqt 3.3.0
+      # - the newest aqt on PyPI - still looks at the old qt6_61x0/qt6_61x0/ path => 404; (2) its
+      # Updates.xml checksum fetch is flaky ("Failed to download checksum"). So: pin to 6.10.3
+      # (newest Windows Qt aqt can still resolve; the app only needs >= 6.5, see CMakeLists), and
+      # write a settings.ini that forces Qt's official mirror and tolerates the missing hash.
+      # macOS keeps 6.12.0 (its old-layout repo still works via install-qt-action).
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install Qt 6.12 (aqt, official mirror)
+      - name: Install Qt 6.10 (aqt, official mirror, hash-tolerant)
         shell: pwsh
         run: |
           python -m pip install --upgrade pip
           pip install "aqtinstall==3.3.*"
-          python -m aqt install-qt windows desktop 6.12.0 win64_msvc2022_64 `
-            --outputdir "$env:RUNNER_WORKSPACE\Qt" --base https://download.qt.io
-          $qt = "$env:RUNNER_WORKSPACE\Qt\6.12.0\msvc2022_64"
+          @(
+            '[requests]',
+            'max_retries_on_connection_error : 5',
+            'max_retries_on_checksum_error : 5',
+            'max_retries_to_retrieve_hash : 5',
+            'hash_algorithm : sha256',
+            'INSECURE_NOT_FOR_PRODUCTION_ignore_hash : True',
+            '[mirrors]',
+            'trusted_mirrors :',
+            '    https://download.qt.io',
+            'fallbacks :',
+            '    https://download.qt.io'
+          ) | Set-Content -Path aqt_settings.ini -Encoding ascii
+          python -m aqt -c aqt_settings.ini install-qt windows desktop 6.10.3 win64_msvc2022_64 `
+            --outputdir "$env:RUNNER_WORKSPACE\Qt"
+          $qt = "$env:RUNNER_WORKSPACE\Qt\6.10.3\msvc2022_64"
           "$qt\bin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
           "CMAKE_PREFIX_PATH=$qt" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
