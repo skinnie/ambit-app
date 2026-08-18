@@ -103,6 +103,13 @@ void GearService::openDatabase()
         "id TEXT PRIMARY KEY, gear_id TEXT, name TEXT, distance_m REAL, time_s REAL, "
         "days INTEGER, activities INTEGER, starting_distance_m REAL, starting_time_s REAL, "
         "last_reset INTEGER)"));
+    // Migrate a gear.db made by an earlier build whose gear_reminder predates these columns
+    // (same class of bug fixed on Android's db.ts, 2026-08-18: import crashed with "table
+    // gear_reminder has no column named distance_m"). Each ADD COLUMN is a harmless no-op error
+    // when the column already exists.
+    for (const char *col : {"distance_m REAL", "time_s REAL", "days INTEGER", "activities INTEGER",
+                            "starting_distance_m REAL", "starting_time_s REAL", "last_reset INTEGER"})
+        q.exec(QStringLiteral("ALTER TABLE gear_reminder ADD COLUMN %1").arg(QLatin1String(col)));
     // Default gear per decoded sport name, and the local usage ledger (manual per-activity gear).
     q.exec(QStringLiteral(
         "CREATE TABLE IF NOT EXISTS gear_assignment (sport TEXT PRIMARY KEY, gear_id TEXT)"));

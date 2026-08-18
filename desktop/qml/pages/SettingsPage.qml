@@ -870,8 +870,34 @@ PageFlickable {
                     width: parent.width
                     visible: ConnectionsService.intervalsIcuConnected
                     enabled: !GearService.loading
-                    text: qsTr("Import gear from Intervals.icu")
-                    onClicked: GearService.importFromIntervals()
+                    text: GearService.loading ? qsTr("Importing…")
+                                              : qsTr("Import gear from Intervals.icu")
+                    onClicked: { gearImportStatus.text = ""; GearService.importFromIntervals() }
+                }
+                // Completion message (André, 2026-08-18: "when finished importing we should have
+                // a message saying done") - GearService.importFinished(count) fires when the pull
+                // lands; lastError covers a failure. Shown inline under the button.
+                Text {
+                    id: gearImportStatus
+                    width: parent.width
+                    visible: text.length > 0
+                    wrapMode: Text.WordWrap
+                    color: Theme.mutedText
+                    font.pixelSize: Theme.fontSizeCaption
+                    text: ""
+                }
+                Connections {
+                    target: GearService
+                    function onImportFinished(count) {
+                        gearImportStatus.color = Theme.mutedText
+                        gearImportStatus.text = qsTr("Done — imported %1 gear item(s).").arg(count)
+                    }
+                    function onLastErrorChanged() {
+                        if (GearService.lastError.length > 0) {
+                            gearImportStatus.color = Theme.error
+                            gearImportStatus.text = GearService.lastError
+                        }
+                    }
                 }
             }
         }
