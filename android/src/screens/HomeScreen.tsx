@@ -9,6 +9,7 @@ import { RootStackParamList } from '../../App';
 import { runSync, SyncState } from '../services/SyncService';
 import { getGearAlerts } from '../services/GearAlerts';
 import { updateOrbitalData, OrbitalUpdateState } from '../services/SgeeService';
+import { refreshActivityClassOnWatch } from '../services/AmbitSettingsService';
 import {
   connect as ambitConnect, disconnect as ambitDisconnect, getDeviceInfo, AmbitDeviceInfo,
   listDevices, selectDevice, AmbitUsbDevice,
@@ -619,6 +620,11 @@ export default function HomeScreen() {
         ? ambitBleDeviceProvider
         : (isKailash(ambitInfo) ? kailashDeviceProvider : undefined);
       await runSync(setSync, provider);
+      // Recalculate the watch's activity class from the athlete's latest intervals.icu
+      // training on every sync (André, 2026-08-18: "recalculate activity level on each sync
+      // usb and bluetooth"). No-op if intervals.icu isn't connected, or on Ambit1/2/Kailash;
+      // writes only when the class changed. Fire-and-forget - must never break activity sync.
+      refreshActivityClassOnWatch().catch(() => {});
     } catch (e: any) {
       Alert.alert(t.error, e?.message ?? t.unknownError);
       setSync(s => ({ ...s, phase: 'error' }));

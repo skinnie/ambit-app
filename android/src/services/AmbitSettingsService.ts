@@ -5,6 +5,7 @@ import {
 } from './AmbitSettingsReader';
 import { decodePersonalSettings } from './AmbitPersonalSettingsReader';
 import { writeSetting as writeSettingRaw, WriteSettingResult, WriteDevice } from './AmbitSettingsWriter';
+import { computeActivityClass } from './IntervalsStats';
 
 // The Ambit 1 / Ambit 2 family (Ambit, Ambit2, Ambit2 S, Ambit2 R) uses the older legacy
 // personal-settings mechanism, not the Ambit3/Kailash SBEM 0x1100 - a different read path
@@ -150,4 +151,47 @@ export async function writeAmbitSetting(
   } finally {
     if (!overBle) await disconnect().catch(() => {});
   }
+}
+
+/**
+ * Recalculate the Suunto activity class from the athlete's latest intervals.icu training and
+ * write Personal.ActivityLevel to the watch - the sync-time refresh (André, 2026-08-18:
+ * "recalculate activity level on each sync usb and bluetooth"). Only the class (it drifts with
+ * training; weight/height/HR are static), and only when it actually changed. No-op when
+ * intervals.icu isn't connected, on Ambit 1/2 (read-only), or on the Kailash (no Personal
+ * fields). Uses the shared read/write path, so it works over USB and BLE. Returns a short
+ * status for logging; never throws (a background refresh must not break a sync).
+ */
+export async function refreshActivityClassOnWatch(): Promise<
+  'skipped' | 'unsupported' | 'unchanged' | 'written' | 'error'
+> {
+  let cls: number | null;
+  try {
+    cls = await computeActivityClass();
+  } catch {
+    return 'error';
+  }
+  if (cls === null) return 'skipped'; // intervals.icu not connected - nothing to do
+
+  let read: ReadSettingsState | undefined;
+  try {
+    await readAmbitSettings(s => { if (s.phase === 'done' || s.phase === 'error') read = s; });
+  } catch {
+    return 'error';
+  }
+  if (!read || read.phase !== 'done' || read.readOnly || read.isKailash
+      || !read.fields || !read.writeDevice) {
+    return 'unsupported';
+  }
+  const cur = read.settings?.find(x => x.key === 'activity_level')?.value;
+  if (cur !== undefined && Math.abs(cur - cls) < 1e-6) return 'unchanged';
+
+  let ok = false;
+  try {
+    await writeAmbitSetting('activity_level', cls, read.fields, read.writeDevice,
+      s => { if (s.phase === 'done') ok = true; });
+  } catch {
+    return 'error';
+  }
+  return ok ? 'written' : 'error';
 }
