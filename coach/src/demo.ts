@@ -9,13 +9,16 @@ import { IntervalsHistory } from './adapters/intervalsHistory.ts';
 import { FitExportSink } from './adapters/fitSink.ts';
 import { SuuntoRaceSink } from './adapters/suuntoRaceSink.ts';
 import { Ambit3Sink } from './adapters/ambit3Sink.ts';
+import { Ambit3AppSink } from './adapters/ambit3AppSink.ts';
 import { computeReadiness, recommend, sendToWatch } from './coach.ts';
 
-// the sink half of the toggle. FIT is the safe fallback; suunto-race + ambit3 are real.
-function pickSink(device: string, opts: { maxHr?: number }): DeviceSink {
+// the sink half of the toggle. FIT is the safe fallback; the rest are real.
+type SinkOpts = { ftp?: number; maxHr?: number; thresholdPaceSecPerKm?: number };
+function pickSink(device: string, o: SinkOpts): DeviceSink {
   switch (device) {
-    case 'suunto-race': return new SuuntoRaceSink({ maxHr: opts.maxHr });
-    case 'ambit3':      return new Ambit3Sink();
+    case 'suunto-race': return new SuuntoRaceSink({ maxHr: o.maxHr });
+    case 'ambit3':      return new Ambit3Sink();                    // planned move (calendar)
+    case 'ambit3-app':  return new Ambit3AppSink(o);               // App Zone guided workout
     case 'fit':
     default:            return new FitExportSink();
   }
@@ -44,7 +47,9 @@ const bar = (s: string) => console.log('\n\x1b[36m' + s + '\x1b[0m');
 const acts = await history.activities(180);
 const signals = await history.readinessSignals(today());
 const profile = await history.profile();
-const sink: DeviceSink = pickSink(cfg.device, { maxHr: profile.maxHr });
+const sink: DeviceSink = pickSink(cfg.device, {
+  ftp: profile.ftp, maxHr: profile.maxHr, thresholdPaceSecPerKm: profile.thresholdPaceSecPerKm,
+});
 
 const readiness = computeReadiness(acts, signals);
 const dot = { green: '🟢', tempered: '🌿', yellow: '🟡', red: '🔴' }[readiness.light];

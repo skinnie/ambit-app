@@ -17,6 +17,7 @@ node --experimental-strip-types src/demo.ts        # or: npm run demo
 SOURCE=local DEVICE=fit MINUTES=90 npm run demo    # the toggle is just env here
 DEVICE=suunto-race npm run demo                    # builds a SuuntoPlus guide (dry-run)
 DEVICE=ambit3 npm run demo                          # collapses to an Ambit3 planned move
+DEVICE=ambit3-app npm run demo                      # App Zone guided-workout spec (real watt ranges)
 SOURCE=intervals npm run demo                       # sample data; ICU_KEY/ICU_ATHLETE = live
 ```
 
@@ -32,7 +33,8 @@ SOURCE=intervals npm run demo                       # sample data; ICU_KEY/ICU_A
 | `src/adapters/intervalsHistory.ts` | real intervals.icu REST (sample offline); adds HRV+sleep → richer light |
 | `src/adapters/fitSink.ts` | writes a FIT-ready plan; real bytes come from `tools/` fit_tool pipeline |
 | `src/adapters/suuntoRaceSink.ts` | real: canonical → SuuntoPlus IntervalPlan (HR-range targets + auto-advance; power/pace ride as text). Wire `transport` to suunto-mcp to send |
-| `src/adapters/ambit3Sink.ts` | real: canonical → one Ambit3 planned move (activity/duration/distance/intensity). Steps dropped — the device's ceiling. Wire `transport` to `tools/training_program.py` |
+| `src/adapters/ambit3Sink.ts` | real: canonical → one Ambit3 planned move (activity/duration/distance/intensity). Steps dropped — a calendar entry. Wire `transport` to `tools/training_program.py` |
+| `src/adapters/ambit3AppSink.ts` | real: canonical → App Zone workout JSON (`tools/workout.py` schema; **power/HR/pace enforced on-watch**). Stops at the spec — compile on the community site, never the parked compiler. Long workouts hit BINARY_TOO_LARGE |
 | `src/demo.ts` | the whole wire-up in one file — the "toggle" |
 
 ## The two rules that make it hold
@@ -52,4 +54,13 @@ credentials and swap its one `transport`/loader:
 - `Ambit3Sink` → `transport` → POST to the app's Python backend → `tools/training_program.py --write`.
 
 Note the device ceilings the sinks encode honestly: FIT carries full intervals; SuuntoPlus
-enforces HR only (power/pace as text); the Ambit3 stores a scheduled move, not steps.
+enforces HR only (power/pace as text); the Ambit3 planned-move is a calendar entry (no steps);
+the Ambit3 App Zone app enforces power/HR/pace live but only for short sessions — dense SYSTM
+rides overflow one app slot (BINARY_TOO_LARGE), so those go planned-move + FIT instead.
+
+### App Zone / compiler boundary (deliberate)
+
+`ambit3AppSink` stops at the `tools/workout.py` JSON spec. Compilation is a separate step the
+adapter never performs: the community compiler "is not ours to invoke on a user's behalf"
+(compile on the community site, or via `tools/training_plan.py`'s backend path). This code does
+**not** touch the parked offline App-Zone compiler.
