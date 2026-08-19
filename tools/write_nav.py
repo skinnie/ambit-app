@@ -849,8 +849,13 @@ def read_memory_map(link):
     # ExerciseLog is not at the Peak's 0x27ac40 at all. Resolving it from the watch, the same
     # discipline the nav regions already use, is the fix. A watch that doesn't declare a given
     # region simply yields no entry, which callers must handle rather than assume.
+    # TrainingProgram added 2026-08-19: the watch declares it (Ambit3 Peak: base 0x001000
+    # size 3072) but it was missing from this regex, so check_memory_map silently SKIPPED
+    # verifying it - training_program.py wrote to the hardcoded base with no declared-region
+    # confirmation (it happened to be correct, but that's the exact "verify region before
+    # write" discipline the other regions already follow).
     for match in re.finditer(
-            rb"(Waypoints|Routes|GpsSGEE|GlonassSGEE|CustomModes|Apps|ExerciseLog|EventLog|TrackLog)\x00",
+            rb"(Waypoints|Routes|GpsSGEE|GlonassSGEE|CustomModes|Apps|TrainingProgram|ExerciseLog|EventLog|TrackLog)\x00",
             reply):
         cursor = match.end()
         end = reply.index(b"\0", cursor)          # hash in hexadecimal
