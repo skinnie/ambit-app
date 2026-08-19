@@ -3,6 +3,10 @@ __pycache__/
 csrc/build/
 venv/
 
+# Personal, local-only training-coach scaffold. It is its own git repo (coach/.git)
+# with NO remote, so it can never be pushed/published from this repository.
+/coach/
+
 # MkDocs build output (mkdocs build), regenerated from docs/ + mkdocs.yml
 site/
 
