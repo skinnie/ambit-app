@@ -12,6 +12,7 @@
 # particular) and to need a round or two of additions here. That is normal for freezing.
 
 import glob
+import os
 from pathlib import Path
 
 # PyInstaller injects SPECPATH (this file's directory) at exec time.
@@ -61,10 +62,22 @@ for _p in glob.glob(str(REPO / "tools" / "*.py")):
     if Path(_p).name not in EXCLUDE_TOOLS:
         hiddenimports.append(Path(_p).stem)
 
+# The USB tools (list_watches.py, write_nav.py, ...) do `import hid`, and the `hid` PyPI
+# package loads the native hidapi shared library lazily via ctypes at runtime. PyInstaller
+# cannot see that lazy load, so on Windows hidapi.dll is otherwise NEVER bundled - `import hid`
+# then throws on a clean user PC and no watch is ever detected (real bug, Sommet v0.1.46).
+# The Windows CI step downloads hidapi.dll and points HIDAPI_DLL at it; bundle it at the
+# bundle root so Windows' DLL search order (which includes sys._MEIPASS) finds it at runtime.
+# No-op on macOS/Linux, where hidapi comes in as a normal dependency of the `hid` wheel.
+binaries = []
+_hidapi_dll = os.environ.get("HIDAPI_DLL")
+if _hidapi_dll and Path(_hidapi_dll).is_file():
+    binaries.append((_hidapi_dll, "."))
+
 a = Analysis(
     [str(BACKEND / "frozen_entry.py")],
     pathex=[str(BACKEND), str(REPO / "tools")],
-    binaries=[],
+    binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],

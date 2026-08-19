@@ -84,6 +84,20 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      # `hid` (the Python USB package) loads hidapi.dll lazily via ctypes, so PyInstaller never
+      # sees it and it won't ship unless we hand it over explicitly. Grab the official prebuilt
+      # DLL from the libusb/hidapi release and let the spec bundle it (HIDAPI_DLL). Without this
+      # the watch is never detected on a clean Windows PC (Sommet v0.1.46 bug).
+      - name: Fetch hidapi.dll (native USB lib for `hid`)
+        shell: pwsh
+        run: |
+          $ver = "0.14.0"
+          $url = "https://github.com/libusb/hidapi/releases/download/hidapi-$ver/hidapi-win.zip"
+          Invoke-WebRequest -Uri $url -OutFile hidapi-win.zip
+          Expand-Archive -Path hidapi-win.zip -DestinationPath hidapi-win -Force
+          $dll = Resolve-Path "hidapi-win\x64\hidapi.dll"
+          "HIDAPI_DLL=$dll" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "hidapi.dll -> $dll"
       - name: Freeze the watch helper (PyInstaller)
         run: |
           python -m pip install --upgrade pip
