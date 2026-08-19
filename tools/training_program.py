@@ -14,8 +14,11 @@ test-write did land correctly (read back byte-exact), but there is no known way 
 confirm the watch's firmware does anything with it - no Training menu exists anywhere in the
 Ambit3 Peak's own user guide.
 
-    ./tools/training_program.py --name "Long run" --duration 60 --intensity 3
-    ./tools/training_program.py --name "Long run" --duration 60 --write
+    # Path (1) re-test: one planned move dated TODAY, then check the watch's reminder/day
+    # screen (NOT the WORKOUT menu - that's the separate Workout-Planner/guidance path).
+    ./tools/training_program.py --name "Long run" --duration 60 --intensity 3   # dry-run
+    ./tools/training_program.py --name "Long run" --duration 60 --write         # real write
+    ./tools/training_program.py --name "Long run" --date 2026-08-20 --write     # dated tomorrow
 
 Shares the low-level watch transport (`Link`, `send_plan`, the memory-map check) with
 `write_nav.py` by importing it, the same way `custom_modes.py`/`apps.py`/`exercise_log.py`
@@ -24,6 +27,7 @@ navigation database (routes/waypoints/POIs).
 """
 
 import argparse
+import datetime
 import struct
 import sys
 
@@ -74,17 +78,27 @@ def build_training_item(activity_id, duration_minutes, intensity, name,
     return item
 
 
-def build_training_program(items, base_date_u32=0):
+def build_training_program(items, base_date):
     """items: a list of build_training_item() results. See the EXPERIMENTAL notice above.
 
-    HEADER (12 bytes, Finding 29): [u32 base_date][u32 preserved][u16 count][u16 ?]. `base_date`
-    is the reference date every item's day_offset counts from (the earliest move's date). Its
-    exact packing is the ONE remaining unknown in this format - createBinary derives it from the
-    earliest JSON startTime via byte extraction, but which packing (days-since-epoch? packed
-    y/m/d?) isn't pinned from the decompile alone. Left as a caller-supplied u32 (default 0)
-    rather than guessed; a real write needs the right value, which a single hardware trial
-    (write one move dated today, see if the watch shows "Today") would reveal."""
-    header = struct.pack("<IIHH", base_date_u32, 0, len(items), 0)
+    HEADER (12 bytes) - base-date packing DECODED (Finding 59, 2026-08-13, from
+    TrainingProgramAreaConverter::createBinary's FUN_00531d20 JDN->Gregorian converter),
+    which closed this format's last unknown:
+
+        off 0  u16  year   (little-endian)
+        off 2  u8   month  (1-12)
+        off 3  u8   day    (1-31)
+        off 4  u32  = 0xFFFFFFFF for a fresh region (holds the prior binary's first 4 bytes
+                    otherwise; the empty/sentinel value is all-ones)
+        off 8  u16  item count
+        off 10 u16  = 0xFFFF
+
+    `base_date` (a datetime.date) is the reference date every item's day_offset counts from -
+    the earliest move's date. Earlier writes packed seconds/hours-since-epoch here, producing a
+    garbage date, which is why nothing surfaced (Finding 59). For the Path (1) re-test we pack a
+    real calendar date so the watch can match "today"."""
+    header = struct.pack("<HBBIHH", base_date.year, base_date.month, base_date.day,
+                         0xFFFFFFFF, len(items), 0xFFFF)
     blob = header + b"".join(items)
     flash = FlashImage()
     flash.write(F.TRAINING_PROGRAM_BASE, blob)
@@ -103,9 +117,14 @@ def main():
     ap.add_argument("--day-offset", type=int, default=0,
                      help="days from the header base date (0 = the base/earliest move itself);"
                           " see build_training_item()'s docstring (Finding 29)")
-    ap.add_argument("--base-date", type=lambda x: int(x, 0), default=0,
-                     help="u32 header base date - packing still unknown (Finding 29), leave 0"
-                          " until a hardware trial reveals it")
+    ap.add_argument("--date", type=datetime.date.fromisoformat, default=datetime.date.today(),
+                     help="header base date, YYYY-MM-DD (default: today). The move's real date"
+                          " is this + --day-offset days. Path (1) re-test wants it to land on"
+                          " today so the watch fires a training-day reminder.")
+    ap.add_argument("--clear", action="store_true",
+                     help="restore the region to its pristine empty state (all-0xFF, byte-"
+                          "identical to a never-written region) instead of writing a move -"
+                          " use with --write to undo a re-test afterwards")
     ap.add_argument("--write", action="store_true",
                      help="actually emits; without this option nothing is sent")
     ap.add_argument("--verbose", action="store_true", help="logs every 64-byte report")
@@ -122,11 +141,23 @@ def main():
     link.command(CMD_DEVICE_INFO, b"\x02\x48\x03\x00")
     check_memory_map(read_memory_map(link))
 
-    item = build_training_item(args.activity_id, args.duration, args.intensity, args.name,
-                                day_offset=args.day_offset)
-    flash, layout = build_training_program([item], base_date_u32=args.base_date)
-    print(f"  item: name={args.name!r} activityId={args.activity_id} "
-          f"duration={args.duration}min intensity={args.intensity}")
+    if args.clear:
+        blob = b"\xff" * F.TRAINING_PROGRAM_REGION_SIZE
+        flash = FlashImage()
+        flash.write(F.TRAINING_PROGRAM_BASE, blob)
+        layout = [("TrainingProgram (cleared to empty)", F.TRAINING_PROGRAM_BASE, blob),
+                  ("tail", F.TRAINING_PROGRAM_BASE, None)]
+        print(f"  CLEAR: restoring {len(blob)} bytes of 0xFF (pristine empty region)")
+    else:
+        item = build_training_item(args.activity_id, args.duration, args.intensity, args.name,
+                                    day_offset=args.day_offset)
+        flash, layout = build_training_program([item], base_date=args.date)
+        move_date = args.date + datetime.timedelta(days=args.day_offset)
+        print(f"  header base date: {args.date.isoformat()} "
+              f"(packed {args.date.year:#06x} {args.date.month:02d} {args.date.day:02d})")
+        print(f"  item: name={args.name!r} activityId={args.activity_id} "
+              f"duration={args.duration}min intensity={args.intensity} "
+              f"-> move date {move_date.isoformat()}")
     send_plan(link, flash, layout, commit=False)
 
     total = sum(len(payload) for _, payload, _ in link.sent)
