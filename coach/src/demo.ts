@@ -8,13 +8,14 @@ import { LocalHistory } from './adapters/localHistory.ts';
 import { IntervalsHistory } from './adapters/intervalsHistory.ts';
 import { FitExportSink } from './adapters/fitSink.ts';
 import { SuuntoRaceSink } from './adapters/suuntoRaceSink.ts';
+import { Ambit3Sink } from './adapters/ambit3Sink.ts';
 import { computeReadiness, recommend, sendToWatch } from './coach.ts';
 
-// the sink half of the toggle. FIT is the safe fallback; suunto-race is real for the Race S.
+// the sink half of the toggle. FIT is the safe fallback; suunto-race + ambit3 are real.
 function pickSink(device: string, opts: { maxHr?: number }): DeviceSink {
   switch (device) {
-    case 'suunto-race': return new SuuntoRaceSink(opts);
-    case 'ambit3':      throw new Error('Ambit3Sink not wired in this scaffold');
+    case 'suunto-race': return new SuuntoRaceSink({ maxHr: opts.maxHr });
+    case 'ambit3':      return new Ambit3Sink();
     case 'fit':
     default:            return new FitExportSink();
   }

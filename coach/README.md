@@ -16,6 +16,8 @@ enters as one adapter and leaves the same way.
 node --experimental-strip-types src/demo.ts        # or: npm run demo
 SOURCE=local DEVICE=fit MINUTES=90 npm run demo    # the toggle is just env here
 DEVICE=suunto-race npm run demo                    # builds a SuuntoPlus guide (dry-run)
+DEVICE=ambit3 npm run demo                          # collapses to an Ambit3 planned move
+SOURCE=intervals npm run demo                       # sample data; ICU_KEY/ICU_ATHLETE = live
 ```
 
 ## Layout
@@ -27,8 +29,10 @@ DEVICE=suunto-race npm run demo                    # builds a SuuntoPlus guide (
 | `src/coach.ts` | readiness (Fitness/Fatigue/Freshness + light) + recommend + send. Imports **only** model + ports |
 | `src/adapters/systmLibrary.ts` | real: maps SYSTM data → canonical (swap `loadCatalogue()` for a live wahoo-systm-mcp call) |
 | `src/adapters/localHistory.ts` | default history; `readinessSignals()` returns `{}` on Ambit3 (the light copes) |
+| `src/adapters/intervalsHistory.ts` | real intervals.icu REST (sample offline); adds HRV+sleep → richer light |
 | `src/adapters/fitSink.ts` | writes a FIT-ready plan; real bytes come from `tools/` fit_tool pipeline |
 | `src/adapters/suuntoRaceSink.ts` | real: canonical → SuuntoPlus IntervalPlan (HR-range targets + auto-advance; power/pace ride as text). Wire `transport` to suunto-mcp to send |
+| `src/adapters/ambit3Sink.ts` | real: canonical → one Ambit3 planned move (activity/duration/distance/intensity). Steps dropped — the device's ceiling. Wire `transport` to `tools/training_program.py` |
 | `src/demo.ts` | the whole wire-up in one file — the "toggle" |
 
 ## The two rules that make it hold
@@ -37,7 +41,15 @@ DEVICE=suunto-race npm run demo                    # builds a SuuntoPlus guide (
 2. **Readiness is driven by `load`; HRV/sleep only nudge it *more* cautious.** So it runs
    sensor-rich (Race S / intervals) or sensor-poor (Ambit3) — see `Readiness.basis`.
 
-## Not built yet (deliberately — ship the real ones first)
+## All six adapters are real. What's left is live wiring (config, not code)
 
-- `IntervalsHistory` — same `HistorySource` interface, three method bodies (GET /activities, /wellness).
-- `Ambit3Sink` — your BLE/USB Training-Program writer. The finish line, not the blocker.
+Each adapter runs offline on sample/dry-run data. To make one send/receive for real, supply
+credentials and swap its one `transport`/loader:
+
+- `IntervalsHistory` → set `ICU_KEY` + `ICU_ATHLETE` (real intervals.icu REST).
+- `SystmLibrary` → point `loadCatalogue()` at a live (forked) `wahoo-systm-mcp`.
+- `SuuntoRaceSink` → `transport` → `suunto-mcp push_workout_guide` (needs `SUUNTO_APP_NAME` + APIzone OAuth).
+- `Ambit3Sink` → `transport` → POST to the app's Python backend → `tools/training_program.py --write`.
+
+Note the device ceilings the sinks encode honestly: FIT carries full intervals; SuuntoPlus
+enforces HR only (power/pace as text); the Ambit3 stores a scheduled move, not steps.
