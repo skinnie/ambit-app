@@ -73,7 +73,7 @@ Fortunately we leave wonderful times, and with AI and community work, why not tr
 ## Desktop: Why Linux first?
 First because there was one projects already advanced: openambit.
 Second, because linux is also, on my opinion a great way to "revive" old hardware and make usable again.
-Third: windows and mac users have suunto app which can get them to the functionalities. Mormally the app will run on mac and windows, I just haven't tested it.
+Third: windows and mac users have suunto app which can get them to the functionalities. Normally the app will run on mac and windows, I just haven't tested it.
 
 
 ## Mobile: why android?
