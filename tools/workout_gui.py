@@ -1,19 +1,24 @@
 #!/usr/bin/env python3
 """A small local web GUI for building structured workouts (wanarun.net-style step builder -
-`training_program_andre.md` Finding 8's realistic shape: GUI -> source generator -> live
+`docs/training_program_andre.md` Finding 8's realistic shape: GUI -> source generator -> live
 compiler). The generator and compiler client are `workout.py`, imported here unchanged - this
 file only adds a browser-facing front end on top, stdlib-only (no framework, no build step,
 matching this project's existing style of small standalone tools).
 
-**Deliberately scoped back, 2026-08-06** (`training_program_andre.md` Finding 19's stopping
-point): this project's own flash writer (`workout_install.py`) hit an unresolved, real "app
-error" on hardware after ruling out every hypothesis it could test - so this tool no longer
-tries to write to the watch's flash at all. Instead it targets the *documented, community-used*
-path instead: compile, then append the result straight into SuuntoLink's own bundled
-`suunto-apps/index.json` (confirmed exact mechanism, forum.suunto.com/topic/7592's first post)
-so SuuntoLink's own already-working "Add Suunto App" install flow does the rest -
-`suuntolink_catalog.py` is that half, kept as its own file since it's desktop-OS-specific file
-surgery, a different concern from this tool's otherwise-portable generator.
+**Writes directly to the watch, 2026-08-12** (`docs/training_program_andre.md` Findings 44-55):
+from 2026-08-06 to 2026-08-12 this tool only reached the watch through SuuntoLink's own
+"Add Suunto App" flow (`suuntolink_catalog.py` appending to its bundled `suunto-apps/
+index.json`) - real, but Mac/Windows only, since SuuntoLink has no Linux build and Android
+never has SuuntoLink at all. That workaround existed because `workout_install.py` had an
+unresolved real "app error" on hardware (Finding 19). That bug (two of them, in the end -
+Findings 44/45, then the deeper Finding 54 root cause) is now fixed and hardware-proven for
+both catalog and community-compiled apps, stateful or not (Findings 46/53/55), so this tool
+now installs straight to a connected watch over USB via `workout_install.py` - the same path
+`desktop/backend/server.py`'s `_handle_apps_install` already uses for catalog apps, reused
+here for a freshly-compiled one instead of a catalog lookup. Works identically on Linux, Mac
+and Windows - none of it touches SuuntoLink. "Add to SuuntoLink" is kept alongside it (Mac/
+Windows only) for anyone who still wants the app in SuuntoLink's own catalog picker too, but
+it is no longer the only way to get a compiled workout onto the watch.
 
     ./tools/workout_gui.py               # serves http://127.0.0.1:8765, opens your browser
     ./tools/workout_gui.py --port 9000 --no-browser
@@ -23,15 +28,42 @@ import argparse
 import json
 import platform
 import re
+import subprocess
 import sys
+import tempfile
 import threading
 import time
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+import guided_workout as GW
 import suuntolink_catalog
-from workout import COMPILE_SITE_URL, build_compile_request, generate_source
+
+TOOLS_DIR = Path(__file__).resolve().parent
+
+
+def run_tool(script, args, timeout=180):
+    """Runs one of tools/*.py exactly as a person at a terminal would - same shape as
+    desktop/backend/server.py's own run_tool(), reimplemented here rather than imported so
+    this stays the standalone, dependency-free tool it already is. Returns (returncode,
+    stdout, stderr); never raises for a nonzero exit, the caller decides what that means."""
+    proc = subprocess.run([sys.executable, str(TOOLS_DIR / script), *args],
+                          cwd=TOOLS_DIR, capture_output=True, text=True, timeout=timeout)
+    return proc.returncode, proc.stdout, proc.stderr
+
+
+def parse_last_json_line(out):
+    """Same reasoning as server.py's own _parse_last_json_line(): tools print human-readable
+    progress *and* one machine-readable JSON summary line, not always in the same position -
+    try every line, keep the last one that parses."""
+    parsed = None
+    for line in out.strip().splitlines():
+        try:
+            parsed = json.loads(line)
+        except ValueError:
+            continue
+    return parsed
 
 # Real, 2026-08-08 ("app is installed in some strange directory, please install it in
 # Downloads directory"): was Path.home() / "AmbitWorkouts" (e.g. C:\Users\<user>\AmbitWorkouts
@@ -103,14 +135,14 @@ HTML_PAGE = r"""<!doctype html>
     --primary-text: #FFFFFF; --ok: #1A7F37; --err: #C0392B;
   }
   :root[data-theme="dark"] {
-    --bg: #14171C; --card: #1B1F27; --text: #E9EBEE; --muted: #9AA3AF;
-    --border: #FFFFFF2A; --code-bg: #FFFFFF14; --primary: #57C9B3;
+    --bg: #14171C; --card: #1B1F27; --text: #E9EBEE; --muted: #B4BDC9;
+    --border: #FFFFFF2A; --code-bg: #FFFFFF14; --primary: #9CA3AF;
     --primary-text: #14171C; --ok: #4CAF6D; --err: #E0655A;
   }
   @media (prefers-color-scheme: dark) {
     :root[data-theme="system"] {
-      --bg: #14171C; --card: #1B1F27; --text: #E9EBEE; --muted: #9AA3AF;
-      --border: #FFFFFF2A; --code-bg: #FFFFFF14; --primary: #57C9B3;
+      --bg: #14171C; --card: #1B1F27; --text: #E9EBEE; --muted: #B4BDC9;
+      --border: #FFFFFF2A; --code-bg: #FFFFFF14; --primary: #9CA3AF;
       --primary-text: #14171C; --ok: #4CAF6D; --err: #E0655A;
     }
   }
@@ -150,6 +182,11 @@ HTML_PAGE = r"""<!doctype html>
                     padding: .4rem 0; }
   .history-entry .grow { flex: 1 1 auto; }
   .hint { font-size: .8rem; opacity: .7; }
+  .install-picker { border: 1px solid var(--border); border-radius: 8px; padding: .6rem .8rem;
+                     margin: .5rem 0; max-width: 420px; }
+  .install-picker select { width: 100%; box-sizing: border-box; padding: .35rem;
+                            background: var(--card); color: var(--text);
+                            border: 1px solid var(--border); }
   #notes { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--border); }
   #notes h2 { font-size: 1rem; }
 </style>
@@ -160,31 +197,22 @@ HTML_PAGE = r"""<!doctype html>
   <button id="themeToggle" onclick="cycleTheme()"></button>
 </h1>
 
-<p>Builds a structured workout into App Zone source. The actual compile happens on the
-community compiler <strong>website</strong>, which you open and paste into yourself - this
-tool never sends anything to that server. The flow is: <strong>1)</strong> "Get source to
-paste" &rarr; <strong>2)</strong> "Open compiler website", paste, compile, download the
-result JSON &rarr; <strong>3)</strong> "Import compiled JSON" below to bring it back.</p>
-<p><strong>"Add to SuuntoLink"</strong> (shown once you import the compiled JSON) appends the
-result straight into your local SuuntoLink's own app catalog. From there, it shows up in
-<strong>SuuntoLink's own "Add Suunto App"</strong> picker next time you connect the watch -
-that's SuuntoLink's own install step, not something this tool does directly.</p>
-<p>Each creation is saved below so you can come back for it later.</p>
-<p class="hint">The compiler is proprietary to Suunto, shared by the community at
-<a href="https://forum.suunto.com/topic/7592/ambit-apps-compilation" target="_blank">forum.suunto.com/topic/7592</a>.
-This tool does not include or call it - you compile on the website there yourself.</p>
+<p>Builds a structured workout and compiles it into a real native Suunto <strong>guided
+workout</strong> - the Movescount interval screen with the target band and step text.
+"Create Workout" compiles it; "Install to Watch" adds it to a sport mode's WORKOUT menu (hold
+[Next] &rarr; WORKOUT). Each creation is saved below so you can come back for it later.</p>
+
+<p class="hint">This page is for <strong>authoring your own</strong> workouts - it doesn't
+need or use the official Suunto Apps catalog (interval timers, HR-zone displays and
+thousands of others already made). <strong>If you don't import that catalog, you'll only
+have the apps you create here</strong> - which is completely fine, just worth knowing. The
+main AmbitApp (Settings &rarr; Suunto Apps Catalog) is where you import it, if you want both.</p>
 
 <div id="linuxNote" style="display:none">
   <p class="hint"><strong>Linux note:</strong> SuuntoLink has no native Linux build, so
-  there's no "Add to SuuntoLink" button here - every compiled workout is still saved to
-  <code>~/Downloads/AmbitWorkouts</code>, ready to use another way.</p>
-  <p class="hint">Either copy the saved <code>.json</code> to a Windows or Mac machine that
-  runs SuuntoLink and use its own "Advanced &rarr; Import compiled JSON" + "Add to
-  SuuntoLink" there, or run SuuntoLink yourself under Wine or in a VM on this machine and do
-  the same "Import compiled JSON" + "Add to SuuntoLink" steps inside that - genuinely
-  untested and unsupported by this project either way (Electron apps like SuuntoLink are
-  historically unreliable under Wine), so treat it as your own experiment, not a documented
-  path.</p>
+  there's no "Add to SuuntoLink" button here - that's fine, "Install to Watch" doesn't need
+  SuuntoLink at all and works exactly the same as on Mac/Windows. Every compiled workout is
+  also saved to <code>~/Downloads/AmbitWorkouts</code> regardless.</p>
 </div>
 
 <div class="meta">
@@ -203,7 +231,7 @@ This tool does not include or call it - you compile on the website there yoursel
 </div>
 
 <div class="row-buttons">
-  <button class="primary" onclick="doGetSource()">Get source to paste</button>
+  <button class="primary" onclick="doCompile()">Create Workout</button>
 </div>
 
 <details>
@@ -217,8 +245,7 @@ This tool does not include or call it - you compile on the website there yoursel
     <input type="file" id="importCompiledFile" style="display:none" onchange="importCompiledJson(event)">
   </div>
   <p class="hint">"Import compiled JSON" is for a file compiled on a <em>different</em> machine
-  (e.g. built on Linux, where there's no SuuntoLink to add it to) - load it here to get the
-  "Add to SuuntoLink" button for it.</p>
+  - load it here to get the "Install to Watch"/"Add to SuuntoLink" buttons for it.</p>
 </details>
 
 <div id="output"></div>
@@ -230,7 +257,10 @@ re-download it later.</p>
 
 <div id="notes">
   <h2>Important notes</h2>
-  <p class="hint"><strong>Always use the "Add to SuuntoLink" button for this</strong> - never
+  <p class="hint"><strong>"Install to Watch" needs the watch plugged in and on its time
+  screen</strong> - it only talks over USB from there, so a menu or an active recording will
+  look disconnected. If it can't reach the watch, check that first.</p>
+  <p class="hint"><strong>Always use the "Add to SuuntoLink" button for that</strong> - never
   replace SuuntoLink's <code>index.json</code> with a downloaded/saved file by hand.
   SuuntoLink expects that file to stay a list of <em>every</em> app it knows about; a compiled
   app on its own is deliberately just one entry meant to be added to that list, not a
@@ -276,7 +306,7 @@ applyTheme(localStorage.getItem(THEME_KEY) || "system");
 let steps = [];
 
 // The compiler reports compatibility using Suunto's internal engineering codenames
-// (history.md) - translated here to the names people actually buy so "compatible with"
+// (docs/history.md) - translated here to the names people actually buy so "compatible with"
 // is readable. Left untranslated (falls through to the raw name) for anything not in
 // this project's own confirmed codename table.
 // Spacing between "Ambit" and its generation number matches ambitapp-v2's own
@@ -382,6 +412,11 @@ function render() {
       <div class="field"><label>Phase</label>
         <select onchange="steps[${i}].type.typeName=this.value">${optionList(TYPE_NAMES, t)}</select>
       </div>
+      <div class="field"><label>Text on watch</label>
+        <input type="text" size="7" maxlength="6" placeholder="e.g. Fast" value="${s.text || ""}"
+               oninput="steps[${i}].text=this.value"
+               title="Short label the watch shows when this step starts. Digits are stripped and it's trimmed to about 6 characters.">
+      </div>
       <div class="field"><label>Duration</label>
         <select onchange="setDurationName(${i}, this.value)">${optionList(DURATION_NAMES, dur.durationName)}</select>
       </div>
@@ -445,6 +480,7 @@ async function doGenerate() {
 }
 
 let lastCompiled = null;
+let lastWorkout = null;   // the workout JSON behind lastCompiled - what the guided install needs
 
 // SuuntoLink has no Linux build at all, so on Linux there's nothing for a button to actually
 // do - no SuuntoLink to add to, not even a doomed attempt at it. Real request 2026-08-08:
@@ -457,47 +493,100 @@ async function detectPlatform() {
   platformSystem = (await resp.json()).system;
   if (platformSystem === "Linux") document.getElementById("linuxNote").style.display = "";
 }
+// "Install to Watch" writes straight to a connected watch over USB (workout_install.py, no
+// SuuntoLink) - works the same on every platform, so unlike "Add to SuuntoLink" it is never
+// hidden. Each button gets its own picker <div>, since the same installButtonHtml() call
+// renders both after a fresh compile and once per History row.
+let installPickerSeq = 0;
+const pickerWorkout = {};    // pickerId -> the workout JSON it installs as a guided workout
+const pickerModes = {};      // pickerId -> /api/modes result, fetched once per picker open
+
 function installButtonHtml(historyIndex) {
-  if (platformSystem === "Linux") return "";
-  const call = historyIndex === undefined ? "lastCompiled" : `loadHistory()[${historyIndex}].compiled`;
+  const wk = historyIndex === undefined ? "lastWorkout" : `loadHistory()[${historyIndex}].workout`;
   const cls = historyIndex === undefined ? "" : ' class="secondary"';
-  return `<button${cls} onclick="doAddToSuuntoLink(${call}, this)">Add to SuuntoLink</button>`;
+  const pickerId = `installPicker${installPickerSeq++}`;
+  // Small helper text next to the button (only on a fresh compile, not in every history row).
+  const help = historyIndex !== undefined ? "" : `
+    <p class="hint" style="margin:.4rem 0 0"><strong>Install to Watch</strong> writes the workout
+    straight to a connected watch over USB &ndash; no SuuntoLink, no account (Linux/Mac/Windows).
+    Pick a sport mode; it lands in that mode's WORKOUT menu (hold [Next] &rarr; WORKOUT, then pick
+    it). Watch plugged in on its time screen.</p>`;
+  return `<button${cls} onclick="toggleInstallPicker('${pickerId}', ${wk})">Install to Watch</button>
+    <div id="${pickerId}" class="install-picker" style="display:none"></div>${help}`;
 }
 
-// Hand-off compile: this tool never calls the compiler server itself. It produces the
-// paste-ready source and lets the user compile it on the community website, then import the
-// result back below via "Import compiled JSON".
-const COMPILE_SITE_URL = "__COMPILE_SITE_URL__";
+async function toggleInstallPicker(pickerId, workout) {
+  pickerWorkout[pickerId] = workout;
+  const el = document.getElementById(pickerId);
+  if (el.style.display !== "none") { el.style.display = "none"; return; }
+  el.style.display = "block";
+  el.innerHTML = '<p class="hint">reading sport modes from the watch...</p>';
+  try {
+    const resp = await fetch("/api/modes");
+    const data = await resp.json();
+    if (!resp.ok || !data.ok) throw new Error(data.error || "couldn't read the watch");
+    pickerModes[pickerId] = data.modes;
+  } catch (e) {
+    el.innerHTML = `<p class="result-err">${e.message}</p>`;
+    return;
+  }
+  renderPickerForm(pickerId);
+}
 
-async function doGetSource() {
+function renderPickerForm(pickerId) {
+  const modes = pickerModes[pickerId];
+  const el = document.getElementById(pickerId);
+  // A guided workout goes into the mode's WORKOUT menu - it is NOT placed on a display row, so
+  // there is no screen/field to choose; just pick the sport mode.
+  const modeOpts = modes.map((m) => `<option value="${m.name}">${m.name}</option>`).join("");
+  el.innerHTML = `
+    <div class="field"><label>Sport mode</label>
+      <select id="${pickerId}_mode">${modeOpts}</select>
+    </div>
+    <div class="row-buttons">
+      <button class="primary" onclick="doInstallToWatch('${pickerId}')">Add to WORKOUT menu</button>
+    </div>
+    <div id="${pickerId}_result"></div>`;
+}
+
+async function doInstallToWatch(pickerId) {
+  const mode = document.getElementById(`${pickerId}_mode`).value;
+  const resultEl = document.getElementById(`${pickerId}_result`);
+  resultEl.innerHTML = '<p class="hint">installing...</p>';
+  const resp = await fetch("/api/install-to-watch", {method: "POST", body: JSON.stringify({
+    workout: pickerWorkout[pickerId], mode,
+  })});
+  const data = await resp.json();
+  if (resp.ok && data.ok) {
+    resultEl.innerHTML = `<p class="result-ok">Installed &ndash; now in ${mode}'s WORKOUT menu (hold [Next] &rarr; WORKOUT).</p>`;
+    return;
+  }
+  // Show what the watch tool actually said - "no parseable JSON" usually means the watch
+  // wasn't on its time screen, but a real error hides in stderr, so make it reachable.
+  const detail = (data.stderr || data.raw_output || "").trim();
+  resultEl.innerHTML = `<p class="result-err">${data.error || "install failed"}</p>`
+    + (detail ? `<details><summary class="secondary">What the watch tool reported</summary>`
+       + `<pre>${detail.replace(/</g, "&lt;").slice(-2000)}</pre></details>` : "");
+}
+
+async function doCompile() {
   const out = document.getElementById("output");
-  out.innerHTML = "generating...";
-  const resp = await fetch("/api/generate", {method: "POST", body: JSON.stringify(currentWorkout())});
+  out.innerHTML = "creating workout...";
+  const workout = currentWorkout();
+  const resp = await fetch("/api/compile", {method: "POST", body: JSON.stringify(workout)});
   const data = await resp.json();
   if (!resp.ok) { out.innerHTML = `<p class="result-err">${data.error}</p>`; return; }
-  out.innerHTML = `
-    <h3>Source to compile</h3>
-    <p>Copy this, open the compiler website, paste it in and compile, then download the
-       result JSON and use <strong>"Import compiled JSON"</strong> above to bring it back here.</p>
-    <div class="row-buttons">
-      <button class="primary" onclick="copySource(this)">Copy source</button>
-      <button onclick="window.open(COMPILE_SITE_URL, '_blank')">Open compiler website</button>
-    </div>
-    <pre id="pasteSource">${data.source.replace(/</g, "&lt;")}</pre>`;
+  renderCompiledResult(workout.name, data, data.savedTo ? `Saved to ${data.savedTo}.` : "", workout);
+  saveHistory(workout, data);
 }
 
-function copySource(btn) {
-  const text = document.getElementById("pasteSource").textContent;
-  navigator.clipboard.writeText(text).then(
-    () => { btn.insertAdjacentHTML("afterend", ' <span class="result-ok">Copied.</span>'); },
-    () => { btn.insertAdjacentHTML("afterend", ' <span class="result-err">Copy failed - select the text and copy manually.</span>'); });
-}
-
-function renderCompiledResult(name, data, extraNote) {
+function renderCompiledResult(name, data, extraNote, workout) {
   lastCompiled = data;
-  document.getElementById("output").innerHTML = `<p class="result-ok">"${name}" - binary
-    length ${data.binary.length} bytes, compatible with:
-    ${data.compatibleVariants.map(variantName).join(", ")}.
+  lastWorkout = workout || null;
+  // A guidance binary comes back as a plain byte array with no compatibleVariants field (unlike
+  // the old app-zone response) - so report its size and let the install button carry the workout.
+  document.getElementById("output").innerHTML = `<p class="result-ok">"${name}" - native guided
+    workout ready (${data.binary.length}-byte guidance binary with target band + step text).
     ${extraNote}</p>
     ${installButtonHtml()}`;
 }
@@ -509,11 +598,14 @@ function importCompiledJson(event) {
     let data;
     try { data = JSON.parse(reader.result); }
     catch (e) { alert(`Not valid JSON: ${e}`); return; }
-    if (!data.binary || !data.compatibleVariants) {
-      alert('Doesn\'t look like a compiled app JSON (expected "binary" and "compatibleVariants" fields).');
+    if (!data.binary) {
+      alert('Doesn\'t look like a compiled workout JSON (expected a "binary" field).');
       return;
     }
-    renderCompiledResult(file.name.replace(/\.json$/i, ""), data, "Imported from a file.");
+    // An imported compiled file has no workout JSON behind it, so it can be viewed but not
+    // re-installed as a guided workout (that needs the workout to recompile). Use "Import
+    // workout JSON" + Create Workout to install one.
+    renderCompiledResult(file.name.replace(/\.json$/i, ""), data, "Imported from a file.", null);
     window.scrollTo({top: document.getElementById("output").offsetTop, behavior: "smooth"});
   };
   reader.readAsText(file);
@@ -634,11 +726,14 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/api/platform":
             self._send_json(200, {"system": platform.system()})  # "Linux"/"Darwin"/"Windows"
             return
+        if self.path == "/api/modes":
+            self._handle_list_modes()
+            return
         if self.path != "/":
             self.send_response(404)
             self.end_headers()
             return
-        body = HTML_PAGE.replace("__COMPILE_SITE_URL__", COMPILE_SITE_URL).encode("utf-8")
+        body = HTML_PAGE.encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
@@ -646,7 +741,8 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_POST(self):
-        if self.path not in ("/api/generate", "/api/add-to-suuntolink"):
+        if self.path not in ("/api/generate", "/api/compile", "/api/add-to-suuntolink",
+                             "/api/install-to-watch"):
             self.send_response(404)
             self.end_headers()
             return
@@ -661,19 +757,29 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/api/add-to-suuntolink":
             self._handle_add_to_suuntolink(body)
             return
-
-        workout = body
-        try:
-            source, own_vars = generate_source(workout)
-            request_text = build_compile_request(source, own_vars, workout.get("name", "Workout"))
-        except (KeyError, ValueError, NotImplementedError) as e:
-            self._send_json(400, {"error": f"couldn't generate source: {e}"})
+        if self.path == "/api/install-to-watch":
+            self._handle_install_to_watch(body)
             return
 
-        # /api/generate is the only workout endpoint now: it returns the paste-ready source.
-        # Compiling is done by the user on the community website (see COMPILE_SITE_URL); this
-        # tool never calls that server.
-        self._send_json(200, {"source": request_text})
+        workout = body
+
+        if self.path == "/api/generate":
+            # For a guided workout, the "source" is the workout JSON itself - that's what gets
+            # POSTed to the compiler (no hand-written app-zone script anymore).
+            self._send_json(200, {"source": json.dumps(workout, indent=2)})
+            return
+
+        # /api/compile: compile the workout JSON into the GENUINE native guidance binary (the
+        # real Movescount interval screen - target band + step text), via the compiler's
+        # JSON->guidance path. This is a WORKOUT for the WORKOUT menu, not an app-zone app.
+        try:
+            result = GW.compile_workout(workout)
+        except (RuntimeError, SystemExit) as e:
+            self._send_json(502, {"error": str(e)})
+            return
+        result["name"] = workout.get("name") or result.get("name", "Workout")
+        saved_to = save_compiled(workout.get("name", "Workout"), result)
+        self._send_json(200, {**result, "savedTo": str(saved_to)})
 
     def _handle_add_to_suuntolink(self, compiled):
         candidates = suuntolink_catalog.find_index_json()
@@ -690,6 +796,65 @@ class Handler(BaseHTTPRequestHandler):
             return
         suuntolink_catalog.open_suuntolink()
         self._send_json(200, {"path": candidates[-1], "backup": backup, "ruleId": rule_id})
+
+    def _handle_list_modes(self):
+        """GET /api/modes - the connected watch's own sport modes/displays/fields, read-only
+        (0x0b17), for the "where does this go" picker before an install. Trims
+        custom_modes.py --json's own output down to what a placement picker needs; a mode
+        already at the 5-app ceiling (check_mode_app_limit's own SPORT_MODE_APP_LIMIT) is kept
+        in the list but flagged rather than dropped, so the UI can explain why it's disabled
+        instead of just not offering it."""
+        code, out, err = run_tool("custom_modes.py", ["--json"], timeout=60)
+        info = parse_last_json_line(out)
+        if info is None or not info.get("ok"):
+            self._send_json(502, {"ok": False,
+                                   "error": "couldn't read the watch's sport modes - is it "
+                                   "connected and on the time screen?",
+                                   "raw_output": out, "stderr": err})
+            return
+        modes = [{
+            "index": i, "name": m.get("name"), "appCount": m.get("appCount", 0),
+            "atLimit": m.get("appCount", 0) >= 5,
+            "displays": [{
+                "index": d["index"], "template": d.get("templateLabel") or d.get("template"),
+                "isBuiltIn": d.get("isBuiltIn"), "screenNumber": d.get("screenNumber"),
+                "fields": [{"index": i, "row": f.get("rowLabel") or f"row {i}",
+                            "shows": f.get("typeLabel")}
+                           for i, f in enumerate(d.get("fields", []))],
+            } for d in m.get("displays", [])],
+        } for i, m in enumerate(info.get("exerciseModes", []))]
+        self._send_json(200, {"ok": True, "modes": modes})
+
+    def _handle_install_to_watch(self, body):
+        """POST /api/install-to-watch. Body: {"workout": {...}, "mode": "<mode name>"}. Installs
+        the workout as a NATIVE GUIDED WORKOUT into the named sport mode's WORKOUT menu via
+        tools/guided_workout.py --append: the compiled guidance binary goes into the Apps region
+        with entry byte0=1 (guidance) and the mode gets a guidance display (Template 295), NO
+        rule - so it's dormant until picked from [Next]-3s -> WORKOUT and renders the native
+        target-band + step-text screen. No display/field to choose (that was the old app-zone
+        data-field shortcut); a workout is not slotted onto a screen. No SuuntoLink, all
+        platforms."""
+        workout = body.get("workout")
+        mode = body.get("mode")
+        if not workout or not mode:
+            self._send_json(400, {"ok": False, "error": 'need "workout" and "mode"'})
+            return
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+            json.dump(workout, f)
+            workout_path = f.name
+        try:
+            args = [workout_path, "--mode", str(mode), "--append", "--json", "--write"]
+            code, out, err = run_tool("guided_workout.py", args, timeout=180)
+        finally:
+            Path(workout_path).unlink(missing_ok=True)
+        info = parse_last_json_line(out)
+        if info is None:
+            self._send_json(502, {"ok": False,
+                                   "error": "guided_workout.py produced no parseable JSON - "
+                                   "is the watch connected and on the time screen?",
+                                   "raw_output": out, "stderr": err})
+            return
+        self._send_json(200 if info.get("ok") else 502, info)
 
 
 def _log_startup_failure(exc):

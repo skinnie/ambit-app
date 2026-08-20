@@ -2,7 +2,7 @@
 """Decodes the Ambit3 "Apps" flash region - where a Suunto App's compiled bytecode gets
 written once assigned to a sport mode's display via SuuntoLink.
 
-**SOLVED, 2026-08-08 (training_program_andre.md Finding 25), from 4 real, clean USBPcap
+**SOLVED, 2026-08-08 (docs/training_program_andre.md Finding 25), from 4 real, clean USBPcap
 captures of SuuntoLink actually installing apps** (`assets/ambit3 pcap/v2/`, provided by
 André - each one a single deliberate action, exactly the "genuine gap" Finding 19 flagged as
 missing). The whole region write is a real, self-describing directory, not a flat list of
@@ -155,18 +155,63 @@ def match_catalog(binary, catalog):
     return None
 
 
-# Real, 2026-08-09 - the real distributable catalog this app actually ships
-# (extract_apps_catalog.py's own output: data/suunto_apps/catalog.json + catalog.bin) is a
-# different shape from the raw suunto-apps/index.json `--catalog` above still supports (that
-# one embeds every binary inline as a JSON int array - fine for a one-off research match,
-# far too wasteful to load whole for routine use). These two helpers are for the real
-# shipped catalog instead: metadata-only entries plus offset/length pointers into a separate
-# blob file, loaded/matched without ever holding all 13,104 binaries in memory at once.
+# NOT shipped/committed (2026-08-12 - this project will be public, and the catalog is
+# thousands of individual Movescount community members' compiled apps plus Suunto's own
+# compiled/hosted catalog, neither of which the interoperability basis this project relies on
+# extends to redistributing - see docs/PROJECT_OVERVIEW.md's "Scope and legal basis"). Built
+# locally instead, lazily, from the user's OWN copy of suunto-apps/index.json - metadata-only
+# entries plus offset/length pointers into a separate blob file, loaded/matched without ever
+# holding all 13,104 binaries in memory at once. `--catalog` above still supports pointing
+# straight at a raw index.json for a one-off research match; these two helpers are for the
+# fast local cache `ensure_catalog_built()` produces from one.
 DEFAULT_CATALOG_DIR = pathlib.Path(__file__).resolve().parent.parent / "data" / "suunto_apps"
+# Where a user drops their own suunto-apps/index.json - see
+# data/suunto_apps_source/README.md for exactly where to find it on their own machine. Never
+# committed (gitignored), same as the built cache above.
+SOURCE_INDEX_PATH = (pathlib.Path(__file__).resolve().parent.parent / "data"
+                     / "suunto_apps_source" / "index.json")
+
+
+def ensure_catalog_built(catalog_dir=DEFAULT_CATALOG_DIR, source_path=SOURCE_INDEX_PATH):
+    """Builds/refreshes the fast local cache (catalog.json + catalog.bin) from the user's own
+    dropped-in suunto-apps/index.json if needed - the cache doesn't exist yet, or the source
+    file is newer than it (the user replaced it with a fresher/different copy). No-op
+    otherwise, so routine calls stay cheap (an mtime comparison, not a re-extraction).
+
+    Tries the drop-in `source_path` first, then falls back to auto-detecting a real,
+    currently-installed SuuntoLink on this machine (`suuntolink_catalog.find_index_json()`) -
+    a real convenience on Mac/Windows where SuuntoLink is often already there, with the
+    drop-in file as the one path that also works on Linux and for anyone without SuuntoLink
+    installed. Raises FileNotFoundError with a message meant to be shown to a person if
+    neither source is available and there is no cache to fall back on."""
+    catalog_dir = pathlib.Path(catalog_dir)
+    source_path = pathlib.Path(source_path)
+    cache_marker = catalog_dir / "catalog.json"
+
+    real_source = source_path if source_path.is_file() else None
+    if real_source is None:
+        import suuntolink_catalog
+        found = suuntolink_catalog.find_index_json()
+        if found:
+            real_source = pathlib.Path(found[-1])
+
+    if real_source is not None:
+        if not cache_marker.is_file() or real_source.stat().st_mtime > cache_marker.stat().st_mtime:
+            import extract_apps_catalog
+            extract_apps_catalog.extract(real_source, catalog_dir)
+        return
+
+    if not cache_marker.is_file():
+        raise FileNotFoundError(
+            "no Suunto Apps catalog found. Copy suunto-apps/index.json from your own "
+            f"SuuntoLink installation to {source_path} (see "
+            "data/suunto_apps_source/README.md for exactly where to find it), or run "
+            "SuuntoLink at least once if it's already installed on this machine.")
 
 
 def load_distributable_catalog(catalog_dir=DEFAULT_CATALOG_DIR):
     catalog_dir = pathlib.Path(catalog_dir)
+    ensure_catalog_built(catalog_dir)
     with open(catalog_dir / "catalog.json") as f:
         entries = json.load(f)["entries"]
     with open(catalog_dir / "catalog.bin", "rb") as f:
