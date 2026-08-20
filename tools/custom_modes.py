@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Decodes the Ambit3 CustomModes flash region (sport modes), a format this project only
-reverse-engineered on 2026-08-05 - see custom_modes_andre.md for the full derivation.
+reverse-engineered on 2026-08-05 - see docs/custom_modes_andre.md for the full derivation.
 
 Unlike Waypoints/Routes/GpsSGEE (fixed-stride binary records) or DeviceSettings/POIs/
 ActivityTracking (SBEM0102 [id][len][data] entries), CustomModes uses a third, distinct
@@ -42,7 +42,7 @@ EXERCISE_MODES_RULE = 0x10D
 # time on a mode that just had a Suunto App assigned via SuuntoLink 4.1.15: an 8-byte leaf,
 # two consecutive uint32 LE Unix timestamps, 2 seconds apart, both landing exactly on the real
 # wall-clock moment of that sync. Name and exact semantics (e.g. created/modified) are inferred,
-# not sourced - see custom_modes_andre.md.
+# not sourced - see docs/custom_modes_andre.md.
 EXERCISE_MODES_APP_META = 0x1FF
 SPORT_MODES = 0x200
 SPORT_MODE = 0x210
@@ -52,7 +52,7 @@ SPORT_MODE_EXERCISE = 0x214
 SPORT_MODE_SETTING_NAME_LEN64 = 0x215
 # Not in BXmlTagMapping/BXmlIdMapping either - found 2026-08-07 the same way EXERCISE_MODES_
 # APP_META was, by round-tripping a real live dump through decode()->encode() and comparing
-# byte for byte against custom_modes_write.py's rebuild (see V3_CHANGELOG.md). Present on
+# byte for byte against custom_modes_write.py's rebuild (see docs/V3_CHANGELOG.md). Present on
 # EVERY SPORT_MODE slot on the reference watch: a 4-byte uint32 whose values (1,2,3,4,5,6,7,
 # 9,10) are a persistent per-slot order/ID that survives deletion - the reference watch had
 # slot 8 ("Alpine skiing") deleted via SuuntoLink, and the surviving values still skip 8
@@ -235,14 +235,14 @@ FIELD_TYPES = {
 # field-type pickers. Curated by hand for every FT_* entry (real sports-watch terminology,
 # not a mechanical guess) - two are hardware-confirmed real names from this project's own
 # live testing, not just plausible-sounding ones: FT_VELOCITY really does show as "Speed"
-# (custom_modes_andre.md, Walk's own wrong field read back as this, matching what André
+# (docs/custom_modes_andre.md, Walk's own wrong field read back as this, matching what André
 # reported seeing), and FT_HEART_RATE_CURR really does show as plain "Heart Rate" (same
 # doc, the confirmed HR-display fix). FT_RULE_ENGINE_0/1/2's "Suunto App Slot N" wording
 # matches this project's own real understanding of what RULEIDX selects (decode_rule()'s
 # own docstring). The PID_RUNNER_GPS_TEMPLATE_* screen-template entries are deliberately
 # NOT given invented descriptions here (this project has never confirmed what most of those
 # numbers look like on a real screen, only that TEMPLATE_4 is the ordinary repeating data
-# screen - see custom_modes_andre.md) - field_type_label()'s own fallback just cleans up
+# screen - see docs/custom_modes_andre.md) - field_type_label()'s own fallback just cleans up
 # the real enum name's own formatting for those instead of guessing new meaning.
 # Human labels. Where a field is one SuuntoLink also offers as a display row, the wording is
 # ITS wording, taken from assets/sportmode_rows.json (generated from its own module and
@@ -324,7 +324,7 @@ def used_extent(data):
 
     This is the span SuuntoLink actually writes AND hashes (confirmed byte-exact against all 4
     real app-install captures in assets/ambit3 pcap/v2/, and against the watch's own reported
-    0x0b21 CustomModes hash - training_program_andre.md Finding 28). Writers must write only
+    0x0b21 CustomModes hash - docs/training_program_andre.md Finding 28). Writers must write only
     data[:used_extent(data)] so the closing hash covers exactly what the firmware re-hashes on
     a cold boot; writing the full padded region instead produces a hash the watch rejects with
     'err:62' on all sport modes after a restart."""
@@ -335,6 +335,28 @@ def used_extent(data):
     if extent > len(data):
         raise ValueError(f"declared extent {extent} exceeds image length {len(data)}")
     return extent
+
+
+def check_field_type_shortcut_invariant(data):
+    """A display field's Type is 0 if and only if it has at least one DISP_FIELD_SHORTCUT -
+    zero exceptions across 31,976 real fields checked in every capture this project has
+    (2026-08-12, docs/training_program_andre.md Finding 53's "connect to Moveslink" recovery). A
+    field with a nonzero Type AND shortcuts, or Type=0 with none, never occurs on real
+    hardware and the firmware rejects it - this was the real root cause of a real-hardware
+    "connect to Moveslink" error, hit for the first time when this project's installer added
+    a mode's FIRST-EVER shortcut to a field without also zeroing its old Type.
+
+    Any writer touching CustomModes should call this on its own output before sending -
+    raises on the first violation rather than letting a bad region reach the watch. Returns
+    None (no violation) or (mode_index, mode_name, display_index, field_index, field_dict)."""
+    decoded = decode(data)
+    for mi, mode in enumerate(decoded.get("exercise_modes", [])):
+        for di, disp in enumerate(mode.get("Displays", [])):
+            for fi, f in enumerate(disp.get("Fields", disp.get("fields", []))):
+                typ, sc = f.get("Type"), f.get("Shortcuts", [])
+                if bool(sc) != (typ == 0):
+                    return (mi, mode.get("Name"), di, fi, f)
+    return None
 
 
 # Value enumerations for display fields whose reading is a code rather than a measurement.
@@ -397,7 +419,7 @@ INTERVAL_SLOT_REPEATS = 5
 # three sub-fields instead, confirmed byte-exact 2026-08-08 against real SuuntoLink captures
 # *and* independently against SuuntoLink's own JS source enums (assets/WIndows apps/
 # suuntolink_roaming/app-4.1.15/resources/app/ambit/{settings,sport_mode}.js) - see
-# custom_modes_andre.md's "2026-08-08" section for the full derivation. Kept as a
+# docs/custom_modes_andre.md's "2026-08-08" section for the full derivation. Kept as a
 # reinterpretation of IntervalSlots[5] rather than a new struct field, so a raw round-trip
 # through encode/decode still works unchanged.
 BACKLIGHT_MODE_NAMES = {0: "NORMAL", 1: "OFF", 2: "NIGHT", 3: "TOGGLE", 255: "DEFAULT"}
@@ -515,7 +537,7 @@ def decode_rule(data, offset, length):
         USERULE (whether a Suunto App is assigned/enabled for that slot)
         LOGRULE (whether that App's result gets logged as part of the recorded Move)
     This is the link between the separate "Suunto Apps" subsystem (its own flash region, own
-    binary converter - see custom_modes_andre.md) and a specific exercise mode: an app itself
+    binary converter - see docs/custom_modes_andre.md) and a specific exercise mode: an app itself
     lives in the Apps region, but *which* app-slot an exercise mode uses, and whether it's
     logged, is recorded here in CustomModes.
     NOT byte-verified: this reference watch has no apps installed (its Apps flash region
@@ -718,12 +740,42 @@ def max_displays_for_variant(variant):
 def system_tail_length(display_templates):
     """How many trailing entries in a real mode's own Displays list are built-in/system
     screens (not real user-configurable "Screen N" ones) - see this module's own
-    _GPS_SYSTEM_TAIL/_NON_GPS_SYSTEM_TAIL comment for exactly what's confirmed."""
+    _GPS_SYSTEM_TAIL/_NON_GPS_SYSTEM_TAIL comment for exactly what's confirmed.
+
+    SUPERSEDED 2026-08-12 by user_display_count() below, which asks the display's own Type
+    instead of pattern-matching its template names. Kept because it is a real, verified
+    description of the two tails this project has seen, and because removing a published
+    helper is not worth it - but nothing in this module calls it any more."""
     if tuple(display_templates[-len(_GPS_SYSTEM_TAIL):]) == _GPS_SYSTEM_TAIL:
         return len(_GPS_SYSTEM_TAIL)
     if tuple(display_templates[-len(_NON_GPS_SYSTEM_TAIL):]) == _NON_GPS_SYSTEM_TAIL:
         return len(_NON_GPS_SYSTEM_TAIL)
     return 0
+
+
+# The display Type that means "a screen the wearer swipes to and the editor counts". Every
+# other Type in this format is one of the watch's own built-in views - compass, navigation,
+# graph, map, lap - which every mode carries and no editor shows.
+USER_DISPLAY_TYPE = 10
+
+
+def user_display_count(displays):
+    """How many of a mode's displays are real user screens.
+
+    Established 2026-08-12 from assets/pcap/removeandaddsportsmodeandmultisport, where both
+    modes SuuntoLink creates are born with 8 displays of which exactly one is Type 10 - and
+    SuuntoLink calls that mode "1 screen". Checked across every CustomModes image in
+    assets/pcap: 1329 modes, 9 distinct display Types (4, 5, 6, 7, 10, 15, 50, 65, 70), and
+    the Type 10 ones are a contiguous prefix in all 1329 - never interleaved.
+
+    THIS REPLACES the template-name tail match system_tail_length() used to do, for a real
+    reason rather than tidiness. Where that rule recognised the tail (1325 of those 1329
+    modes) the two agree exactly - zero disagreements - but on the other 4 it recognised
+    nothing and reported every built-in view as a user screen. That is a real bug seen in
+    the desktop app on 2026-08-12: the demo watch's Cycling showed "11 display(s)" where
+    SuuntoLink shows 5, because its display list ends in a tail neither pattern matched.
+    Asking the format instead of pattern-matching it cannot fail that way."""
+    return sum(1 for d in displays if d.get("Type") == USER_DISPLAY_TYPE)
 
 
 # Real, 2026-08-10 (André, item 11: "on ambit 3, open water swim, screen 1 I see 1 0x0047,
@@ -800,27 +852,24 @@ def _interval_timer_json(settings):
     }
 
 
-def _displays_to_json(displays, variant=None):
+def _displays_to_json(displays):
     """One mode's own real Displays list, JSON-shaped - `index` stays the raw 0-based
     position (writeDisplayField's own addressing needs this unchanged), `screenNumber` is
     the real 1-based number the user would actually see on the watch (None for a built-in
     screen - see system_tail_length()'s own module-level comment), `isBuiltIn` flags which
     is which."""
-    templates = [d["TemplateName"] for d in displays]
-    tail_len = system_tail_length(templates)
-    # Cap the real (user-configurable) screens at what the watch actually allows. The Traverse
-    # keeps 4 real screens then a long built-in tail (map/compass/navigate/graph...) that the
-    # Ambit3 tail-signature doesn't match, so system_tail_length() alone left all 17 "real"
-    # ("17 display(s)" on a Traverse). max_displays_for_variant() (Jabiru/Loon -> 4) is the
-    # confirmed SuuntoLink ceiling; the extras beyond it are built-in screens.
-    real_count = min(len(displays) - tail_len, max_displays_for_variant(variant))
     out = []
     for i, disp in enumerate(displays):
-        is_built_in = i >= real_count
+        # The display's own Type, not a guess from its template name - see
+        # user_display_count() for why that changed and what it fixes.
+        is_built_in = disp.get("Type") != USER_DISPLAY_TYPE
         out.append({
             "index": i,
             "screenNumber": None if is_built_in else i + 1,
             "isBuiltIn": is_built_in,
+            # The raw display Type, so a UI can count user screens the same way this does
+            # rather than re-deriving the rule.
+            "type": disp.get("Type"),
             "template": disp["TemplateName"],
             # The numeric template id as well as its name. A UI needs the number to ask
             # which values may go on this display's rows (SuuntoLink keys that by display
@@ -833,7 +882,7 @@ def _displays_to_json(displays, variant=None):
     return out
 
 
-def to_json(result, variant=None):
+def to_json(result):
     """A JSON-friendly view of decode()'s own result dict, for backend/server.py - added
     2026-08-08 alongside the real CustomModes write tools (custom_modes_rename_test.py/
     custom_modes_field_write_test.py/custom_modes_display_field_write_test.py). Every field
@@ -868,7 +917,7 @@ def to_json(result, variant=None):
             "backlightMode": s.get("BacklightModeName"),
             "displayMode": s.get("DisplayModeName"),
             "quickNavigation": s.get("QuickNavigationName"),
-            "displays": _displays_to_json(mode["Displays"], variant),
+            "displays": _displays_to_json(mode["Displays"]),
             "rules": mode["Rules"],
         })
 
@@ -884,6 +933,13 @@ def to_json(result, variant=None):
     # one of your multisport modes"), and a UI needs to know which without re-deriving it.
     exercise_names = [m.get("Settings", {}).get("Name") for m in result["exercise_modes"]]
     used_by_multisport = set()
+    # `inWatchMenu` marks the exercise modes that have a SPORT_MODES entry of their own, i.e.
+    # the ones you can actually select on the watch. Not every mode does: the factory-fitted
+    # "Transition" (ActivityID 1, from Movescount days) has none, which is why it costs none
+    # of the watch's 10 slots and cannot be started on its own. Established 2026-08-12 from
+    # assets/pcap/removeandaddsportsmodeandmultisport - see docs/custom_modes_andre.md. A UI needs
+    # this to explain why its list can be longer than the "N/10 used" beside it.
+    in_menu = set()
     sport_modes = []
     for slot in result["sport_modes"]:
         if not slot["Name"]:
@@ -891,6 +947,8 @@ def to_json(result, variant=None):
         legs = list(slot["Exercises"] or [])
         if len(legs) > 1:
             used_by_multisport.update(legs)
+        else:
+            in_menu.update(legs)
         sport_modes.append({
             "name": slot["Name"],
             "activityId": slot["ActivityID"],
@@ -903,6 +961,7 @@ def to_json(result, variant=None):
 
     for index, mode in enumerate(modes):
         mode["usedByMultisport"] = index in used_by_multisport
+        mode["inWatchMenu"] = index in in_menu
 
     return {"ok": True, "formatType": result.get("format_type"),
             "exerciseModes": modes, "sportModes": sport_modes}
@@ -980,28 +1039,16 @@ def main():
             for k, v in sorted(FIELD_TYPES.items())]}))
         return 0
 
-    variant = None   # a raw --from dump carries no watch identity; default-cap displays
     if args.from_file:
         with open(args.from_file, "rb") as f:
             data = f.read()
     else:
-        from write_nav import Link, read_flash, read_memory_map, codename_for_pid
+        from write_nav import Link, read_flash
         link = Link(dry_run=False, verbose=not args.json)
         if not args.json:
             print("read-only: 0x0b17 reads flash, nothing is written")
         link.open()
-        # The connected watch's codename (e.g. "Jabiru") drives the per-mode display cap below.
-        variant = codename_for_pid(link.opened_product_id)
-        # Resolve the CustomModes region from the watch's own 0x0b21 memory map rather than the
-        # hardcoded Ambit3-Peak base - the same per-device discipline the ExerciseLog/nav reads
-        # already use. The Traverse keeps its CustomModes at a different offset, so reading the
-        # Peak's 0x002000 returned an empty/garbage region ("0 sport modes on a Traverse").
-        base, size = read_memory_map(link).get("CustomModes", (CUSTOM_MODES_BASE, CUSTOM_MODES_SIZE))
-        if base == 0xFFFFFFFF or size == 0:
-            # This watch declares no CustomModes region - nothing to decode, not an error.
-            data = b""
-        else:
-            data = read_flash(link, base, size, label="CustomModes")
+        data = read_flash(link, CUSTOM_MODES_BASE, CUSTOM_MODES_SIZE, label="CustomModes")
         if args.save:
             with open(args.save, "wb") as f:
                 f.write(data)
@@ -1010,7 +1057,7 @@ def main():
 
     result = decode(data)
     if args.json:
-        print(json.dumps(to_json(result, variant)))
+        print(json.dumps(to_json(result)))
     else:
         show(result, verbose=args.displays)
     return 0

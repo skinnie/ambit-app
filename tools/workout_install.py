@@ -2,14 +2,14 @@
 """Installs a compiled Suunto App (workout.py's --compile output, or any entry from
 SuuntoLink's bundled catalog) onto the watch: appends it into the Apps flash region, and wires
 it into one exercise mode's display so it actually shows up - the writer half of
-`training_program_andre.md`'s Finding 13/15 GUI -> generator -> compiler -> *install* pipeline.
+`docs/training_program_andre.md`'s Finding 13/15 GUI -> generator -> compiler -> *install* pipeline.
 
 DRY-RUN BY DEFAULT, same convention as every other writer in this project: without --write
 nothing is emitted, only the exact bytes are logged.
 
 **What's verified and what isn't.** The tag-level encoding is verified byte-exact against a real
 SuuntoLink install: the tag order inside an exercise mode is `SETTINGS, APP_META, DISPLAYS,
-RULES`. The app-placement mechanism was CORRECTED 2026-08-09 (training_program_andre.md Finding
+RULES`. The app-placement mechanism was CORRECTED 2026-08-09 (docs/training_program_andre.md Finding
 44) after diffing a real, rendering SuuntoLink Couch-to-5K install against the clean pre-state:
 SuuntoLink makes an app render by **appending the app's rule-engine slot (51/52/53 =
 FT_RULE_ENGINE_0/1/2) as a `DISP_FIELD_SHORTCUT` on a display field** - so that row cycles
@@ -20,7 +20,7 @@ RULES list. `RuleIdx` is the app's own index in the Apps region. Installing an a
 `install_app_into_mode()` now reproduces a real SuuntoLink install byte-for-byte (only the
 time-based APP_META timestamps differ).
 
-**2026-08-08 (training_program_andre.md Finding 25): the Apps-region format is now SOLVED**,
+**2026-08-08 (docs/training_program_andre.md Finding 25): the Apps-region format is now SOLVED**,
 from 4 real USBPcap captures of SuuntoLink actually installing apps (`assets/ambit3 pcap/v2/`)
 plus a real live 11-entry region - see `apps.py`'s module docstring for the full derivation.
 The whole region is a self-describing directory (`[u16 num_entries][u16 unknown2][u32
@@ -71,7 +71,7 @@ from write_nav import (CMD_DEVICE_INFO, Link, check_memory_map, read_flash,
                         read_memory_map, send_plan)
 
 
-def build_apps_region(existing_entries, compiled):
+def build_apps_region(existing_entries, compiled, entry_type=0):
     """Builds a full Apps-region write: the real directory format (apps.py's module
     docstring, Finding 25) - `[u16 num_entries][u16 count^0x02][u32 entry_offset]*N
     [u32 total_length]`, then one `[3-byte header][29-byte name]` block + magic + binary per
@@ -96,7 +96,7 @@ def build_apps_region(existing_entries, compiled):
     # The on-watch entry layout is [header][name][IAMRULE magic][bytecode]; `binary` here must be
     # the bytecode WITHOUT the magic, since we prepend apps.MAGIC below. But some sources already
     # carry the 8-byte magic inside their `binary` (notably SuuntoLink's own catalog index.json -
-    # training_program_andre.md Finding 45): passing that straight through produced a DOUBLE magic
+    # docs/training_program_andre.md Finding 45): passing that straight through produced a DOUBLE magic
     # and an 8-byte-shifted, corrupt bytecode that installed cleanly but always rendered "--".
     # Strip a leading magic defensively so every source lands byte-identical to a real install.
     if binary[:len(apps.MAGIC)] == apps.MAGIC:
@@ -105,7 +105,11 @@ def build_apps_region(existing_entries, compiled):
     marker = apps.entry_checksum(binary)
     name = compiled.get("name", "App").encode("iso-8859-15", "replace")[:apps.NAME_LEN - 1]
     name_field = name + b"\0" * (apps.NAME_LEN - len(name))
-    new_entry_bytes = (bytes([0, activity_id, marker]) + name_field
+    # Entry header byte 0 = the rule TYPE, from BinaryAreaAppsConverter::typeMapping in the
+    # Movescount Android app's libkomposti (init(): map["generic"]=0, map["guidance"]=1).
+    # apps.py called this "reserved=0" because every entry it ever decoded was a generic App.
+    # 1 = a native guidance WORKOUT (the [Next]-3s WORKOUT menu), the whole point of --as-workout.
+    new_entry_bytes = (bytes([entry_type & 0xFF, activity_id, marker]) + name_field
                        + apps.MAGIC + binary)
 
     all_bytes = [e["_raw_block"] for e in existing_entries] + [new_entry_bytes]
@@ -170,7 +174,7 @@ def _find_mode(data, mode_index):
 SPORT_MODE_APP_LIMIT = 5  # The real, manual-documented limit (3.35 Suunto Apps: "up to five
                           # Suunto Apps to each sport mode") - per MODE, not a whole-watch total.
                           # RULE_ENGINE_SLOTS (a small global slot-count model) is retired
-                          # entirely as of training_program_andre.md Finding 23: it was based on
+                          # entirely as of docs/training_program_andre.md Finding 23: it was based on
                           # custom_modes.py's FIELD_TYPES dictionary and Finding 17's now-explained
                           # "RuleIdx=3 -> app error" test, neither of which was ever a real cap.
 
@@ -275,11 +279,23 @@ def set_app_meta(data, mode_index):
 
 
 def add_app_shortcut_to_field(data, mode_index, display_index, field_index, shortcut_value):
-    """THE mechanism SuuntoLink uses to make an app render (training_program_andre.md Finding 44):
+    """THE mechanism SuuntoLink uses to make an app render (docs/training_program_andre.md Finding 44):
     APPEND the app's rule-engine slot (51/52/53 = FT_RULE_ENGINE_0/1/2) as an
     EXERCISE_MODES_DISP_FIELD_SHORTCUT to the chosen display field, so that row cycles between its
-    normal value(s) and the app on button presses. This does NOT change the field's Type - the
-    old "set the field Type to 51" approach never rendered (showed "--")."""
+    normal value(s) and the app on button presses. This does NOT touch the field's Type if it
+    already has a shortcut - the old "set the field Type to 51" approach never rendered
+    ("--").
+
+    Finding 53 addendum (2026-08-12): if the field has ZERO existing shortcuts, its Type MUST
+    be zeroed at the same time. Confirmed against 6 independent real SuuntoLink transitions in
+    running2fromcreateandthen1to7 (e.g. Type 8->0, 197->0, 160->0, 40->0, always exactly when
+    Shortcuts goes from [] to non-empty; never seen with the old Type left in place). Every
+    real field this project has ever read either has Type=0 with a Shortcuts list, or a
+    nonzero Type with none - "nonzero Type + Shortcuts" never occurs. This project's installer
+    had never exercised the empty-shortcuts case before - Findings 44-46's Fixed100/Temperature
+    tests both happened to land on fields that already had a shortcut - and produced exactly
+    that never-real combination, which the firmware rejected with "connect to Moveslink" on a
+    real Running/display0/field1 install (that field's Type was 28, no prior shortcuts)."""
     loc = _find_mode(data, mode_index)
     mc, ml = loc["mode_content"], loc["mode_len"]
     displays = next(c for c in _walk_children(data, mc, mc + ml)
@@ -306,6 +322,19 @@ def add_app_shortcut_to_field(data, mode_index, display_index, field_index, shor
     if target is None:
         raise ValueError(f"display {display_index} field {field_index} not found in this mode")
     f_offset, f_content, f_len, d_offset = target
+
+    has_shortcut = False
+    setting_content = None
+    for c_id, c_content, c_len, c_offset in _walk_children(data, f_content, f_content + f_len):
+        if c_id == cm.EXERCISE_MODES_DISP_FIELD_SHORTCUT:
+            has_shortcut = True
+        elif c_id == cm.EXERCISE_MODES_DISP_FIELD_SETTING:
+            setting_content = c_content
+    if not has_shortcut:
+        # First shortcut on this field - zero its Type in place (Finding 53 addendum above).
+        # In-place overwrite, same length, so it never affects any offset used below.
+        struct.pack_into("<H", data, setting_content + 2, 0)
+
     sc_tag = _tag(cm.EXERCISE_MODES_DISP_FIELD_SHORTCUT, struct.pack("<H", shortcut_value))
     _grow_region(data, f_content + f_len, sc_tag)   # append shortcut at end of this field
     delta = len(sc_tag)
@@ -339,7 +368,14 @@ def install_app_into_mode(custom_modes_bytes, mode_index, display_index, field_i
     add_rule_to_mode(data, mode_index, rule_idx)
     set_app_meta(data, mode_index)
 
-    if not as_workout:
+    # Place the engine-slot shortcut on a data field when a field is given. For a guidance
+    # WORKOUT (as_workout, byte0=1) this is ALSO wanted: the guidance entry makes it appear in
+    # the [Next]-3s WORKOUT menu, but our community-compiled binary renders its step output via
+    # prefix/postfix on a display field (Finding 61's "Warm --s"), not the native guidance
+    # display - so without a field placement there is nothing to SEE while the workout runs.
+    # as_workout with no field => menu only, unwired (the original Finding 39 experiment).
+    place_field = (display_index is not None and field_index is not None)
+    if not as_workout or place_field:
         if n_existing >= len(APP_SLOT_TYPES):
             raise RuntimeError(
                 f"mode already has {n_existing} apps placed on fields - only "
@@ -467,7 +503,8 @@ def main():
             print(f"backed up current CustomModes to {args.backup_to}")
 
     existing_apps_entries = apps_entries_with_raw_blocks(current_apps)
-    new_region = build_apps_region(existing_apps_entries, compiled)
+    new_region = build_apps_region(existing_apps_entries, compiled,
+                                   entry_type=1 if args.as_workout else 0)
     if len(new_region) > F.APPS_REGION_SIZE:
         sys.exit(f"refusing to write: the rebuilt Apps region would be {len(new_region)} "
                  f"bytes, past the end of the {F.APPS_REGION_SIZE}-byte Apps region")
@@ -498,6 +535,18 @@ def main():
             current_custom_modes, args.mode, args.display, args.field, rule_idx,
             as_workout=args.as_workout)
 
+        # Refuse to send anything violating the Type/Shortcut invariant (Finding 53's
+        # "connect to Moveslink" root cause) - checked here, on the actual bytes about to be
+        # written, so any future bug in this class is caught before it ever reaches the watch
+        # rather than after a real-hardware failure.
+        violation = cm.check_field_type_shortcut_invariant(new_custom_modes)
+        if violation:
+            mi, mname, di, fi, f = violation
+            sys.exit(f"refusing to write: mode[{mi}]={mname!r} display[{di}] field[{fi}] "
+                     f"would have Type={f.get('Type')} with Shortcuts={f.get('Shortcuts')} - "
+                     "violates the real Type/Shortcut invariant (Finding 53), would risk "
+                     "'connect to Moveslink' on the watch")
+
         # Write ONLY the used BXML extent (Finding 28) - see custom_modes.used_extent(). The
         # full-region write was the confirmed cause of 'err:62' on every mode after a restart.
         cm_extent = cm.used_extent(new_custom_modes)
@@ -510,7 +559,7 @@ def main():
         # write the app itself first, then wire it in - so a failure partway through never
         # leaves CustomModes pointing at an app that isn't actually there.
         # commit=False for BOTH (no CMD_NAV_COMMIT / 0x0b04): confirmed 2026-08-09
-        # (training_program_andre.md Finding 27) against all 4 real SuuntoLink app-install
+        # (docs/training_program_andre.md Finding 27) against all 4 real SuuntoLink app-install
         # captures in assets/ambit3 pcap/v2/ - not one of them EVER sends 0x0b04 for the
         # Apps or CustomModes regions. 0x0b04 is specifically the *navigation database*
         # commit (routes/waypoints); firing it after an Apps/CustomModes write was this
