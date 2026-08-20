@@ -1,24 +1,15 @@
 #!/usr/bin/env python3
-"""A small local web GUI for building structured workouts (wanarun.net-style step builder -
-`docs/training_program_andre.md` Finding 8's realistic shape: GUI -> source generator -> live
-compiler). The generator and compiler client are `workout.py`, imported here unchanged - this
-file only adds a browser-facing front end on top, stdlib-only (no framework, no build step,
-matching this project's existing style of small standalone tools).
+"""A small local web GUI for building native Suunto guided workouts (step builder -> the
+community/Komposti compiler's JSON->guidance path -> the watch's WORKOUT menu). The compile +
+install logic is `guided_workout.py`, imported here unchanged; this file only adds a
+browser-facing front end on top, stdlib-only (no framework, no build step, matching this
+project's existing style of small standalone tools).
 
-**Writes directly to the watch, 2026-08-12** (`docs/training_program_andre.md` Findings 44-55):
-from 2026-08-06 to 2026-08-12 this tool only reached the watch through SuuntoLink's own
-"Add Suunto App" flow (`suuntolink_catalog.py` appending to its bundled `suunto-apps/
-index.json`) - real, but Mac/Windows only, since SuuntoLink has no Linux build and Android
-never has SuuntoLink at all. That workaround existed because `workout_install.py` had an
-unresolved real "app error" on hardware (Finding 19). That bug (two of them, in the end -
-Findings 44/45, then the deeper Finding 54 root cause) is now fixed and hardware-proven for
-both catalog and community-compiled apps, stateful or not (Findings 46/53/55), so this tool
-now installs straight to a connected watch over USB via `workout_install.py` - the same path
-`desktop/backend/server.py`'s `_handle_apps_install` already uses for catalog apps, reused
-here for a freshly-compiled one instead of a catalog lookup. Works identically on Linux, Mac
-and Windows - none of it touches SuuntoLink. "Add to SuuntoLink" is kept alongside it (Mac/
-Windows only) for anyone who still wants the app in SuuntoLink's own catalog picker too, but
-it is no longer the only way to get a compiled workout onto the watch.
+"Create Workout" compiles the workout JSON into the genuine native guidance binary (target band
++ step text); "Install to Watch" adds it to a chosen sport mode's WORKOUT menu straight over USB
+(`guided_workout.py`, Apps entry byte0=1 + guidance display, no rule). Works identically on
+Linux, Mac and Windows - none of it touches SuuntoLink (a guided workout lives in the watch's
+own WORKOUT menu, not in SuuntoLink's app catalog).
 
     ./tools/workout_gui.py               # serves http://127.0.0.1:8765, opens your browser
     ./tools/workout_gui.py --port 9000 --no-browser
@@ -26,7 +17,6 @@ it is no longer the only way to get a compiled workout onto the watch.
 
 import argparse
 import json
-import platform
 import re
 import subprocess
 import sys
@@ -38,7 +28,6 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import guided_workout as GW
-import suuntolink_catalog
 
 TOOLS_DIR = Path(__file__).resolve().parent
 
@@ -70,46 +59,12 @@ def parse_last_json_line(out):
 # on Windows) - moved under Downloads so saved workouts land somewhere the user actually
 # expects to look, keeping the same named subfolder for organization.
 SAVE_DIR = Path.home() / "Downloads" / "AmbitWorkouts"
-README_PATH = SAVE_DIR / "README - read this on Linux.txt"
-
-LINUX_README = """Ambit3 Workout Builder - using a compiled workout on Linux
-============================================================
-
-SuuntoLink doesn't run on Linux at all, so this app can't add a compiled workout straight
-into it the way the Windows/Mac builds can ("Add to SuuntoLink"). Here's the real way to get
-a workout you compiled here onto your watch:
-
-1. Your compiled workout .json files are saved right in this folder:
-   {save_dir}
-
-2. Copy the .json file for the workout you want onto a Windows or Mac computer that has
-   SuuntoLink installed - USB drive, cloud storage, email, whatever's easiest.
-
-3. On that computer, open the Ambit3 Workout Builder app (the same app, built for that OS -
-   see tools/packaging/README.md in the project if it isn't built yet).
-
-4. Click "Advanced", then "Import compiled JSON", and pick the file you copied over.
-
-5. Click "Add to SuuntoLink". It'll show up next time you connect the watch to SuuntoLink.
-
-**Never replace SuuntoLink's own index.json by hand with this file.** SuuntoLink expects that
-file to stay a list of every app it knows about; a compiled workout on its own is meant to be
-added to that list, not to replace it - overwriting the whole file breaks SuuntoLink outright
-("apps not iterable", blank sport-mode screens, confirmed on real hardware). The "Add to
-SuuntoLink" button in the app does this correctly and automatically; hand-editing does not.
-
-About Wine: SuuntoLink is an Electron app (Chromium + Node.js), and those are historically
-unreliable under Wine - GPU/graphics and native-module quirks are common. This hasn't been
-tried or tested for SuuntoLink specifically as part of this project, so it isn't a supported
-or expected path here - the copy-the-file route above is the one that's actually verified.
-"""
 
 
 def save_compiled(name, compiled):
-    """Every successful compile also lands here, independent of SuuntoLink/History - alongside
-    the README (Linux) explaining what to actually do with it."""
+    """Every successful compile also lands here as a JSON, independent of the History list, so a
+    workout can be re-downloaded later."""
     SAVE_DIR.mkdir(exist_ok=True)
-    README_PATH.write_text(LINUX_README.format(save_dir=SAVE_DIR))
     safe_name = re.sub(r"[^A-Za-z0-9_-]+", "_", name).strip("_") or "workout"
     path = SAVE_DIR / f"{safe_name}_{int(time.time())}.json"
     path.write_text(json.dumps(compiled, indent=2))
@@ -202,18 +157,10 @@ workout</strong> - the Movescount interval screen with the target band and step 
 "Create Workout" compiles it; "Install to Watch" adds it to a sport mode's WORKOUT menu (hold
 [Next] &rarr; WORKOUT). Each creation is saved below so you can come back for it later.</p>
 
-<p class="hint">This page is for <strong>authoring your own</strong> workouts - it doesn't
-need or use the official Suunto Apps catalog (interval timers, HR-zone displays and
-thousands of others already made). <strong>If you don't import that catalog, you'll only
-have the apps you create here</strong> - which is completely fine, just worth knowing. The
-main AmbitApp (Settings &rarr; Suunto Apps Catalog) is where you import it, if you want both.</p>
-
-<div id="linuxNote" style="display:none">
-  <p class="hint"><strong>Linux note:</strong> SuuntoLink has no native Linux build, so
-  there's no "Add to SuuntoLink" button here - that's fine, "Install to Watch" doesn't need
-  SuuntoLink at all and works exactly the same as on Mac/Windows. Every compiled workout is
-  also saved to <code>~/Downloads/AmbitWorkouts</code> regardless.</p>
-</div>
+<p class="hint">This page authors <strong>your own</strong> guided workouts and installs them
+straight to the watch over USB - it works the same on Linux, Mac and Windows and doesn't touch
+SuuntoLink at all (a guided workout lives in the watch's own WORKOUT menu). Every workout you
+create is also saved to <code>~/Downloads/AmbitWorkouts</code>.</p>
 
 <div class="meta">
   <label>Workout name</label>
@@ -241,18 +188,14 @@ main AmbitApp (Settings &rarr; Suunto Apps Catalog) is where you import it, if y
     <button class="secondary" onclick="exportJson()">Export workout JSON</button>
     <button class="secondary" onclick="document.getElementById('importFile').click()">Import workout JSON</button>
     <input type="file" id="importFile" style="display:none" onchange="importJson(event)">
-    <button class="secondary" onclick="document.getElementById('importCompiledFile').click()">Import compiled JSON</button>
-    <input type="file" id="importCompiledFile" style="display:none" onchange="importCompiledJson(event)">
   </div>
-  <p class="hint">"Import compiled JSON" is for a file compiled on a <em>different</em> machine
-  - load it here to get the "Install to Watch"/"Add to SuuntoLink" buttons for it.</p>
 </details>
 
 <div id="output"></div>
 
 <h2>History</h2>
-<p class="hint">Every app you create is kept here (in this browser only) so you can revisit or
-re-download it later.</p>
+<p class="hint">Every workout you create is kept here (in this browser only) so you can revisit
+or re-download it later.</p>
 <div id="history"></div>
 
 <div id="notes">
@@ -260,22 +203,10 @@ re-download it later.</p>
   <p class="hint"><strong>"Install to Watch" needs the watch plugged in and on its time
   screen</strong> - it only talks over USB from there, so a menu or an active recording will
   look disconnected. If it can't reach the watch, check that first.</p>
-  <p class="hint"><strong>Always use the "Add to SuuntoLink" button for that</strong> - never
-  replace SuuntoLink's <code>index.json</code> with a downloaded/saved file by hand.
-  SuuntoLink expects that file to stay a list of <em>every</em> app it knows about; a compiled
-  app on its own is deliberately just one entry meant to be added to that list, not a
-  replacement for it. Overwriting the whole file breaks SuuntoLink ("apps not iterable", blank
-  sport-mode screens) until you restore <code>index_old.json</code> back over it.</p>
-  <p class="hint"><strong>macOS permission note:</strong> the first time you click "Add to
-  SuuntoLink", macOS may silently block it (it can look like nothing happened, or you'll see a
-  permission-style error). Go to System Settings &rarr; Privacy &amp; Security &rarr;
-  <strong>App Management</strong> (use Full Disk Access instead if your macOS doesn't have
-  that section), enable "Ambit3 Workout Builder" there, then fully quit the app
-  (<code>killall "Ambit3 Workout Builder"</code>, or Cmd+Q from its Dock icon - closing the
-  browser tab alone doesn't quit it) and reopen it before trying again. Also worth knowing: if
-  SuuntoLink is already open when you click the button, it may just come to the front instead
-  of re-reading the catalog - quit and reopen SuuntoLink too if a newly added app doesn't show
-  up right away.</p>
+  <p class="hint"><strong>Where it lands:</strong> the workout goes into the sport mode's own
+  <strong>WORKOUT menu</strong> (on the watch: the mode &rarr; hold [Next] &rarr; WORKOUT &rarr;
+  pick it). It stays dormant until you select it there, then guides you through the steps with
+  the native target band, step text and step beeps.</p>
   <p class="hint">This is an independent, unofficial tool, not affiliated with, endorsed by,
   or supported by Suunto. "Suunto", "Ambit", "Traverse" and the watch names shown above are
   trademarks of their respective owner, used here only to describe compatibility. Provided
@@ -312,12 +243,6 @@ let steps = [];
 // Spacing between "Ambit" and its generation number matches ambitapp-v2's own
 // HomeViewModel.qml _modelNames table (2026-08-08 request, applied in both places for the
 // same reason: "Ambit3" -> "Ambit 3").
-const VARIANT_NAMES = {
-  Bluebird: "Ambit", Duck: "Ambit 2", Colibri: "Ambit 2 S", Greentit: "Ambit 2 R",
-  Emu: "Ambit 3 Peak", Finch: "Ambit 3 Sport", Ibisbill: "Ambit 3 Run", Kaka: "Ambit 3 Vertical",
-  Jabiru: "Traverse", Loon: "Traverse Alpha",
-};
-function variantName(codename) { return VARIANT_NAMES[codename] || codename; }
 
 const TYPE_NAMES = ["warmup", "interval", "recovery", "cooldown"];
 const DURATION_NAMES = ["time", "distance", "ascent", "lap"];
@@ -482,21 +407,10 @@ async function doGenerate() {
 let lastCompiled = null;
 let lastWorkout = null;   // the workout JSON behind lastCompiled - what the guided install needs
 
-// SuuntoLink has no Linux build at all, so on Linux there's nothing for a button to actually
-// do - no SuuntoLink to add to, not even a doomed attempt at it. Real request 2026-08-08:
-// removed the "Open instructions" button that used to stand in for it - the same guidance is
-// now inline on the page itself (#linuxNote, shown below) rather than needing a click to open
-// a separate README file.
-let platformSystem = null;
-async function detectPlatform() {
-  const resp = await fetch("/api/platform");
-  platformSystem = (await resp.json()).system;
-  if (platformSystem === "Linux") document.getElementById("linuxNote").style.display = "";
-}
-// "Install to Watch" writes straight to a connected watch over USB (workout_install.py, no
-// SuuntoLink) - works the same on every platform, so unlike "Add to SuuntoLink" it is never
-// hidden. Each button gets its own picker <div>, since the same installButtonHtml() call
-// renders both after a fresh compile and once per History row.
+// "Install to Watch" writes the guided workout straight to a connected watch over USB
+// (guided_workout.py, no SuuntoLink) - works the same on Linux, Mac and Windows. Each button
+// gets its own picker <div>, since the same installButtonHtml() call renders both after a fresh
+// compile and once per History row.
 let installPickerSeq = 0;
 const pickerWorkout = {};    // pickerId -> the workout JSON it installs as a guided workout
 const pickerModes = {};      // pickerId -> /api/modes result, fetched once per picker open
@@ -591,39 +505,6 @@ function renderCompiledResult(name, data, extraNote, workout) {
     ${installButtonHtml()}`;
 }
 
-function importCompiledJson(event) {
-  const file = event.target.files[0];
-  const reader = new FileReader();
-  reader.onload = () => {
-    let data;
-    try { data = JSON.parse(reader.result); }
-    catch (e) { alert(`Not valid JSON: ${e}`); return; }
-    if (!data.binary) {
-      alert('Doesn\'t look like a compiled workout JSON (expected a "binary" field).');
-      return;
-    }
-    // An imported compiled file has no workout JSON behind it, so it can be viewed but not
-    // re-installed as a guided workout (that needs the workout to recompile). Use "Import
-    // workout JSON" + Create Workout to install one.
-    renderCompiledResult(file.name.replace(/\.json$/i, ""), data, "Imported from a file.", null);
-    window.scrollTo({top: document.getElementById("output").offsetTop, behavior: "smooth"});
-  };
-  reader.readAsText(file);
-  event.target.value = "";  // so importing the same file twice still fires onchange
-}
-
-// Both handlers take the clicked button and show their result right next to it - not a fixed
-// element ID, since the same buttons render both after a fresh compile and in each History row.
-async function doAddToSuuntoLink(compiled, btn) {
-  btn.disabled = true;
-  const resp = await fetch("/api/add-to-suuntolink", {method: "POST", body: JSON.stringify(compiled)});
-  const data = await resp.json();
-  btn.disabled = false;
-  btn.insertAdjacentHTML("afterend", resp.ok
-    ? ` <span class="result-ok">Done.</span>`
-    : ` <span class="result-err">${data.error}</span>`);
-}
-
 function download(filename, text) {
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([text], {type: "application/json"}));
@@ -703,7 +584,7 @@ function deleteFromHistory(i) {
 }
 
 render();
-detectPlatform().then(renderHistory);  // History's buttons depend on platformSystem
+renderHistory();
 </script>
 </body>
 </html>
@@ -723,9 +604,6 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):
-        if self.path == "/api/platform":
-            self._send_json(200, {"system": platform.system()})  # "Linux"/"Darwin"/"Windows"
-            return
         if self.path == "/api/modes":
             self._handle_list_modes()
             return
@@ -741,8 +619,7 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_POST(self):
-        if self.path not in ("/api/generate", "/api/compile", "/api/add-to-suuntolink",
-                             "/api/install-to-watch"):
+        if self.path not in ("/api/generate", "/api/compile", "/api/install-to-watch"):
             self.send_response(404)
             self.end_headers()
             return
@@ -754,9 +631,6 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(400, {"error": f"invalid JSON body: {e}"})
             return
 
-        if self.path == "/api/add-to-suuntolink":
-            self._handle_add_to_suuntolink(body)
-            return
         if self.path == "/api/install-to-watch":
             self._handle_install_to_watch(body)
             return
@@ -780,22 +654,6 @@ class Handler(BaseHTTPRequestHandler):
         result["name"] = workout.get("name") or result.get("name", "Workout")
         saved_to = save_compiled(workout.get("name", "Workout"), result)
         self._send_json(200, {**result, "savedTo": str(saved_to)})
-
-    def _handle_add_to_suuntolink(self, compiled):
-        candidates = suuntolink_catalog.find_index_json()
-        if not candidates:
-            self._send_json(404, {
-                "error": "couldn't find SuuntoLink's suunto-apps/index.json automatically. "
-                         "Make sure SuuntoLink is installed, then check the path for your OS "
-                         "in suuntolink_catalog.py's module docstring."})
-            return
-        try:
-            backup, rule_id = suuntolink_catalog.add_entry(candidates[-1], compiled)
-        except (OSError, ValueError, json.JSONDecodeError) as e:
-            self._send_json(500, {"error": f"couldn't update {candidates[-1]}: {e}"})
-            return
-        suuntolink_catalog.open_suuntolink()
-        self._send_json(200, {"path": candidates[-1], "backup": backup, "ruleId": rule_id})
 
     def _handle_list_modes(self):
         """GET /api/modes - the connected watch's own sport modes/displays/fields, read-only
