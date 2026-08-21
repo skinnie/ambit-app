@@ -81,6 +81,10 @@ private val NSP_NOTIFY_CHAR_UUID: UUID = UUID.fromString("d0fd6b80-e62e-11e3-a2e
 private val CCCD_UUID: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
 
 private const val SCAN_TIMEOUT_MS = 15_000L
+// Matches Suunto's own BluetoothOperationWaitBonding timeout (jadx diff, 2026-08-21 -
+// ambit_app_ble_stability_suunto_app_diff memory) - a bonding attempt gets this long to
+// resolve to BOND_BONDED/BOND_NONE before it's treated as a named failure.
+private const val BOND_TIMEOUT_MS = 60_000L
 /* Belt-and-suspenders alongside the service-UUID scan filter (which already
  * only matches this device family) and the Ambit3/Traverse USB PID table
  * this project already maintains — see AmbitUsbModule.kt's SUUNTO_PID_NAMES.
@@ -363,8 +367,24 @@ class AmbitBleModule(private val reactContext: ReactApplicationContext) :
                 // happens around here and is driven by the bond-state receiver.
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                 if (!nativeInitStarted) {
-                    // Disconnected before we ever went live — surface it as the connect failure.
-                    failConnect("DISCONNECTED", "Watch disconnected before subscribing (status=$status)")
+                    if (bondingInProgress) {
+                        // Distinct, expected failure - not a generic drop. Suunto's own app
+                        // (jadx diff, 2026-08-21 - ambit_app_ble_stability_suunto_app_diff
+                        // memory) has a dedicated BluetoothOperationWaitBonding queue step
+                        // that treats a GATT disconnect DURING bonding as its own named
+                        // case rather than routing it through the same generic disconnect
+                        // path as everything else. Same idea here: clear the bonding-wait
+                        // state and report a message that actually says what happened,
+                        // instead of the generic "disconnected before subscribing" (which
+                        // reads like a normal connect race, not a failed pairing attempt).
+                        clearBondTimeout()
+                        bondingInProgress = false
+                        failConnect("DISCONNECTED_DURING_BONDING",
+                            "Watch disconnected while pairing/bonding was in progress (status=$status)")
+                    } else {
+                        // Disconnected before we ever went live — surface it as the connect failure.
+                        failConnect("DISCONNECTED", "Watch disconnected before subscribing (status=$status)")
+                    }
                 }
             }
         }
@@ -513,6 +533,17 @@ class AmbitBleModule(private val reactContext: ReactApplicationContext) :
     // Milestone 7 items 5-7 for the whole passkey/BLUETOOTH_PRIVILEGED saga.
     private var bondReceiver: BroadcastReceiver? = null
 
+    // Explicit, timed bonding-wait state — see the DISCONNECTED_DURING_BONDING branch above
+    // and BOND_TIMEOUT_MS's own comment for why this exists as a named state rather than
+    // being inferred from bond-state broadcasts alone.
+    private var bondingInProgress = false
+    private var bondTimeoutRunnable: Runnable? = null
+
+    private fun clearBondTimeout() {
+        bondTimeoutRunnable?.let { mainHandler.removeCallbacks(it) }
+        bondTimeoutRunnable = null
+    }
+
     private fun registerBondAndPairingReceiver(device: BluetoothDevice) {
         unregisterBondReceiver()
         val receiver = object : BroadcastReceiver() {
@@ -528,6 +559,34 @@ class AmbitBleModule(private val reactContext: ReactApplicationContext) :
                     BluetoothDevice.ACTION_BOND_STATE_CHANGED -> {
                         val state = intent.getIntExtra(BluetoothDevice.EXTRA_BOND_STATE, BluetoothDevice.BOND_NONE)
                         Log.d("AmbitBleModule", "bond state -> $state")
+                        when (state) {
+                            BluetoothDevice.BOND_BONDING -> {
+                                bondingInProgress = true
+                                clearBondTimeout()
+                                // Mirrors Suunto's own BluetoothOperationWaitBonding timeout
+                                // (60s) - without this, a bonding attempt that never resolves
+                                // (the watch drops the link mid-SMP-exchange without a bond
+                                // broadcast ever following, a real possibility per this
+                                // project's own le-connection-abort-by-local history) leaves
+                                // bondingInProgress permanently true and connectPromise
+                                // hanging until the outer scan timeout, rather than failing
+                                // with a message that says what actually happened.
+                                val timeout = Runnable {
+                                    bondTimeoutRunnable = null
+                                    if (bondingInProgress) {
+                                        bondingInProgress = false
+                                        failConnect("BONDING_TIMEOUT",
+                                            "Bonding did not complete within ${BOND_TIMEOUT_MS / 1000}s")
+                                    }
+                                }
+                                bondTimeoutRunnable = timeout
+                                mainHandler.postDelayed(timeout, BOND_TIMEOUT_MS)
+                            }
+                            BluetoothDevice.BOND_BONDED, BluetoothDevice.BOND_NONE -> {
+                                bondingInProgress = false
+                                clearBondTimeout()
+                            }
+                        }
                     }
 
                     BluetoothDevice.ACTION_PAIRING_REQUEST -> {
@@ -590,6 +649,8 @@ class AmbitBleModule(private val reactContext: ReactApplicationContext) :
             try { reactContext.unregisterReceiver(it) } catch (_: IllegalArgumentException) {}
         }
         bondReceiver = null
+        bondingInProgress = false
+        clearBondTimeout()
     }
 
     /** VID is always Suunto's; PID only picks the driver_support row, and any
