@@ -45,6 +45,7 @@ import socket
 import struct
 import sys
 import threading
+import time
 from pathlib import Path
 
 # The framing is NOT reimplemented here. ble_link.py's SLIP/NSP envelope is byte-exact
@@ -472,6 +473,7 @@ def build_classes():
             self.pending_passkey_device = None
             self._passkey_value = None
             self._passkey_ready = threading.Event()
+            self._cancel_reason = None
             dbus_service.Object.__init__(self, bus, self.path)
 
         def submit_passkey(self, passkey):
@@ -482,6 +484,22 @@ def build_classes():
             self._passkey_value = int(passkey)
             self._passkey_ready.set()
             return True
+
+        def cancel_pending(self, device, reason):
+            """Wakes a RequestPasskey() wait early with a rejection instead of leaving it
+            hung until its own 60s timeout - for when the device disconnects mid-pairing.
+
+            Suunto's own app (jadx diff, 2026-08-21 - see ambit_app_ble_stability_suunto_app_diff
+            memory) has a dedicated `BluetoothOperationWaitBonding` queue step that treats a
+            GATT disconnect DURING bonding as an explicit, named failure rather than an
+            ambiguous generic disconnect. Same idea here: `start_discovery()`'s own disconnect
+            handler calls this instead of just letting the passkey wait time out on its own,
+            once it sees `pending_passkey_device` match the device that just dropped."""
+            if self.pending_passkey_device != device:
+                return
+            self._cancel_reason = reason
+            self._passkey_value = None
+            self._passkey_ready.set()
 
         @dbus_service.method(AGENT_IFACE, in_signature="", out_signature="")
         def Release(self):
@@ -515,16 +533,19 @@ def build_classes():
             self.pending_passkey_device = device
             self._passkey_value = None
             self._passkey_ready.clear()
+            self._cancel_reason = None
             print(f"  pairing: watch {device} is showing a 6-digit passkey - read it off "
                   "the watch's screen and report it back (up to 60s)")
 
             def wait_for_passkey():
-                if self._passkey_ready.wait(60.0):
+                if self._passkey_ready.wait(60.0) and self._cancel_reason is None:
                     reply_handler(self._passkey_value)
                 else:
                     error_handler(dbus.exceptions.DBusException(
-                        "org.bluez.Error.Rejected", "passkey not provided within 60s"))
+                        "org.bluez.Error.Rejected",
+                        self._cancel_reason or "passkey not provided within 60s"))
                 self.pending_passkey_device = None
+                self._cancel_reason = None
 
             threading.Thread(target=wait_for_passkey, daemon=True).start()
 
@@ -804,7 +825,27 @@ def forget_suunto_bonds(bus, dbus, adapter):
     return removed
 
 
-def start_discovery(bus, dbus, adapter, verbose, on_disconnect=None):
+# Non-blocking pause between StopDiscovery() and Connect(), scheduled on the GLib main
+# loop rather than a blocking time.sleep() - the mainloop thread must never block, same
+# constraint _send()'s own chained timeout_add pacing already documents. Suunto's own app
+# (jadx diff, 2026-08-21 - ambit_app_ble_stability_suunto_app_diff memory) added a generic
+# `QueueOperationDelay` primitive between 4.73.6 and 6.12.7 for exactly this kind of
+# empirically-needed settle time around BLE calls; this is that same idea applied to the one
+# place in this file two radio operations (scan-stop, connect) happen back-to-back.
+CONNECT_SETTLE_DELAY_MS = 300
+
+# Minimum time between successive Connect() attempts to the SAME device path. Without this,
+# a device that fails/drops repeatedly in a noisy BLE neighborhood (this file's own
+# `consider()` log line already documents dozens of nearby devices on a real desk) gets
+# re-dialed on every subsequent RSSI/property update - which on some adapters arrive several
+# times a second - turning one flaky link into a tight connect-fail-retry loop that never
+# lets the radio settle. Mirrors the spirit of Suunto's own retry primitives without copying
+# their exact backoff curve (unknown/undocumented) - a flat floor is enough here since the
+# real failure mode observed is "retried too fast", not "gave up too early".
+CONNECT_RETRY_BACKOFF_S = 3.0
+
+
+def start_discovery(bus, dbus, glib, adapter, verbose, on_disconnect=None, agent=None):
     """Scan, and connect to anything soliciting the NSP service.
 
     Deliberately an unfiltered scan. The Kotlin module hit exactly this on real hardware: the
@@ -819,9 +860,14 @@ def start_discovery(bus, dbus, adapter, verbose, on_disconnect=None):
     blacklisted the watch for the rest of the process's life, even though the watch kept
     re-advertising and the user kept retrying "Sync now" on it. Every real connect attempt
     this session that didn't complete on the first try needed this to recover.
+
+    `agent`, if given, is consulted on every disconnect: if the dropped device is the one the
+    pairing Agent is currently waiting on a passkey for, the wait is cancelled immediately
+    (see `Agent.cancel_pending`'s own docstring) rather than left to its own 60s timeout.
     """
     adapter_obj = dbus.Interface(bus.get_object(BLUEZ, adapter), ADAPTER_IFACE)
     seen = set()
+    last_attempt_at = {}
 
     def resume_discovery():
         # consider() stops discovery before connecting (an active scan and a connect fight
@@ -839,8 +885,18 @@ def start_discovery(bus, dbus, adapter, verbose, on_disconnect=None):
             return
         if "Connected" not in changed or bool(changed["Connected"]):
             return                                          # not a drop
-        print(f"  watch disconnected ({path.split('/')[-1]}) - will retry on the next "
-              "advertisement/Sync now")
+        if agent is not None and agent.pending_passkey_device == path:
+            # Distinct, expected failure - not a generic drop. Suunto's app treats a
+            # disconnect mid-bonding as its own named case (BluetoothOperationWaitBonding)
+            # rather than routing it through the same path as every other disconnect; doing
+            # the same here also means the RequestPasskey() thread doesn't sit hung for up
+            # to 60s waiting on a passkey nobody can submit any more.
+            agent.cancel_pending(path, "device disconnected while a passkey was pending")
+            print(f"  watch disconnected mid-pairing ({path.split('/')[-1]}) - cancelled "
+                  "the pending passkey wait, will retry on the next advertisement")
+        else:
+            print(f"  watch disconnected ({path.split('/')[-1]}) - will retry on the next "
+                  "advertisement/Sync now")
         seen.discard(path)
         resume_discovery()
         if on_disconnect:
@@ -879,6 +935,14 @@ def start_discovery(bus, dbus, adapter, verbose, on_disconnect=None):
             if verbose:
                 print(f"  seen {path.split('/')[-1]} {name or '(no name)'}")
             return
+        # Backoff floor - see CONNECT_RETRY_BACKOFF_S's own comment. Checked, not just
+        # relied on via `seen`: a failed/dropped connection removes the path from `seen`
+        # specifically so a later advertisement can retry it, and property-change signals
+        # (RSSI etc.) can arrive many times a second, so `seen` alone doesn't throttle
+        # anything here.
+        since_last = time.monotonic() - last_attempt_at.get(path, 0.0)
+        if since_last < CONNECT_RETRY_BACKOFF_S:
+            return
         seen.add(path)
         why = "NSP uuid" if solicits else ("name match" if named else "Suunto address")
         print(f"  watch found: {name or '(no name)'} [{why}] - connecting "
@@ -912,10 +976,20 @@ def start_discovery(bus, dbus, adapter, verbose, on_disconnect=None):
             seen.discard(path)
             resume_discovery()
 
-        dbus.Interface(bus.get_object(BLUEZ, path), "org.bluez.Device1").Connect(
-            reply_handler=lambda: print("  connected - waiting for it to subscribe"),
-            error_handler=on_connect_failed,
-            timeout=60)
+        def do_connect():
+            last_attempt_at[path] = time.monotonic()
+            dbus.Interface(bus.get_object(BLUEZ, path), "org.bluez.Device1").Connect(
+                reply_handler=lambda: print("  connected - waiting for it to subscribe"),
+                error_handler=on_connect_failed,
+                timeout=60)
+            return False               # one-shot
+
+        # Scheduled after a short settle delay rather than fired immediately - see
+        # CONNECT_SETTLE_DELAY_MS's own comment. Must go through the main loop (timeout_add),
+        # never a blocking sleep here: this function runs on the GLib main loop thread, and
+        # blocking it stalls all other D-Bus traffic (the same reasoning _send()'s pacing
+        # comment already documents for notifications).
+        glib.timeout_add(CONNECT_SETTLE_DELAY_MS, do_connect)
 
     bus.add_signal_receiver(
         consider, dbus_interface=DBUS_OM_IFACE, signal_name="InterfacesAdded")
@@ -1104,7 +1178,8 @@ def listen(verbose=False, timeout=0, forget=False, serve_socket=True):
 
     # The real mechanism, mirroring AmbitBleModule.scanAndConnect(): find the watch
     # soliciting our service, then connect to it while we host the server.
-    start_discovery(bus, dbus, adapter, verbose, on_disconnect=reset_link_on_disconnect)
+    start_discovery(bus, dbus, GLib, adapter, verbose,
+                    on_disconnect=reset_link_on_disconnect, agent=agent)
 
     if timeout > 0:
         def stop():
