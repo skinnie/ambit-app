@@ -13,6 +13,7 @@ import { useExperimental } from '../config/ExperimentalContext';
 const EXP_FEATURE_ROWS = [
   { flag: 'intervals' as const,   label: t.experimentalIntervals,   desc: t.experimentalIntervalsDesc,   screen: 'Intervals' as const,   icon: 'chart' as const },
   { flag: 'smartSensor' as const, label: t.experimentalSmartSensor, desc: t.experimentalSmartSensorDesc, screen: 'SmartSensor' as const, icon: 'link' as const },
+  { flag: 'workoutCalendar' as const, label: t.experimentalWorkoutCalendar, desc: t.experimentalWorkoutCalendarDesc, screen: 'WorkoutCalendar' as const, icon: 'chart' as const },
 ];
 import { isMarkSyncedEnabled, setMarkSyncedEnabled as persistMarkSynced } from '../services/MarkSynced';
 import { useDemo } from '../config/DemoContext';

@@ -15,7 +15,7 @@
 export const APPS_BASE = 0x0927c0;
 export const APPS_REGION_SIZE = 200000;
 const MAGIC = Uint8Array.from([0x49, 0x41, 0x4d, 0x52, 0x55, 0x4c, 0x45, 0x00]); // "IAMRULE\0"
-const NAME_LEN = 29;
+export const NAME_LEN = 29;
 const ENTRY_HEADER_LEN = 3;
 const ENTRY_BLOCK_LEN = ENTRY_HEADER_LEN + NAME_LEN; // 32: entry_offset -> magic
 
@@ -109,8 +109,15 @@ export interface CompiledApp {
 
 /** Build a full Apps-region image: the directory + every existing entry verbatim + the new
  * app appended last. Exact port of workout_install.build_apps_region. Returns the USED bytes
- * only (caller pads to APPS_REGION_SIZE with 0xFF and writes with extent = this length). */
-export function buildAppsRegion(existingRawBlocks: Uint8Array[], compiled: CompiledApp): Uint8Array {
+ * only (caller pads to APPS_REGION_SIZE with 0xFF and writes with extent = this length).
+ *
+ * `entryType` is the entry header's byte 0 - the rule TYPE from Movescount Android's
+ * libkomposti (BinaryAreaAppsConverter::typeMapping: "generic"=0, "guidance"=1). Was
+ * hardcoded 0 here (every entry this port ever built was a generic Suunto App); now a real
+ * param so a native GUIDED WORKOUT (the [Next]-3s WORKOUT menu, entryType=1 -
+ * GuidedWorkoutCore.GUIDANCE_ENTRY_TYPE) can reuse this same builder, matching the desktop
+ * tools/workout_install.py signature this ported from. */
+export function buildAppsRegion(existingRawBlocks: Uint8Array[], compiled: CompiledApp, entryType = 0): Uint8Array {
   // Strip a leading magic defensively (SuuntoLink's catalog binaries already carry it -
   // Finding 45; a double magic renders "--"). Then prepend our own.
   let binary = compiled.binary;
@@ -122,7 +129,7 @@ export function buildAppsRegion(existingRawBlocks: Uint8Array[], compiled: Compi
   const nameField = new Array(NAME_LEN).fill(0);
   for (let i = 0; i < nameBytes.length; i++) nameField[i] = nameBytes[i];
 
-  const newBlock = Uint8Array.from([0, activityId, marker, ...nameField, ...MAGIC, ...binary]);
+  const newBlock = Uint8Array.from([entryType & 0xff, activityId, marker, ...nameField, ...MAGIC, ...binary]);
 
   const blocks = [...existingRawBlocks, newBlock];
   const numEntries = blocks.length;
