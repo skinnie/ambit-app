@@ -307,7 +307,26 @@ ambit_log_entry_t *libambit_pmem20_log_read_entry(libambit_pmem20_t *object, uin
     return log_entry;
 }
 
-static void libambit_pmem20_log_read_log_data_part(libambit_pmem20_t *object,
+/**
+ * \return 0 if every chunk in [address, address+length) was read successfully,
+ * -1 if any read_log_chunk() call failed. Real, 2026-08-21: this used to ignore
+ * read_log_chunk()'s return value entirely, so a single dropped/corrupted BLE
+ * reply (CRC mismatch, timeout, or a mismatched reply accepted for the wrong
+ * request - see protocol_ble.c) silently left that slice of `buffer` as the
+ * caller's original calloc()'d zeros instead of aborting. When the zeroed
+ * slice landed on a log entry's header (the common case: header is near the
+ * start of the entry, so the FIRST chunk failing zeroes it), every header
+ * field parsed as near-zero/zero - duration ~0s, distance=0m, activity_type=0
+ * (defaults to "Running" downstream) - and that garbage entry still got
+ * pushed as a real activity. Hardware-observed on a real Ambit3 Peak BLE sync
+ * 2026-08-21: several near-zero-duration/zero-distance stub activities in
+ * place of one real ~30min/1.86km trek. Propagating the failure instead lets
+ * the caller (libambit_pmem20_log_read_entry_address) discard the whole entry
+ * rather than parse it from corrupt data - the entry is simply retried on the
+ * next sync (it was never marked synced), which is far better than a
+ * permanent junk row in the activities DB.
+ */
+static int libambit_pmem20_log_read_log_data_part(libambit_pmem20_t *object,
                                                    uint32_t address, uint32_t length,
                                                    uint8_t *buffer)
 {
@@ -330,11 +349,17 @@ static void libambit_pmem20_log_read_log_data_part(libambit_pmem20_t *object,
         }
 
         LOG_INFO("Reading buffer region %p -> %p (%u bytes in total)", next_address, next_address + read_length, buffer_read);
-        read_log_chunk(object, next_address, read_length, buffer + buffer_read);
+        if (read_log_chunk(object, next_address, read_length, buffer + buffer_read) != 0) {
+            LOG_WARNING("Failed to read log data chunk at %08x (%u bytes) - aborting this entry",
+                        next_address, read_length);
+            return -1;
+        }
 
         next_address += read_length;
         buffer_read += read_length;
     }
+
+    return 0;
 }
 
 ambit_log_entry_t *libambit_pmem20_log_read_entry_address(libambit_pmem20_t *object,
@@ -364,10 +389,28 @@ ambit_log_entry_t *libambit_pmem20_log_read_entry_address(libambit_pmem20_t *obj
     log_entry->header.activity_name = NULL;
 
     LOG_INFO("Reading log entry from address1=%08x", address1);
-    libambit_pmem20_log_read_log_data_part(object, address1, length1, buffer);
+    if (libambit_pmem20_log_read_log_data_part(object, address1, length1, buffer) != 0) {
+        LOG_WARNING("Failed to read log entry data (address1=%08x) - discarding entry instead "
+                    "of parsing it from a partially-zeroed buffer", address1);
+        free(buffer);
+        if (log_entry->header.activity_name) {
+            free(log_entry->header.activity_name);
+        }
+        free(log_entry);
+        return NULL;
+    }
     if (address2) {
         LOG_INFO("Reading log entry from address2=%08x", address2);
-        libambit_pmem20_log_read_log_data_part(object, address2, length2, buffer + length1);
+        if (libambit_pmem20_log_read_log_data_part(object, address2, length2, buffer + length1) != 0) {
+            LOG_WARNING("Failed to read log entry data (address2=%08x) - discarding entry instead "
+                        "of parsing it from a partially-zeroed buffer", address2);
+            free(buffer);
+            if (log_entry->header.activity_name) {
+                free(log_entry->header.activity_name);
+            }
+            free(log_entry);
+            return NULL;
+        }
     }
 
     size_t buffer_offset = 12;

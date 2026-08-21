@@ -580,8 +580,35 @@ int libambit_protocol_command_ble(ambit_object_t *object, uint16_t command,
 
     pthread_mutex_lock(&ctx->lock);
     int wait_ret = 0;
-    while (!ctx->reply_ready && wait_ret == 0) {
-        wait_ret = pthread_cond_timedwait(&ctx->cond, &ctx->lock, &deadline);
+    /* Loop past any frame that isn't actually the reply to THIS command, instead of
+     * blindly accepting whatever arrives next. Real, 2026-08-21: ambit_ble_on_notify
+     * sets reply_ready for any complete, valid-CRC frame - it stores reply_command but
+     * this call never used to check it against `command`. A stray/unrelated frame
+     * (or a reply that legitimately belongs to an adjacent request when something
+     * upstream got out of sequence) would then be accepted as if it were this
+     * command's reply; its length almost never matches what the caller expects (e.g.
+     * pmem20's read_log_chunk wants exactly length+8), so the call would "succeed"
+     * with garbage/truncated data that got silently written into a log entry's buffer
+     * - hardware-observed producing near-zero-duration, zero-distance junk activities
+     * from a real BLE sync. Now: a mismatched command is dropped and we keep waiting
+     * for the real one, up to the same overall deadline. */
+    while (wait_ret == 0) {
+        while (!ctx->reply_ready && wait_ret == 0) {
+            wait_ret = pthread_cond_timedwait(&ctx->cond, &ctx->lock, &deadline);
+        }
+        if (!ctx->reply_ready) {
+            break;
+        }
+        if (ctx->reply_command != command) {
+            LOGE("libambit_protocol_command_ble: got reply for 0x%04x while waiting for 0x%04x "
+                 "- discarding and continuing to wait", ctx->reply_command, command);
+            ctx->reply_ready = 0;
+            free(ctx->reply_payload);
+            ctx->reply_payload = NULL;
+            ctx->reply_payload_len = 0;
+            continue;
+        }
+        break;
     }
     if (!ctx->reply_ready) {
         pthread_mutex_unlock(&ctx->lock);
