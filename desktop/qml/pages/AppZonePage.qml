@@ -2,12 +2,12 @@ import QtQuick
 import QtQuick.Controls
 import AmbitApp
 
-// Real, 2026-08-08 ("Create a new menu, for suunto, called Intervals, that would link to our
-// interval workout builder"). This page doesn't build workouts itself - tools/workout_gui.py
-// already is a real, working, self-contained tool (its own local server + browser UI, see
-// tools/packaging/README.md) - this is just the launcher, matching IntervalsService's own
-// "launch the other real app" scope. Suunto-only (App-Zone compiling is an Ambit3 mechanism,
-// no Garmin equivalent), same as NavRail's own visibility rule for this entry.
+// The App Zone (Suunto Apps) builder launcher, mirroring IntervalsPage. Like that page it
+// doesn't build anything itself - tools/apps_gui.py is a real, self-contained tool (its own local
+// server + browser UI) - this just launches it (AppZoneService), for the same reason (no in-app
+// WebEngine to duplicate the user's own browser). Suunto-only; gated behind its own experimental
+// toggle in Settings, revealed in the NavRail the same way Intervals is. Distinct from the Suunto
+// Apps CATALOG (installing pre-made apps), which lives in the Sport Modes data-field picker.
 PageFlickable {
     id: root
     contentWidth: width
@@ -33,9 +33,15 @@ PageFlickable {
 
                 Row {
                     spacing: Theme.spacingSmall
-                    IntervalsIcon { size: 28; color: Theme.primary; anchors.verticalCenter: parent.verticalCenter }
                     Text {
-                        text: qsTr("Interval Workout Builder")
+                        text: Icons.appZone
+                        font.family: Icons.fontFamily
+                        font.pixelSize: 28
+                        color: Theme.primary
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+                    Text {
+                        text: qsTr("App Zone Builder")
                         font.bold: true
                         font.pixelSize: Theme.fontSizeHeading
                         color: Theme.text
@@ -48,17 +54,17 @@ PageFlickable {
                     wrapMode: Text.WordWrap
                     color: Theme.mutedText
                     font.pixelSize: Theme.fontSizeLabel
-                    text: qsTr("Build a structured interval workout and install it as a native " +
-                                "guided workout in the watch's WORKOUT menu (target band + step " +
-                                "text), the same tool as tools/workout_gui.py - opens in your " +
-                                "default browser as its own local app, separate from this " +
-                                "window. Works offline except for the final compile step.")
+                    text: qsTr("Write a Suunto App in the App Zone scripting language, compile it " +
+                                "on the community compiler, and install it onto a sport mode's " +
+                                "display field - the same tool as tools/apps_gui.py. Opens in your " +
+                                "default browser as its own local app, separate from this window. " +
+                                "For a structured interval workout instead, use the Intervals menu.")
                 }
 
                 RoundedButton {
-                    text: qsTr("Open Workout Builder")
+                    text: qsTr("Open App Builder")
                     onClicked: {
-                        const error = IntervalsService.launch();
+                        const error = AppZoneService.launch();
                         root.lastResultOk = error.length === 0;
                         root.lastResultText = error.length === 0
                             ? qsTr("Launched - check your browser.")

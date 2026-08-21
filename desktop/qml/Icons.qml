@@ -21,6 +21,7 @@ QtObject {
     readonly property string trainingProgram: "\ue8df" // today (a dated calendar page)
     readonly property string gear: "\ue52f"            // directions_bike
     readonly property string coach: "\ue0bf"           // forum (chat bubble)
+    readonly property string appZone: "\ue86f"         // code (App Zone scripting)
 
     readonly property string add: ""
     readonly property string arrowBack: ""

@@ -28,6 +28,8 @@ DeviceService::DeviceService(QObject *parent) : QObject(parent)
         QSettings().value(QStringLiteral("experimental/markSynced"), false).toBool();
     m_intervalsEnabled =
         QSettings().value(QStringLiteral("experimental/intervals"), false).toBool();
+    m_appZoneEnabled =
+        QSettings().value(QStringLiteral("experimental/appZone"), false).toBool();
     m_smartSensorEnabled =
         QSettings().value(QStringLiteral("experimental/smartSensor"), false).toBool();
     m_coachEnabled =
@@ -658,6 +660,15 @@ void DeviceService::setIntervalsEnabled(bool value)
     m_intervalsEnabled = value;
     QSettings().setValue(QStringLiteral("experimental/intervals"), value);
     emit intervalsEnabledChanged();
+}
+
+void DeviceService::setAppZoneEnabled(bool value)
+{
+    if (m_appZoneEnabled == value)
+        return;
+    m_appZoneEnabled = value;
+    QSettings().setValue(QStringLiteral("experimental/appZone"), value);
+    emit appZoneEnabledChanged();
 }
 
 void DeviceService::setSmartSensorEnabled(bool value)
