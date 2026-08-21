@@ -11,4 +11,4 @@ cmake -S . -B build
 cmake --build build
 
 echo ""
-echo "Binary: $(pwd)/build/ambitapp"
+echo "Binary: $(pwd)/build/Sommet"
