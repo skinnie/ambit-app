@@ -1,5 +1,8 @@
 #include "gearservice.h"
 
+#include <cmath>
+#include <QtMath>
+
 #include <QDateTime>
 #include <QDir>
 #include <QJsonArray>
@@ -113,6 +116,9 @@ void GearService::openDatabase()
     // Default gear per decoded sport name, and the local usage ledger (manual per-activity gear).
     q.exec(QStringLiteral(
         "CREATE TABLE IF NOT EXISTS gear_assignment (sport TEXT PRIMARY KEY, gear_id TEXT)"));
+    q.exec(QStringLiteral(
+        "CREATE TABLE IF NOT EXISTS gear_exception ("
+        "sport TEXT PRIMARY KEY, country TEXT, radius_km REAL, gear_id TEXT)"));
     q.exec(QStringLiteral(
         "CREATE TABLE IF NOT EXISTS activity_gear ("
         "activity_key TEXT PRIMARY KEY, gear_id TEXT, distance_m REAL, time_s REAL)"));
@@ -288,6 +294,103 @@ QString GearService::defaultGearForSport(const QString &sport) const
     return q.next() ? q.value(0).toString() : QString();
 }
 
+// Country centroids for the exception geofence (André, 2026-08-18). A curated set - Europe in
+// full plus common travel destinations - each an approximate country centre. "In <country>
+// within <radius> km" is a circle around this point; not a border polygon, which is why the
+// radius is generous (up to 1000 km). Extend freely.
+QVariantList GearService::countries() const
+{
+    struct C { const char *name; double lat; double lon; };
+    static const C table[] = {
+        {"Portugal",39.5,-8.0},{"Spain",40.3,-3.7},{"France",46.6,2.4},{"Italy",42.8,12.8},
+        {"Germany",51.1,10.4},{"United Kingdom",54.0,-2.5},{"Ireland",53.2,-8.0},
+        {"Netherlands",52.2,5.3},{"Belgium",50.6,4.6},{"Switzerland",46.8,8.2},
+        {"Austria",47.6,14.1},{"Andorra",42.5,1.6},{"Luxembourg",49.8,6.1},
+        {"Denmark",56.0,9.5},{"Norway",62.0,9.0},{"Sweden",62.0,15.0},{"Finland",64.0,26.0},
+        {"Poland",52.0,19.0},{"Czechia",49.8,15.5},{"Slovakia",48.7,19.7},
+        {"Slovenia",46.1,14.8},{"Croatia",45.1,15.2},{"Greece",39.0,22.0},
+        {"Hungary",47.2,19.4},{"Romania",45.9,25.0},{"Bulgaria",42.7,25.5},
+        {"Iceland",64.9,-19.0},{"Morocco",31.8,-7.0},{"Cape Verde",16.0,-24.0},
+        {"Turkey",39.0,35.0},{"United States",39.5,-98.5},{"Canada",56.0,-106.0},
+        {"Brazil",-10.0,-52.0},{"Argentina",-34.0,-64.0},{"Australia",-25.0,134.0},
+        {"New Zealand",-41.0,174.0},{"South Africa",-29.0,24.0},{"Japan",36.2,138.3},
+        {"Thailand",15.0,101.0},{"United Arab Emirates",24.0,54.0},
+    };
+    QVariantList out;
+    for (const C &c : table) {
+        QVariantMap m;
+        m.insert(QStringLiteral("name"), QString::fromUtf8(c.name));
+        m.insert(QStringLiteral("lat"), c.lat);
+        m.insert(QStringLiteral("lon"), c.lon);
+        out.append(m);
+    }
+    return out;
+}
+
+void GearService::setException(const QString &sport, const QString &country,
+                               double radiusKm, const QString &gearId)
+{
+    QSqlQuery q(m_db);
+    if (country.isEmpty() || gearId.isEmpty()) {
+        q.prepare(QStringLiteral("DELETE FROM gear_exception WHERE sport = ?"));
+        q.addBindValue(sport);
+    } else {
+        q.prepare(QStringLiteral(
+            "INSERT OR REPLACE INTO gear_exception (sport, country, radius_km, gear_id) "
+            "VALUES (?, ?, ?, ?)"));
+        q.addBindValue(sport);
+        q.addBindValue(country);
+        q.addBindValue(radiusKm);
+        q.addBindValue(gearId);
+    }
+    q.exec();
+    loadFromDb();
+}
+
+void GearService::clearException(const QString &sport)
+{
+    setException(sport, QString(), 0.0, QString());
+}
+
+QVariantMap GearService::exceptionFor(const QString &sport) const
+{
+    return m_exceptions.value(sport).toMap();
+}
+
+QString GearService::gearForActivity(const QString &sport, double lat, double lon) const
+{
+    const QString def = defaultGearForSport(sport);
+    const QVariantMap ex = m_exceptions.value(sport).toMap();
+    if (ex.isEmpty() || std::isnan(lat) || std::isnan(lon))
+        return def;  // no exception, or an indoor/location-less activity -> default
+
+    double clat = 0.0, clon = 0.0;
+    bool found = false;
+    const QString country = ex.value(QStringLiteral("country")).toString();
+    for (const QVariant &c : countries()) {
+        const QVariantMap m = c.toMap();
+        if (m.value(QStringLiteral("name")).toString() == country) {
+            clat = m.value(QStringLiteral("lat")).toDouble();
+            clon = m.value(QStringLiteral("lon")).toDouble();
+            found = true;
+            break;
+        }
+    }
+    if (!found) return def;
+
+    // Haversine great-circle distance (km) from the activity start to the country centroid.
+    const double R = 6371.0;
+    const double dLat = qDegreesToRadians(lat - clat);
+    const double dLon = qDegreesToRadians(lon - clon);
+    const double a = std::sin(dLat / 2) * std::sin(dLat / 2)
+        + std::cos(qDegreesToRadians(clat)) * std::cos(qDegreesToRadians(lat))
+          * std::sin(dLon / 2) * std::sin(dLon / 2);
+    const double distKm = R * 2.0 * std::atan2(std::sqrt(a), std::sqrt(1.0 - a));
+    return distKm <= ex.value(QStringLiteral("radiusKm")).toDouble()
+        ? ex.value(QStringLiteral("gearId")).toString()
+        : def;
+}
+
 void GearService::attributeActivity(const QString &key, const QString &gearId,
                                     double distanceM, double timeS)
 {
@@ -385,6 +488,16 @@ void GearService::loadFromDb()
     QSqlQuery aq(QStringLiteral("SELECT sport, gear_id FROM gear_assignment"), m_db);
     while (aq.next())
         m_assignments.insert(aq.value(0).toString(), aq.value(1).toString());
+
+    m_exceptions.clear();
+    QSqlQuery eq(QStringLiteral("SELECT sport, country, radius_km, gear_id FROM gear_exception"), m_db);
+    while (eq.next()) {
+        QVariantMap ex;
+        ex.insert(QStringLiteral("country"), eq.value(1).toString());
+        ex.insert(QStringLiteral("radiusKm"), eq.value(2).toDouble());
+        ex.insert(QStringLiteral("gearId"), eq.value(3).toString());
+        m_exceptions.insert(eq.value(0).toString(), ex);
+    }
 
     QSqlQuery q(QStringLiteral(
         "SELECT id, remote_id, parent_id, name, type, component, distance_m, time_s, retired "
