@@ -30,4 +30,4 @@ cleanup() {
 }
 trap cleanup EXIT
 
-./desktop/build/ambitapp
+./desktop/build/Sommet
