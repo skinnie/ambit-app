@@ -166,6 +166,7 @@ qt_add_qml_module(ambitapp
         qml/pages/SettingsPage.qml
         qml/pages/SportModesPage.qml
         qml/pages/IntervalsPage.qml
+        qml/pages/AppZonePage.qml
         qml/pages/TrainingProgramPage.qml
         qml/pages/GpsTrackPodPage.qml
         qml/pages/SuuntoT6Page.qml
@@ -200,6 +201,8 @@ qt_add_qml_module(ambitapp
         src/services/garminservice.cpp
         src/services/intervalsservice.h
         src/services/intervalsservice.cpp
+        src/services/appzoneservice.h
+        src/services/appzoneservice.cpp
         src/services/kailashservice.h
         src/services/kailashservice.cpp
         src/services/settingswriteservice.h

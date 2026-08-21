@@ -548,6 +548,26 @@ PageFlickable {
                 Item { width: 1; height: Theme.spacingSmall }
                 Text {
                     width: parent.width; wrapMode: Text.WordWrap
+                    text: qsTr("App Zone menu (build & install Suunto Apps)")
+                    font.bold: true; font.pixelSize: Theme.fontSizeBody; color: Theme.text
+                }
+                Row {
+                    spacing: Theme.spacingSmall
+                    RoundedSwitch {
+                        anchors.verticalCenter: parent.verticalCenter
+                        checked: DeviceService.appZoneEnabled
+                        onToggled: DeviceService.appZoneEnabled = checked
+                    }
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: DeviceService.appZoneEnabled ? qsTr("On") : qsTr("Off")
+                        color: DeviceService.appZoneEnabled ? Theme.primary : Theme.mutedText
+                        font.pixelSize: Theme.fontSizeBody
+                    }
+                }
+                Item { width: 1; height: Theme.spacingSmall }
+                Text {
+                    width: parent.width; wrapMode: Text.WordWrap
                     text: qsTr("Smart Sensor menu (Suunto HR belt over Bluetooth)")
                     font.bold: true; font.pixelSize: Theme.fontSizeBody; color: Theme.text
                 }

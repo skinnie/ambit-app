@@ -36,6 +36,7 @@ ApplicationWindow {
         settings: "pages/SettingsPage.qml",
         sportModes: "pages/SportModesPage.qml",
         intervals: "pages/IntervalsPage.qml",
+        appZone: "pages/AppZonePage.qml",
         totals: "pages/TotalsPage.qml",
         calendar: "pages/CalendarPage.qml",
         gear: "pages/GearPage.qml",

@@ -147,6 +147,8 @@ class DeviceService : public QObject
     // same per-feature-toggle model the Android app uses. Persisted via QSettings.
     Q_PROPERTY(bool intervalsEnabled READ intervalsEnabled
                WRITE setIntervalsEnabled NOTIFY intervalsEnabledChanged)
+    Q_PROPERTY(bool appZoneEnabled READ appZoneEnabled
+               WRITE setAppZoneEnabled NOTIFY appZoneEnabledChanged)
     Q_PROPERTY(bool smartSensorEnabled READ smartSensorEnabled
                WRITE setSmartSensorEnabled NOTIFY smartSensorEnabledChanged)
     // Coach (v2 concept, 2026-08-21) - same per-feature-toggle model, gates the NavRail
@@ -284,10 +286,12 @@ public:
     void setBleExperimentEnabled(bool value);
     bool markSyncedEnabled() const { return m_markSyncedEnabled; }
     bool intervalsEnabled() const { return m_intervalsEnabled; }
+    bool appZoneEnabled() const { return m_appZoneEnabled; }
     bool smartSensorEnabled() const { return m_smartSensorEnabled; }
     bool coachEnabled() const { return m_coachEnabled; }
     void setMarkSyncedEnabled(bool value);
     void setIntervalsEnabled(bool value);
+    void setAppZoneEnabled(bool value);
     void setSmartSensorEnabled(bool value);
     void setCoachEnabled(bool value);
 
@@ -314,6 +318,7 @@ signals:
     void bleExperimentEnabledChanged();
     void markSyncedEnabledChanged();
     void intervalsEnabledChanged();
+    void appZoneEnabledChanged();
     void smartSensorEnabledChanged();
     void coachEnabledChanged();
     void connectedWatchesChanged();
@@ -377,6 +382,7 @@ private:
     int m_bleAttemptSeconds = 0;
     bool m_bleExperimentEnabled = false;
     bool m_intervalsEnabled = false;
+    bool m_appZoneEnabled = false;
     bool m_smartSensorEnabled = false;
     bool m_coachEnabled = false;
     bool m_markSyncedEnabled = false;

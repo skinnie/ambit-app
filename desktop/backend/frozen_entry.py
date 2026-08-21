@@ -31,15 +31,23 @@ def _bundled_tools_dir():
     return Path(__file__).resolve().parent.parent.parent / "tools"
 
 
-def _run_workout_builder():
+def _run_builder(script_name):
     import runpy
 
-    tool = str(_bundled_tools_dir() / "workout_gui.py")
+    tool = str(_bundled_tools_dir() / script_name)
     tools_dir = str(_bundled_tools_dir())
     if tools_dir not in sys.path:
         sys.path.insert(0, tools_dir)
-    sys.argv = [tool] + sys.argv[2:]  # pass through anything after --workout-builder
+    sys.argv = [tool] + sys.argv[2:]  # pass through anything after the --*-builder sentinel
     runpy.run_path(tool, run_name="__main__")
+
+
+def _run_workout_builder():
+    _run_builder("workout_gui.py")
+
+
+def _run_apps_builder():
+    _run_builder("apps_gui.py")
 
 
 def _run_tool():
@@ -62,6 +70,10 @@ def _run_tool():
 def main():
     if len(sys.argv) >= 2 and sys.argv[1] == "--workout-builder":
         _run_workout_builder()
+        return
+
+    if len(sys.argv) >= 2 and sys.argv[1] == "--apps-builder":
+        _run_apps_builder()
         return
 
     if len(sys.argv) >= 3 and sys.argv[1] == "--tool":

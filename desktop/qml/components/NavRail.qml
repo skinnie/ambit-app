@@ -125,6 +125,20 @@ Rectangle {
             selected: root.currentPage === "intervals"
             onClicked: root.pageSelected("intervals")
         }
+        // App Zone builder (write + compile + install a generic Suunto App) - its own
+        // experimental toggle, same model as Intervals. Ambit3 AND Traverse (both have a
+        // CustomModes + Apps region); Kailash excluded (no CustomModes), Garmin excluded (no
+        // Suunto-Apps concept) - unlike Intervals it does NOT need a TrainingProgram region, so
+        // Traverse is not excluded here.
+        NavItem {
+            width: parent.width
+            visible: DeviceService.appZoneEnabled && HomeViewModel.anyDevice
+                     && !HomeViewModel.isGarmin && !HomeViewModel.isKailash
+            glyph: Icons.appZone
+            label: qsTr("App Zone")
+            selected: root.currentPage === "appZone"
+            onClicked: root.pageSelected("appZone")
+        }
         // Training Program (2026-08-12, "movescount era called them training program.
         // 2 on a screen on our app") - scheduled, date-gated workouts. Same Suunto-only
         // gating as Intervals: it rides the identical App-Zone/CustomModes install
