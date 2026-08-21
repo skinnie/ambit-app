@@ -566,6 +566,27 @@ PageFlickable {
                     }
                 }
 
+                Item { width: 1; height: Theme.spacingSmall }
+                Text {
+                    width: parent.width; wrapMode: Text.WordWrap
+                    text: qsTr("Coach menu (readiness beacon + chat, v2 concept)")
+                    font.bold: true; font.pixelSize: Theme.fontSizeBody; color: Theme.text
+                }
+                Row {
+                    spacing: Theme.spacingSmall
+                    RoundedSwitch {
+                        anchors.verticalCenter: parent.verticalCenter
+                        checked: DeviceService.coachEnabled
+                        onToggled: DeviceService.coachEnabled = checked
+                    }
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: DeviceService.coachEnabled ? qsTr("On") : qsTr("Off")
+                        color: DeviceService.coachEnabled ? Theme.primary : Theme.mutedText
+                        font.pixelSize: Theme.fontSizeBody
+                    }
+                }
+
                 // GPS Track Pod and Suunto T6 are standalone legacy Suunto devices
                 // integrated built-blind (never hardware-confirmed). Each reveals its own
                 // side-menu item when turned on, off by default. NavRail gates on these.
@@ -718,6 +739,105 @@ PageFlickable {
                 id: demoPicker
                 current: DeviceService.demoVariant
                 onDeviceChosen: (variant) => DeviceService.setDemoMode(true, variant)
+            }
+        }
+
+        // --- Coach (v2 concept, 2026-08-21). Two independent toggles, per André's own
+        // "can we have both with a toggle?" - each backend is real code, not a stub; the
+        // zero-setup default (canned chat + bundled sample catalogue) works with nothing
+        // configured here at all. See coachservice.h's own header comment for what "live"
+        // actually requires (a small HTTP bridge in front of wahoo-systm-mcp's stdio MCP).
+        Card {
+            width: parent.width
+            visible: DeviceService.coachEnabled
+            Column {
+                width: parent.width
+                spacing: Theme.spacingSmall
+                Row {
+                    spacing: Theme.spacingSmall
+                    Icon { glyph: Icons.coach; size: 20; color: Theme.text; anchors.verticalCenter: parent.verticalCenter }
+                    Text { text: qsTr("Coach"); font.bold: true; font.pixelSize: Theme.fontSizeBodyLarge; color: Theme.text; anchors.verticalCenter: parent.verticalCenter }
+                }
+
+                Item { width: 1; height: Theme.spacingSmall }
+                Text {
+                    width: parent.width; wrapMode: Text.WordWrap
+                    text: qsTr("Chat backend: Claude API (real conversation, needs an Anthropic API key - NOT your claude.ai subscription, small per-message cost)")
+                    font.bold: true; font.pixelSize: Theme.fontSizeBody; color: Theme.text
+                }
+                Row {
+                    spacing: Theme.spacingSmall
+                    RoundedSwitch {
+                        anchors.verticalCenter: parent.verticalCenter
+                        checked: CoachService.chatBackend === "claude"
+                        onToggled: CoachService.chatBackend = checked ? "claude" : "canned"
+                    }
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: CoachService.chatBackend === "claude" ? qsTr("Claude API") : qsTr("Canned replies")
+                        color: CoachService.chatBackend === "claude" ? Theme.primary : Theme.mutedText
+                        font.pixelSize: Theme.fontSizeBody
+                    }
+                }
+                Row {
+                    visible: CoachService.chatBackend === "claude"
+                    spacing: Theme.spacingSmall
+                    RoundedTextField {
+                        id: anthropicKeyField
+                        width: 260
+                        echoMode: TextInput.Password
+                        placeholderText: CoachService.anthropicKeySet ? qsTr("Key saved (enter to replace)") : qsTr("Anthropic API key")
+                    }
+                    Button {
+                        text: qsTr("Save")
+                        enabled: anthropicKeyField.text.length > 0
+                        onClicked: { CoachService.setAnthropicApiKey(anthropicKeyField.text); anthropicKeyField.text = "" }
+                    }
+                    Button {
+                        text: qsTr("Clear")
+                        visible: CoachService.anthropicKeySet
+                        onClicked: CoachService.clearAnthropicApiKey()
+                    }
+                }
+
+                Item { width: 1; height: Theme.spacingSmall }
+                Text {
+                    width: parent.width; wrapMode: Text.WordWrap
+                    text: qsTr("Workout catalogue: live wahoo-systm-mcp (vs. the bundled offline sample)")
+                    font.bold: true; font.pixelSize: Theme.fontSizeBody; color: Theme.text
+                }
+                Row {
+                    spacing: Theme.spacingSmall
+                    RoundedSwitch {
+                        anchors.verticalCenter: parent.verticalCenter
+                        checked: CoachService.catalogueSource === "live"
+                        onToggled: CoachService.catalogueSource = checked ? "live" : "sample"
+                    }
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: CoachService.catalogueSource === "live" ? qsTr("Live") : qsTr("Bundled sample (55 sessions)")
+                        color: CoachService.catalogueSource === "live" ? Theme.primary : Theme.mutedText
+                        font.pixelSize: Theme.fontSizeBody
+                    }
+                }
+                Row {
+                    visible: CoachService.catalogueSource === "live"
+                    spacing: Theme.spacingSmall
+                    RoundedTextField {
+                        id: mcpUrlField
+                        width: 320
+                        text: CoachService.systmMcpUrl
+                        placeholderText: qsTr("http://127.0.0.1:PORT/workouts")
+                        onEditingFinished: CoachService.systmMcpUrl = text
+                    }
+                }
+                Text {
+                    visible: CoachService.lastError.length > 0
+                    width: parent.width; wrapMode: Text.WordWrap
+                    text: CoachService.lastError
+                    color: Theme.error
+                    font.pixelSize: Theme.fontSizeCaption
+                }
             }
         }
 

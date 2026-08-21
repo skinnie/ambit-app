@@ -30,6 +30,8 @@ DeviceService::DeviceService(QObject *parent) : QObject(parent)
         QSettings().value(QStringLiteral("experimental/intervals"), false).toBool();
     m_smartSensorEnabled =
         QSettings().value(QStringLiteral("experimental/smartSensor"), false).toBool();
+    m_coachEnabled =
+        QSettings().value(QStringLiteral("experimental/coach"), false).toBool();
     // Off by default - see this property's own header comment (built blind, never
     // hardware-confirmed).
     m_gpsTrackPodExperimentEnabled =
@@ -665,6 +667,15 @@ void DeviceService::setSmartSensorEnabled(bool value)
     m_smartSensorEnabled = value;
     QSettings().setValue(QStringLiteral("experimental/smartSensor"), value);
     emit smartSensorEnabledChanged();
+}
+
+void DeviceService::setCoachEnabled(bool value)
+{
+    if (m_coachEnabled == value)
+        return;
+    m_coachEnabled = value;
+    QSettings().setValue(QStringLiteral("experimental/coach"), value);
+    emit coachEnabledChanged();
 }
 
 void DeviceService::setSuuntoT6ExperimentEnabled(bool value)

@@ -48,6 +48,12 @@ desktop/assets/*
 desktop/assets/fonts/*
 !desktop/assets/fonts/MaterialSymbolsRounded.ttf
 !desktop/assets/fonts/NOTICE.md
+# Coach's bundled sample catalogue (2026-08-21) - a tracked copy of coach/data/systm-sample.json
+# (coach/ itself is NOT this - see that directory's own README, kept local-only/gitignored
+# separately). CoachService.cpp reads this exact path at runtime.
+!desktop/assets/coach/
+desktop/assets/coach/*
+!desktop/assets/coach/systm-sample.json
 full-assets/
 # Flash-region dumps from the watch — carry the watch serial number; never commit.
 backups/

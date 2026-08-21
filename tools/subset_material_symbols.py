@@ -45,6 +45,13 @@ POI_GLYPHS = {
     15: "filter_hdr", 16: "water_drop", 17: "place",
 }
 
+# One-off icons that aren't POI-indexed - name -> Material Symbol glyph name. Coach (2026-08-21,
+# the v2 training-coach nav entry) needed a chat-bubble glyph, nothing existing in the subset
+# fit ("forum" - a conversation bubble, matches the chat half of the Coach screen).
+EXTRA_GLYPHS = {
+    "coach": "forum",
+}
+
 
 def existing_codepoints(path):
     cps = set()
@@ -72,8 +79,16 @@ def main():
         print("ERROR - glyph names not in the font:", missing)
         return 1
 
+    extra_cp, missing_extra = {}, []
+    for key, gname in EXTRA_GLYPHS.items():
+        cp = name_to_cp.get(gname)
+        (extra_cp.__setitem__(key, cp) if cp is not None else missing_extra.append((key, gname)))
+    if missing_extra:
+        print("ERROR - glyph names not in the font:", missing_extra)
+        return 1
+
     keep = existing_codepoints(DESKTOP_TTF) if os.path.exists(DESKTOP_TTF) else set()
-    unicodes = sorted(keep | set(poi_cp.values()))
+    unicodes = sorted(keep | set(poi_cp.values()) | set(extra_cp.values()))
 
     static = instancer.instantiateVariableFont(
         full, {"wght": 400, "FILL": 0, "GRAD": 0, "opsz": 24}, inplace=False)
@@ -92,6 +107,10 @@ def main():
     print("\nPOI type -> glyph -> codepoint (source for Icons.qml + PoiScreen POI_TYPE_GLYPHS):")
     for tid in sorted(POI_GLYPHS):
         print(f"  {tid:2d}  {POI_GLYPHS[tid]:16}  U+{poi_cp[tid]:04X}  \\u{poi_cp[tid]:04x}")
+    if extra_cp:
+        print("\nExtra one-off icons (source for Icons.qml):")
+        for key in sorted(extra_cp):
+            print(f"  {key:16}  {EXTRA_GLYPHS[key]:16}  U+{extra_cp[key]:04X}  \\u{extra_cp[key]:04x}")
     return 0
 
 

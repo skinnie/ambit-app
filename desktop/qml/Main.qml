@@ -39,6 +39,7 @@ ApplicationWindow {
         totals: "pages/TotalsPage.qml",
         calendar: "pages/CalendarPage.qml",
         gear: "pages/GearPage.qml",
+        coach: "pages/CoachPage.qml",
         gpsTrackPod: "pages/GpsTrackPodPage.qml",
         suuntoT6: "pages/SuuntoT6Page.qml",
         trainingProgram: "pages/TrainingProgramPage.qml",

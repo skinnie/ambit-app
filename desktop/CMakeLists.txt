@@ -126,6 +126,7 @@ qt_add_qml_module(ambitapp
         qml/pages/TotalsPage.qml
         qml/pages/CalendarPage.qml
         qml/pages/GearPage.qml
+        qml/pages/CoachPage.qml
         qml/components/Icon.qml
         qml/components/RoundedComboBox.qml
         qml/components/ThemedMenu.qml
@@ -183,6 +184,8 @@ qt_add_qml_module(ambitapp
         src/services/activityservice.cpp
         src/services/gearservice.h
         src/services/gearservice.cpp
+        src/services/coachservice.h
+        src/services/coachservice.cpp
         src/services/routeservice.h
         src/services/routeservice.cpp
         src/services/poiservice.h
@@ -215,6 +218,10 @@ qt_add_qml_module(ambitapp
     RESOURCES
         assets/fonts/MaterialSymbolsRounded.ttf
         packaging/icon.png
+        # Coach's bundled catalogue (2026-08-21) - a copy of coach/data/systm-sample.json.
+        # coach/ itself is gitignored / not part of this public repo (its own README says
+        # so explicitly), so CoachService reads its own tracked copy here, not that path.
+        assets/coach/systm-sample.json
         # assets/map/osm-raster-style.json was MapLibre's own style file - unused since the
         # 2026-08-07 switch to Qt's built-in "osm" plugin, left on disk but out of the build
 )

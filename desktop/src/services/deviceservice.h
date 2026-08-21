@@ -149,6 +149,12 @@ class DeviceService : public QObject
                WRITE setIntervalsEnabled NOTIFY intervalsEnabledChanged)
     Q_PROPERTY(bool smartSensorEnabled READ smartSensorEnabled
                WRITE setSmartSensorEnabled NOTIFY smartSensorEnabledChanged)
+    // Coach (v2 concept, 2026-08-21) - same per-feature-toggle model, gates the NavRail
+    // entry. Was a compile-time FeatureFlags.coach: true; moved here (default OFF, runtime
+    // toggle) at André's request so it ships hidden like every other new feature until it
+    // earns its way out, not visible from first launch.
+    Q_PROPERTY(bool coachEnabled READ coachEnabled
+               WRITE setCoachEnabled NOTIFY coachEnabledChanged)
 
     // Suunto T6 family (2026-08-14, "implement Suunto t6 ... only as experimental") - a
     // different, older Suunto product from the watches this app targets (a 2004-2010
@@ -279,9 +285,11 @@ public:
     bool markSyncedEnabled() const { return m_markSyncedEnabled; }
     bool intervalsEnabled() const { return m_intervalsEnabled; }
     bool smartSensorEnabled() const { return m_smartSensorEnabled; }
+    bool coachEnabled() const { return m_coachEnabled; }
     void setMarkSyncedEnabled(bool value);
     void setIntervalsEnabled(bool value);
     void setSmartSensorEnabled(bool value);
+    void setCoachEnabled(bool value);
 
     bool suuntoT6ExperimentEnabled() const { return m_suuntoT6ExperimentEnabled; }
     void setSuuntoT6ExperimentEnabled(bool value);
@@ -307,6 +315,7 @@ signals:
     void markSyncedEnabledChanged();
     void intervalsEnabledChanged();
     void smartSensorEnabledChanged();
+    void coachEnabledChanged();
     void connectedWatchesChanged();
 
 private:
@@ -369,6 +378,7 @@ private:
     bool m_bleExperimentEnabled = false;
     bool m_intervalsEnabled = false;
     bool m_smartSensorEnabled = false;
+    bool m_coachEnabled = false;
     bool m_markSyncedEnabled = false;
     bool m_gpsTrackPodExperimentEnabled = false;
     bool m_suuntoT6ExperimentEnabled = false;
