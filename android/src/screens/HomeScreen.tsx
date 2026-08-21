@@ -21,7 +21,7 @@ import RNFS from 'react-native-fs';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   scanAndConnect as bleScanAndConnect, scanAndConnectTo as bleScanAndConnectTo,
-  listBondedWatches, BondedWatch,
+  listBondedWatches, BondedWatch, onBleDisconnected,
 } from '../native/AmbitBleModule';
 import * as Garmin from '../native/GarminModule';
 import type { GarminConnectResult } from '../native/GarminModule';
@@ -156,9 +156,11 @@ export default function HomeScreen() {
     // right after the initial info/history read, before the user can tap anything.
     // This button inherited neither half of that - it assumed a connection that was
     // usually already gone by the time it was tappable, and failed the exact same way
-    // on every retry since nothing ever reconnected. BLE has no such gap (the link
-    // stays up until explicitly closed - see bleConnected's own comments), so only
-    // reconnect for the USB path.
+    // on every retry since nothing ever reconnected. BLE has no such gap: `bleConnected`
+    // is kept accurate even when the watch drops the link on its own (the
+    // onBleDisconnected listener below flips it back to false the moment that happens -
+    // see its own comment for the real bug this fixed, 2026-08-21), so only reconnect
+    // for the USB path.
     const usingBle = bleConnectedRef.current;
     try {
       if (!usingBle) {
@@ -440,6 +442,29 @@ export default function HomeScreen() {
   }
   const handleBleConnectRef = useRef(handleBleConnect);
   handleBleConnectRef.current = handleBleConnect;
+
+  // Real bug, found live 2026-08-21 (André: "the watch kinda don't reconnect after a
+  // while"). This screen used to assume a BLE link, once up, "stays up until explicitly
+  // closed" (see the old comment near bleConnectedRef's other uses) — but the watch's own
+  // BLE session really is short-lived and watch-driven (ambit_app_ble_workflow_reliability
+  // memory), so it drops on its own after a while with nothing here ever finding out. The
+  // native side (AmbitBleModule.kt) reconnects fine when re-triggered — this was purely a
+  // stale-UI-state bug: `bleConnected` never flipped back to false, so the app kept
+  // claiming "Connected" long after the real link was gone, with no visible way to retry.
+  // Mirrors the existing connect-error cleanup (handleBleConnect's own catch block) rather
+  // than inventing a new UI state.
+  useEffect(() => {
+    return onBleDisconnected(() => {
+      if (!bleConnectedRef.current) return;   // already knew (e.g. mid handleBleConnect retry)
+      setBleConnected(false);
+      bleConnectedRef.current = false;
+      setBleTransportActive(false);
+      setConnectedBleAddress(null);
+      setConnectError(t.homeBleDisconnectedError);
+      setPhase('connect-error');
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Writes the Kailash track fetched at connect time (kailashTrack) to Downloads as GPX.
   // No watch round-trip here — the samples were already read over the live link in
