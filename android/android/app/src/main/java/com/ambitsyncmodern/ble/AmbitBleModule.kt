@@ -25,6 +25,7 @@ import android.os.Looper
 import android.os.ParcelUuid
 import androidx.core.content.ContextCompat
 import com.facebook.react.bridge.*
+import com.facebook.react.modules.core.DeviceEventManagerModule
 import com.facebook.react.modules.core.PermissionAwareActivity
 import com.facebook.react.modules.core.PermissionListener
 import java.util.ArrayDeque
@@ -385,6 +386,21 @@ class AmbitBleModule(private val reactContext: ReactApplicationContext) :
                         // Disconnected before we ever went live — surface it as the connect failure.
                         failConnect("DISCONNECTED", "Watch disconnected before subscribing (status=$status)")
                     }
+                } else {
+                    // Post-handshake disconnect - the link was already live and syncing.
+                    // Real gap, found live 2026-08-21 (André: "the watch kinda don't
+                    // reconnect after a while"): nothing here told JS this happened at all.
+                    // HomeScreen.tsx's `bleConnected` state assumed the BLE link "stays up
+                    // until explicitly closed" and never checked again - so the UI kept
+                    // showing "Connected" indefinitely after a real, silent drop, and the
+                    // user had no signal that tapping "Pair" again was even necessary (the
+                    // native reconnect itself works fine once re-triggered - confirmed live,
+                    // same session - the JS side just never asked it to). Reset local state
+                    // and emit an event so JS can reflect reality instead of a stale assumption.
+                    Log.d("AmbitBleModule", "post-handshake disconnect (status=$status) - notifying JS")
+                    nativeInitStarted = false
+                    connectedDevice = null
+                    emitDisconnected(status)
                 }
             }
         }
@@ -511,6 +527,21 @@ class AmbitBleModule(private val reactContext: ReactApplicationContext) :
         nativeInitStarted = false
         synchronized(chunkQueueLock) { pendingChunks.clear(); chunkInFlight = false }
         promise.resolve(true)
+    }
+
+    /** Tells JS a live BLE link just dropped, so HomeScreen.tsx can flip `bleConnected` back
+     * to false and surface a real reconnect prompt instead of trusting a stale assumption
+     * that the link never drops on its own. See the post-handshake disconnect branch above
+     * for why this exists. */
+    private fun emitDisconnected(status: Int) {
+        val params = Arguments.createMap().apply { putInt("status", status) }
+        try {
+            reactContext
+                .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+                .emit("AmbitBleDisconnected", params)
+        } catch (e: Exception) {
+            Log.e("AmbitBleModule", "emitDisconnected failed: ${e.message}")
+        }
     }
 
     private fun failConnect(code: String, message: String?) {

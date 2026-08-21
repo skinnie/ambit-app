@@ -1,6 +1,7 @@
-import { NativeModules } from 'react-native';
+import { NativeModules, NativeEventEmitter } from 'react-native';
 
 const { AmbitBleModule: NativeAmbitBle } = NativeModules;
+const emitter = new NativeEventEmitter(NativeAmbitBle);
 
 if (!NativeAmbitBle) {
   throw new Error(
@@ -66,4 +67,15 @@ export function scanAndConnectTo(address: string): Promise<string> {
 
 export function disconnectBle(): Promise<void> {
   return NativeAmbitBle.disconnectBle();
+}
+
+/** Fires when a live, already-handshaken BLE link drops on its own (the watch's own
+ * behavior, not something JS asked for — see AmbitBleModule.kt's post-handshake
+ * onConnectionStateChange branch). Real gap fixed 2026-08-21: without this, HomeScreen.tsx
+ * had no way to learn a connection it thought was still up had actually gone, and kept
+ * showing "Connected" indefinitely. Callers should reset their own "connected" state and
+ * let the user reconnect (scanAndConnect/scanAndConnectTo) rather than polling. */
+export function onBleDisconnected(callback: (event: { status: number }) => void): () => void {
+  const sub = emitter.addListener('AmbitBleDisconnected', callback);
+  return () => sub.remove();
 }
