@@ -66,6 +66,17 @@ Rectangle {
             selected: root.currentPage === "totals"
             onClicked: root.pageSelected("totals")
         }
+        // Coach (v2 concept, 2026-08-21): readiness beacon + chat, one screen. Same
+        // reasoning as Totals/Calendar - it reads local activity history, not the connected
+        // watch, so it shows for every device including none.
+        NavItem {
+            width: parent.width
+            visible: DeviceService.coachEnabled
+            glyph: Icons.coach
+            label: qsTr("Coach")
+            selected: root.currentPage === "coach"
+            onClicked: root.pageSelected("coach")
+        }
         // Calendar - real request, 2026-08-11 (André, with a reference screenshot). Same
         // reasoning as Totals just above: it's the same device-aware activity list, no
         // device support to gate on, so it shows for every device including none.
