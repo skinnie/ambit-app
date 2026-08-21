@@ -97,6 +97,79 @@ Item {
         onAccepted: GearService.removeGear(gearId)
     }
 
+    // Exception to a sport's default gear (André, 2026-08-18). "In <country> within <radius> km
+    // → use <gear>" instead of the default; matched on the activity's GPS start (indoor rides
+    // have no GPS and always use the default).
+    ThemedDialog {
+        id: exceptionDialog
+        property string sport: ""
+        title: qsTr("Exception")
+        modal: true
+        parent: Overlay.overlay
+        anchors.centerIn: Overlay.overlay
+        standardButtons: Dialog.Close
+
+        function openFor(s) {
+            sport = s
+            var ex = GearService.gearExceptions[s]
+            var cs = GearService.countries()
+            exCountry.model = cs
+            var ci = 0
+            if (ex) for (var i = 0; i < cs.length; i++) if (cs[i].name === ex.country) { ci = i; break }
+            exCountry.currentIndex = ci
+            exRadius.value = ex ? ex.radiusKm : 250
+            var choices = root.gearChoices()
+            exGear.model = choices
+            var gi = 0
+            if (ex) for (var j = 0; j < choices.length; j++) if (choices[j].id === ex.gearId) { gi = j; break }
+            exGear.currentIndex = gi
+            open()
+        }
+
+        ColumnLayout {
+            width: 340
+            spacing: Theme.spacingSmall
+
+            Text {
+                Layout.fillWidth: true; wrapMode: Text.WordWrap
+                color: Theme.mutedText; font.pixelSize: Theme.fontSizeCaption
+                text: qsTr("Normally the default gear is used for %1. As an exception, when an "
+                    + "activity's GPS start is within the radius of the country below, this gear "
+                    + "is used instead. Indoor activities (no GPS) always use the default.")
+                    .arg(exceptionDialog.sport)
+            }
+
+            Text { text: qsTr("In country"); color: Theme.text; font.pixelSize: Theme.fontSizeCaption }
+            RoundedComboBox { id: exCountry; Layout.fillWidth: true; textRole: "name" }
+
+            Text { text: qsTr("Within %1 km").arg(Math.round(exRadius.value))
+                   color: Theme.text; font.pixelSize: Theme.fontSizeCaption }
+            Slider { id: exRadius; from: 10; to: 1000; stepSize: 10; value: 250; Layout.fillWidth: true }
+
+            Text { text: qsTr("Use this gear"); color: Theme.text; font.pixelSize: Theme.fontSizeCaption }
+            RoundedComboBox { id: exGear; Layout.fillWidth: true; textRole: "text" }
+
+            RowLayout {
+                Layout.topMargin: Theme.spacingSmall
+                RoundedButton {
+                    text: qsTr("Save exception")
+                    onClicked: {
+                        var c = exCountry.model[exCountry.currentIndex]
+                        var g = exGear.model[exGear.currentIndex]
+                        GearService.setException(exceptionDialog.sport, c ? c.name : "",
+                                                 Math.round(exRadius.value), g ? g.id : "")
+                        exceptionDialog.close()
+                    }
+                }
+                RoundedButton {
+                    text: qsTr("Remove")
+                    visible: GearService.gearExceptions[exceptionDialog.sport] !== undefined
+                    onClicked: { GearService.clearException(exceptionDialog.sport); exceptionDialog.close() }
+                }
+            }
+        }
+    }
+
     Rectangle { anchors.fill: parent; color: Theme.background }
 
     ColumnLayout {
@@ -186,6 +259,21 @@ Item {
                                     textRole: "text"
                                     currentIndex: root.assignedIndex(modelData, choices)
                                     onActivated: GearService.setAssignment(modelData, choices[currentIndex].id)
+                                }
+                                // Exception affordance (André, 2026-08-18): a "!" that opens the
+                                // "Exception" panel - filled when an exception is set for this sport.
+                                Rectangle {
+                                    // Small "!" badge, same size as the POIs "i" info affordance.
+                                    implicitWidth: 15; implicitHeight: 15; radius: 7.5
+                                    readonly property bool hasEx: GearService.gearExceptions[modelData] !== undefined
+                                    color: hasEx ? Theme.primary : "transparent"
+                                    border.width: 1
+                                    border.color: hasEx ? Theme.primary : Theme.mutedText
+                                    Text { anchors.centerIn: parent; text: "!"; font.bold: true
+                                           font.pixelSize: Theme.fontSizeLabel
+                                           color: parent.hasEx ? "white" : Theme.mutedText }
+                                    HoverHandler { cursorShape: Qt.PointingHandCursor }
+                                    TapHandler { onTapped: exceptionDialog.openFor(modelData) }
                                 }
                             }
                         }

@@ -37,6 +37,7 @@ class GearService : public QObject
     Q_PROPERTY(int soonCount READ soonCount NOTIFY gearsChanged)
     // Default gear per decoded sport name (sportName -> gear id). Drives the picker's pre-select.
     Q_PROPERTY(QVariantMap assignments READ assignments NOTIFY gearsChanged)
+    Q_PROPERTY(QVariantMap gearExceptions READ gearExceptions NOTIFY gearsChanged)
 
 public:
     explicit GearService(QObject *parent = nullptr);
@@ -48,12 +49,27 @@ public:
     int dueCount() const { return m_dueCount; }
     int soonCount() const { return m_soonCount; }
     QVariantMap assignments() const { return m_assignments; }
+    // Per-sport EXCEPTION to the default gear (André, 2026-08-18): "if country=Portugal and
+    // activity=cycling => carrera". Not a rule engine - just one exception over the default:
+    // when an activity's start GPS falls within `radiusKm` of the chosen country, use the
+    // exception gear instead of the default. Map: sport -> { country, radiusKm, gearId }.
+    QVariantMap gearExceptions() const { return m_exceptions; }
+    // Countries offered in the exception dropdown, each { name, lat, lon } (centroid).
+    Q_INVOKABLE QVariantList countries() const;
 
     // Local distance tally + manual per-activity gear (D2-a). All local — no network. The
     // activity key is a stable per-activity string (its start time). Gear distance shown =
     // imported intervals baseline + these locally-attributed activities.
     Q_INVOKABLE void setAssignment(const QString &sport, const QString &gearId);
     Q_INVOKABLE QString defaultGearForSport(const QString &sport) const;
+    Q_INVOKABLE void setException(const QString &sport, const QString &country,
+                                  double radiusKm, const QString &gearId);
+    Q_INVOKABLE void clearException(const QString &sport);
+    Q_INVOKABLE QVariantMap exceptionFor(const QString &sport) const;
+    // Resolve the gear for an activity: the exception gear when (lat,lon) is within the
+    // exception's geofence, else the sport default. Pass NaN lat/lon for a location-less
+    // (indoor) activity - it always falls through to the default.
+    Q_INVOKABLE QString gearForActivity(const QString &sport, double lat, double lon) const;
     Q_INVOKABLE void attributeActivity(const QString &key, const QString &gearId,
                                        double distanceM, double timeS);
     Q_INVOKABLE void clearActivity(const QString &key);
@@ -97,6 +113,7 @@ private:
     QSqlDatabase m_db;
     QVariantList m_gears;
     QVariantMap m_assignments;
+    QVariantMap m_exceptions;   // sport -> { country, radiusKm, gearId }
     int m_dueCount = 0;
     int m_soonCount = 0;
     bool m_loading = false;
