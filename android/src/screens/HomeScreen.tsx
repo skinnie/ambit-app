@@ -784,6 +784,11 @@ export default function HomeScreen() {
     ...(expFeatures.smartSensor
       ? [{ id: 'smartSensor', label: t.experimentalSmartSensor, icon: 'link' as const, onPress: () => navigation.navigate('SmartSensor') }]
       : []),
+    // Workout Calendar - same Apps/CustomModes mechanism as Intervals (guided-workout binaries
+    // in the WORKOUT menu), so it's gated identically: Ambit-only, connected, not Kailash/Traverse.
+    ...(expFeatures.workoutCalendar && connected && deviceType === 'ambit' && !isKailash(ambitInfo) && !isTraverse(ambitInfo)
+      ? [{ id: 'workoutCalendar', label: t.experimentalWorkoutCalendar, icon: 'chart' as const, onPress: () => navigation.navigate('WorkoutCalendar') }]
+      : []),
     // Gear tracker (v3): derived from the local gear DB + intervals.icu, so it's always
     // reachable — no connected watch needed, not gated behind Experimental.
     { id: 'gear', label: t.gearButton, icon: 'cycling' as const, onPress: () => navigation.navigate('Gear') },

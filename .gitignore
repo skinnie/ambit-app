@@ -140,3 +140,7 @@ desktop/*.exitcode
 /docs/explanation/suunto-cloud-api-note.md
 /docs/explanation/training-program.md
 /docs/explanation/unresolved-questions.md
+
+# Never commit the compiler x-functions-key (local override; public default lives in workout.py)
+tools/.compile_key
+.compile_key

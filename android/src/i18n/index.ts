@@ -669,6 +669,8 @@ const fr = {
   experimentalIntervalsDesc: 'Créer une séance d’intervalles (Suunto App ou séance planifiée).',
   experimentalSmartSensor: 'Smart Sensor',
   experimentalSmartSensorDesc: 'Ceinture cardio Suunto Smart Sensor via Bluetooth.',
+  experimentalWorkoutCalendar: 'Calendrier d’entraînement',
+  experimentalWorkoutCalendarDesc: 'Séances datées dans le menu WORKOUT, nommées « jj/mm_nom ».',
   smartSensorScreenTitle: 'Smart Sensor',
   appZoneScreenTitle: 'App Zone',
   intervalsScreenTitle: 'Intervalles',
@@ -735,6 +737,27 @@ const fr = {
   intervalsWriteBtn: 'Écrire sur la montre',
   intervalsWritten: 'Écrit sur la montre.',
   intervalsWriting: 'Écriture…',
+  // Workout Calendar (2026-08-21) - dated native guided workouts named "dd/mm_nom" dans le
+  // menu WORKOUT, contournant la zone TrainingProgram native (inaccessible). Compilation
+  // manuelle, comme Intervals - voir intervalsCompilerNote.
+  workoutCalendarWarning:
+    '⚠️ Expérimental, montres Ambit3 uniquement. Chaque séance se compile sur le site ' +
+    'communautaire tiers (pas Suunto), comme les séances d’intervalles ci-dessus. À la ' +
+    'synchronisation, tout ce qui est daté avant aujourd’hui est effacé de la montre et ' +
+    'remplacé par ce qui vient ensuite.',
+  workoutCalendarDateLabel: 'Date',
+  workoutCalendarModeLabel: 'Mode sportif',
+  workoutCalendarAddBtn: 'Ajouter au calendrier',
+  workoutCalendarAddedMsg: 'Ajouté au calendrier.',
+  workoutCalendarPlanTitle: 'Calendrier',
+  workoutCalendarPlanEmpty: 'Rien de prévu pour l’instant.',
+  workoutCalendarPending: 'en attente de compilation',
+  workoutCalendarPreviewBtn: 'Aperçu de la synchro',
+  workoutCalendarSyncBtn: 'Synchroniser avec la montre',
+  workoutCalendarSyncing: 'Synchronisation…',
+  workoutCalendarSyncedMsg: 'Montre synchronisée.',
+  workoutCalendarEmptyPlanMsg: 'Le calendrier est vide.',
+  workoutCalendarPickModeFirst: 'Choisissez un mode sportif.',
   // ── Gear tracker (v3) ──
   gearButton: 'Matériel',
   gearScreenTitle: 'Matériel',
@@ -1408,6 +1431,8 @@ const en: typeof fr = {
   experimentalIntervalsDesc: 'Build an interval workout (Suunto App or a planned move).',
   experimentalSmartSensor: 'Smart Sensor',
   experimentalSmartSensorDesc: 'Suunto Smart Sensor heart-rate belt over Bluetooth.',
+  experimentalWorkoutCalendar: 'Workout Calendar',
+  experimentalWorkoutCalendarDesc: 'Dated workouts in the WORKOUT menu, named "dd/mm_name".',
   smartSensorScreenTitle: 'Smart Sensor',
   appZoneScreenTitle: 'App Zone',
   intervalsScreenTitle: 'Intervals',
@@ -1473,6 +1498,26 @@ const en: typeof fr = {
   intervalsWriteBtn: 'Write to watch',
   intervalsWritten: 'Written to the watch.',
   intervalsWriting: 'Writing...',
+  // Workout Calendar (2026-08-21) - dated native guided workouts named "dd/mm_name" in the
+  // WORKOUT menu, sidestepping the unreachable native TrainingProgram region. Manual compile,
+  // same as Intervals above - see intervalsCompilerNote.
+  workoutCalendarWarning:
+    '⚠️ Experimental, Ambit3 watches only. Each workout compiles on the same third-party ' +
+    'community site as Intervals above (not Suunto). On sync, anything dated before today ' +
+    'is erased from the watch and replaced with whatever comes next.',
+  workoutCalendarDateLabel: 'Date',
+  workoutCalendarModeLabel: 'Sport mode',
+  workoutCalendarAddBtn: 'Add to Calendar',
+  workoutCalendarAddedMsg: 'Added to the calendar.',
+  workoutCalendarPlanTitle: 'Calendar',
+  workoutCalendarPlanEmpty: 'Nothing planned yet.',
+  workoutCalendarPending: 'awaiting compile',
+  workoutCalendarPreviewBtn: 'Preview sync',
+  workoutCalendarSyncBtn: 'Sync to Watch',
+  workoutCalendarSyncing: 'Syncing...',
+  workoutCalendarSyncedMsg: 'Watch synced.',
+  workoutCalendarEmptyPlanMsg: 'The calendar is empty.',
+  workoutCalendarPickModeFirst: 'Pick a sport mode.',
   // ── Gear tracker (v3) ──
   gearButton: 'Gear',
   gearScreenTitle: 'Gear',

@@ -27,6 +27,7 @@ import CalendarScreen from './src/screens/CalendarScreen';
 import SmartSensorScreen from './src/screens/SmartSensorScreen';
 import AppZoneScreen from './src/screens/AppZoneScreen';
 import IntervalsScreen from './src/screens/IntervalsScreen';
+import WorkoutCalendarScreen from './src/screens/WorkoutCalendarScreen';
 import GearScreen from './src/screens/GearScreen';
 import type { GarminConnectResult } from './src/native/GarminModule';
 import { ActivityRecord } from './src/database/db';
@@ -68,6 +69,10 @@ export type RootStackParamList = {
   SmartSensor: undefined;
   AppZone: undefined;
   Intervals: undefined;
+  // The Calendar feature (2026-08-21) - dated native guided workouts in the WORKOUT menu,
+  // named "dd/mm_name". "WorkoutCalendar" (not "Calendar") deliberately - that route name is
+  // already the activity-history month grid above; this is a different feature entirely.
+  WorkoutCalendar: undefined;
   // Gear tracker (v3): bikes/shoes + components (parts) + service reminders, local-first and
   // mirrored two-way to intervals.icu. Derived from the local gear DB, no device needed.
   Gear: undefined;
@@ -220,6 +225,11 @@ function AppShell() {
             name="Intervals"
             component={IntervalsScreen}
             options={{ title: t.intervalsScreenTitle }}
+          />
+          <Stack.Screen
+            name="WorkoutCalendar"
+            component={WorkoutCalendarScreen}
+            options={{ title: t.experimentalWorkoutCalendar }}
           />
           <Stack.Screen
             name="Gear"
