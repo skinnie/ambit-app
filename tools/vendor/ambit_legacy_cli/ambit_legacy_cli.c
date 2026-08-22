@@ -152,6 +152,15 @@ static int cmd_settings(void) {
 
     ambit_personal_settings_t *ps = libambit_personal_settings_alloc();
     int rc = ps ? libambit_personal_settings_get(dev, ps) : -1;
+    /* Real bug, caught 2026-08-22 comparing against openambit2's own devicemanager.cpp
+     * (the only other real, independent consumer of this library): personal_settings_get()
+     * NEVER touches waypoints/routes (checked personal.c directly - zero mentions) - only
+     * the SEPARATE libambit_navigation_read() call populates them. This function used to
+     * report waypoints_count/routes_count straight from `ps` without ever calling it, so
+     * every "0 waypoints, 0 routes" this project reported for the Ambit1 earlier the same
+     * session was never actually queried - same "verify a zero result" mistake as the
+     * skip_cb bug, on the same watch, same day. */
+    int nav_rc = (rc == 0) ? libambit_navigation_read(dev, ps) : -1;
     if (rc != 0) {
         fputs("@@JSON@@\n", stdout); printf("{\"ok\": false, \"error\": \"personal_settings_get failed, rc=%d\"}\n", rc);
         if (ps) libambit_personal_settings_free(ps);
@@ -162,9 +171,10 @@ static int cmd_settings(void) {
 
     fputs("@@JSON@@\n", stdout); printf("{\"ok\": true, \"weight_kg\": %.2f, \"birthyear\": %u, \"max_hr\": %u, "
            "\"rest_hr\": %u, \"fitness_level\": %u, \"is_male\": %u, \"length_cm\": %u, "
-           "\"language\": %u, \"units_mode\": %u, \"waypoints_count\": %u, \"waypoints\": [\n",
+           "\"language\": %u, \"units_mode\": %u, \"navigation_read_rc\": %d, "
+           "\"waypoints_count\": %u, \"waypoints\": [\n",
            ps->weight / 100.0, ps->birthyear, ps->max_hr, ps->rest_hr, ps->fitness_level,
-           ps->is_male, ps->length, ps->language, ps->units_mode, ps->waypoints.count);
+           ps->is_male, ps->length, ps->language, ps->units_mode, nav_rc, ps->waypoints.count);
     for (uint16_t i = 0; i < ps->waypoints.count; i++) {
         ambit_waypoint_t *w = &ps->waypoints.data[i];
         printf("    {\"name\": ");
@@ -173,7 +183,23 @@ static int cmd_settings(void) {
                w->latitude / 10000000.0, w->longitude / 10000000.0, w->altitude, w->type,
                (i + 1 < ps->waypoints.count) ? "," : "");
     }
-    printf("  ], \"routes_count\": %u}\n", ps->routes.count);
+    printf("  ], \"routes_count\": %u, \"routes\": [\n", ps->routes.count);
+    for (uint8_t i = 0; i < ps->routes.count; i++) {
+        ambit_route_t *r = &ps->routes.data[i];
+        printf("    {\"name\": ");
+        json_str(stdout, r->name);
+        printf(", \"waypoint_count\": %u, \"points_count\": %u, \"distance_m\": %u, "
+               "\"altitude_asc_m\": %u, \"altitude_dec_m\": %u, \"points\": [\n",
+               r->waypoint_count, r->points_count, r->distance, r->altitude_asc, r->altitude_dec);
+        for (uint16_t p = 0; p < r->points_count; p++) {
+            ambit_routepoint_t *pt = &r->points[p];
+            printf("      {\"lat\": %.7f, \"lon\": %.7f, \"altitude_m\": %d}%s\n",
+                   pt->lat / 10000000.0, pt->lon / 10000000.0, pt->altitude,
+                   (p + 1 < r->points_count) ? "," : "");
+        }
+        printf("    ]}%s\n", (i + 1 < ps->routes.count) ? "," : "");
+    }
+    printf("  ]}\n");
 
     libambit_personal_settings_free(ps);
     libambit_close(dev);
