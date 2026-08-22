@@ -43,6 +43,29 @@ reverse-engineering here would have been possible, or would have taken far longe
   [terre-adelie SuuntoX6HR wiki](http://wiki.terre-adelie.org/SuuntoX6HR). Nobody on this project
   owns an X6HR, so this legacy-device support rides entirely on their real-hardware work.
 
+- **Ulrik ([evelbulgroz/suunto-t6-sync](https://github.com/evelbulgroz/suunto-t6-sync))** -
+  the reverse-engineered Suunto T6 / T6c / T6d FTDI-USB protocol and training-log decoding
+  (MIT), developed against real T6d units. Vendored unmodified at `tools/vendor/suunto_t6_sync/`
+  and wrapped by `tools/suunto_t6.py` - this project owns no T6 either, so the same
+  real-hardware-development-is-the-verification reasoning as the X6HR applies.
+
+- **Ivor Wanders ([iwanders/gpspod](https://github.com/iwanders/gpspod))** - the
+  reverse-engineered Suunto GPS Track Pod USB protocol (MIT), vendored at `tools/vendor/gpspod/`
+  and used by `tools/gps_track_pod.py` to read the pod tracks the T6/X6HR heart-rate logs are
+  merged with into a mapped activity.
+
+- **[intervals.icu](https://intervals.icu)** (David Tinker) - the training-analysis platform
+  this app integrates with: activity upload and the Gear tracker's two-way sync of
+  bikes / shoes / components / service reminders both talk to its API.
+
+- **[OpenStreetMap](https://www.openstreetmap.org/copyright)** - © OpenStreetMap contributors
+  (ODbL). The map views render OSM tiles.
+
+- **[Open-Meteo](https://open-meteo.com/)** - weather data (CC BY 4.0), for the weather card.
+
+- **[Google Material Symbols](https://github.com/google/material-design-icons)** - the icon
+  set (Apache License 2.0) used throughout the desktop UI.
+
 - **The App-Zone interval/workout example authors** - real, published App-Zone-language
   workout apps this project's structured-workout findings (Findings 8-11) were checked against.
   Chief among them **[claha/suunto](https://github.com/claha/suunto)**, whose Python generator
