@@ -328,6 +328,21 @@ Item {
                         }
                     }
                 }
+
+                // ---- AI footprint note (only when the chat really calls Claude) ----
+                Text {
+                    Layout.fillWidth: true
+                    Layout.leftMargin: Theme.spacingMedium
+                    Layout.rightMargin: Theme.spacingMedium
+                    Layout.bottomMargin: Theme.spacingSmall
+                    visible: CoachService.chatBackend === "claude"
+                    text: qsTr("🌱 Use AI mindfully — one chat ≈ ~2 g CO₂ (estimates vary ~0.03–15 g), about "
+                             + "driving 20 m or a tree's next ~45 min. The readiness light and workout picks "
+                             + "are plain maths (free, offline); only chatting uses AI.")
+                    color: Theme.mutedText
+                    font.pixelSize: Theme.fontSizeTiny
+                    wrapMode: Text.WordWrap
+                }
             }
         }
     }
