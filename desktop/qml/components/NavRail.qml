@@ -240,7 +240,7 @@ Rectangle {
             width: parent.width
             visible: DeviceService.suuntoT6ExperimentEnabled
             glyph: Icons.activities
-            label: qsTr("Suunto T6")
+            label: qsTr("Legacy Suunto")
             selected: root.currentPage === "suuntoT6"
             onClicked: root.pageSelected("suuntoT6")
         }

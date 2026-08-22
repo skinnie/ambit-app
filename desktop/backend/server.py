@@ -2527,9 +2527,12 @@ class Handler(BaseHTTPRequestHandler):
                 return []
             return [{"name": p.name, "path": str(p)}
                     for p in sorted(directory.glob(pattern), reverse=True)]
+        # "t6" is really "any legacy wristop sidecar" - the X6HR emits the same {points} shape,
+        # so its exports merge with a Pod track through the identical path.
         self._send_json(200, {"ok": True,
                               "pod": _listing(GPSTRACKPOD_DIR, "*.gpx"),
-                              "t6": _listing(SUUNTOT6_DIR, "*.json")})
+                              "t6": _listing(SUUNTOT6_DIR, "*.json")
+                                    + _listing(SUUNTOX6HR_DIR, "*.json")})
 
     def _handle_legacymerge_devices(self):
         """GET /api/legacymerge/devices - what's plugged in RIGHT NOW, for the device-first
