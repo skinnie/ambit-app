@@ -251,6 +251,30 @@ def catalog_entry_binary(rule_id):
 # so two plugged watches raced and pages loaded inconsistently).
 SELECTED_PRODUCT_ID = None
 
+# Real, 2026-08-22 (André's Ambit1, serial 1614984607001600): these product IDs speak the
+# older, pre-SBEM PMEM 2.0 protocol - write_nav.py's own SBEM queries (settings 0x1100,
+# memory map 0x0b21, POIs 0x0b24) come back empty on them, not an error, confirmed live. Only
+# device identity/battery (0x0000/0x0306) are common to the whole family - /api/device and
+# /api/devices already work for these unmodified. Settings/waypoints/training-logs route
+# through tools/legacy_link.py instead - see that file and tools/vendor/ambit_legacy_cli/.
+LEGACY_PRODUCT_IDS = {0x0010, 0x0019, 0x001A, 0x001D}  # Bluebird, Duck, Colibri, Greentit
+
+
+def selected_is_legacy():
+    """True when the pinned watch (or, with none pinned, whichever is plugged) is an
+    Ambit1/2. Falls back to a real device_info.py query when nothing is pinned - cheap (one
+    0x0000/0x0306 round trip, already needed for /api/device) and correct even with the
+    default "whichever is plugged" selection, unlike guessing from SELECTED_PRODUCT_ID alone."""
+    if SELECTED_PRODUCT_ID is not None:
+        return SELECTED_PRODUCT_ID in LEGACY_PRODUCT_IDS
+    code, out, err = run_tool("device_info.py", ["--json"])
+    info = None
+    try:
+        info = json.loads(out.strip().splitlines()[-1]) if out.strip() else None
+    except Exception:  # noqa: BLE001 - not parseable means "don't know", not legacy
+        info = None
+    return bool(info) and info.get("model") in ("Bluebird", "Duck", "Colibri", "Greentit")
+
 
 def run_tool(script, args, timeout=180):
     """Runs one of tools/*.py exactly as a person at a terminal would. Returns
@@ -340,6 +364,8 @@ class Handler(BaseHTTPRequestHandler):
             self._handle_kailash_tracklog()
         elif self.path == "/api/settings" or self.path.startswith("/api/settings?"):
             self._handle_settings_read()
+        elif self.path == "/api/legacy/settings":
+            self._handle_legacy_settings()
         elif self.path == "/api/customodes":
             self._handle_customodes_read()
         elif self.path == "/api/customodes/field-types":
@@ -529,6 +555,9 @@ class Handler(BaseHTTPRequestHandler):
         if ble_bridge.bridge.status().get("handshake_done"):
             self._handle_activities_ble(int(known_count), mark_synced=mark_synced)
             return
+        if selected_is_legacy():
+            self._handle_activities_legacy()
+            return
         with tempfile.TemporaryDirectory() as tmpdir:
             tool_args = ["--gpx-out", tmpdir, "--fit-out", tmpdir, "--known-count", known_count]
             if mark_synced:
@@ -553,6 +582,60 @@ class Handler(BaseHTTPRequestHandler):
                               if master_path.exists() else len(activities))
             self._send_json(200, {"ok": True, "activities": activities,
                                    "total_entries": total_entries, "raw_output": out})
+
+    def _handle_activities_legacy(self):
+        """The Ambit1/2 path for GET /api/activities - tools/legacy_link.py's `logs`
+        (openambit's PMEM 2.0 log read, the only implementation of this older protocol in
+        the project - see tools/vendor/ambit_legacy_cli/). Real, hardware-tested 2026-08-22
+        against André's Ambit1 (0 logs currently on that watch - the code path runs clean,
+        content itself is unverified beyond that). GPX only for now: no FIT encoder exists
+        yet for this family's log format, so fit_base64 is always null - same "real GPS
+        track, no FIT" shape ActivityService already tolerates from tools/gps_track_pod.py.
+        known_count/mark_synced (query params on the SBEM path above) don't apply here: the
+        legacy log read has no partial-skip or synced-flag mechanism in this project yet."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            code, out, err = run_tool("legacy_link.py", ["logs", tmpdir])
+            if code != 0:
+                self._send_json(502, {"ok": False, "raw_output": out, "stderr": err})
+                return
+            info = self._parse_last_json_line(out)
+            if info is None or not info.get("ok"):
+                self._send_json(502, {"ok": False, "error": "legacy_link.py logs produced "
+                                       "no parseable JSON", "raw_output": out, "stderr": err})
+                return
+            activities = []
+            for entry in info.get("logs", []):
+                gpx_path = Path(entry["gpx_file"])
+                activities.append({
+                    "index": entry["index"],
+                    "gpx": gpx_path.read_text() if gpx_path.exists() else "",
+                    "fit_base64": None,
+                })
+            self._send_json(200, {"ok": True, "activities": activities,
+                                   "total_entries": info.get("total_entries", len(activities)),
+                                   "raw_output": out})
+
+    def _handle_legacy_settings(self):
+        """GET /api/legacy/settings - Ambit1/2 personal settings + waypoints, real read via
+        tools/legacy_link.py's `settings` (openambit's PMEM 2.0 personal_settings_get).
+        Deliberately a separate endpoint from /api/settings, not a branch inside it: that
+        endpoint's schema (settings_write.py's Ambit3/Kailash field tables) doesn't apply to
+        this much smaller, differently-shaped struct, and this family has no write path yet
+        either (see the ambit-app-ambit12-settings-write memory) - hijacking the existing
+        read+write Settings page would invite a write UI this protocol can't back up.
+        Real, hardware-tested 2026-08-22 against André's Ambit1 (weight/birthyear/HR/etc
+        all read correctly; 0 waypoints/routes currently on that watch)."""
+        if not selected_is_legacy():
+            self._send_json(409, {"ok": False, "error": "the selected/connected watch is "
+                                   "not an Ambit1/2 - use /api/settings instead"})
+            return
+        code, out, err = run_tool("legacy_link.py", ["settings"])
+        info = self._parse_last_json_line(out)
+        if info is None:
+            self._send_json(502, {"ok": False, "error": "legacy_link.py settings produced "
+                                   "no parseable JSON", "raw_output": out, "stderr": err})
+            return
+        self._send_json(200 if info.get("ok") else 502, info)
 
     def _handle_activities_ble(self, known_count, mark_synced=False):
         """The BLE path for GET /api/activities - tools/ble_activities.py. Same real
@@ -1329,9 +1412,9 @@ class Handler(BaseHTTPRequestHandler):
         self._send_json(200 if info.get("ok") else 502, info)
 
     def _handle_settings_read(self):
-        """GET /api/settings[?device=kailash] - Ambit3 (and Traverse/Ambit2, same schema
-        family) by default; pass ?device=kailash for Kailash's own smaller, separately-
-        curated table (added 2026-08-08, same day as the Ambit3 one - see
+        """GET /api/settings[?device=kailash] - Ambit3/Traverse by default; pass
+        ?device=kailash for Kailash's own smaller, separately-curated table (added
+        2026-08-08, same day as the Ambit3 one - see
         tools/settings_write.py's own docstring for both tables' real sources: SuuntoLink's
         screenshots for the Ambit3, the real 7R iOS app's own screenshots for Kailash).
         Real, read-only 0x1100 DeviceSettings query - see custom_modes_andre.md for how

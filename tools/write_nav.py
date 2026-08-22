@@ -45,6 +45,18 @@ PRODUCT_IDS = {
     # missing here meant Link.open() raised "no Ambit3 on the USB bus" even with the real
     # device plugged in, since hid.enumerate() only ever looked at the product IDs above.
     0x002A: "Kailash (Hoopoe)",
+    # Real, 2026-08-22: confirmed live against André's actual Ambit1 (serial
+    # 1614984607001600, fw 2.5.7.0) - CMD_DEVICE_INFO (0x0000) and CMD_STATUS (0x0306) are
+    # byte-for-byte openambit's shared device_driver_common.c commands (device_info.py's own
+    # header already said so), common to the WHOLE family including the pre-SBEM Ambit1/2,
+    # not just Ambit3+ - only PRODUCT_IDS was missing these, hid.enumerate() never looked for
+    # them. Confirmed the SBEM object-model commands (settings 0x1100, memory map 0x0b21,
+    # POIs 0x0b24) do NOT extend to Ambit1: they return a 0-byte reply, not an error - real
+    # ambit1/2 settings/waypoints/logs need the legacy PMEM 2.0 protocol instead, which this
+    # file does not implement (see tools/legacy_link.py). Ambit2 product IDs are added
+    # alongside Bluebird on the same evidence (shared device_driver_ambit driver, device_support.c).
+    0x0010: "Ambit (Bluebird)", 0x0019: "Ambit2 (Duck)",
+    0x001A: "Ambit2 S (Colibri)", 0x001D: "Ambit2 R (Greentit)",
 }
 
 

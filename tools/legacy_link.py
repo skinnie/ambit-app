@@ -1,0 +1,107 @@
+#!/usr/bin/env python3
+"""Device info / personal settings / training logs for the legacy Ambit1/2 ("Bluebird")
+family - the PMEM 2.0 protocol that predates SBEM (write_nav.py's own protocol).
+
+2026-08-22, real hardware (André's Ambit1, serial 1614984607001600): CMD_DEVICE_INFO/
+CMD_STATUS (0x0000/0x0306) turned out common to the whole family - write_nav.py's own
+PRODUCT_IDS now covers Ambit1/2, and device_info.py/list_watches.py already work for them
+unmodified. But the higher-level SBEM object queries (settings 0x1100, memory map 0x0b21,
+POIs 0x0b24) come back EMPTY, not an error, confirming Ambit1/2 predate SBEM and speak a
+different, older command set over the same transport. This file is the "one file per format"
+tool (see the project's own convention: a new watch feature/format gets its own file
+importing from write_nav.py, never a new elif branch there) for that older format - except
+the format itself isn't reimplemented here, it's wrapped: see tools/vendor/ambit_legacy_cli/
+and tools/vendor/openambit_libambit/README.md for why (a real, hardware-proven implementation
+already exists - openambit's libambit - so this shells out to a small compiled CLI built on
+top of it, the one piece of C in an otherwise all-Python tools/ directory).
+
+Deliberately READ-ONLY: device-info, personal settings (incl. waypoints), training logs as
+GPX. No write path - Ambit1/2 personal-settings write is real (SuuntoLink does it) but its
+wire format has never been captured in this project (see the ambit-app-ambit12-settings-write
+memory), so there's nothing safe to send yet.
+
+    ./tools/legacy_link.py device-info
+    ./tools/legacy_link.py settings
+    ./tools/legacy_link.py logs OUTDIR
+"""
+
+import json
+import pathlib
+import subprocess
+import sys
+
+HERE = pathlib.Path(__file__).resolve().parent
+
+
+def _binary_path():
+    """The compiled ambit_legacy_cli binary - dev tree path, or PyInstaller's frozen
+    _MEIPASS/tools/vendor/... (bundled the same way tools/ itself is - see
+    desktop/backend/server.py's own FROZEN branch, tools/packaging/ambit_backend.spec)."""
+    candidates = [
+        HERE / "vendor" / "ambit_legacy_cli" / "ambit_legacy_cli",
+        HERE / "vendor" / "ambit_legacy_cli" / "ambit_legacy_cli.exe",
+    ]
+    for c in candidates:
+        if c.exists():
+            return c
+    return None
+
+
+def run(args):
+    """Runs the compiled CLI, returns its parsed JSON stdout object. Raises RuntimeError
+    with a clear, actionable message (never a build isn't findable) if it's missing or the
+    process failed to produce parseable JSON - the same "report, don't mask" discipline as
+    every other tools/*.py CLI in this project."""
+    binary = _binary_path()
+    if binary is None:
+        raise RuntimeError(
+            "ambit_legacy_cli is not built - run tools/vendor/ambit_legacy_cli/build.sh "
+            "once (needs cmake + a C compiler + libusb-1.0; see that script's own header "
+            "comment). Ambit1/2 settings/logs need it; device identity/battery don't - "
+            "those already work via write_nav.py/device_info.py.")
+    proc = subprocess.run([str(binary), *args], capture_output=True, text=True, timeout=120)
+    try:
+        # libambit itself prints a couple of unconditional debug lines to stdout ahead of
+        # the real payload (vendored, unmodified - see openambit_libambit/README.md), and
+        # the JSON payload can itself contain embedded newlines (the `logs` index is
+        # pretty-printed) - splitlines()[-1] would grab a fragment. ambit_legacy_cli.c
+        # prints a "@@JSON@@" marker on its own line right before the real payload instead.
+        return json.loads(proc.stdout.rsplit("@@JSON@@\n", 1)[-1].strip())
+    except Exception as exc:  # noqa: BLE001 - report the real process output, never mask
+        raise RuntimeError(
+            f"ambit_legacy_cli {' '.join(args)} produced no parseable JSON "
+            f"(exit {proc.returncode}): {exc}\nstdout: {proc.stdout!r}\nstderr: {proc.stderr!r}")
+
+
+def device_info():
+    return run(["device-info"])
+
+
+def settings():
+    return run(["settings"])
+
+
+def logs(outdir):
+    return run(["logs", str(outdir)])
+
+
+def main():
+    if len(sys.argv) < 2 or sys.argv[1] not in ("device-info", "settings", "logs"):
+        sys.exit(f"usage: {sys.argv[0]} device-info|settings|logs [OUTDIR]")
+    cmd = sys.argv[1]
+    try:
+        if cmd == "logs":
+            if len(sys.argv) < 3:
+                sys.exit(f"usage: {sys.argv[0]} logs OUTDIR")
+            result = logs(sys.argv[2])
+        else:
+            result = run([cmd])
+    except RuntimeError as exc:
+        print(json.dumps({"ok": False, "error": str(exc)}))
+        return 1
+    print(json.dumps(result))
+    return 0 if result.get("ok") else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
