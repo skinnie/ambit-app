@@ -21,6 +21,13 @@ PageFlickable {
 
     readonly property string api: "http://127.0.0.1:8766"
 
+    // Which legacy wristop the backend detected: "t6" (FTDI cradle) or "x6hr" (serial/IR). One
+    // page auto-detects and routes to that device's own endpoints; the merge below is shared.
+    property string device: ""
+    property string modelName: qsTr("T6 / X6HR")
+    // The T6 exports FIT; the X6HR (no vendored FIT writer) exports GPX. Both merge with a Pod.
+    property string exportFormat: "fit"
+
     property bool busy: false
     property var deviceInfo: null
     property string statusError: ""
@@ -54,26 +61,31 @@ PageFlickable {
             root.busy = false
             let d = null
             try { d = JSON.parse(xhr.responseText) } catch (e) {}
-            if (!d || !d.ok) {
-                root.deviceInfo = null
-                root.logs = []
-                root.statusError = (d && d.error) ? d.error : qsTr("Couldn't reach the app backend.")
+            if (!d) {
+                root.device = ""; root.deviceInfo = null; root.logs = []
+                root.statusError = qsTr("Couldn't reach the app backend.")
                 return
             }
-            if (!d.present) {
-                root.deviceInfo = null
-                root.logs = []
-                root.statusError = qsTr("No Suunto T6 detected. Connect it with its FTDI cable.")
+            if (!d.ok || !d.device) {
+                root.device = ""; root.deviceInfo = null; root.logs = []
+                root.statusError = (d && d.error) ? d.error
+                    : qsTr("No Suunto T6 or X6HR detected. Connect it with its PC-interface cable.")
                 return
             }
-            root.deviceInfo = d
+            root.device = d.device
+            root.modelName = d.device === "x6hr" ? qsTr("Suunto X6HR") : qsTr("Suunto T6")
+            root.exportFormat = d.device === "x6hr" ? "gpx" : "fit"
+            root.deviceInfo = d.status || null
             refreshLogs()
         }
-        xhr.open("GET", api + "/api/suuntot6/status")
+        xhr.open("GET", api + "/api/legacywatch/status")
         xhr.send()
     }
 
+    function _deviceApi() { return root.device === "x6hr" ? "suuntox6hr" : "suuntot6" }
+
     function refreshLogs() {
+        if (!root.device) { root.logs = []; return }
         const xhr = new XMLHttpRequest()
         xhr.onreadystatechange = function() {
             if (xhr.readyState !== XMLHttpRequest.DONE)
@@ -82,7 +94,7 @@ PageFlickable {
             try { d = JSON.parse(xhr.responseText) } catch (e) {}
             root.logs = (d && d.ok && d.logs) ? d.logs : []
         }
-        xhr.open("GET", api + "/api/suuntot6/logs")
+        xhr.open("GET", api + "/api/" + _deviceApi() + "/logs")
         xhr.send()
     }
 
@@ -167,7 +179,7 @@ PageFlickable {
                 root.actionText = (d && d.error) ? d.error : qsTr("Export failed.")
             }
         }
-        xhr.open("POST", api + "/api/suuntot6/retrieve")
+        xhr.open("POST", api + "/api/" + _deviceApi() + "/retrieve")
         xhr.setRequestHeader("Content-Type", "application/json")
         xhr.send(JSON.stringify({ index: index, format: fmt }))
     }
@@ -209,7 +221,7 @@ PageFlickable {
         y: Theme.spacingLarge
 
         Text {
-            text: qsTr("Suunto T6")
+            text: root.modelName
             color: Theme.text
             font.pixelSize: Theme.fontSizeTitle
             font.bold: true
@@ -223,9 +235,10 @@ PageFlickable {
             wrapMode: Text.WordWrap
             color: Theme.mutedText
             font.pixelSize: Theme.fontSizeBody
-            text: qsTr("An older heart-rate training computer with no GPS. Its export is a " +
-                        "heart-rate + barometric-altitude series; to get a map track, merge it " +
-                        "with a GPS Track Pod recording of the same session below.")
+            text: qsTr("An older Suunto wristop with no GPS - a T6 heart-rate computer or an " +
+                        "X6HR (whichever is plugged in). Its export is a heart-rate + barometric-" +
+                        "altitude series; to get a map track, merge it with a GPS Track Pod " +
+                        "recording of the same session below.")
         }
 
         // --- Status ---
@@ -256,7 +269,7 @@ PageFlickable {
                     color: Theme.text
                     font.pixelSize: Theme.fontSizeBody
                     text: root.deviceInfo
-                          ? (root.deviceInfo.info || "") + "\n" + (root.deviceInfo.status || "")
+                          ? (root.modelName + "   serial " + (root.deviceInfo.serial || "?"))
                           : ""
                 }
                 RoundedButton {
@@ -303,9 +316,9 @@ PageFlickable {
                         }
                         RoundedButton {
                             id: fitBtn
-                            text: qsTr("Export FIT")
+                            text: qsTr("Export %1").arg(root.exportFormat.toUpperCase())
                             enabled: !root.busy
-                            onClicked: root.exportLog(modelData.index, "fit")
+                            onClicked: root.exportLog(modelData.index, root.exportFormat)
                         }
                     }
                 }

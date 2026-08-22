@@ -36,6 +36,13 @@ reverse-engineering here would have been possible, or would have taken far longe
   structured-workout JSON schema this project's own workout generator (`tools/workout.py`)
   targets, alongside `openambitproject/openambit#257` and Suunto's own French tutorial.
 
+- **tomoya kamata (T.Kamata)** - author of [`nabeka/x6hr-python`](https://github.com/nabeka/x6hr-python)
+  (GPLv3), the reverse-engineered serial protocol and log decoding for the Suunto X6HR wristop,
+  developed against a real X6HR. `tools/suunto_x6hr.py` is a Python-3 port of it, cross-checked
+  against **[larshesel/suunto_x6hr_erl](https://github.com/larshesel/suunto_x6hr_erl)** and the
+  [terre-adelie SuuntoX6HR wiki](http://wiki.terre-adelie.org/SuuntoX6HR). Nobody on this project
+  owns an X6HR, so this legacy-device support rides entirely on their real-hardware work.
+
 - **The App-Zone interval/workout example authors** - real, published App-Zone-language
   workout apps this project's structured-workout findings (Findings 8-11) were checked against.
   Chief among them **[claha/suunto](https://github.com/claha/suunto)**, whose Python generator
