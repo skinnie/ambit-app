@@ -93,6 +93,7 @@ GPSTRACKPOD_DIR = Path.home() / "AmbitAppBackups" / "gpstrackpod"
 # the sibling folder. Same built-blind, no-real-device-to-test-against reasoning as the GPS
 # Track Pod above - see tools/suunto_t6.py's own module docstring.
 SUUNTOT6_DIR = Path.home() / "AmbitAppBackups" / "suuntot6"
+SUUNTOX6HR_DIR = Path.home() / "AmbitAppBackups" / "suuntox6hr"
 LEGACYMERGE_DIR = Path.home() / "AmbitAppBackups" / "legacy-merged"
 
 # Confirmed live and fully unauthenticated, 2026-08-05 (docs/sgee_andre.md) - no AppKey/account
@@ -374,6 +375,12 @@ class Handler(BaseHTTPRequestHandler):
             self._handle_suuntot6_status()
         elif self.path == "/api/suuntot6/logs":
             self._handle_suuntot6_logs()
+        elif self.path == "/api/suuntox6hr/status":
+            self._handle_suuntox6hr_status()
+        elif self.path == "/api/suuntox6hr/logs":
+            self._handle_suuntox6hr_logs()
+        elif self.path == "/api/legacywatch/status":
+            self._handle_legacywatch_status()
         elif self.path == "/api/legacymerge/sources":
             self._handle_legacymerge_sources()
         elif self.path == "/api/legacymerge/devices":
@@ -451,6 +458,8 @@ class Handler(BaseHTTPRequestHandler):
             self._handle_gpstrackpod_logs()
         elif self.path == "/api/suuntot6/retrieve":
             self._handle_suuntot6_retrieve(body)
+        elif self.path == "/api/suuntox6hr/retrieve":
+            self._handle_suuntox6hr_retrieve(body)
         elif self.path == "/api/legacymerge/run":
             self._handle_legacymerge_run(body)
         elif self.path == "/api/legacymerge/live":
@@ -2447,6 +2456,68 @@ class Handler(BaseHTTPRequestHandler):
                                    "raw_output": out, "stderr": err})
             return
         self._send_json(200 if result.get("ok") else 502, result)
+
+    # ── Suunto X6HR (experimental legacy wristop, serial/IR - see tools/suunto_x6hr.py) ──
+
+    def _handle_suuntox6hr_status(self):
+        """GET /api/suuntox6hr/status - serial number + units, or a clean "not present"."""
+        code, out, err = run_tool("suunto_x6hr.py", ["--status", "--json"])
+        result = self._parse_last_json_line(out)
+        if result is None:
+            self._send_json(502, {"ok": False, "error": "suunto_x6hr.py produced no JSON",
+                                   "raw_output": out, "stderr": err})
+            return
+        self._send_json(200, result)
+
+    def _handle_suuntox6hr_logs(self):
+        """GET /api/suuntox6hr/logs - chrono + hiking logs on the device."""
+        code, out, err = run_tool("suunto_x6hr.py", ["--list", "--json"])
+        result = self._parse_last_json_line(out)
+        if result is None:
+            self._send_json(502, {"ok": False, "error": "suunto_x6hr.py produced no JSON",
+                                   "raw_output": out, "stderr": err})
+            return
+        self._send_json(200 if result.get("ok") else 502, result)
+
+    def _handle_suuntox6hr_retrieve(self, body):
+        """POST /api/suuntox6hr/retrieve. Body: {"index": int, "format": "gpx"|"csv"|"json"}.
+        Writes the export + a JSON sample sidecar (for the merge) into SUUNTOX6HR_DIR - the same
+        sidecar shape suunto_t6.py emits, so legacy_merge consumes it identically."""
+        index = body.get("index")
+        fmt = body.get("format", "gpx")
+        if not isinstance(index, int):
+            self._send_json(400, {"ok": False, "error": "missing \"index\" (int)"})
+            return
+        if fmt not in ("gpx", "csv", "json"):
+            self._send_json(400, {"ok": False, "error": "format must be gpx, csv or json"})
+            return
+        SUUNTOX6HR_DIR.mkdir(parents=True, exist_ok=True)
+        out_path = SUUNTOX6HR_DIR / f"suunto_x6hr_{index}.{fmt}"
+        args = ["--retrieve", str(index), "--out", str(out_path), "--format", fmt, "--json",
+                "--samples-out", str(SUUNTOX6HR_DIR / f"suunto_x6hr_{index}.json")]
+        code, out, err = run_tool("suunto_x6hr.py", args)
+        result = self._parse_last_json_line(out)
+        if result is None:
+            self._send_json(502, {"ok": False, "error": "suunto_x6hr.py produced no JSON",
+                                   "raw_output": out, "stderr": err})
+            return
+        self._send_json(200 if result.get("ok") else 502, result)
+
+    def _handle_legacywatch_status(self):
+        """GET /api/legacywatch/status - detect whichever legacy Suunto wristop is connected:
+        the T6 first (it announces its FTDI USB cable), then the X6HR (probed on a plain serial
+        port). Returns {ok, device: "t6"|"x6hr", status} so one page can auto-detect and then
+        pull that device's own logs. Neither present -> {ok:false, device:null}."""
+        for device, script in (("t6", "suunto_t6.py"), ("x6hr", "suunto_x6hr.py")):
+            code, out, err = run_tool(script, ["--status", "--json"])
+            st = self._parse_last_json_line(out)
+            if st and st.get("ok"):
+                self._send_json(200, {"ok": True, "device": device, "status": st})
+                return
+        self._send_json(200, {"ok": False, "device": None,
+                              "error": "No Suunto T6 or X6HR detected. Connect it with its "
+                                       "PC-interface cable (T6: FTDI USB cradle; X6HR: the "
+                                       "serial/IR pod via a USB-serial adapter)."})
 
     def _handle_legacymerge_sources(self):
         """GET /api/legacymerge/sources - the GPS Track Pod tracks (GPSTRACKPOD_DIR/*.gpx) and

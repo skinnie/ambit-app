@@ -40,13 +40,6 @@ from datetime import datetime, timedelta, timezone
 BAUD = 9600  # nabeka's reader opens the port at pyserial's default (9600 8N1); kept the same.
 
 
-def _require_pyserial():
-    try:
-        import serial  # noqa: F401
-    except ImportError:
-        sys.exit("pyserial is not installed - `pip install pyserial` to talk to a real X6HR.")
-
-
 def _autodetect_port() -> str | None:
     """First plausible serial port, or None. The X6HR's USB-serial adapter has no unique
     Suunto VID (it's whatever FTDI/CP210x/CH340 cable the owner used), so unlike the T6 we
@@ -198,8 +191,12 @@ def chrono_to_points(log) -> list[dict]:
 # ─── serial open ────────────────────────────────────────────────────────────────────────────
 
 def _open(port_name):
-    _require_pyserial()
-    import serial
+    """Open the X6HR on a serial port, or None if it can't (pyserial missing, or no port) -
+    callers turn None into a clean JSON "not present" answer rather than an exception."""
+    try:
+        import serial
+    except ImportError:
+        return None
     port_name = port_name or _autodetect_port()
     if not port_name:
         return None
