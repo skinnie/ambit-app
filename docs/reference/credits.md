@@ -66,6 +66,23 @@ reverse-engineering here would have been possible, or would have taken far longe
 - **[Google Material Symbols](https://github.com/google/material-design-icons)** - the icon
   set (Apache License 2.0) used throughout the desktop UI.
 
+The **Coach** feature (readiness beacon + chat) stands on further prior work:
+
+- **The CTL / ATL / TSB "Performance Manager" model** - Eric Banister's impulse-response model
+  of training load, popularised as the Performance Manager Chart by **Dr. Andrew Coggan** and
+  **Hunter Allen** (and TrainingPeaks). The Coach's Fitness / Fatigue / Freshness readiness math
+  (`coachservice.cpp`'s exponentially-weighted CTL/ATL pass) is that model - honestly limited
+  here to a duration-based load signal, since this device family decodes no power or HR strap.
+
+- **[joaodrp/wahoo-systm-mcp](https://github.com/joaodrp/wahoo-systm-mcp)** - the SYSTM
+  catalogue MCP server the Coach's "live" library source is designed to read (via a small HTTP
+  bridge in front of its stdio JSON-RPC).
+
+- **Wahoo SYSTM** (formerly **The Sufferfest**) - the structured-workout catalogue whose real
+  sessions (TSS / IF / 4DP metrics) the Coach's library and its bundled offline sample
+  (`systm-sample.json`) are built from. SYSTM and its content are Wahoo's; used here only to
+  describe and match workouts, not redistributed.
+
 - **The App-Zone interval/workout example authors** - real, published App-Zone-language
   workout apps this project's structured-workout findings (Findings 8-11) were checked against.
   Chief among them **[claha/suunto](https://github.com/claha/suunto)**, whose Python generator
