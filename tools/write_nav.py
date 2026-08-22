@@ -57,6 +57,19 @@ PRODUCT_IDS = {
     # alongside Bluebird on the same evidence (shared device_driver_ambit driver, device_support.c).
     0x0010: "Ambit (Bluebird)", 0x0019: "Ambit2 (Duck)",
     0x001A: "Ambit2 S (Colibri)", 0x001D: "Ambit2 R (Greentit)",
+    # Real, 2026-08-22, live on André's own Ambit1: unlike the Ambit3/Kailash family (BSL
+    # keeps the app's own product_id, only the 0x0000 model STRING flips to "BSL"),
+    # Bluebird's bootloader re-enumerates under its OWN distinct product_id - real lsusb
+    # output: "ID 1493:0011 Suunto AmbitBSL". Needed here (not just firmware_write.py's own
+    # LEGACY_BSL_PID map) because Link.open() looks up any explicit product_id in this table
+    # unconditionally for its display label - see firmware_write.py's poll_pid_reopen().
+    # Deliberately no "bluebird" substring anywhere in this label - resolve_product_id()'s
+    # --device matching is a plain case-insensitive substring test, and anything containing
+    # "bluebird" makes "--device Bluebird" ambiguous against 0x0010 above the instant a
+    # watch is (however briefly) sitting in its bootloader. codename_for_pid() isn't used
+    # for this pid by anything real, so the mismatch with the "(codename)" convention here
+    # is deliberate, not an oversight.
+    0x0011: "Ambit Bootloader (AmbitBSL)",
 }
 
 

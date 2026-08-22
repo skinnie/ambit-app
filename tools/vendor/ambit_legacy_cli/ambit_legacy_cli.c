@@ -228,9 +228,51 @@ static int cmd_logs(const char *outdir) {
     return ok ? 0 : 1;
 }
 
+/* Real write, added 2026-08-22 for André's Ambit1: the legacy family has no 0x0b21 memory
+ * map, so tools/sgee.py's own SBEM-based GPS orbit write (find the GpsSGEE region, then
+ * write it) can't reach this family at all - confirmed live, "this watch does not declare a
+ * GpsSGEE region". openambit's driver has a real, direct equivalent
+ * (libambit_gps_orbit_write) that doesn't need a memory map - it's the watch's own driver
+ * that knows where GPS orbit data lives for this protocol. Ephemeris data, not firmware -
+ * same low-risk category as the Ambit3 family's proven GPS orbit write. */
+static int cmd_gps_orbit_write(const char *path) {
+    FILE *f = fopen(path, "rb");
+    if (!f) { printf("{\"ok\": false, \"error\": \"cannot open %s\"}\n", path); return 1; }
+    fseek(f, 0, SEEK_END);
+    long len = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    uint8_t *data = malloc(len);
+    if (fread(data, 1, len, f) != (size_t)len) {
+        fputs("@@JSON@@\n", stdout);
+        printf("{\"ok\": false, \"error\": \"short read of %s\"}\n", path);
+        fclose(f); free(data);
+        return 1;
+    }
+    fclose(f);
+
+    ambit_device_info_t *devices, *info;
+    ambit_object_t *dev = open_first_device(&devices, &info);
+    if (!dev) {
+        fputs("@@JSON@@\n", stdout);
+        printf("{\"ok\": false, \"error\": \"no Suunto device found on the USB bus\"}\n");
+        free(data);
+        return 1;
+    }
+
+    int rc = libambit_gps_orbit_write(dev, data, (size_t)len);
+    fputs("@@JSON@@\n", stdout);
+    printf("{\"ok\": %s, \"bytes_written\": %ld}\n", rc == 0 ? "true" : "false", len);
+
+    free(data);
+    libambit_close(dev);
+    libambit_free_enumeration(devices);
+    return rc == 0 ? 0 : 1;
+}
+
 int main(int argc, char **argv) {
     if (argc < 2) {
-        fprintf(stderr, "usage: %s device-info|settings|logs OUTDIR\n", argv[0]);
+        fprintf(stderr, "usage: %s device-info|settings|logs OUTDIR|gps-orbit-write FILE\n",
+                argv[0]);
         return 2;
     }
     if (strcmp(argv[1], "device-info") == 0) return cmd_device_info();
@@ -238,6 +280,10 @@ int main(int argc, char **argv) {
     if (strcmp(argv[1], "logs") == 0) {
         if (argc < 3) { fprintf(stderr, "usage: %s logs OUTDIR\n", argv[0]); return 2; }
         return cmd_logs(argv[2]);
+    }
+    if (strcmp(argv[1], "gps-orbit-write") == 0) {
+        if (argc < 3) { fprintf(stderr, "usage: %s gps-orbit-write FILE\n", argv[0]); return 2; }
+        return cmd_gps_orbit_write(argv[2]);
     }
     fprintf(stderr, "unknown command %s\n", argv[1]);
     return 2;
