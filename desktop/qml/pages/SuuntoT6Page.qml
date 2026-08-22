@@ -24,7 +24,7 @@ PageFlickable {
     // Which legacy wristop the backend detected: "t6" (FTDI cradle) or "x6hr" (serial/IR). One
     // page auto-detects and routes to that device's own endpoints; the merge below is shared.
     property string device: ""
-    property string modelName: qsTr("Legacy Suunto watch")
+    property string modelName: qsTr("T6 / X6HR")
     // The T6 exports FIT; the X6HR (no vendored FIT writer) exports GPX. Both merge with a Pod.
     property string exportFormat: "fit"
 

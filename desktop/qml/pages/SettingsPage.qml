@@ -633,7 +633,7 @@ PageFlickable {
                 Item { width: 1; height: Theme.spacingSmall }
                 Text {
                     width: parent.width; wrapMode: Text.WordWrap
-                    text: qsTr("Legacy Suunto menu (T6 HR computer / X6HR wristop)")
+                    text: qsTr("T6/X6 menu (legacy Suunto HR wristops)")
                     font.bold: true; font.pixelSize: Theme.fontSizeBody; color: Theme.text
                 }
                 Row {
