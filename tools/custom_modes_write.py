@@ -138,7 +138,17 @@ def build_sport_mode_slot(slot):
     confirmed 0/1/2/1/3 swim/T1/bike/T2/run example. Tag order (NAME, ACTIVITY_ID, EXERCISE*N,
     ORDER, then AppMeta if present) matches the real order observed on every slot of a live
     dump, 2026-08-07 - see SPORT_MODE_ORDER/SPORT_MODE_APP_META's own docstrings in
-    custom_modes.py. `Order` is required - every real slot has one."""
+    custom_modes.py.
+
+    CORRECTED 2026-08-22: "`Order` is required - every real slot has one" was wrong - real,
+    live hardware (André's Ambit3 Sport AND Run, both) has the SPORT_MODE_ORDER tag on
+    NONE of their real sport-mode slots (confirmed by grepping the raw tag bytes directly
+    in the flash dump, not just the decoder - 0 occurrences on either watch). The earlier
+    "every real slot has one" claim was true only of whatever dump it was confirmed
+    against (likely the Peak) - a genuine per-model difference, not a bug in those watches.
+    `Order` is now optional, same as `AppMeta` already was, so the byte-exact re-encode
+    safety check (this function's caller) can pass on Sport/Run instead of always
+    REFUSING with a TypeError."""
     # CORRECTED 2026-08-22: was iso-8859-15, see build_settings()'s own comment above.
     name = slot["Name"].encode("utf-8", "replace")[:64]
     name = name.decode("utf-8", "ignore").encode("utf-8").ljust(64, b"\0")
@@ -146,7 +156,8 @@ def build_sport_mode_slot(slot):
     body += tag(SPORT_MODE_ACTIVITY_ID, struct.pack("<H", slot["ActivityID"]))
     for exercise in slot["Exercises"]:
         body += tag(SPORT_MODE_EXERCISE, struct.pack("<H", exercise))
-    body += tag(SPORT_MODE_ORDER, struct.pack("<I", slot["Order"]))
+    if slot.get("Order") is not None:
+        body += tag(SPORT_MODE_ORDER, struct.pack("<I", slot["Order"]))
     if slot.get("AppMeta") is not None:
         body += tag(SPORT_MODE_APP_META, struct.pack("<I", slot["AppMeta"]))
     return tag(SPORT_MODE, body)
