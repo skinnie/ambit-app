@@ -83,11 +83,6 @@ static int write_gpx(const char *path, ambit_log_entry_t *entry, const char *nam
 
 typedef struct { FILE *idx; char *outdir; int index; int first; } log_ctx_t;
 
-static int log_skip_cb(void *userref, ambit_log_header_t *header) {
-    (void)userref; (void)header;
-    return 0; /* never skip - the caller only calls `logs` when it wants everything */
-}
-
 static void log_progress_cb(void *userref, uint16_t count, uint16_t current, uint8_t pct) {
     (void)userref;
     fprintf(stderr, "log %u/%u (%u%%)\n", current, count, pct);
@@ -204,16 +199,33 @@ static int cmd_logs(const char *outdir) {
         return 1;
     }
 
-    int rc = libambit_log_read(dev, log_skip_cb, log_push_cb, log_progress_cb, &ctx);
+    /* NULL skip_cb, not a callback that always returns "skip" - a real, embarrassing bug
+     * found 2026-08-22: libambit.h documents ambit_log_skip_cb as "return 0 to skip entry,
+     * else -1", and device_driver_ambit.c's log_read() walks headers first and ONLY starts
+     * reading actual PMEM log data once skip_cb returns nonzero for one of them. The earlier
+     * version of this file had a skip_cb that always returned 0 ("never skip" - backwards),
+     * so it silently walked every header, skipped every one, and reported André's real
+     * Ambit1 as having 0 logs when he knew for a fact it had real training data on it.
+     * Passing NULL entirely takes the driver's own documented "no skip callback: read
+     * everything" path instead - simpler and correct, no callback semantics left to get
+     * backwards. */
+    int rc = libambit_log_read(dev, NULL, log_push_cb, log_progress_cb, &ctx);
     fflush(ctx.idx);
     fclose(ctx.idx);
 
+    /* libambit_log_read()'s return convention is driver-specific: device_driver_ambit.c
+     * returns entries_read (a count, so 0 is a legitimately empty but successful read) and
+     * only -1 on a real failure - NOT the plain 0-success/-1-failure convention most of this
+     * library's other calls use. Found live, 2026-08-22: a real 9-entry read reported
+     * "ok": false here (rc=9 != 0) even though every entry came back correct - cosmetic
+     * (the data was already right), but worth getting right so a caller can trust "ok". */
+    int ok = rc >= 0;
     fputs("@@JSON@@\n", stdout); printf("{\"ok\": %s, \"total_entries\": %d, \"logs\": [\n%s\n  ]}\n",
-           rc == 0 ? "true" : "false", ctx.index, idxbuf);
+           ok ? "true" : "false", ctx.index, idxbuf);
 
     libambit_close(dev);
     libambit_free_enumeration(devices);
-    return rc == 0 ? 0 : 1;
+    return ok ? 0 : 1;
 }
 
 int main(int argc, char **argv) {
