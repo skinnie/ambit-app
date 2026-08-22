@@ -78,6 +78,11 @@ The **Coach** feature (readiness beacon + chat) stands on further prior work:
   catalogue MCP server the Coach's "live" library source is designed to read (via a small HTTP
   bridge in front of its stdio JSON-RPC).
 
+- **[googlarz/suunto-mcp](https://github.com/googlarz/suunto-mcp)** - the modern-Suunto
+  (SuuntoPlus Guides) MCP server whose `push_workout_guide` / IntervalPlan format the Coach's
+  Suunto-Race device sink maps onto. That sink lives in the local `coach/` scaffold rather than
+  the shipped app, but its design and workout-guide shape are taken directly from this project.
+
 - **Wahoo SYSTM** (formerly **The Sufferfest**) - the structured-workout catalogue whose real
   sessions (TSS / IF / 4DP metrics) the Coach's library and its bundled offline sample
   (`systm-sample.json`) are built from. SYSTM and its content are Wahoo's; used here only to
