@@ -273,6 +273,10 @@ PageFlickable {
     property bool _wasConnected: false
     function autoRead() {
         if (HomeViewModel.isKailash) return
+        // Real, 2026-08-22: Ambit1/2 predate the SBEM CustomModes region this service
+        // reads - calling it against a connected Ambit1 got a real "ok: false" (correct -
+        // that family doesn't have this mechanism), same fix as Watch Settings/Routes.
+        if (!DeviceCapabilities.supportsSportModes) return
         CustomModesService.refreshFieldTypes()
         CustomModesService.refresh()
         // Ask what THIS watch can hold rather than assuming the reference watch's numbers.
@@ -347,10 +351,21 @@ PageFlickable {
         text: qsTr("Sport Modes isn't available on Kailash - it has no CustomModes region on this watch at all.")
     }
 
+    Text {
+        visible: HomeViewModel.connected && !HomeViewModel.isKailash && !DeviceCapabilities.supportsSportModes
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.top: parent.top
+        anchors.topMargin: Theme.spacingLarge
+        width: 560
+        wrapMode: Text.WordWrap
+        color: Theme.mutedText
+        text: qsTr("%1 doesn't support Sport Modes on this app yet.").arg(HomeViewModel.deviceDisplayName)
+    }
+
     // ============================== LIST VIEW ==============================
     Column {
         id: listColumn
-        visible: !HomeViewModel.isKailash && !root.selectedMode
+        visible: !HomeViewModel.isKailash && DeviceCapabilities.supportsSportModes && !root.selectedMode
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.top: parent.top
         anchors.topMargin: Theme.spacingLarge

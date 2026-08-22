@@ -774,6 +774,21 @@ class Handler(BaseHTTPRequestHandler):
             self._handle_poi_add_ble(name, lat, lon)
             return
 
+        if selected_is_legacy():
+            # Real write, 2026-08-22: openambit's libambit_navigation_write, preserves
+            # existing waypoints (read-append-write, same discipline as write_nav.py's own
+            # addpoi above) - see tools/legacy_link.py and the ambit-app-hardware-fleet-check
+            # memory for the live test this was validated against before being wired here.
+            code, out, err = run_tool("legacy_link.py", ["poi-add", name, str(lat), str(lon)])
+            info = self._parse_last_json_line(out)
+            if info is None or not info.get("ok"):
+                self._send_json(502, {"ok": False, "error": (info or {}).get(
+                    "error", "legacy_link.py poi-add produced no parseable JSON"),
+                    "raw_output": out, "stderr": err})
+                return
+            self._send_json(200, {"ok": True, "raw_output": out})
+            return
+
         # POI type (icon) - optional; default "Waypoint" (17) if omitted. addpoi validates
         # the id/name and errors cleanly, so no need to pre-check it here.
         args = ["addpoi", "--name", name, "--lat", f"{lat:.7f}", "--lon", f"{lon:.7f}", "--write"]
