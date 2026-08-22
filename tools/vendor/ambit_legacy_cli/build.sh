@@ -18,7 +18,7 @@ cmake -S "$LIBAMBIT_DIR" -B "$LIBAMBIT_DIR/build" -DCMAKE_BUILD_TYPE=Release -DH
 cmake --build "$LIBAMBIT_DIR/build" -j"$(nproc 2>/dev/null || sysctl -n hw.ncpu)"
 
 gcc -O2 -Wall -I"$LIBAMBIT_DIR" -o "$HERE/ambit_legacy_cli" "$HERE/ambit_legacy_cli.c" \
-    -L"$LIBAMBIT_DIR/build" -lambit -Wl,-rpath,"$LIBAMBIT_DIR/build"
+    -L"$LIBAMBIT_DIR/build" -lambit -lm -Wl,-rpath,"$LIBAMBIT_DIR/build"
 
 echo ""
 echo "Binary: $HERE/ambit_legacy_cli"

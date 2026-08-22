@@ -7,17 +7,28 @@
  * run_tool()), the same way every other tools py CLI is - so GPLv3 stays confined to this
  * one helper process instead of reaching the app binary.
  *
- * Deliberately READ-ONLY. No write call (libambit_navigation_write, sport_mode_write,
- * app_data_write, gps_orbit_write) is ever made. Ambit 1/2 personal-settings write is
- * real (SuuntoLink does it - see the ambit-app-ambit12-settings-write memory) but its wire
- * format has never been captured in this project, so there is nothing safe to send yet.
+ * Started read-only; two real writes added same day (2026-08-22) once André pushed back on
+ * staying over-cautious given how much real write-and-verify testing this project had
+ * already done on other watches that same session: `gps-orbit-write` (proven working live)
+ * and `poi-add`/`poi-clear` (openambit's own `libambit_waypoint_append` +
+ * `libambit_navigation_write`, real functions, exercised here for the first time in this
+ * project - test with a throwaway name first, same discipline as every other real write in
+ * this project: add, read back, verify, revert). `sport_mode_write`/`app_data_write` stay
+ * unused - no way to READ current sport modes back on this family (openambit has no
+ * corresponding read function), so there is nothing to safely preserve before writing.
+ * Ambit 1/2 personal-SETTINGS write (weight/HR/etc, not waypoints) is real too (SuuntoLink
+ * does it) but its wire format has never been captured in this project - see the
+ * ambit-app-ambit12-settings-write memory.
  *
  * One JSON object printed to stdout per invocation - same "--json" convention as every
  * other tools py CLI that backend/server.py's run_tool() already parses.
  *
  *   ambit_legacy_cli device-info
  *   ambit_legacy_cli settings
- *   ambit_legacy_cli logs OUTDIR         # writes OUTDIR/<n>.gpx + prints an index
+ *   ambit_legacy_cli logs OUTDIR              # writes OUTDIR/<n>.gpx + prints an index
+ *   ambit_legacy_cli gps-orbit-write FILE
+ *   ambit_legacy_cli poi-add NAME LAT LON     # preserves existing waypoints
+ *   ambit_legacy_cli poi-clear                # writes back 0 waypoints
  *
  * Build: see build.sh in this directory (links against ../openambit_libambit's libambit).
  */
@@ -25,6 +36,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <math.h>
 #include "libambit.h"
 
 static void json_str(FILE *f, const char *s) {
@@ -295,6 +307,105 @@ static int cmd_gps_orbit_write(const char *path) {
     return rc == 0 ? 0 : 1;
 }
 
+/* Real write, added 2026-08-22: adds ONE waypoint, preserving every waypoint already on
+ * the watch - read current (navigation_read), append (openambit's own
+ * libambit_waypoint_append, real, not reimplemented here), write back
+ * (navigation_write), read back again to CONFIRM (this project's own standing "prove it,
+ * don't just trust the ack" discipline - see custom_modes_andre.md). */
+static int cmd_poi_add(const char *name, double lat, double lon) {
+    ambit_device_info_t *devices, *info;
+    ambit_object_t *dev = open_first_device(&devices, &info);
+    if (!dev) { fputs("@@JSON@@\n", stdout); printf("{\"ok\": false, \"error\": \"no Suunto device found on the USB bus\"}\n"); return 1; }
+
+    ambit_personal_settings_t *ps = libambit_personal_settings_alloc();
+    int rc = ps ? libambit_personal_settings_get(dev, ps) : -1;
+    if (rc == 0) rc = libambit_navigation_read(dev, ps);
+    if (rc != 0) {
+        fputs("@@JSON@@\n", stdout);
+        printf("{\"ok\": false, \"error\": \"reading current waypoints failed, rc=%d - refusing to write blind\"}\n", rc);
+        if (ps) libambit_personal_settings_free(ps);
+        libambit_close(dev);
+        libambit_free_enumeration(devices);
+        return 1;
+    }
+    uint16_t before_count = ps->waypoints.count;
+
+    ambit_waypoint_t w;
+    memset(&w, 0, sizeof(w));
+    strncpy(w.name, name, sizeof(w.name) - 1);
+    w.latitude = (int32_t)llround(lat * 10000000.0);
+    w.longitude = (int32_t)llround(lon * 10000000.0);
+    w.altitude = 0;
+    w.type = 17;   /* "Waypoint" - matches write_nav.py's own WAYPOINT_TYPE_DEFAULT convention */
+    w.status = 0;  /* real convention from openambit2's own movescountjson.cpp for a new entry */
+    libambit_waypoint_append(ps, &w, 1);
+
+    int write_rc = libambit_navigation_write(dev, ps);
+    libambit_personal_settings_free(ps);
+
+    /* Re-read for real confirmation rather than trusting the write's own return code. */
+    ambit_personal_settings_t *verify = libambit_personal_settings_alloc();
+    int verify_rc = verify ? libambit_navigation_read(dev, verify) : -1;
+    uint16_t after_count = verify ? verify->waypoints.count : 0;
+    int found = 0;
+    if (verify) {
+        for (uint16_t i = 0; i < verify->waypoints.count; i++) {
+            if (strncmp(verify->waypoints.data[i].name, name, sizeof(verify->waypoints.data[i].name) - 1) == 0)
+                found = 1;
+        }
+        libambit_personal_settings_free(verify);
+    }
+
+    int ok = (write_rc == 0) && (verify_rc == 0) && found && (after_count == before_count + 1);
+    fputs("@@JSON@@\n", stdout);
+    printf("{\"ok\": %s, \"write_rc\": %d, \"before_count\": %u, \"after_count\": %u, \"confirmed_present\": %s}\n",
+           ok ? "true" : "false", write_rc, before_count, after_count, found ? "true" : "false");
+
+    libambit_close(dev);
+    libambit_free_enumeration(devices);
+    return ok ? 0 : 1;
+}
+
+/* Real write: writes back an empty waypoint list. Used to revert cmd_poi_add's own test
+ * writes and, generally, to clear the on-device waypoint list. Does NOT touch routes -
+ * ps->routes is left exactly as read. */
+static int cmd_poi_clear(void) {
+    ambit_device_info_t *devices, *info;
+    ambit_object_t *dev = open_first_device(&devices, &info);
+    if (!dev) { fputs("@@JSON@@\n", stdout); printf("{\"ok\": false, \"error\": \"no Suunto device found on the USB bus\"}\n"); return 1; }
+
+    ambit_personal_settings_t *ps = libambit_personal_settings_alloc();
+    int rc = ps ? libambit_personal_settings_get(dev, ps) : -1;
+    if (rc == 0) rc = libambit_navigation_read(dev, ps);
+    if (rc != 0) {
+        fputs("@@JSON@@\n", stdout);
+        printf("{\"ok\": false, \"error\": \"reading current state failed, rc=%d\"}\n", rc);
+        if (ps) libambit_personal_settings_free(ps);
+        libambit_close(dev);
+        libambit_free_enumeration(devices);
+        return 1;
+    }
+    if (ps->waypoints.data) free(ps->waypoints.data);
+    ps->waypoints.data = NULL;
+    ps->waypoints.count = 0;
+
+    int write_rc = libambit_navigation_write(dev, ps);
+    libambit_personal_settings_free(ps);
+
+    ambit_personal_settings_t *verify = libambit_personal_settings_alloc();
+    int verify_rc = verify ? libambit_navigation_read(dev, verify) : -1;
+    uint16_t after_count = verify ? verify->waypoints.count : 1;
+    if (verify) libambit_personal_settings_free(verify);
+
+    int ok = (write_rc == 0) && (verify_rc == 0) && (after_count == 0);
+    fputs("@@JSON@@\n", stdout);
+    printf("{\"ok\": %s, \"write_rc\": %d, \"after_count\": %u}\n", ok ? "true" : "false", write_rc, after_count);
+
+    libambit_close(dev);
+    libambit_free_enumeration(devices);
+    return ok ? 0 : 1;
+}
+
 int main(int argc, char **argv) {
     if (argc < 2) {
         fprintf(stderr, "usage: %s device-info|settings|logs OUTDIR|gps-orbit-write FILE\n",
@@ -311,6 +422,11 @@ int main(int argc, char **argv) {
         if (argc < 3) { fprintf(stderr, "usage: %s gps-orbit-write FILE\n", argv[0]); return 2; }
         return cmd_gps_orbit_write(argv[2]);
     }
+    if (strcmp(argv[1], "poi-add") == 0) {
+        if (argc < 5) { fprintf(stderr, "usage: %s poi-add NAME LAT LON\n", argv[0]); return 2; }
+        return cmd_poi_add(argv[2], atof(argv[3]), atof(argv[4]));
+    }
+    if (strcmp(argv[1], "poi-clear") == 0) return cmd_poi_clear();
     fprintf(stderr, "unknown command %s\n", argv[1]);
     return 2;
 }

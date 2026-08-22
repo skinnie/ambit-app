@@ -15,14 +15,19 @@ and tools/vendor/openambit_libambit/README.md for why (a real, hardware-proven i
 already exists - openambit's libambit - so this shells out to a small compiled CLI built on
 top of it, the one piece of C in an otherwise all-Python tools/ directory).
 
-Deliberately READ-ONLY: device-info, personal settings (incl. waypoints), training logs as
-GPX. No write path - Ambit1/2 personal-settings write is real (SuuntoLink does it) but its
-wire format has never been captured in this project (see the ambit-app-ambit12-settings-write
-memory), so there's nothing safe to send yet.
+Started read-only; two real writes added same day (2026-08-22): GPS orbit data
+(gps-orbit-write, already proven live) and POI/waypoint add+clear (openambit's own
+libambit_navigation_write, exercised here for the first time in this project - add, read
+back, confirm present, same discipline as every other real write in this project). Personal
+SETTINGS write (weight/HR/etc, not waypoints) is real too (SuuntoLink does it) but its wire
+format has never been captured in this project (see the ambit-app-ambit12-settings-write
+memory), so there's nothing safe to send for THAT specific piece yet.
 
     ./tools/legacy_link.py device-info
     ./tools/legacy_link.py settings
     ./tools/legacy_link.py logs OUTDIR
+    ./tools/legacy_link.py poi-add NAME LAT LON
+    ./tools/legacy_link.py poi-clear
 """
 
 import json
@@ -85,15 +90,30 @@ def logs(outdir):
     return run(["logs", str(outdir)])
 
 
+def poi_add(name, lat, lon):
+    return run(["poi-add", name, str(lat), str(lon)])
+
+
+def poi_clear():
+    return run(["poi-clear"])
+
+
+_COMMANDS = ("device-info", "settings", "logs", "poi-add", "poi-clear")
+
+
 def main():
-    if len(sys.argv) < 2 or sys.argv[1] not in ("device-info", "settings", "logs"):
-        sys.exit(f"usage: {sys.argv[0]} device-info|settings|logs [OUTDIR]")
+    if len(sys.argv) < 2 or sys.argv[1] not in _COMMANDS:
+        sys.exit(f"usage: {sys.argv[0]} {'|'.join(_COMMANDS)} [ARGS]")
     cmd = sys.argv[1]
     try:
         if cmd == "logs":
             if len(sys.argv) < 3:
                 sys.exit(f"usage: {sys.argv[0]} logs OUTDIR")
             result = logs(sys.argv[2])
+        elif cmd == "poi-add":
+            if len(sys.argv) < 5:
+                sys.exit(f"usage: {sys.argv[0]} poi-add NAME LAT LON")
+            result = poi_add(sys.argv[2], sys.argv[3], sys.argv[4])
         else:
             result = run([cmd])
     except RuntimeError as exc:
