@@ -50,7 +50,12 @@ def tag(tag_id, content):
 def build_settings(settings):
     """Inverse of decode_settings(). `settings` is a dict shaped exactly like decode_settings's
     return value (Name, ActivityID, CustomModeID, UseHw, ..., IntervalSlots)."""
-    name = settings["Name"].encode("iso-8859-15", "replace")[:SETTINGS_NAME_SIZE]
+    # CORRECTED 2026-08-22: was iso-8859-15 - real hardware (André's French Ambit3 Sport)
+    # proved the watch sends/expects UTF-8 for name fields, see ambit_format.py's
+    # encode_name() header comment. Truncation re-decoded with "ignore" so a multi-byte
+    # character never gets cut in half at the byte boundary (same fix as encode_name()).
+    name = settings["Name"].encode("utf-8", "replace")[:SETTINGS_NAME_SIZE]
+    name = name.decode("utf-8", "ignore").encode("utf-8")
     body = name.ljust(SETTINGS_NAME_SIZE, b"\0")
 
     custom_mode_id = settings["CustomModeID"]
@@ -134,7 +139,9 @@ def build_sport_mode_slot(slot):
     ORDER, then AppMeta if present) matches the real order observed on every slot of a live
     dump, 2026-08-07 - see SPORT_MODE_ORDER/SPORT_MODE_APP_META's own docstrings in
     custom_modes.py. `Order` is required - every real slot has one."""
-    name = slot["Name"].encode("iso-8859-15", "replace")[:64].ljust(64, b"\0")
+    # CORRECTED 2026-08-22: was iso-8859-15, see build_settings()'s own comment above.
+    name = slot["Name"].encode("utf-8", "replace")[:64]
+    name = name.decode("utf-8", "ignore").encode("utf-8").ljust(64, b"\0")
     body = tag(SPORT_MODE_SETTING_NAME_LEN64, name)
     body += tag(SPORT_MODE_ACTIVITY_ID, struct.pack("<H", slot["ActivityID"]))
     for exercise in slot["Exercises"]:

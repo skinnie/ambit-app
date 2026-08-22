@@ -72,11 +72,21 @@ def build_training_item(activity_id, duration_minutes, intensity, name,
         off 12 u16  duration (MINUTES - createBinary divides JSON seconds by 60)
         off 14 u8   intensity (1-5)
         off 15 u8   padding (0)
-        off 16 23B  activityName (ISO-8859, null-padded/truncated - strncpy 0x17). NOTE: starts
+        off 16 23B  activityName (UTF-8, null-padded/truncated - strncpy 0x17). NOTE: starts
                     at offset 16, not 15 as the earlier version had it.
         off 39 u8   padding (0)
+
+    UPDATED 2026-08-22: charset changed iso-8859-15 -> utf-8. This struct itself was never
+    verified against a real capture (see the ambit-app project memory's TrainingProgram
+    finding - decompiled-code-derived, medium confidence), so "ISO-8859" here was always an
+    assumption, not a confirmed byte value the way custom_modes.py's was. Changed anyway for
+    consistency with what IS now confirmed on real hardware: every other watch NAME field in
+    this project (custom_modes.py, apps.py, exercise_log.py) turned out to be UTF-8, proven
+    by real mojibake on André's French Ambit3 Sport - same firmware, almost certainly the
+    same string convention throughout, but flagging this one specifically as still unverified.
     """
-    name_field = name.encode("iso-8859-15", "replace")[:23]
+    name_field = name.encode("utf-8", "replace")[:23]
+    name_field = name_field.decode("utf-8", "ignore").encode("utf-8")
     name_field += b"\0" * (23 - len(name_field))
     item = struct.pack("<BBHIIHB", day_offset & 0xFF, int(completed), activity_id, move_id,
                         distance, duration_minutes, intensity & 0xFF)  # 15 bytes, off 0..14
@@ -123,7 +133,9 @@ def build_training_item_emu(activity_id, intensity, name, day_offset=0):
     struct.pack_into("<H", item, 2, activity_id)
     item[14] = intensity & 0xFF
     item[15] = 0xFF
-    name_field = name.encode("iso-8859-15", "replace")[:23]
+    # CORRECTED 2026-08-22: was iso-8859-15, see build_training_item()'s own comment above.
+    name_field = name.encode("utf-8", "replace")[:23]
+    name_field = name_field.decode("utf-8", "ignore").encode("utf-8")
     item[16:16 + len(name_field)] = name_field
     item[16 + len(name_field):39] = b"\0" * (39 - (16 + len(name_field)))
     item[39] = 0x00

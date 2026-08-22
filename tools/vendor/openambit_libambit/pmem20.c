@@ -457,8 +457,14 @@ int libambit_pmem20_log_parse_header(uint8_t *data, size_t datalen, ambit_log_he
     if (log_header->activity_name) {
         free(log_header->activity_name);
     }
+    /* PATCHED 2026-08-22 (deviation from upstream openambit, see this project's own
+     * ../openambit_libambit/README.md and tools/legacy_link.py): was "ISO-8859-15" upstream -
+     * real hardware (André's French Ambit3 Sport, same firmware family) proved this watch
+     * family's name fields are UTF-8, producing visible mojibake under the old assumption.
+     * device_driver_ambit3.c's own equivalent decode already used "UTF-8" upstream, for the
+     * exact same field on the newer driver - this brings the legacy PMEM 2.0 path in line. */
     log_header->activity_name = utf8memconv((char *)data + offset, 16,
-                                            "ISO-8859-15");
+                                            "UTF-8");
     offset += 16;
     log_header->heartrate_min = read8inc(data, &offset);
 

@@ -1,8 +1,16 @@
 # Vendored: openambit's libambit (GPLv3)
 
 Source: https://github.com/openambitproject/openambit, `src/libambit/`, commit
-`ca910d10a3786f706941e250b1f6f5514632c30e` (2023-09-14), unmodified. Licensed GPLv3 (see
-`COPYING` in this directory) - written by Emil Ljungdahl and contributors.
+`ca910d10a3786f706941e250b1f6f5514632c30e` (2023-09-14). Licensed GPLv3 (see `COPYING` in this
+directory) - written by Emil Ljungdahl and contributors.
+
+**One deviation from upstream**, `pmem20.c`'s legacy `activity_name` decode: was
+`"ISO-8859-15"` upstream, patched to `"UTF-8"` 2026-08-22 - real hardware (André's French
+Ambit3 Sport) proved this project's watch name fields are UTF-8 (visible mojibake otherwise;
+see `tools/custom_modes.py`'s decode fix for the same evidence). Upstream's own
+`device_driver_ambit3.c` already used `"UTF-8"` for the identical field on the newer driver -
+this brings the legacy path in line with it, not a fresh guess. See the inline comment at that
+line for the full note. Everything else here is unmodified.
 
 ## Why this is here
 
