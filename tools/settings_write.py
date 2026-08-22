@@ -54,6 +54,23 @@ from write_nav import CMD_SETTINGS_READ, Link, descriptor_for_product_id
 CMD_SETTINGS_WRITE = 0x1101
 KAILASH_PRODUCT_ID = 0x002A
 
+# Real, 2026-08-22, decoded straight from SuuntoLink's own ambit/sport_mode.js
+# `supports*(variant)` functions (node, stubbed `electron`) - the real per-model capability
+# gate, not guessed from a spec sheet. Ran EVERY `supports*` function for Emu(Peak)/
+# Finch(Sport)/Ibisbill(Run): only altiBaroProfile differs among the fields this file's
+# AMBIT3_SETTINGS table covers (Sport/Run have no barometer - `supportsAltiBaroProfile` is
+# false for both, true only for Peak) - audio mode, compass units, GPS position format,
+# language, backlight, interval timer, HR limits, autoscroll, display all identical.
+# supportsMultisportModes/supportsBikePod/supportsPowerPod are also false on the Run
+# (no multisport combos, no bike/power pod pairing) but those aren't DeviceSettings fields
+# this file reads/writes - they gate sport_mode_manage.py's own create/multisport path
+# instead, not yet threaded through there.
+AMBIT3_SPORT_PRODUCT_ID = 0x001C
+AMBIT3_RUN_PRODUCT_ID = 0x001E
+_UNSUPPORTED_ON_MODEL = {
+    "alti_baro_profile": {AMBIT3_SPORT_PRODUCT_ID, AMBIT3_RUN_PRODUCT_ID},
+}
+
 # key -> a unique suffix of the real schema path (matched via .endswith(), so
 # "Display.Invert" only ever matches sml.DeviceSettings.Display.Invert, not some other
 # field that happens to contain "Invert" mid-path). Every one of these is visible in
@@ -732,6 +749,16 @@ def read_all(payload, descriptor, product_id=None):
         # derives (backlight brightness is 5..100, not 0..255).
         writable = (key not in KAILASH_READ_ONLY) if product_id == KAILASH_PRODUCT_ID \
             else (key in AMBIT3_KEY_TEMPLATE)
+        # Real, 2026-08-22: André pushed back on "settings are identical across Peak/Sport/
+        # Run" being surprising, correctly - ran SuuntoLink's own compiled sport_mode.js
+        # (node, stubbed `electron`) rather than guessed, and `supportsAltiBaroProfile(variant)`
+        # is false for both Sport(Finch)/Run(Ibisbill), true for Peak(Emu) - SuuntoLink hides
+        # this control ENTIRELY on those two models (no barometer), not merely one of its
+        # choices. An earlier version of this fix only dropped the "Automatic" choice - real
+        # but incomplete, since the field itself should show read-only (or not at all), same
+        # as any other field this watch's own firmware doesn't back.
+        if key in _UNSUPPORTED_ON_MODEL and product_id in _UNSUPPORTED_ON_MODEL[key]:
+            writable = False
         if product_id != KAILASH_PRODUCT_ID and _display_range(key) is not None:
             desc = dict(desc)
             desc["min"], desc["max"] = _display_range(key)
@@ -1206,6 +1233,14 @@ def write_one(link, descriptor, key, new_value, product_id=None):
     refusal = _refuse_forced_unit(schema, key, before)
     if refusal:
         return {"ok": False, "error": refusal}
+    # Symmetric with read_all()'s own `writable: False` for this same case (see its
+    # _UNSUPPORTED_ON_MODEL comment) - real, 2026-08-22: write_one() never checked this on
+    # its own read_all() only marked the field non-writable in the DESCRIPTION, this
+    # function had no matching refusal, so a real write would have gone out anyway.
+    if key in _UNSUPPORTED_ON_MODEL and product_id in _UNSUPPORTED_ON_MODEL[key]:
+        return {"ok": False, "error": f"{key} is not supported on this watch model "
+                "(SuuntoLink's own supports*(variant) reports it unavailable - no "
+                "barometer on Sport/Run)"}
 
     # Real, 2026-08-10 - the Ambit3 family goes through SuuntoLink's own per-screen
     # template (see AMBIT3_WRITE_TEMPLATES for why that matters: the old path below
